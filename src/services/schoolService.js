@@ -16,6 +16,16 @@ class SchoolService {
     this.snapshot = snapshot;
   }
 
+  getActiveClass() {
+    const currentLesson = this.getCurrentLesson();
+
+    if (currentLesson) {
+      return this.getClassById(currentLesson.classId);
+    }
+
+    return this.snapshot.classes[0] || null;
+  }
+
   getCurrentLesson(date = new Date()) {
     const weekday = getCurrentWeekdayIndex(date);
     const currentMinutes = (date.getHours() * 60) + date.getMinutes();

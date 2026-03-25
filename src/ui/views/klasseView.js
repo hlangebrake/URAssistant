@@ -5,15 +5,33 @@ window.Unterrichtsassistent.ui.views = window.Unterrichtsassistent.ui.views || {
 window.Unterrichtsassistent.ui.views.klasse = {
   id: "klasse",
   title: "Lerngruppe",
+  getSubtitle: function (service) {
+    const schoolClass = service.getActiveClass();
+
+    if (!schoolClass) {
+      return "";
+    }
+
+    return [schoolClass.name || "", schoolClass.subject || ""].join(" ").trim();
+  },
   render: function (service) {
-    const allStudents = service.snapshot.students || [];
-    const tableRows = allStudents.map(function (student) {
+    const schoolClass = service.getActiveClass();
+    const students = schoolClass ? service.getStudentsForClass(schoolClass.id) : [];
+    function escapeValue(value) {
+      return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    const tableRows = students.map(function (student) {
       return [
-        "<tr>",
-        "<td>", student.firstName || "", "</td>",
-        "<td>", student.lastName || "", "</td>",
-        "<td>", student.className || "", "</td>",
-        "<td>", student.gender || "", "</td>",
+        '<tr data-student-id="', student.id, '">',
+        '<td><input class="student-table__input" type="text" value="', escapeValue(student.firstName), '" onchange="window.UnterrichtsassistentApp.updateStudentField(\'', student.id, '\', \'firstName\', this.value)"></td>',
+        '<td><input class="student-table__input" type="text" value="', escapeValue(student.lastName), '" onchange="window.UnterrichtsassistentApp.updateStudentField(\'', student.id, '\', \'lastName\', this.value)"></td>',
+        '<td><input class="student-table__input" type="text" value="', escapeValue(student.gender), '" onchange="window.UnterrichtsassistentApp.updateStudentField(\'', student.id, '\', \'gender\', this.value)"></td>',
+        '<td class="student-table__action-cell"><button class="row-delete-button" type="button" aria-label="Schueler loeschen" onclick="return window.UnterrichtsassistentApp.deleteStudent(\'', student.id, '\')">Entfernen</button></td>',
         "</tr>"
       ].join("");
     }).join("");
@@ -21,14 +39,16 @@ window.Unterrichtsassistent.ui.views.klasse = {
     return [
       '<div class="panel-grid panel-grid--klasse">',
       '<article class="panel panel--full">',
+      schoolClass ? "" : '<p class="empty-message">Noch keine Lerngruppe angelegt. Lege ueber den Plus-Button zuerst eine Lerngruppe an.</p>',
       '<div class="student-table-wrap">',
       '<table class="student-table">',
-      "<thead><tr><th>Vorname</th><th>Nachname</th><th>Lerngruppe</th><th>Geschlecht</th></tr></thead>",
+      "<thead><tr><th>Vorname</th><th>Nachname</th><th>Geschlecht</th><th></th></tr></thead>",
       "<tbody>",
-      tableRows || '<tr><td colspan="4">Noch keine importierten oder vorhandenen Schuelerdaten.</td></tr>',
+      tableRows || '<tr><td colspan="4">Noch keine Schuelerdaten in dieser Lerngruppe.</td></tr>',
       "</tbody>",
       "</table>",
       "</div>",
+      schoolClass ? '<div class="table-actions"><button class="import-box__label" type="button" onclick="return window.UnterrichtsassistentApp.addStudentRow()">Neue Zeile</button></div>' : "",
       "</article>",
       '<div class="import-modal" id="classImportModal" hidden>',
       '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeClassImportModal()"></div>',

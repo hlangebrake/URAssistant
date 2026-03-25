@@ -4,6 +4,7 @@ const navLinks = document.querySelectorAll(".nav-link");
 const views = document.querySelectorAll("[data-view]");
 const viewTitle = document.getElementById("viewTitle");
 const viewHeaderActions = document.getElementById("viewHeaderActions");
+const viewSubtitle = document.getElementById("viewSubtitle");
 
 const namespace = window.Unterrichtsassistent || {};
 const dataLayer = namespace.data || {};
@@ -49,6 +50,22 @@ function renderStartupError(message) {
   }
 }
 
+function updateHeaderSubtitle(viewId, config) {
+  if (!viewSubtitle) {
+    return;
+  }
+
+  if (viewId === "klasse" && config && typeof config.getSubtitle === "function" && schoolService) {
+    const subtitle = config.getSubtitle(schoolService);
+    viewSubtitle.textContent = subtitle;
+    viewSubtitle.hidden = !subtitle;
+    return;
+  }
+
+  viewSubtitle.textContent = "";
+  viewSubtitle.hidden = true;
+}
+
 function updateHeaderActions(viewId) {
   if (!viewHeaderActions) {
     return;
@@ -91,12 +108,27 @@ function setActiveView(viewId) {
   }
 
   viewTitle.textContent = config.title;
+  updateHeaderSubtitle(viewId, config);
   updateHeaderActions(viewId);
 }
 
 function toggleMenu() {
   const isCollapsed = appShell.classList.toggle("is-collapsed");
   menuToggle.setAttribute("aria-expanded", String(!isCollapsed));
+}
+
+function saveAndRefreshSnapshot(nextRawSnapshot) {
+  return repository.saveSnapshot(nextRawSnapshot).then(function () {
+    schoolService = new SchoolServiceClass(createSnapshot(nextRawSnapshot));
+    setActiveView("klasse");
+  }).catch(function () {
+    schoolService = new SchoolServiceClass(createSnapshot(nextRawSnapshot));
+    setActiveView("klasse");
+  });
+}
+
+function createStudentId() {
+  return "student-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
 }
 
 window.UnterrichtsassistentApp = window.UnterrichtsassistentApp || {};
@@ -144,18 +176,88 @@ window.UnterrichtsassistentApp.submitClassImport = function (event) {
     const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
     const nextRawSnapshot = mergeImportedStudentsFn(currentRawSnapshot, importedStudents, subjectName);
 
-    repository.saveSnapshot(nextRawSnapshot).then(function () {
-      schoolService = new SchoolServiceClass(createSnapshot(nextRawSnapshot));
-      setActiveView("klasse");
-      window.UnterrichtsassistentApp.closeClassImportModal();
-    }).catch(function () {
-      schoolService = new SchoolServiceClass(createSnapshot(nextRawSnapshot));
-      setActiveView("klasse");
+    saveAndRefreshSnapshot(nextRawSnapshot).then(function () {
       window.UnterrichtsassistentApp.closeClassImportModal();
     });
   };
 
   reader.readAsText(file, "utf-8");
+  return false;
+};
+window.UnterrichtsassistentApp.updateStudentField = function (studentId, fieldName, nextValue) {
+  const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
+  const student = currentRawSnapshot.students.find(function (item) {
+    return item.id === studentId;
+  });
+
+  if (!student || ["firstName", "lastName", "gender"].indexOf(fieldName) === -1) {
+    return false;
+  }
+
+  student[fieldName] = String(nextValue || "").trim();
+  saveAndRefreshSnapshot(currentRawSnapshot);
+  return false;
+};
+window.UnterrichtsassistentApp.addStudentRow = function () {
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
+  let studentId;
+
+  if (!activeClass) {
+    return false;
+  }
+
+  studentId = createStudentId();
+  currentRawSnapshot.students.push({
+    id: studentId,
+    firstName: "",
+    lastName: "",
+    className: activeClass.name || "",
+    gender: "",
+    strengths: [],
+    gaps: [],
+    attendanceRate: 1
+  });
+
+  currentRawSnapshot.classes = currentRawSnapshot.classes.map(function (schoolClass) {
+    if (schoolClass.id === activeClass.id) {
+      schoolClass.studentIds = schoolClass.studentIds || [];
+      schoolClass.studentIds.push(studentId);
+    }
+
+    return schoolClass;
+  });
+
+  saveAndRefreshSnapshot(currentRawSnapshot);
+  return false;
+};
+window.UnterrichtsassistentApp.deleteStudent = function (studentId) {
+  const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
+
+  if (!window.confirm("Soll dieser Schueler mit allen zugehoerigen Daten dauerhaft geloescht werden?")) {
+    return false;
+  }
+
+  currentRawSnapshot.students = currentRawSnapshot.students.filter(function (student) {
+    return student.id !== studentId;
+  });
+  currentRawSnapshot.classes = currentRawSnapshot.classes.map(function (schoolClass) {
+    schoolClass.studentIds = (schoolClass.studentIds || []).filter(function (linkedStudentId) {
+      return linkedStudentId !== studentId;
+    });
+    return schoolClass;
+  });
+  currentRawSnapshot.assessments = currentRawSnapshot.assessments.filter(function (assessment) {
+    return assessment.studentId !== studentId;
+  });
+  currentRawSnapshot.seatPlans = currentRawSnapshot.seatPlans.map(function (seatPlan) {
+    seatPlan.seats = (seatPlan.seats || []).filter(function (seat) {
+      return seat.studentId !== studentId;
+    });
+    return seatPlan;
+  });
+
+  saveAndRefreshSnapshot(currentRawSnapshot);
   return false;
 };
 

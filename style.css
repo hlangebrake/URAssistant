@@ -193,6 +193,12 @@ button {
   font-size: clamp(2rem, 5vw, 3.2rem);
 }
 
+.content__subtitle {
+  margin: 0.5rem 0 0;
+  color: var(--text-soft);
+  font-size: 1rem;
+}
+
 .view {
   display: none;
 }
@@ -378,6 +384,7 @@ button {
   padding: 0.9rem 1rem;
   border-bottom: 1px solid var(--line);
   text-align: left;
+  vertical-align: middle;
 }
 
 .student-table th {
@@ -387,6 +394,47 @@ button {
 
 .student-table tbody tr:last-child td {
   border-bottom: 0;
+}
+
+.student-table__input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgba(23, 49, 62, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text);
+  font: inherit;
+}
+
+.student-table__input:focus {
+  outline: 2px solid rgba(23, 49, 62, 0.18);
+  outline-offset: 1px;
+}
+
+.student-table__action-cell {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.row-delete-button {
+  padding: 0.55rem 0.8rem;
+  border: 1px solid rgba(23, 49, 62, 0.12);
+  border-radius: 999px;
+  background: rgba(23, 49, 62, 0.05);
+  color: var(--text-soft);
+  cursor: pointer;
+}
+
+.table-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 1rem;
+}
+
+.empty-message {
+  margin: 0 0 1rem;
+  color: var(--text-soft);
 }
 
 .app-shell.is-collapsed .sidebar__toggle-text,
