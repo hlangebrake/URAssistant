@@ -5,10 +5,15 @@ const views = document.querySelectorAll("[data-view]");
 const viewTitle = document.getElementById("viewTitle");
 const viewHeaderActions = document.getElementById("viewHeaderActions");
 const viewSubtitle = document.getElementById("viewSubtitle");
+const contentHeader = document.querySelector(".content__header");
 const sidebar = document.getElementById("sidebar");
 const activeClassBadge = document.getElementById("activeClassBadge");
 const activeClassSelect = document.getElementById("activeClassSelect");
 const collapsedClassPicker = document.getElementById("collapsedClassPicker");
+const activeDateInput = document.getElementById("activeDateInput");
+const activeTimeInput = document.getElementById("activeTimeInput");
+const liveDateTimeButton = document.getElementById("liveDateTimeButton");
+const collapsedLiveDateTimeButton = document.getElementById("collapsedLiveDateTimeButton");
 
 const namespace = window.Unterrichtsassistent || {};
 const dataLayer = namespace.data || {};
@@ -36,6 +41,7 @@ let activeViewId = "unterricht";
 let classViewMode = "analyse";
 let timetableViewMode = "ansicht";
 const timetableWeekdayKeys = ["1", "2", "3", "4", "5"];
+let liveDateTimeIntervalId = null;
 
 function getClassImportModal() {
   return document.getElementById("classImportModal");
@@ -73,45 +79,159 @@ function createTimetableRow(type) {
   };
 }
 
-function ensureTimetable(snapshot) {
-  if (!snapshot.timetable) {
-    snapshot.timetable = {
-      startTime: "07:50",
-      rows: []
-    };
+function getTodayDateValue() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return year + "-" + month + "-" + day;
+}
+
+function getYesterdayDateValue() {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const year = yesterday.getFullYear();
+  const month = String(yesterday.getMonth() + 1).padStart(2, "0");
+  const day = String(yesterday.getDate()).padStart(2, "0");
+  return year + "-" + month + "-" + day;
+}
+
+function getNowDateParts() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  const hours = String(now.getHours()).padStart(2, "0");
+  const minutes = String(now.getMinutes()).padStart(2, "0");
+
+  return {
+    date: year + "-" + month + "-" + day,
+    shortDate: day + "." + month + ".",
+    time: hours + ":" + minutes
+  };
+}
+
+function getActiveDateTimeParts() {
+  const defaultParts = getNowDateParts();
+  const activeMode = schoolService ? String(schoolService.snapshot.activeDateTimeMode || "live") : "live";
+
+  if (activeMode === "live") {
+    return defaultParts;
   }
 
-  if (!Array.isArray(snapshot.timetable.rows)) {
-    snapshot.timetable.rows = [];
+  const activeDateTime = schoolService ? String(schoolService.snapshot.activeDateTime || "").trim() : "";
+  const parsedDate = activeDateTime ? new Date(activeDateTime) : null;
+
+  if (!parsedDate || Number.isNaN(parsedDate.getTime())) {
+    return defaultParts;
   }
 
-  if (!snapshot.timetable.startTime) {
-    snapshot.timetable.startTime = "07:50";
+  return {
+    date: parsedDate.getFullYear() + "-" + String(parsedDate.getMonth() + 1).padStart(2, "0") + "-" + String(parsedDate.getDate()).padStart(2, "0"),
+    time: String(parsedDate.getHours()).padStart(2, "0") + ":" + String(parsedDate.getMinutes()).padStart(2, "0")
+  };
+}
+
+function isLiveDateTimeMode() {
+  return !schoolService || String(schoolService.snapshot.activeDateTimeMode || "live") === "live";
+}
+
+function syncLiveDateTimeUi() {
+  if (!schoolService || !isLiveDateTimeMode()) {
+    return;
   }
 
-  snapshot.timetable.rows = snapshot.timetable.rows.map(function (row) {
-    const nextRow = row || {};
+  setActiveView(activeViewId);
+}
 
-    if (!nextRow.days) {
-      nextRow.days = {};
+function ensureLiveDateTimeRefresh() {
+  if (liveDateTimeIntervalId) {
+    return;
+  }
+
+  liveDateTimeIntervalId = window.setInterval(function () {
+    syncLiveDateTimeUi();
+  }, 5000);
+}
+
+function ensureTimetables(snapshot) {
+  if (!Array.isArray(snapshot.timetables)) {
+    snapshot.timetables = snapshot.timetable ? [snapshot.timetable] : [];
+  }
+
+  snapshot.timetables = snapshot.timetables.map(function (timetable, index) {
+    const nextTimetable = timetable || {};
+
+    if (!nextTimetable.id) {
+      nextTimetable.id = "timetable-" + Date.now() + "-" + index;
     }
 
-    timetableWeekdayKeys.forEach(function (weekdayKey) {
-      if (!nextRow.days[weekdayKey]) {
-        nextRow.days[weekdayKey] = createDefaultTimetableDay();
-      } else {
-        nextRow.days[weekdayKey].classId = nextRow.days[weekdayKey].classId || "";
-        nextRow.days[weekdayKey].room = nextRow.days[weekdayKey].room || "";
-        nextRow.days[weekdayKey].isDouble = Boolean(nextRow.days[weekdayKey].isDouble);
+    if (!Array.isArray(nextTimetable.rows)) {
+      nextTimetable.rows = [];
+    }
+
+    if (!nextTimetable.startTime) {
+      nextTimetable.startTime = "07:50";
+    }
+
+    nextTimetable.validFrom = nextTimetable.validFrom || "";
+    nextTimetable.validTo = nextTimetable.validTo || "";
+    nextTimetable.rows = nextTimetable.rows.map(function (row) {
+      const nextRow = row || {};
+
+      if (!nextRow.days) {
+        nextRow.days = {};
       }
+
+      timetableWeekdayKeys.forEach(function (weekdayKey) {
+        if (!nextRow.days[weekdayKey]) {
+          nextRow.days[weekdayKey] = createDefaultTimetableDay();
+        } else {
+          nextRow.days[weekdayKey].classId = nextRow.days[weekdayKey].classId || "";
+          nextRow.days[weekdayKey].room = nextRow.days[weekdayKey].room || "";
+          nextRow.days[weekdayKey].isDouble = Boolean(nextRow.days[weekdayKey].isDouble);
+        }
+      });
+
+      nextRow.type = nextRow.type === "pause" ? "pause" : "lesson";
+      nextRow.durationMinutes = Number(nextRow.durationMinutes) || (nextRow.type === "pause" ? 5 : 45);
+      return nextRow;
     });
 
-    nextRow.type = nextRow.type === "pause" ? "pause" : "lesson";
-    nextRow.durationMinutes = Number(nextRow.durationMinutes) || (nextRow.type === "pause" ? 5 : 45);
-    return nextRow;
+    return nextTimetable;
   });
 
-  return snapshot.timetable;
+  if (!snapshot.activeTimetableId && snapshot.timetables[0]) {
+    snapshot.activeTimetableId = snapshot.timetables[0].id;
+  }
+
+  delete snapshot.timetable;
+  return snapshot.timetables;
+}
+
+function getManagedTimetableFromSnapshot(snapshot) {
+  const timetables = ensureTimetables(snapshot);
+  const activeTimetable = timetables.find(function (timetable) {
+    return timetable.id === snapshot.activeTimetableId;
+  });
+
+  if (activeTimetable) {
+    return activeTimetable;
+  }
+
+  snapshot.activeTimetableId = timetables[0] ? timetables[0].id : null;
+  return timetables[0] || null;
+}
+
+function createTimetableRecord() {
+  return {
+    id: "timetable-" + Date.now() + "-" + Math.floor(Math.random() * 1000),
+    validFrom: getTodayDateValue(),
+    validTo: "",
+    startTime: "07:50",
+    rows: []
+  };
 }
 
 function isValidTimeValue(value) {
@@ -190,14 +310,46 @@ function getClassDisplayColor(schoolClass) {
   return "#d9d4cb";
 }
 
+function formatDateLabel(dateValue) {
+  if (!dateValue) {
+    return "offen";
+  }
+
+  const parts = String(dateValue).split("-");
+
+  if (parts.length !== 3) {
+    return dateValue;
+  }
+
+  return parts[2] + "." + parts[1] + "." + parts[0];
+}
+
+function buildTimetableDropdownHtml() {
+  const currentTimetable = schoolService ? schoolService.getCurrentTimetable() : null;
+  const allTimetables = schoolService ? schoolService.getAllTimetables() : [];
+  const managedTimetable = schoolService ? schoolService.getManagedTimetable() : null;
+  const options = allTimetables.length
+    ? allTimetables.map(function (timetable) {
+        const label = currentTimetable && timetable.id === currentTimetable.id
+          ? "aktuell"
+          : "Gueltig bis: " + formatDateLabel(timetable.validTo);
+        const selected = managedTimetable && managedTimetable.id === timetable.id ? ' selected' : "";
+        return '<option value="' + escapeHtml(timetable.id) + '"' + selected + ">" + escapeHtml(label) + "</option>";
+      }).join("")
+    : '<option value="">Keine Stundenplaene</option>';
+
+  return '<select id="activeTimetableSelect" class="sidebar__class-select timetable-select" aria-label="Gespeicherten Stundenplan waehlen" onchange="return window.UnterrichtsassistentApp.changeActiveTimetable(this.value)">' + options + "</select>";
+}
+
 function buildViewModeToggleHtml(options) {
-  return '<div class="header-action-group"><div class="class-view-mode-toggle class-view-mode-toggle--header" role="tablist" aria-label="' + options.ariaLabel + '"><button class="class-view-mode-toggle__button' + (options.activeMode === options.leftMode ? " is-active" : "") + '" type="button" role="tab" aria-selected="' + (options.activeMode === options.leftMode ? "true" : "false") + '" onclick="return ' + options.leftAction + '">' + options.leftLabel + '</button><button class="class-view-mode-toggle__button' + (options.activeMode === options.rightMode ? " is-active" : "") + '" type="button" role="tab" aria-selected="' + (options.activeMode === options.rightMode ? "true" : "false") + '" onclick="return ' + options.rightAction + '">' + options.rightLabel + '</button></div>' + (options.trailingHtml || "") + "</div>";
+  return '<div class="header-action-group"><div class="class-view-mode-toggle class-view-mode-toggle--header" role="tablist" aria-label="' + options.ariaLabel + '"><button class="class-view-mode-toggle__button' + (options.activeMode === options.leftMode ? " is-active" : "") + '" type="button" role="tab" aria-selected="' + (options.activeMode === options.leftMode ? "true" : "false") + '" onclick="return ' + options.leftAction + '">' + options.leftLabel + '</button><button class="class-view-mode-toggle__button' + (options.activeMode === options.rightMode ? " is-active" : "") + '" type="button" role="tab" aria-selected="' + (options.activeMode === options.rightMode ? "true" : "false") + '" onclick="return ' + options.rightAction + '">' + options.rightLabel + '</button></div>' + (options.trailingHtml ? '<div class="header-action-group__secondary">' + options.trailingHtml + "</div>" : "") + "</div>";
 }
 
 function renderActiveClassContext() {
   const classes = schoolService ? schoolService.getAllClasses() : [];
   const activeClass = schoolService ? schoolService.getActiveClass() : null;
   const badgeLabel = activeClass ? (activeClass.name || "--") : "--";
+  const activeDateTimeParts = getActiveDateTimeParts();
 
   if (activeClassBadge) {
     activeClassBadge.textContent = badgeLabel;
@@ -223,6 +375,24 @@ function renderActiveClassContext() {
         }).join("")
       : '<div class="collapsed-class-picker__empty">Keine Lerngruppe</div>';
   }
+
+  if (activeDateInput) {
+    activeDateInput.value = activeDateTimeParts.date;
+  }
+
+  if (activeTimeInput) {
+    activeTimeInput.value = activeDateTimeParts.time;
+  }
+
+  if (liveDateTimeButton) {
+    liveDateTimeButton.classList.toggle("is-live", isLiveDateTimeMode());
+    liveDateTimeButton.setAttribute("aria-pressed", String(isLiveDateTimeMode()));
+  }
+
+  if (collapsedLiveDateTimeButton) {
+    collapsedLiveDateTimeButton.classList.toggle("is-live", isLiveDateTimeMode());
+    collapsedLiveDateTimeButton.setAttribute("aria-pressed", String(isLiveDateTimeMode()));
+  }
 }
 
 function updateHeaderSubtitle(viewId, config) {
@@ -246,7 +416,17 @@ function updateHeaderActions(viewId) {
     return;
   }
 
+  if (contentHeader) {
+    contentHeader.classList.remove("has-secondary-actions");
+    contentHeader.classList.remove("has-secondary-actions--compact");
+  }
+
   if (viewId === "klasse") {
+    if (contentHeader && isClassManageMode()) {
+      contentHeader.classList.add("has-secondary-actions");
+      contentHeader.classList.add("has-secondary-actions--compact");
+    }
+
     viewHeaderActions.innerHTML = buildViewModeToggleHtml({
       ariaLabel: "Ansicht der Lerngruppe wechseln",
       activeMode: classViewMode,
@@ -264,6 +444,10 @@ function updateHeaderActions(viewId) {
   }
 
   if (viewId === "stundenplan") {
+    if (contentHeader && isTimetableManageMode()) {
+      contentHeader.classList.add("has-secondary-actions");
+    }
+
     viewHeaderActions.innerHTML = buildViewModeToggleHtml({
       ariaLabel: "Ansicht des Stundenplans wechseln",
       activeMode: timetableViewMode,
@@ -273,7 +457,9 @@ function updateHeaderActions(viewId) {
       rightMode: "verwalten",
       rightLabel: "Verwalten",
       rightAction: "window.UnterrichtsassistentApp.setTimetableViewMode('verwalten')",
-      trailingHtml: ""
+      trailingHtml: isTimetableManageMode()
+        ? buildTimetableDropdownHtml() + '<button class="circle-action" type="button" aria-label="Neuen Stundenplan anlegen" onclick="return window.UnterrichtsassistentApp.createTimetable()">+</button>'
+        : ""
     });
     return;
   }
@@ -403,6 +589,43 @@ window.UnterrichtsassistentApp.setTimetableViewMode = function (nextMode) {
 
   return false;
 };
+window.UnterrichtsassistentApp.changeActiveTimetable = function (timetableId) {
+  if (!repository || !schoolService) {
+    return false;
+  }
+
+  const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
+
+  ensureTimetables(currentRawSnapshot);
+  currentRawSnapshot.activeTimetableId = timetableId || null;
+  saveAndRefreshSnapshot(currentRawSnapshot, "stundenplan");
+  return false;
+};
+window.UnterrichtsassistentApp.createTimetable = function () {
+  if (!isTimetableManageMode() || !repository || !schoolService) {
+    return false;
+  }
+
+  const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
+  const timetables = ensureTimetables(currentRawSnapshot);
+  const currentTimetable = schoolService.getCurrentTimetable();
+  const nextTimetable = createTimetableRecord();
+  const yesterdayValue = getYesterdayDateValue();
+
+  if (currentTimetable) {
+    timetables.forEach(function (timetable) {
+      if (timetable.id === currentTimetable.id) {
+        timetable.validTo = yesterdayValue;
+      }
+    });
+  }
+
+  timetables.unshift(nextTimetable);
+  currentRawSnapshot.activeTimetableId = nextTimetable.id;
+  timetableViewMode = "verwalten";
+  saveAndRefreshSnapshot(currentRawSnapshot, "stundenplan");
+  return false;
+};
 window.UnterrichtsassistentApp.changeActiveClass = function (classId) {
   if (!repository || !schoolService) {
     return false;
@@ -411,8 +634,75 @@ window.UnterrichtsassistentApp.changeActiveClass = function (classId) {
   const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
 
   currentRawSnapshot.activeClassId = classId || null;
+  currentRawSnapshot.activeDateTimeMode = "manual";
   saveAndRefreshSnapshot(currentRawSnapshot, activeViewId);
   closeCollapsedClassPicker();
+  return false;
+};
+window.UnterrichtsassistentApp.setContextFromTimetableCell = function (classId, dateValue, timeValue, timetableId) {
+  if (!repository || !schoolService || !classId || !dateValue || !timeValue) {
+    return false;
+  }
+
+  const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
+
+  currentRawSnapshot.activeClassId = classId;
+  currentRawSnapshot.activeDateTime = String(dateValue) + "T" + String(timeValue);
+  currentRawSnapshot.activeDateTimeMode = "manual";
+
+  if (timetableId) {
+    currentRawSnapshot.activeTimetableId = timetableId;
+  }
+
+  saveAndRefreshSnapshot(currentRawSnapshot, activeViewId);
+  closeCollapsedClassPicker();
+  return false;
+};
+window.UnterrichtsassistentApp.setLiveDateTimeMode = function () {
+  if (!repository || !schoolService) {
+    return false;
+  }
+
+  const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
+  const currentParts = getNowDateParts();
+
+  currentRawSnapshot.activeDateTime = currentParts.date + "T" + currentParts.time;
+  currentRawSnapshot.activeDateTimeMode = "live";
+  saveAndRefreshSnapshot(currentRawSnapshot, activeViewId);
+  return false;
+};
+window.UnterrichtsassistentApp.updateActiveDateTime = function (partName, nextValue) {
+  if (!repository || !schoolService || ["date", "time"].indexOf(partName) === -1) {
+    return false;
+  }
+
+  const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
+  const currentParts = getActiveDateTimeParts();
+  const trimmedValue = String(nextValue || "").trim();
+  const activeClass = schoolService.getActiveClass();
+  const wasLiveMode = isLiveDateTimeMode();
+
+  if (partName === "date") {
+    if (!trimmedValue) {
+      return false;
+    }
+    currentParts.date = trimmedValue;
+  } else {
+    currentParts.time = trimmedValue;
+  }
+
+  if (!currentParts.date || !currentParts.time) {
+    return false;
+  }
+
+  currentRawSnapshot.activeDateTime = currentParts.date + "T" + currentParts.time;
+  currentRawSnapshot.activeDateTimeMode = "manual";
+
+  if (wasLiveMode && activeClass) {
+    currentRawSnapshot.activeClassId = activeClass.id;
+  }
+
+  saveAndRefreshSnapshot(currentRawSnapshot, activeViewId);
   return false;
 };
 window.UnterrichtsassistentApp.openClassImportModal = function () {
@@ -620,12 +910,29 @@ window.UnterrichtsassistentApp.updateTimetableStartTime = function (nextValue) {
   }
 
   const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
+  const timetable = getManagedTimetableFromSnapshot(currentRawSnapshot);
 
-  if (!isValidTimeValue(nextValue)) {
+  if (!timetable || !isValidTimeValue(nextValue)) {
     return false;
   }
 
-  ensureTimetable(currentRawSnapshot).startTime = nextValue;
+  timetable.startTime = nextValue;
+  saveAndRefreshSnapshot(currentRawSnapshot, "stundenplan");
+  return false;
+};
+window.UnterrichtsassistentApp.updateTimetableDateField = function (fieldName, nextValue) {
+  if (!isTimetableManageMode()) {
+    return false;
+  }
+
+  const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
+  const timetable = getManagedTimetableFromSnapshot(currentRawSnapshot);
+
+  if (!timetable || ["validFrom", "validTo"].indexOf(fieldName) === -1) {
+    return false;
+  }
+
+  timetable[fieldName] = String(nextValue || "");
   saveAndRefreshSnapshot(currentRawSnapshot, "stundenplan");
   return false;
 };
@@ -635,7 +942,11 @@ window.UnterrichtsassistentApp.addTimetableRow = function () {
   }
 
   const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
-  const timetable = ensureTimetable(currentRawSnapshot);
+  const timetable = getManagedTimetableFromSnapshot(currentRawSnapshot);
+
+  if (!timetable) {
+    return false;
+  }
 
   timetable.rows.push(createTimetableRow("lesson"));
   saveAndRefreshSnapshot(currentRawSnapshot, "stundenplan");
@@ -647,12 +958,12 @@ window.UnterrichtsassistentApp.updateTimetableRowField = function (rowId, fieldN
   }
 
   const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
-  const timetable = ensureTimetable(currentRawSnapshot);
-  const row = timetable.rows.find(function (item) {
+  const timetable = getManagedTimetableFromSnapshot(currentRawSnapshot);
+  const row = timetable ? timetable.rows.find(function (item) {
     return item.id === rowId;
-  });
+  }) : null;
 
-  if (!row) {
+  if (!timetable || !row) {
     return false;
   }
 
@@ -678,15 +989,15 @@ window.UnterrichtsassistentApp.updateTimetableClass = function (rowId, weekdayKe
   }
 
   const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
-  const timetable = ensureTimetable(currentRawSnapshot);
-  const row = timetable.rows.find(function (item) {
+  const timetable = getManagedTimetableFromSnapshot(currentRawSnapshot);
+  const row = timetable ? timetable.rows.find(function (item) {
     return item.id === rowId;
-  });
+  }) : null;
   const selectedClass = currentRawSnapshot.classes.find(function (schoolClass) {
     return schoolClass.id === classId;
   });
 
-  if (!row || row.type !== "lesson" || timetableWeekdayKeys.indexOf(String(weekdayKey)) === -1) {
+  if (!timetable || !row || row.type !== "lesson" || timetableWeekdayKeys.indexOf(String(weekdayKey)) === -1) {
     return false;
   }
 
@@ -709,12 +1020,12 @@ window.UnterrichtsassistentApp.updateTimetableRoom = function (rowId, weekdayKey
   }
 
   const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
-  const timetable = ensureTimetable(currentRawSnapshot);
-  const row = timetable.rows.find(function (item) {
+  const timetable = getManagedTimetableFromSnapshot(currentRawSnapshot);
+  const row = timetable ? timetable.rows.find(function (item) {
     return item.id === rowId;
-  });
+  }) : null;
 
-  if (!row || row.type !== "lesson" || timetableWeekdayKeys.indexOf(String(weekdayKey)) === -1) {
+  if (!timetable || !row || row.type !== "lesson" || timetableWeekdayKeys.indexOf(String(weekdayKey)) === -1) {
     return false;
   }
 
@@ -728,13 +1039,13 @@ window.UnterrichtsassistentApp.toggleTimetableDouble = function (rowId, weekdayK
   }
 
   const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
-  const timetable = ensureTimetable(currentRawSnapshot);
-  const rowIndex = timetable.rows.findIndex(function (item) {
+  const timetable = getManagedTimetableFromSnapshot(currentRawSnapshot);
+  const rowIndex = timetable ? timetable.rows.findIndex(function (item) {
     return item.id === rowId;
-  });
+  }) : -1;
   const row = rowIndex >= 0 ? timetable.rows[rowIndex] : null;
 
-  if (!row || row.type !== "lesson" || timetableWeekdayKeys.indexOf(String(weekdayKey)) === -1) {
+  if (!timetable || !row || row.type !== "lesson" || timetableWeekdayKeys.indexOf(String(weekdayKey)) === -1) {
     return false;
   }
 
@@ -793,13 +1104,15 @@ window.UnterrichtsassistentApp.deleteActiveClass = function () {
   currentRawSnapshot.seatPlans = currentRawSnapshot.seatPlans.filter(function (seatPlan) {
     return seatPlan.classId !== activeClass.id;
   });
-  ensureTimetable(currentRawSnapshot).rows = ensureTimetable(currentRawSnapshot).rows.map(function (row) {
-    timetableWeekdayKeys.forEach(function (weekdayKey) {
-      if (row.days[weekdayKey] && row.days[weekdayKey].classId === activeClass.id) {
-        row.days[weekdayKey] = createDefaultTimetableDay();
-      }
+  ensureTimetables(currentRawSnapshot).forEach(function (timetable) {
+    timetable.rows = timetable.rows.map(function (row) {
+      timetableWeekdayKeys.forEach(function (weekdayKey) {
+        if (row.days[weekdayKey] && row.days[weekdayKey].classId === activeClass.id) {
+          row.days[weekdayKey] = createDefaultTimetableDay();
+        }
+      });
+      return row;
     });
-    return row;
   });
 
   if (currentRawSnapshot.classes.length) {
@@ -828,6 +1141,7 @@ async function startApp() {
     }
   }
 
+  ensureLiveDateTimeRefresh();
   setActiveView(activeViewId);
   renderActiveClassContext();
 }

@@ -52,7 +52,10 @@ class TimetableRow {
 }
 
 class Timetable {
-  constructor({ startTime = "07:50", rows = [] }) {
+  constructor({ id, validFrom = "", validTo = "", startTime = "07:50", rows = [] }) {
+    this.id = id;
+    this.validFrom = validFrom;
+    this.validTo = validTo;
     this.startTime = startTime || "07:50";
     this.rows = rows.map((row) => new TimetableRow(row));
   }

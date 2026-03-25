@@ -12,9 +12,28 @@ function createDomainSnapshot(rawData) {
     TodoItem
   } = window.Unterrichtsassistent.domain;
 
+  function normalizeTimetables(rawSnapshot) {
+    const rawTimetables = Array.isArray(rawSnapshot.timetables)
+      ? rawSnapshot.timetables
+      : (rawSnapshot.timetable ? [Object.assign({ id: "timetable-default", validFrom: "", validTo: "" }, rawSnapshot.timetable)] : []);
+
+    return rawTimetables.map(function (item, index) {
+      return new Timetable(Object.assign({
+        id: item.id || ("timetable-" + String(index + 1)),
+        validFrom: item.validFrom || "",
+        validTo: item.validTo || ""
+      }, item));
+    });
+  }
+
+  const timetables = normalizeTimetables(rawData);
+
   return {
     activeClassId: rawData.activeClassId || (rawData.classes[0] ? rawData.classes[0].id : null),
-    timetable: new Timetable(rawData.timetable || {}),
+    activeTimetableId: rawData.activeTimetableId || (timetables[0] ? timetables[0].id : null),
+    activeDateTime: rawData.activeDateTime || "",
+    activeDateTimeMode: rawData.activeDateTimeMode || "live",
+    timetables: timetables,
     students: rawData.students.map((item) => new Student(item)),
     classes: rawData.classes.map((item) => new SchoolClass(item)),
     lessons: rawData.lessons.map((item) => new Lesson(item)),
@@ -43,6 +62,9 @@ function serializeDomainSnapshot(snapshot) {
     const rows = Array.isArray(source.rows) ? source.rows : [];
 
     return {
+      id: source.id || "",
+      validFrom: source.validFrom || "",
+      validTo: source.validTo || "",
       startTime: source.startTime || "07:50",
       rows: rows.map(function (row) {
         const rowDays = row.days || {};
@@ -69,7 +91,10 @@ function serializeDomainSnapshot(snapshot) {
 
   return {
     activeClassId: snapshot.activeClassId || null,
-    timetable: cloneTimetable(snapshot.timetable),
+    activeTimetableId: snapshot.activeTimetableId || (snapshot.timetables && snapshot.timetables[0] ? snapshot.timetables[0].id : null),
+    activeDateTime: snapshot.activeDateTime || "",
+    activeDateTimeMode: snapshot.activeDateTimeMode || "live",
+    timetables: (snapshot.timetables || []).map(cloneTimetable),
     students: cloneItems(snapshot.students, ["id", "firstName", "lastName", "className", "gender", "strengths", "gaps", "attendanceRate"]),
     classes: cloneItems(snapshot.classes, ["id", "name", "room", "subject", "studentIds", "displayColor"]),
     lessons: cloneItems(snapshot.lessons, ["id", "classId", "subject", "room", "weekday", "startTime", "endTime", "topic"]),

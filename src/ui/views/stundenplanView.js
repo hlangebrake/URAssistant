@@ -6,14 +6,15 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
   id: "stundenplan",
   title: "Stundenplan",
   render: function (service) {
-    const timetable = service.getTimetable();
-    const rows = service.getTimetableRows();
-    const weekdays = service.getWeekdays();
-    const classes = service.getAllClasses();
     const viewMode = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getTimetableViewMode === "function"
       ? window.UnterrichtsassistentApp.getTimetableViewMode()
       : "ansicht";
     const isManageMode = viewMode === "verwalten";
+    const referenceDate = service.getReferenceDate();
+    const timetable = isManageMode ? service.getManagedTimetable() : service.getCurrentTimetable(referenceDate);
+    const rows = timetable ? service.getTimetableRows(timetable) : [];
+    const weekdays = service.getWeekdays();
+    const classes = service.getAllClasses();
 
     function escapeValue(value) {
       return String(value || "")
@@ -36,7 +37,7 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
     }
 
     function getWeekDates() {
-      const today = new Date();
+      const today = new Date(referenceDate);
       const currentDay = today.getDay();
       const distanceToMonday = currentDay === 0 ? -6 : 1 - currentDay;
       const monday = new Date(today);
@@ -48,10 +49,22 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
       weekdays.forEach(function (weekday, index) {
         const date = new Date(monday);
         date.setDate(monday.getDate() + index);
-        datesByKey[weekday.key] = String(date.getDate()).padStart(2, "0") + "." + String(date.getMonth() + 1).padStart(2, "0") + ".";
+        const isoDate = date.getFullYear() + "-" + String(date.getMonth() + 1).padStart(2, "0") + "-" + String(date.getDate()).padStart(2, "0");
+        datesByKey[weekday.key] = {
+          label: String(date.getDate()).padStart(2, "0") + "." + String(date.getMonth() + 1).padStart(2, "0") + ".",
+          isoDate: isoDate
+        };
       });
 
       return datesByKey;
+    }
+
+    function formatDateValue(dateValue) {
+      if (!dateValue) {
+        return "";
+      }
+
+      return String(dateValue).slice(0, 10);
     }
 
     function getClassDisplayName(schoolClass) {
@@ -174,6 +187,10 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
       const timeBarHtml = timeContext.barSourceRowId === row.id && isCurrentDay
         ? '<span class="schedule-compact__time-bar" style="top:' + String(timeContext.barOffsetPercent) + '%"></span>'
         : "";
+      const actionLabel = resolvedClass
+        ? getClassDisplayName(resolvedClass) + ", " + weekday.shortLabel + " " + timeContext.weekDates[weekday.key].label + ", " + row.startTime
+        : "";
+      const actionAttributes = ' type="button" aria-label="' + escapeValue(actionLabel) + '" title="' + escapeValue(actionLabel) + '" onclick="return window.UnterrichtsassistentApp.setContextFromTimetableCell(\'' + escapeValue(resolvedClassId) + '\', \'' + escapeValue(timeContext.weekDates[weekday.key].isoDate) + '\', \'' + escapeValue(row.startTime) + '\', \'' + escapeValue(timetable ? timetable.id : "") + '\')"';
 
       if (cell.isBlocked) {
         return "";
@@ -185,10 +202,10 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
 
       return [
         '<td class="schedule-compact__lesson-cell', currentCellClass, '"', rowspan > 1 ? ' rowspan="' + rowspan + '"' : "", ">",
-        '<div class="schedule-compact__lesson-box', rowspan > 1 ? " is-double" : "", '" style="', buildLessonBoxStyle(resolvedClass), " ", boxStyle, '">',
+        '<button class="schedule-compact__lesson-box', rowspan > 1 ? " is-double" : "", '"' + actionAttributes + ' style="', buildLessonBoxStyle(resolvedClass), " ", boxStyle, '">',
         '<div class="schedule-compact__lesson-title">', escapeValue(getClassDisplayName(resolvedClass)), "</div>",
         '<div class="schedule-compact__lesson-room">', escapeValue(resolvedRoom || "Raum offen"), "</div>",
-        "</div>",
+        "</button>",
         timeBarHtml,
         "</td>"
       ].join("");
@@ -224,6 +241,14 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
       return [
         '<div class="schedule-toolbar">',
         '<label class="schedule-toolbar__field">',
+        "<span>Gueltig ab</span>",
+        '<input class="student-table__input schedule-toolbar__time" type="date" value="', escapeValue(formatDateValue(timetable.validFrom)), '" onchange="return window.UnterrichtsassistentApp.updateTimetableDateField(\'validFrom\', this.value)">',
+        "</label>",
+        '<label class="schedule-toolbar__field">',
+        "<span>Gueltig bis</span>",
+        '<input class="student-table__input schedule-toolbar__time" type="date" value="', escapeValue(formatDateValue(timetable.validTo)), '" onchange="return window.UnterrichtsassistentApp.updateTimetableDateField(\'validTo\', this.value)">',
+        "</label>",
+        '<label class="schedule-toolbar__field">',
         "<span>Unterrichtsbeginn</span>",
         '<input class="student-table__input schedule-toolbar__time" type="time" value="', escapeValue(timetable.startTime), '" onchange="return window.UnterrichtsassistentApp.updateTimetableStartTime(this.value)">',
         "</label>",
@@ -236,7 +261,7 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
         }).join(""),
         "</tr></thead>",
         "<tbody>",
-        tableRows,
+        tableRows || '<tr><td colspan="6">Noch kein Zeitraster vorhanden. Lege unten die erste Zeile an.</td></tr>',
         "</tbody>",
         "</table>",
         "</div>",
@@ -249,7 +274,7 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
       const lessonRows = rows.filter(function (row) {
         return row.type === "lesson";
       });
-      const now = new Date();
+      const now = new Date(referenceDate);
       const currentWeekdayIndex = now.getDay() === 0 ? 7 : now.getDay();
       const currentWeekdayKey = currentWeekdayIndex >= 1 && currentWeekdayIndex <= 5 ? String(currentWeekdayIndex) : "";
       const currentMinutes = (now.getHours() * 60) + now.getMinutes();
@@ -308,7 +333,8 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
         pastWeekdayKeys: pastWeekdayKeys,
         pastLessonRowIds: pastLessonRowIds,
         barSourceRowId: barSourceRowId,
-        barOffsetPercent: barOffsetPercent
+        barOffsetPercent: barOffsetPercent,
+        weekDates: weekDates
       };
 
       const compactRows = lessonRows.map(function (row, rowIndex) {
@@ -339,7 +365,7 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
             pastWeekdayKeys[weekday.key] ? "is-past-day" : ""
           ].join(" ").trim();
 
-          return '<th class="' + headerClasses + '"><span class="schedule-compact__weekday">' + escapeValue(weekday.shortLabel) + '</span><span class="schedule-compact__weekday-date">' + escapeValue(weekDates[weekday.key]) + "</span></th>";
+          return '<th class="' + headerClasses + '"><span class="schedule-compact__weekday">' + escapeValue(weekday.shortLabel) + '</span><span class="schedule-compact__weekday-date">' + escapeValue(weekDates[weekday.key].label) + "</span></th>";
         }).join(""),
         "</tr></thead>",
         "<tbody>",
@@ -353,7 +379,7 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
     return [
       '<div class="panel-grid panel-grid--klasse">',
       '<article class="panel panel--full">',
-      rows.length ? (isManageMode ? renderManageTable() : renderCompactTable()) : '<p class="empty-message">Noch kein Zeitraster vorhanden. Lege im Modus Verwalten mit "Neue Zeile" die erste Unterrichtsstunde oder Pause an.</p>',
+      timetable ? (isManageMode ? renderManageTable() : (rows.length ? renderCompactTable() : '<p class="empty-message">Fuer den aktuell gueltigen Stundenplan ist noch kein Zeitraster hinterlegt.</p>')) : '<p class="empty-message">Noch kein Stundenplan vorhanden. Lege im Modus Verwalten ueber den Plus-Button den ersten Stundenplan an.</p>',
       "</article>",
       "</div>"
     ].join("");

@@ -63,9 +63,39 @@ function normalizeTimetable(timetable) {
   const rows = Array.isArray(source.rows) ? source.rows : [];
 
   return {
+    id: source.id || "",
+    validFrom: source.validFrom || "",
+    validTo: source.validTo || "",
     startTime: source.startTime || "07:50",
     rows: rows.map(normalizeTimetableRow)
   };
+}
+
+function normalizeDateValue(value) {
+  return String(value || "").slice(0, 10);
+}
+
+function getLocalDateValue(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return year + "-" + month + "-" + day;
+}
+
+function compareDateValues(left, right) {
+  if (left === right) {
+    return 0;
+  }
+
+  if (!left) {
+    return -1;
+  }
+
+  if (!right) {
+    return 1;
+  }
+
+  return left < right ? -1 : 1;
 }
 
 function buildTimetableRows(timetable) {
@@ -136,19 +166,74 @@ class SchoolService {
     this.snapshot = snapshot;
   }
 
+  getReferenceDate() {
+    if ((this.snapshot.activeDateTimeMode || "live") === "live") {
+      return new Date();
+    }
+
+    const activeDateTime = String(this.snapshot.activeDateTime || "").trim();
+    const parsedDate = activeDateTime ? new Date(activeDateTime) : null;
+
+    if (parsedDate && !Number.isNaN(parsedDate.getTime())) {
+      return parsedDate;
+    }
+
+    return new Date();
+  }
+
   getWeekdays() {
     return WEEKDAY_META.slice();
   }
 
+  getAllTimetables() {
+    return (this.snapshot.timetables || []).map(normalizeTimetable).sort(function (left, right) {
+      return compareDateValues(right.validFrom, left.validFrom);
+    });
+  }
+
+  getTimetableById(timetableId) {
+    return this.getAllTimetables().find(function (timetable) {
+      return timetable.id === timetableId;
+    }) || null;
+  }
+
+  getCurrentTimetable(date) {
+    const effectiveDate = date || this.getReferenceDate();
+    const todayValue = getLocalDateValue(effectiveDate);
+    const matchingTimetables = this.getAllTimetables().filter(function (timetable) {
+      const validFrom = normalizeDateValue(timetable.validFrom);
+      const validTo = normalizeDateValue(timetable.validTo);
+      const startsBefore = !validFrom || compareDateValues(validFrom, todayValue) <= 0;
+      const endsAfter = !validTo || compareDateValues(validTo, todayValue) >= 0;
+
+      return startsBefore && endsAfter;
+    }).sort(function (left, right) {
+      return compareDateValues(right.validFrom, left.validFrom);
+    });
+
+    return matchingTimetables[0] || this.getAllTimetables()[0] || null;
+  }
+
+  getManagedTimetable() {
+    if (this.snapshot.activeTimetableId) {
+      const activeTimetable = this.getTimetableById(this.snapshot.activeTimetableId);
+      if (activeTimetable) {
+        return activeTimetable;
+      }
+    }
+
+    return this.getCurrentTimetable(this.getReferenceDate());
+  }
+
   getTimetable() {
-    return normalizeTimetable(this.snapshot.timetable);
+    return this.getManagedTimetable() || normalizeTimetable({});
   }
 
-  getTimetableRows() {
-    return buildTimetableRows(this.snapshot.timetable);
+  getTimetableRows(timetable) {
+    return buildTimetableRows(timetable || this.getManagedTimetable());
   }
 
-  getScheduledLessons() {
+  getScheduledLessons(date) {
     const classesById = {};
     const lessons = [];
 
@@ -156,7 +241,13 @@ class SchoolService {
       classesById[schoolClass.id] = schoolClass;
     });
 
-    this.getTimetableRows().forEach(function (row) {
+    const currentTimetable = this.getCurrentTimetable(date);
+
+    if (!currentTimetable) {
+      return [];
+    }
+
+    this.getTimetableRows(currentTimetable).forEach(function (row) {
       WEEKDAY_KEYS.forEach(function (weekdayKey) {
         const cell = row.cells[weekdayKey];
         const classId = row.type === "lesson"
@@ -195,6 +286,14 @@ class SchoolService {
   }
 
   getActiveClass() {
+    if ((this.snapshot.activeDateTimeMode || "live") === "live") {
+      const liveLesson = this.getMostRecentLesson(this.getReferenceDate());
+
+      if (liveLesson) {
+        return this.getClassById(liveLesson.classId);
+      }
+    }
+
     if (this.snapshot.activeClassId) {
       const activeClass = this.getClassById(this.snapshot.activeClassId);
       if (activeClass) {
@@ -202,7 +301,7 @@ class SchoolService {
       }
     }
 
-    const currentLesson = this.getCurrentLesson();
+    const currentLesson = this.getCurrentLesson(this.getReferenceDate());
 
     if (currentLesson) {
       return this.getClassById(currentLesson.classId);
@@ -211,22 +310,46 @@ class SchoolService {
     return this.snapshot.classes[0] || null;
   }
 
-  getCurrentLesson(date = new Date()) {
-    const weekday = getCurrentWeekdayIndex(date);
-    const currentMinutes = (date.getHours() * 60) + date.getMinutes();
-    const scheduledLessons = this.getScheduledLessons();
+  getMostRecentLesson(date) {
+    const effectiveDate = date || this.getReferenceDate();
+    const weekday = getCurrentWeekdayIndex(effectiveDate);
+    const currentMinutes = (effectiveDate.getHours() * 60) + effectiveDate.getMinutes();
+    const scheduledLessons = this.getScheduledLessons(effectiveDate);
+    const pastLessons = scheduledLessons.filter(function (lesson) {
+      if (lesson.weekday < weekday) {
+        return true;
+      }
+
+      return lesson.weekday === weekday && timeToMinutes(lesson.startTime) <= currentMinutes;
+    }).sort(function (left, right) {
+      if (left.weekday !== right.weekday) {
+        return right.weekday - left.weekday;
+      }
+
+      return timeToMinutes(right.startTime) - timeToMinutes(left.startTime);
+    });
+
+    return pastLessons[0] || scheduledLessons[scheduledLessons.length - 1] || null;
+  }
+
+  getCurrentLesson(date) {
+    const effectiveDate = date || this.getReferenceDate();
+    const weekday = getCurrentWeekdayIndex(effectiveDate);
+    const currentMinutes = (effectiveDate.getHours() * 60) + effectiveDate.getMinutes();
+    const scheduledLessons = this.getScheduledLessons(effectiveDate);
 
     return scheduledLessons.find(function (lesson) {
       const starts = timeToMinutes(lesson.startTime);
       const ends = timeToMinutes(lesson.endTime);
       return lesson.weekday === weekday && currentMinutes >= starts && currentMinutes <= ends;
-    }) || this.getNextLesson(date);
+    }) || this.getNextLesson(effectiveDate);
   }
 
-  getNextLesson(date = new Date()) {
-    const weekday = getCurrentWeekdayIndex(date);
-    const currentMinutes = (date.getHours() * 60) + date.getMinutes();
-    const scheduledLessons = this.getScheduledLessons();
+  getNextLesson(date) {
+    const effectiveDate = date || this.getReferenceDate();
+    const weekday = getCurrentWeekdayIndex(effectiveDate);
+    const currentMinutes = (effectiveDate.getHours() * 60) + effectiveDate.getMinutes();
+    const scheduledLessons = this.getScheduledLessons(effectiveDate);
     const futureLessons = scheduledLessons
       .filter(function (lesson) {
         if (lesson.weekday > weekday) {

@@ -87,15 +87,17 @@ button {
 .sidebar__top {
   display: grid;
   gap: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
 }
 
 .sidebar__toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.75rem;
-  width: fit-content;
+  display: inline-grid;
+  place-items: center;
+  width: 52px;
   min-height: 52px;
-  padding: 0.75rem 1rem;
+  padding: 0.75rem;
+  margin: 0 auto;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
@@ -105,16 +107,17 @@ button {
 
 .sidebar__brand {
   position: relative;
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  align-items: start;
   gap: 0.9rem;
 }
 
 .sidebar__brand-mark {
   display: grid;
   place-items: center;
-  width: 48px;
-  height: 48px;
+  width: 56px;
+  height: 56px;
   border: 0;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.14);
@@ -125,14 +128,96 @@ button {
 }
 
 .sidebar__brand-text {
-  display: grid;
-  gap: 0.2rem;
+  display: contents;
 }
 
 .sidebar__brand-row {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  min-height: 56px;
+}
+
+.sidebar__brand-row:first-child {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.sidebar__brand-row--datetime {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.2rem;
+}
+
+.sidebar__field {
+  display: grid;
+  min-width: 0;
+  color: rgba(247, 243, 235, 0.82);
+  font-size: 0.82rem;
+}
+
+.sidebar__field--compact {
+  width: auto;
+  flex: 0 0 auto;
+}
+
+.sidebar__datetime-stack {
+  display: grid;
+  gap: 0.55rem;
+  align-content: center;
+}
+
+.sidebar__brand .sidebar__class-select {
+  width: 100%;
+  max-width: none;
+}
+
+.sidebar__live-button {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  min-width: 56px;
+  height: 56px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  color: var(--text-on-dark);
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.sidebar__live-button-text {
+  display: inline-block;
+}
+
+.sidebar__live-button.is-live {
+  background: #c4463a;
+  color: #fff7f5;
+}
+
+.sidebar__live-button--collapsed {
+  display: none;
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.sidebar__datetime-input {
+  width: 100%;
+  min-height: 38px;
+  padding: 0.4rem 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-on-dark);
+}
+
+.sidebar__datetime-input::-webkit-calendar-picker-indicator {
+  filter: invert(1);
 }
 
 .sidebar__class-select {
@@ -250,6 +335,14 @@ button {
   margin-bottom: 1.5rem;
 }
 
+.content__header.has-secondary-actions {
+  padding-bottom: 4.8rem;
+}
+
+.content__header.has-secondary-actions--compact {
+  padding-bottom: 3.1rem;
+}
+
 .content__title-row {
   position: relative;
   display: flex;
@@ -318,8 +411,8 @@ button {
 #viewHeaderActions {
   position: absolute;
   left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  top: 0;
+  transform: translateX(-50%);
 }
 
 .view {
@@ -423,9 +516,36 @@ button {
 
 .header-action-group {
   display: flex;
+  flex-direction: column;
   align-items: center;
+  gap: 0.65rem;
+}
+
+.header-action-group__secondary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-wrap: wrap;
   gap: 0.65rem;
+  width: 100%;
+  margin-top: 0.15rem;
+}
+
+.timetable-select {
+  min-width: 260px;
+  max-width: 320px;
+  min-height: 46px;
+  padding: 0.65rem 2.4rem 0.65rem 0.9rem;
+  border: 1px solid rgba(23, 49, 62, 0.18);
+  border-radius: 14px;
+  background: rgba(251, 248, 241, 0.96);
+  color: var(--text);
+  box-shadow: 0 10px 24px rgba(23, 49, 62, 0.08);
+}
+
+.timetable-select:focus-visible {
+  outline: 2px solid rgba(23, 49, 62, 0.22);
+  outline-offset: 2px;
 }
 
 .import-modal {
@@ -813,14 +933,19 @@ button {
 }
 
 .schedule-compact__lesson-box {
+  width: 100%;
   height: 100%;
   min-height: 74px;
   padding: 0.78rem 0.88rem;
+  border: 0;
   border-radius: 18px;
   background:
     linear-gradient(180deg, rgba(37, 76, 93, 0.96), rgba(23, 49, 62, 0.98));
   color: var(--text-on-dark);
   box-shadow: 0 16px 32px rgba(23, 49, 62, 0.16);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .schedule-compact__lesson-box.is-double {
@@ -867,19 +992,22 @@ button {
   color: var(--text-soft);
 }
 
-.app-shell.is-collapsed .sidebar__toggle-text,
 .app-shell.is-collapsed .sidebar__brand-text,
 .app-shell.is-collapsed .nav-link__label {
   display: none;
 }
 
+.app-shell.is-collapsed .sidebar__live-button--collapsed {
+  display: grid;
+}
+
+.app-shell.is-collapsed .sidebar__brand-mark {
+  grid-row: 1;
+}
+
 .app-shell.is-collapsed .sidebar__brand,
 .app-shell.is-collapsed .nav-link {
   justify-content: center;
-}
-
-.app-shell.is-collapsed .sidebar__toggle {
-  padding-inline: 0.8rem;
 }
 
 @media (max-width: 960px) {
@@ -916,7 +1044,8 @@ button {
   }
 
   .sidebar__toggle {
-    padding: 0.9rem 1.1rem;
+    width: 56px;
+    padding: 0.9rem;
   }
 
   .nav-link {
@@ -949,8 +1078,7 @@ button {
     border-bottom-right-radius: 24px;
   }
 
-  .app-shell.is-collapsed .nav-link__label,
-  .app-shell.is-collapsed .sidebar__toggle-text {
+  .app-shell.is-collapsed .nav-link__label {
     display: initial;
   }
 
