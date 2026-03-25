@@ -91,11 +91,19 @@ class TodoItem {
 }
 
 class SeatPlan {
-  constructor({ id, classId, updatedAt, seats = [] }) {
+  constructor({ id, classId, room = "", validFrom = "", validTo = "", updatedAt, seats = [], deskLayoutItems = [], deskLayoutLinks = [], roomWindowSide = "", roomWidth = 720, roomHeight = 720 }) {
     this.id = id;
     this.classId = classId;
+    this.room = room;
+    this.validFrom = validFrom;
+    this.validTo = validTo;
     this.updatedAt = updatedAt;
     this.seats = seats;
+    this.deskLayoutItems = deskLayoutItems;
+    this.deskLayoutLinks = deskLayoutLinks;
+    this.roomWindowSide = roomWindowSide;
+    this.roomWidth = roomWidth;
+    this.roomHeight = roomHeight;
   }
 }
 

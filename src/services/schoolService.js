@@ -71,6 +71,25 @@ function normalizeTimetable(timetable) {
   };
 }
 
+function normalizeSeatPlan(seatPlan) {
+  const source = seatPlan || {};
+
+  return {
+    id: source.id || "",
+    classId: source.classId || "",
+    room: source.room || "",
+    validFrom: source.validFrom || "",
+    validTo: source.validTo || "",
+    updatedAt: source.updatedAt || "",
+    seats: Array.isArray(source.seats) ? source.seats : [],
+    deskLayoutItems: Array.isArray(source.deskLayoutItems) ? source.deskLayoutItems : [],
+    deskLayoutLinks: Array.isArray(source.deskLayoutLinks) ? source.deskLayoutLinks : [],
+    roomWindowSide: source.roomWindowSide || "",
+    roomWidth: Number(source.roomWidth) || 720,
+    roomHeight: Number(source.roomHeight) || 720
+  };
+}
+
 function normalizeDateValue(value) {
   return String(value || "").slice(0, 10);
 }
@@ -233,6 +252,118 @@ class SchoolService {
     return buildTimetableRows(timetable || this.getManagedTimetable());
   }
 
+  getRoomsForClass(classId) {
+    const rooms = {};
+    const activeClass = classId ? this.getClassById(classId) : null;
+
+    this.getAllTimetables().forEach(function (timetable) {
+      buildTimetableRows(timetable).forEach(function (row) {
+        WEEKDAY_KEYS.forEach(function (weekdayKey) {
+          const cell = row.cells[weekdayKey];
+          const effectiveClassId = row.type === "lesson"
+            ? (cell.isBlocked ? cell.inheritedClassId : cell.classId)
+            : "";
+          const effectiveRoom = row.type === "lesson"
+            ? (cell.isBlocked ? cell.inheritedRoom : cell.room)
+            : "";
+
+          if (effectiveClassId === classId && effectiveRoom) {
+            rooms[effectiveRoom] = true;
+          }
+        });
+      });
+    });
+
+    if (!Object.keys(rooms).length && activeClass && activeClass.room) {
+      rooms[activeClass.room] = true;
+    }
+
+    return Object.keys(rooms).sort();
+  }
+
+  getRelevantRoomForClass(classId, date) {
+    const effectiveDate = date || this.getReferenceDate();
+    const weekday = getCurrentWeekdayIndex(effectiveDate);
+    const currentMinutes = (effectiveDate.getHours() * 60) + effectiveDate.getMinutes();
+    const currentTimetable = this.getCurrentTimetable(effectiveDate);
+    let fallbackRoom = "";
+
+    if (!currentTimetable) {
+      return this.getRoomsForClass(classId)[0] || "";
+    }
+
+    this.getTimetableRows(currentTimetable).forEach(function (row) {
+      const starts = timeToMinutes(row.startTime);
+      const ends = timeToMinutes(row.endTime);
+      const cell = row.cells[String(weekday)] || null;
+      const effectiveClassId = row.type === "lesson" && cell
+        ? (cell.isBlocked ? cell.inheritedClassId : cell.classId)
+        : "";
+      const effectiveRoom = row.type === "lesson" && cell
+        ? (cell.isBlocked ? cell.inheritedRoom : cell.room)
+        : "";
+
+      if (effectiveClassId === classId && effectiveRoom && !fallbackRoom) {
+        fallbackRoom = effectiveRoom;
+      }
+
+      if (effectiveClassId === classId && effectiveRoom && currentMinutes >= starts && currentMinutes <= ends) {
+        fallbackRoom = effectiveRoom;
+      }
+    });
+
+    return fallbackRoom || this.getRoomsForClass(classId)[0] || "";
+  }
+
+  getAllSeatPlans() {
+    return (this.snapshot.seatPlans || []).map(normalizeSeatPlan).sort(function (left, right) {
+      return compareDateValues(right.validFrom, left.validFrom);
+    });
+  }
+
+  getSeatPlansForClass(classId) {
+    return this.getAllSeatPlans().filter(function (seatPlan) {
+      return seatPlan.classId === classId;
+    });
+  }
+
+  getSeatPlansForClassAndRoom(classId, room) {
+    return this.getSeatPlansForClass(classId).filter(function (seatPlan) {
+      return (seatPlan.room || "") === (room || "");
+    });
+  }
+
+  getCurrentSeatPlan(classId, room, date) {
+    const effectiveDate = date || this.getReferenceDate();
+    const todayValue = getLocalDateValue(effectiveDate);
+    const matchingSeatPlans = this.getSeatPlansForClassAndRoom(classId, room).filter(function (seatPlan) {
+      const validFrom = normalizeDateValue(seatPlan.validFrom);
+      const validTo = normalizeDateValue(seatPlan.validTo);
+      const startsBefore = !validFrom || compareDateValues(validFrom, todayValue) <= 0;
+      const endsAfter = !validTo || compareDateValues(validTo, todayValue) >= 0;
+
+      return startsBefore && endsAfter;
+    }).sort(function (left, right) {
+      return compareDateValues(right.validFrom, left.validFrom);
+    });
+
+    return matchingSeatPlans[0] || this.getSeatPlansForClassAndRoom(classId, room)[0] || null;
+  }
+
+  getManagedSeatPlan(classId, room) {
+    if (this.snapshot.activeSeatPlanId) {
+      const activeSeatPlan = this.getAllSeatPlans().find(function (seatPlan) {
+        return seatPlan.id === String(this.snapshot.activeSeatPlanId || "");
+      }, this);
+
+      if (activeSeatPlan && activeSeatPlan.classId === classId && activeSeatPlan.room === (room || "")) {
+        return activeSeatPlan;
+      }
+    }
+
+    return this.getCurrentSeatPlan(classId, room, this.getReferenceDate());
+  }
+
   getScheduledLessons(date) {
     const classesById = {};
     const lessons = [];
@@ -393,9 +524,9 @@ class SchoolService {
   }
 
   getSeatPlanForClass(classId) {
-    return this.snapshot.seatPlans.find(function (seatPlan) {
-      return seatPlan.classId === classId;
-    }) || null;
+    const room = this.snapshot.activeSeatPlanRoom || this.getRelevantRoomForClass(classId, this.getReferenceDate()) || "";
+
+    return this.getCurrentSeatPlan(classId, room, this.getReferenceDate());
   }
 
   getOpenTodosForClass(classId) {

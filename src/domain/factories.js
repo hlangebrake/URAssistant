@@ -31,6 +31,8 @@ function createDomainSnapshot(rawData) {
   return {
     activeClassId: rawData.activeClassId || (rawData.classes[0] ? rawData.classes[0].id : null),
     activeTimetableId: rawData.activeTimetableId || (timetables[0] ? timetables[0].id : null),
+    activeSeatPlanId: rawData.activeSeatPlanId || null,
+    activeSeatPlanRoom: rawData.activeSeatPlanRoom || "",
     activeDateTime: rawData.activeDateTime || "",
     activeDateTimeMode: rawData.activeDateTimeMode || "live",
     timetables: timetables,
@@ -92,6 +94,8 @@ function serializeDomainSnapshot(snapshot) {
   return {
     activeClassId: snapshot.activeClassId || null,
     activeTimetableId: snapshot.activeTimetableId || (snapshot.timetables && snapshot.timetables[0] ? snapshot.timetables[0].id : null),
+    activeSeatPlanId: snapshot.activeSeatPlanId || null,
+    activeSeatPlanRoom: snapshot.activeSeatPlanRoom || "",
     activeDateTime: snapshot.activeDateTime || "",
     activeDateTimeMode: snapshot.activeDateTimeMode || "live",
     timetables: (snapshot.timetables || []).map(cloneTimetable),
@@ -100,7 +104,7 @@ function serializeDomainSnapshot(snapshot) {
     lessons: cloneItems(snapshot.lessons, ["id", "classId", "subject", "room", "weekday", "startTime", "endTime", "topic"]),
     assessments: cloneItems(snapshot.assessments, ["id", "studentId", "classId", "type", "score", "maxScore", "date"]),
     todos: cloneItems(snapshot.todos, ["id", "title", "dueDate", "relatedClassId", "done"]),
-    seatPlans: cloneItems(snapshot.seatPlans, ["id", "classId", "updatedAt", "seats"])
+    seatPlans: cloneItems(snapshot.seatPlans, ["id", "classId", "room", "validFrom", "validTo", "updatedAt", "seats", "deskLayoutItems", "deskLayoutLinks", "roomWindowSide", "roomWidth", "roomHeight"])
   };
 }
 
