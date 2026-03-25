@@ -32,9 +32,14 @@ const repository = RepositoryClass ? new RepositoryClass() : null;
 
 let schoolService = null;
 let activeViewId = "unterricht";
+let classViewMode = "analyse";
 
 function getClassImportModal() {
   return document.getElementById("classImportModal");
+}
+
+function isClassManageMode() {
+  return classViewMode === "verwalten";
 }
 
 function eachNode(nodeList, callback) {
@@ -117,12 +122,14 @@ function updateHeaderSubtitle(viewId, config) {
 }
 
 function updateHeaderActions(viewId) {
+  const isManageMode = isClassManageMode();
+
   if (!viewHeaderActions) {
     return;
   }
 
   if (viewId === "klasse") {
-    viewHeaderActions.innerHTML = '<div class="header-action-group"><button class="circle-action circle-action--danger" type="button" aria-label="Aktive Lerngruppe loeschen" onclick="return window.UnterrichtsassistentApp.deleteActiveClass()">-</button><button class="circle-action" type="button" aria-label="Neue Lerngruppe anlegen" onclick="return window.UnterrichtsassistentApp.openClassImportModal()">+</button></div>';
+    viewHeaderActions.innerHTML = '<div class="header-action-group"><div class="class-view-mode-toggle class-view-mode-toggle--header" role="tablist" aria-label="Ansicht der Lerngruppe wechseln"><button class="class-view-mode-toggle__button' + (isManageMode ? "" : " is-active") + '" type="button" role="tab" aria-selected="' + (isManageMode ? "false" : "true") + '" onclick="return window.UnterrichtsassistentApp.setClassViewMode(\'analyse\')">Analyse</button><button class="class-view-mode-toggle__button' + (isManageMode ? " is-active" : "") + '" type="button" role="tab" aria-selected="' + (isManageMode ? "true" : "false") + '" onclick="return window.UnterrichtsassistentApp.setClassViewMode(\'verwalten\')">Verwalten</button></div>' + (isManageMode ? '<button class="circle-action circle-action--danger" type="button" aria-label="Aktive Lerngruppe loeschen" onclick="return window.UnterrichtsassistentApp.deleteActiveClass()">-</button><button class="circle-action" type="button" aria-label="Neue Lerngruppe anlegen" onclick="return window.UnterrichtsassistentApp.openClassImportModal()">+</button>' : "") + '</div>';
     return;
   }
 
@@ -130,8 +137,13 @@ function updateHeaderActions(viewId) {
 }
 
 function setActiveView(viewId) {
+  const previousViewId = activeViewId;
   activeViewId = viewId;
   const config = registeredViews[viewId];
+
+  if (viewId === "klasse" && previousViewId !== "klasse") {
+    classViewMode = "analyse";
+  }
 
   eachNode(navLinks, function (link) {
     const isActive = link.dataset.viewTarget === viewId;
@@ -217,6 +229,18 @@ window.UnterrichtsassistentApp = window.UnterrichtsassistentApp || {};
 window.UnterrichtsassistentApp.activateView = setActiveView;
 window.UnterrichtsassistentApp.toggleMenu = toggleMenu;
 window.UnterrichtsassistentApp.toggleCollapsedClassPicker = toggleCollapsedClassPicker;
+window.UnterrichtsassistentApp.getClassViewMode = function () {
+  return classViewMode;
+};
+window.UnterrichtsassistentApp.setClassViewMode = function (nextMode) {
+  classViewMode = nextMode === "verwalten" ? "verwalten" : "analyse";
+
+  if (activeViewId === "klasse") {
+    setActiveView("klasse");
+  }
+
+  return false;
+};
 window.UnterrichtsassistentApp.changeActiveClass = function (classId) {
   if (!repository || !schoolService) {
     return false;
@@ -231,6 +255,10 @@ window.UnterrichtsassistentApp.changeActiveClass = function (classId) {
 };
 window.UnterrichtsassistentApp.openClassImportModal = function () {
   const modal = getClassImportModal();
+
+  if (!isClassManageMode()) {
+    return false;
+  }
 
   if (modal) {
     modal.hidden = false;
@@ -261,6 +289,10 @@ window.UnterrichtsassistentApp.submitClassImport = function (event) {
 
   if (event && typeof event.preventDefault === "function") {
     event.preventDefault();
+  }
+
+  if (!isClassManageMode()) {
+    return false;
   }
 
   if (!subjectName || !repository || !schoolService || !serializeSnapshot) {
@@ -297,6 +329,10 @@ window.UnterrichtsassistentApp.submitClassImport = function (event) {
   return false;
 };
 window.UnterrichtsassistentApp.updateStudentField = function (studentId, fieldName, nextValue) {
+  if (!isClassManageMode()) {
+    return false;
+  }
+
   const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
   const student = currentRawSnapshot.students.find(function (item) {
     return item.id === studentId;
@@ -311,6 +347,10 @@ window.UnterrichtsassistentApp.updateStudentField = function (studentId, fieldNa
   return false;
 };
 window.UnterrichtsassistentApp.updateActiveClassField = function (fieldName, nextValue) {
+  if (!isClassManageMode()) {
+    return false;
+  }
+
   const activeClass = schoolService ? schoolService.getActiveClass() : null;
   const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
   const trimmedValue = String(nextValue || "").trim();
@@ -343,6 +383,10 @@ window.UnterrichtsassistentApp.updateActiveClassField = function (fieldName, nex
   return false;
 };
 window.UnterrichtsassistentApp.addStudentRow = function () {
+  if (!isClassManageMode()) {
+    return false;
+  }
+
   const activeClass = schoolService ? schoolService.getActiveClass() : null;
   const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
   let studentId;
@@ -376,6 +420,10 @@ window.UnterrichtsassistentApp.addStudentRow = function () {
   return false;
 };
 window.UnterrichtsassistentApp.deleteStudent = function (studentId) {
+  if (!isClassManageMode()) {
+    return false;
+  }
+
   const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
 
   if (!window.confirm("Soll dieser Schueler mit allen zugehoerigen Daten dauerhaft geloescht werden?")) {
@@ -405,6 +453,10 @@ window.UnterrichtsassistentApp.deleteStudent = function (studentId) {
   return false;
 };
 window.UnterrichtsassistentApp.deleteActiveClass = function () {
+  if (!isClassManageMode()) {
+    return false;
+  }
+
   const activeClass = schoolService ? schoolService.getActiveClass() : null;
   const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
   const studentIdsToDelete = {};

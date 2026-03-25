@@ -17,6 +17,10 @@ window.Unterrichtsassistent.ui.views.klasse = {
   render: function (service) {
     const schoolClass = service.getActiveClass();
     const students = schoolClass ? service.getStudentsForClass(schoolClass.id) : [];
+    const classViewMode = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getClassViewMode === "function"
+      ? window.UnterrichtsassistentApp.getClassViewMode()
+      : "analyse";
+    const isManageMode = classViewMode === "verwalten";
     function escapeValue(value) {
       return String(value || "")
         .replace(/&/g, "&amp;")
@@ -27,6 +31,16 @@ window.Unterrichtsassistent.ui.views.klasse = {
 
     const tableRows = students.map(function (student) {
       const genderValue = escapeValue(student.gender).toLowerCase();
+      if (!isManageMode) {
+        return [
+          '<tr data-student-id="', student.id, '">',
+          "<td>", escapeValue(student.firstName), "</td>",
+          "<td>", escapeValue(student.lastName), "</td>",
+          "<td>", genderValue || "-", "</td>",
+          "</tr>"
+        ].join("");
+      }
+
       return [
         '<tr data-student-id="', student.id, '">',
         '<td><input class="student-table__input" type="text" value="', escapeValue(student.firstName), '" onchange="window.UnterrichtsassistentApp.updateStudentField(\'', student.id, '\', \'firstName\', this.value)"></td>',
@@ -46,7 +60,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
       '<div class="panel-grid panel-grid--klasse">',
       '<article class="panel panel--full">',
       schoolClass ? "" : '<p class="empty-message">Noch keine Lerngruppe angelegt. Lege ueber den Plus-Button zuerst eine Lerngruppe an.</p>',
-      schoolClass ? [
+      schoolClass && isManageMode ? [
         '<div class="class-meta-editor">',
         '<label class="class-meta-editor__field">',
         '<span>Klassenbezeichner</span>',
@@ -64,13 +78,15 @@ window.Unterrichtsassistent.ui.views.klasse = {
       '</div>',
       '<div class="student-table-wrap">',
       '<table class="student-table">',
-      "<thead><tr><th>Vorname</th><th>Nachname</th><th>Geschlecht</th><th></th></tr></thead>",
+      isManageMode
+        ? "<thead><tr><th>Vorname</th><th>Nachname</th><th>Geschlecht</th><th></th></tr></thead>"
+        : "<thead><tr><th>Vorname</th><th>Nachname</th><th>Geschlecht</th></tr></thead>",
       "<tbody>",
-      tableRows || '<tr><td colspan="4">Noch keine Schuelerdaten in dieser Lerngruppe.</td></tr>',
+      tableRows || ('<tr><td colspan="' + (isManageMode ? "4" : "3") + '">Noch keine Schuelerdaten in dieser Lerngruppe.</td></tr>'),
       "</tbody>",
       "</table>",
       "</div>",
-      schoolClass ? '<div class="table-actions"><button class="import-box__label" type="button" onclick="return window.UnterrichtsassistentApp.addStudentRow()">Neue Zeile</button></div>' : "",
+      schoolClass && isManageMode ? '<div class="table-actions"><button class="import-box__label" type="button" onclick="return window.UnterrichtsassistentApp.addStudentRow()">Neue Zeile</button></div>' : "",
       "</article>",
       '<div class="import-modal" id="classImportModal" hidden>',
       '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeClassImportModal()"></div>',
