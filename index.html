@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Unterrichtsassistent</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-shell is-collapsed">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar__top">
+        <button class="sidebar__toggle" id="menuToggle" type="button" aria-label="Menueleiste ein- oder ausklappen" aria-expanded="false" aria-controls="sidebarNav" onclick="return window.UnterrichtsassistentApp.toggleMenu()">
+          <span class="sidebar__toggle-icon" aria-hidden="true">[=]</span>
+          <span class="sidebar__toggle-text">Menü</span>
+        </button>
+        <div class="sidebar__brand">
+          <span class="sidebar__brand-mark">UA</span>
+          <div class="sidebar__brand-text">
+            <strong>Unterrichtsassistent</strong>
+            <span>Offline verfügbar</span>
+          </div>
+        </div>
+      </div>
+
+      <nav class="sidebar__nav" id="sidebarNav" aria-label="Hauptnavigation">
+        <button class="nav-link is-active" type="button" data-view-target="unterricht" data-view-title="Unterricht" data-view-description="Plane und dokumentiere den aktuellen Unterrichtsverlauf." onclick="window.UnterrichtsassistentApp.activateView('unterricht'); return false;">
+          <span class="nav-link__icon" aria-hidden="true">U</span>
+          <span class="nav-link__label">Unterricht</span>
+        </button>
+        <button class="nav-link" type="button" data-view-target="klasse" data-view-title="Lerngruppe" data-view-description="Behalte Lerngruppe, Beobachtungen und Organisation an einem Ort." onclick="window.UnterrichtsassistentApp.activateView('klasse'); return false;">
+          <span class="nav-link__icon" aria-hidden="true">L</span>
+          <span class="nav-link__label">Lerngruppe</span>
+        </button>
+        <button class="nav-link" type="button" data-view-target="stundenplan" data-view-title="Stundenplan" data-view-description="Strukturiere deine Woche mit Stunden, Terminen und Aufgaben." onclick="window.UnterrichtsassistentApp.activateView('stundenplan'); return false;">
+          <span class="nav-link__icon" aria-hidden="true">S</span>
+          <span class="nav-link__label">Stundenplan</span>
+        </button>
+      </nav>
+    </aside>
+
+    <main class="content" id="mainContent">
+      <header class="content__header">
+        <div class="content__title-row">
+          <h1 id="viewTitle">Unterricht</h1>
+          <div id="viewHeaderActions"></div>
+        </div>
+      </header>
+
+      <section class="view is-active" id="unterricht" data-view></section>
+
+      <section class="view" id="klasse" data-view hidden></section>
+
+      <section class="view" id="stundenplan" data-view hidden></section>
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      var appShell = document.querySelector(".app-shell");
+      var menuToggle = document.getElementById("menuToggle");
+      var navLinks = document.querySelectorAll(".nav-link");
+      var views = document.querySelectorAll("[data-view]");
+      var viewTitle = document.getElementById("viewTitle");
+      var viewHeaderActions = document.getElementById("viewHeaderActions");
+
+      window.UnterrichtsassistentApp = window.UnterrichtsassistentApp || {};
+
+      window.UnterrichtsassistentApp.activateView = function (viewId) {
+        var i;
+        var selectedLink = null;
+
+        for (i = 0; i < navLinks.length; i += 1) {
+          if (navLinks[i].getAttribute("data-view-target") === viewId) {
+            navLinks[i].classList.add("is-active");
+            navLinks[i].setAttribute("aria-current", "page");
+            selectedLink = navLinks[i];
+          } else {
+            navLinks[i].classList.remove("is-active");
+            navLinks[i].setAttribute("aria-current", "false");
+          }
+        }
+
+        for (i = 0; i < views.length; i += 1) {
+          if (views[i].id === viewId) {
+            views[i].classList.add("is-active");
+            views[i].hidden = false;
+          } else {
+            views[i].classList.remove("is-active");
+            views[i].hidden = true;
+          }
+        }
+
+        if (selectedLink) {
+          viewTitle.textContent = selectedLink.getAttribute("data-view-title") || selectedLink.textContent;
+          viewHeaderActions.innerHTML = viewId === "klasse"
+            ? '<button class="circle-action" type="button" aria-label="Neue Lerngruppe anlegen" onclick="return window.UnterrichtsassistentApp.openClassImportModal()">+</button>'
+            : "";
+        }
+      };
+
+      window.UnterrichtsassistentApp.toggleMenu = function () {
+        if (!appShell || !menuToggle) {
+          return false;
+        }
+
+        if (appShell.classList.contains("is-collapsed")) {
+          appShell.classList.remove("is-collapsed");
+          menuToggle.setAttribute("aria-expanded", "true");
+        } else {
+          appShell.classList.add("is-collapsed");
+          menuToggle.setAttribute("aria-expanded", "false");
+        }
+
+        return false;
+      };
+    }());
+  </script>
+  <script src="src/domain/models.js"></script>
+  <script src="src/domain/factories.js"></script>
+  <script src="src/data/demoData.js"></script>
+  <script src="src/data/indexedDb.js"></script>
+  <script src="src/data/appRepository.js"></script>
+  <script src="src/data/studentCsvImport.js"></script>
+  <script src="src/services/schoolService.js"></script>
+  <script src="src/ui/views/unterrichtView.js"></script>
+  <script src="src/ui/views/klasseView.js"></script>
+  <script src="src/ui/views/stundenplanView.js"></script>
+  <script src="src/ui/viewRegistry.js"></script>
+  <script src="src/ui/renderers.js"></script>
+  <script src="src/app.js"></script>
+</body>
+</html>

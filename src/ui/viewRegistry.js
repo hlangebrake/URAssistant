@@ -1,0 +1,9 @@
+window.Unterrichtsassistent = window.Unterrichtsassistent || {};
+window.Unterrichtsassistent.ui = window.Unterrichtsassistent.ui || {};
+window.Unterrichtsassistent.ui.views = window.Unterrichtsassistent.ui.views || {};
+
+window.Unterrichtsassistent.ui.viewConfig = {
+  unterricht: window.Unterrichtsassistent.ui.views.unterricht,
+  klasse: window.Unterrichtsassistent.ui.views.klasse,
+  stundenplan: window.Unterrichtsassistent.ui.views.stundenplan
+};
