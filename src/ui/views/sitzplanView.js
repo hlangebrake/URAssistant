@@ -30,15 +30,26 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
       : "horizontal";
     const availableRooms = activeClass ? service.getRoomsForClass(activeClass.id) : [];
     const selectedRoom = activeClass ? String(service.snapshot.activeSeatPlanRoom || "").trim() : "";
-    const activeRoom = activeClass
-      ? ((selectedRoom && (!availableRooms.length || availableRooms.indexOf(selectedRoom) >= 0))
-        ? selectedRoom
-        : (service.getRelevantRoomForClass(activeClass.id, service.getReferenceDate()) || availableRooms[0] || ""))
+    const liveRoom = activeClass && String(service.snapshot.activeDateTimeMode || "live") === "live" && typeof service.getLiveRoomForClass === "function"
+      ? service.getLiveRoomForClass(activeClass.id, service.getReferenceDate())
       : "";
+    const activeRoom = activeClass
+      ? ((liveRoom && (!availableRooms.length || availableRooms.indexOf(liveRoom) >= 0))
+        ? liveRoom
+        : ((selectedRoom && (!availableRooms.length || availableRooms.indexOf(selectedRoom) >= 0))
+        ? selectedRoom
+        : (service.getRelevantRoomForClass(activeClass.id, service.getReferenceDate()) || availableRooms[0] || "")))
+      : "";
+    const currentSeatPlan = activeClass
+      ? service.getCurrentSeatPlan(activeClass.id, activeRoom, service.getReferenceDate())
+      : null;
+    const managedSeatPlan = activeClass
+      ? service.getManagedSeatPlan(activeClass.id, activeRoom)
+      : null;
     const seatPlan = activeClass
       ? (seatPlanViewMode === "verwalten"
-        ? service.getManagedSeatPlan(activeClass.id, activeRoom)
-        : service.getCurrentSeatPlan(activeClass.id, activeRoom, service.getReferenceDate()))
+        ? (seatPlanManageMode === "tischordnung" ? managedSeatPlan : currentSeatPlan)
+        : currentSeatPlan)
       : null;
     const deskLayoutItems = seatPlan && Array.isArray(seatPlan.deskLayoutItems) ? seatPlan.deskLayoutItems : [];
     const deskLayoutLinks = seatPlan && Array.isArray(seatPlan.deskLayoutLinks) ? seatPlan.deskLayoutLinks : [];
@@ -60,9 +71,9 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
 
     function renderDeskLayoutItems() {
       return deskLayoutItems.map(function (item) {
-        const itemType = item.type === "pult" ? "pult" : (item.type === "double" ? "double" : "single");
-        const itemWidth = String(Number(item.width) || ((itemType === "double" || itemType === "pult") ? 156 : 88));
-        const itemHeight = String(Number(item.height) || 88);
+        const itemType = item.type === "tafel" ? "tafel" : (item.type === "pult" ? "pult" : (item.type === "double" ? "double" : "single"));
+        const itemWidth = String(Number(item.width) || (itemType === "tafel" ? 320 : ((itemType === "double" || itemType === "pult") ? 156 : 88)));
+        const itemHeight = String(Number(item.height) || (itemType === "tafel" ? 28 : 88));
         const hiddenClass = hiddenDeskLayoutItemIds.indexOf(item.id) >= 0 ? " is-drag-hidden" : "";
         const actionLabel = seatPlanDeskToolMode === "rotate"
           ? "Tischgruppe drehen"
@@ -77,6 +88,22 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
         ].join(";");
 
         return '<button class="desk-layout-item desk-layout-item--' + itemType + hiddenClass + '" type="button" data-desk-item-id="' + escapeValue(item.id) + '" data-desk-type="' + itemType + '" data-width="' + itemWidth + '" data-height="' + itemHeight + '" style="' + inlineStyle + '" onpointerdown="return window.UnterrichtsassistentApp.startDeskLayoutItemPointerDrag(event, \'' + escapeValue(item.id) + '\')" aria-label="' + actionLabel + '"></button>';
+      }).join("");
+    }
+
+    function renderDeskLayoutItemsStatic(offsetX, offsetY) {
+      return deskLayoutItems.map(function (item) {
+        const itemType = item.type === "tafel" ? "tafel" : (item.type === "pult" ? "pult" : (item.type === "double" ? "double" : "single"));
+        const itemWidth = String(Number(item.width) || (itemType === "tafel" ? 320 : ((itemType === "double" || itemType === "pult") ? 156 : 88)));
+        const itemHeight = String(Number(item.height) || (itemType === "tafel" ? 28 : 88));
+        const inlineStyle = [
+          "left:" + String((Number(item.x) || 0) - (Number(offsetX) || 0)) + "px",
+          "top:" + String((Number(item.y) || 0) - (Number(offsetY) || 0)) + "px",
+          "width:" + itemWidth + "px",
+          "height:" + itemHeight + "px"
+        ].join(";");
+
+        return '<div class="desk-layout-item desk-layout-item--' + itemType + ' desk-layout-item--static" style="' + inlineStyle + '" aria-hidden="true"></div>';
       }).join("");
     }
 
@@ -97,6 +124,45 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
           '</button>'
         ].join("");
       }).join("");
+    }
+
+    function renderRoomWindowEdgesStatic() {
+      const edges = roomWindowSide ? [{ side: roomWindowSide }] : [];
+
+      return edges.map(function (edge) {
+        return [
+          '<div class="desk-layout-room-edge desk-layout-room-edge--static desk-layout-room-edge--', edge.side,
+          roomWindowSide === edge.side ? ' is-active' : '',
+          '" aria-hidden="true">',
+          '<span class="desk-layout-room-edge__label">Fenster</span>',
+          '</div>'
+        ].join("");
+      }).join("");
+    }
+
+    function getDeskBounds() {
+      if (!deskLayoutItems.length) {
+        return null;
+      }
+
+      return deskLayoutItems.reduce(function (bounds, item) {
+        const x = Number(item.x) || 0;
+        const y = Number(item.y) || 0;
+        const width = Number(item.width) || (item.type === "tafel" ? 320 : ((item.type === "double" || item.type === "pult") ? 156 : 88));
+        const height = Number(item.height) || (item.type === "tafel" ? 28 : 88);
+
+        return {
+          minX: Math.min(bounds.minX, x),
+          minY: Math.min(bounds.minY, y),
+          maxX: Math.max(bounds.maxX, x + width),
+          maxY: Math.max(bounds.maxY, y + height)
+        };
+      }, {
+        minX: Infinity,
+        minY: Infinity,
+        maxX: 0,
+        maxY: 0
+      });
     }
 
     function renderRoomResizeHandles() {
@@ -313,17 +379,17 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
         minX = Math.min.apply(null, visibleItems.map(function (item) { return Number(item.x) || 0; }));
         minY = Math.min.apply(null, visibleItems.map(function (item) { return Number(item.y) || 0; }));
         maxRight = Math.max.apply(null, visibleItems.map(function (item) {
-          return (Number(item.x) || 0) + (Number(item.width) || ((item.type === "double" || item.type === "pult") ? 156 : 88));
+          return (Number(item.x) || 0) + (Number(item.width) || (item.type === "tafel" ? 320 : ((item.type === "double" || item.type === "pult") ? 156 : 88)));
         }));
         maxBottom = Math.max.apply(null, visibleItems.map(function (item) {
-          return (Number(item.y) || 0) + (Number(item.height) || 88);
+          return (Number(item.y) || 0) + (Number(item.height) || (item.type === "tafel" ? 28 : 88));
         }));
         rects = visibleItems.map(function (item) {
           return {
             x: (Number(item.x) || 0) - minX,
             y: (Number(item.y) || 0) - minY,
-            width: (Number(item.width) || ((item.type === "double" || item.type === "pult") ? 156 : 88)) + (padding * 2),
-            height: (Number(item.height) || 88) + (padding * 2)
+            width: (Number(item.width) || (item.type === "tafel" ? 320 : ((item.type === "double" || item.type === "pult") ? 156 : 88))) + (padding * 2),
+            height: (Number(item.height) || (item.type === "tafel" ? 28 : 88)) + (padding * 2)
           };
         });
         outlinePath = buildDeskLayoutGroupOutlinePath(rects, step);
@@ -461,6 +527,8 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
         '<button class="desk-tool desk-tool--double" type="button" onpointerdown="return window.UnterrichtsassistentApp.startDeskLayoutPointerDrag(event, \'double\')" aria-label="Doppeltisch auf die Flaeche ziehen"></button>',
         '<div class="desk-toolbox">Pult</div>',
         '<button class="desk-tool desk-tool--pult" type="button" onpointerdown="return window.UnterrichtsassistentApp.startDeskLayoutPointerDrag(event, \'pult\')" aria-label="Pult auf die Flaeche ziehen"></button>',
+        '<div class="desk-toolbox">Tafel</div>',
+        '<button class="desk-tool desk-tool--tafel" type="button" onpointerdown="return window.UnterrichtsassistentApp.startDeskLayoutPointerDrag(event, \'tafel\')" aria-label="Tafel auf die Flaeche ziehen"></button>',
         '</aside>',
         '<div class="desk-layout-builder__canvas-wrap">',
         renderRoomResizeHandles(),
@@ -469,7 +537,36 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
         renderDeskLayoutGroups(),
         renderDeskLayoutLinks(),
         renderDeskLayoutItems(),
-        deskLayoutItems.length ? "" : '<div class="desk-layout-builder__hint">Ziehe Einzeltisch, Doppeltisch oder Pult auf diese Flaeche.</div>',
+        deskLayoutItems.length ? "" : '<div class="desk-layout-builder__hint">Ziehe Einzeltisch, Doppeltisch, Pult oder Tafel auf diese Flaeche.</div>',
+        '</div>',
+        '</div>',
+        '</div>'
+      ].join("");
+    }
+
+    function renderSeatOrderView() {
+      const deskBounds = getDeskBounds();
+      const readonlyPadding = 56;
+      const offsetX = deskBounds ? Math.max(Math.floor(deskBounds.minX) - readonlyPadding, 0) : 0;
+      const offsetY = deskBounds ? Math.max(Math.floor(deskBounds.minY) - readonlyPadding, 0) : 0;
+      const canvasStyle = deskBounds
+        ? [
+            "width:" + String(Math.max(Math.ceil(deskBounds.maxX - deskBounds.minX) + (readonlyPadding * 2), 220)) + "px",
+            "height:" + String(Math.max(Math.ceil(deskBounds.maxY - deskBounds.minY) + (readonlyPadding * 2), 220)) + "px"
+          ].join(";")
+        : "width:" + String(roomWidth) + "px;height:" + String(roomHeight) + "px";
+
+      if (!seatPlan) {
+        return '<div class="seat-plan-placeholder">Fuer diese Lerngruppe und diesen Raum ist noch keine aktuelle Tischordnung hinterlegt.</div>';
+      }
+
+      return [
+        '<div class="desk-layout-builder desk-layout-builder--readonly">',
+        '<div class="desk-layout-builder__canvas-wrap desk-layout-builder__canvas-wrap--readonly">',
+        '<div class="desk-layout-builder__canvas desk-layout-builder__canvas--readonly" style="', canvasStyle, '">',
+        renderRoomWindowEdgesStatic(),
+        renderDeskLayoutItemsStatic(offsetX, offsetY),
+        deskLayoutItems.length ? "" : '<div class="desk-layout-builder__hint">Diese Tischordnung enthaelt noch keine Tische.</div>',
         '</div>',
         '</div>',
         '</div>'
@@ -489,7 +586,7 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
             ? renderPlaceholder("Die Ansicht des Sitzplans wird als naechstes aufgebaut.")
             : (seatPlanManageMode === "tischordnung"
               ? renderManageDeskLayout()
-              : renderPlaceholder("Die Sitzordnung wird als naechstes aufgebaut."))
+              : renderSeatOrderView())
         )
         : '<p class="empty-message">Noch keine aktive Lerngruppe vorhanden.</p>',
       "</article>",

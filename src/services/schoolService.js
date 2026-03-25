@@ -315,6 +315,33 @@ class SchoolService {
     return fallbackRoom || this.getRoomsForClass(classId)[0] || "";
   }
 
+  getLiveRoomForClass(classId, date) {
+    const effectiveDate = date || this.getReferenceDate();
+    const weekday = getCurrentWeekdayIndex(effectiveDate);
+    const currentMinutes = (effectiveDate.getHours() * 60) + effectiveDate.getMinutes();
+    const matchingLessons = this.getScheduledLessons(effectiveDate)
+      .filter(function (lesson) {
+        if (lesson.classId !== classId || !lesson.room) {
+          return false;
+        }
+
+        if (lesson.weekday < weekday) {
+          return true;
+        }
+
+        return lesson.weekday === weekday && timeToMinutes(lesson.startTime) <= currentMinutes;
+      })
+      .sort(function (left, right) {
+        if (left.weekday !== right.weekday) {
+          return right.weekday - left.weekday;
+        }
+
+        return timeToMinutes(right.startTime) - timeToMinutes(left.startTime);
+      });
+
+    return matchingLessons[0] ? matchingLessons[0].room : this.getRelevantRoomForClass(classId, effectiveDate);
+  }
+
   getAllSeatPlans() {
     return (this.snapshot.seatPlans || []).map(normalizeSeatPlan).sort(function (left, right) {
       return compareDateValues(right.validFrom, left.validFrom);
@@ -524,7 +551,9 @@ class SchoolService {
   }
 
   getSeatPlanForClass(classId) {
-    const room = this.snapshot.activeSeatPlanRoom || this.getRelevantRoomForClass(classId, this.getReferenceDate()) || "";
+    const room = (this.snapshot.activeDateTimeMode || "live") === "live"
+      ? this.getLiveRoomForClass(classId, this.getReferenceDate())
+      : (this.snapshot.activeSeatPlanRoom || this.getRelevantRoomForClass(classId, this.getReferenceDate()) || "");
 
     return this.getCurrentSeatPlan(classId, room, this.getReferenceDate());
   }

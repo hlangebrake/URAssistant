@@ -374,6 +374,10 @@ function getActiveSeatPlanRoom(activeClass) {
   const selectedRoom = schoolService ? String(schoolService.snapshot.activeSeatPlanRoom || "").trim() : "";
   const rooms = schoolService && currentClass ? schoolService.getRoomsForClass(currentClass.id) : [];
 
+  if (schoolService && currentClass && isLiveDateTimeMode() && typeof schoolService.getLiveRoomForClass === "function") {
+    return schoolService.getLiveRoomForClass(currentClass.id, schoolService.getReferenceDate()) || selectedRoom || rooms[0] || "";
+  }
+
   if (selectedRoom && (!rooms.length || rooms.indexOf(selectedRoom) >= 0)) {
     return selectedRoom;
   }
@@ -761,6 +765,13 @@ function getCurrentTimestamp() {
 }
 
 function getDeskTemplateMetrics(deskType) {
+  if (deskType === "tafel") {
+    return {
+      width: 320,
+      height: 28
+    };
+  }
+
   if (deskType === "double" || deskType === "pult") {
     return {
       width: 156,
@@ -775,7 +786,7 @@ function getDeskTemplateMetrics(deskType) {
 }
 
 function normalizeDeskLayoutType(deskType) {
-  if (deskType === "double" || deskType === "pult") {
+  if (deskType === "double" || deskType === "pult" || deskType === "tafel") {
     return deskType;
   }
 
@@ -787,6 +798,10 @@ function getDeskLayoutVisualVariant(deskType) {
 
   if (normalizedType === "pult") {
     return "pult";
+  }
+
+  if (normalizedType === "tafel") {
+    return "tafel";
   }
 
   if (normalizedType === "double") {
@@ -2311,6 +2326,10 @@ function getActiveSeatPlanRoomFromSnapshot(rawSnapshot, activeClass) {
   const selectedRoom = String(rawSnapshot.activeSeatPlanRoom || "").trim();
   const serviceRooms = schoolService && currentClass ? schoolService.getRoomsForClass(currentClass.id) : [];
 
+  if (rawSnapshot.activeDateTimeMode === "live" && schoolService && currentClass && typeof schoolService.getLiveRoomForClass === "function") {
+    return schoolService.getLiveRoomForClass(currentClass.id, schoolService.getReferenceDate()) || selectedRoom || serviceRooms[0] || "";
+  }
+
   if (selectedRoom && (!serviceRooms.length || serviceRooms.indexOf(selectedRoom) >= 0)) {
     return selectedRoom;
   }
@@ -2456,10 +2475,23 @@ window.UnterrichtsassistentApp.changeActiveSeatPlanRoom = function (roomValue) {
   }
 
   const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
+  const activeClass = schoolService.getActiveClass();
+  const wasLiveMode = isLiveDateTimeMode();
+  const currentParts = getNowDateParts();
 
   ensureSeatPlans(currentRawSnapshot);
   currentRawSnapshot.activeSeatPlanRoom = String(roomValue || "").trim();
   currentRawSnapshot.activeSeatPlanId = null;
+
+  if (wasLiveMode) {
+    currentRawSnapshot.activeDateTime = currentParts.date + "T" + currentParts.time;
+    currentRawSnapshot.activeDateTimeMode = "manual";
+
+    if (activeClass) {
+      currentRawSnapshot.activeClassId = activeClass.id;
+    }
+  }
+
   saveAndRefreshSnapshot(currentRawSnapshot, "sitzplan");
   return false;
 };
@@ -3012,9 +3044,15 @@ window.UnterrichtsassistentApp.setLiveDateTimeMode = function () {
 
   const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
   const currentParts = getNowDateParts();
+  const activeClass = schoolService.getActiveClass();
+  const liveRoom = activeClass && typeof schoolService.getLiveRoomForClass === "function"
+    ? schoolService.getLiveRoomForClass(activeClass.id, new Date())
+    : "";
 
   currentRawSnapshot.activeDateTime = currentParts.date + "T" + currentParts.time;
   currentRawSnapshot.activeDateTimeMode = "live";
+  currentRawSnapshot.activeSeatPlanId = null;
+  currentRawSnapshot.activeSeatPlanRoom = liveRoom || "";
   saveAndRefreshSnapshot(currentRawSnapshot, activeViewId);
   return false;
 };
