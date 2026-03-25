@@ -12,27 +12,31 @@
       <div class="sidebar__top">
         <button class="sidebar__toggle" id="menuToggle" type="button" aria-label="Menueleiste ein- oder ausklappen" aria-expanded="false" aria-controls="sidebarNav" onclick="return window.UnterrichtsassistentApp.toggleMenu()">
           <span class="sidebar__toggle-icon" aria-hidden="true">[=]</span>
-          <span class="sidebar__toggle-text">Menü</span>
+          <span class="sidebar__toggle-text">Menue</span>
         </button>
         <div class="sidebar__brand">
-          <span class="sidebar__brand-mark">UA</span>
+          <button class="sidebar__brand-mark" id="activeClassBadge" type="button" aria-label="Aktive Lerngruppe auswaehlen" aria-haspopup="listbox" aria-expanded="false" onclick="return window.UnterrichtsassistentApp.toggleCollapsedClassPicker()">--</button>
           <div class="sidebar__brand-text">
-            <strong>Unterrichtsassistent</strong>
-            <span>Offline verfügbar</span>
+            <div class="sidebar__brand-row">
+              <select id="activeClassSelect" class="sidebar__class-select" aria-label="Aktive Lerngruppe waehlen" onchange="return window.UnterrichtsassistentApp.changeActiveClass(this.value)">
+                <option value="">Keine Lerngruppe</option>
+              </select>
+            </div>
           </div>
+          <div class="collapsed-class-picker" id="collapsedClassPicker" hidden></div>
         </div>
       </div>
 
       <nav class="sidebar__nav" id="sidebarNav" aria-label="Hauptnavigation">
-        <button class="nav-link is-active" type="button" data-view-target="unterricht" data-view-title="Unterricht" data-view-description="Plane und dokumentiere den aktuellen Unterrichtsverlauf." onclick="window.UnterrichtsassistentApp.activateView('unterricht'); return false;">
+        <button class="nav-link is-active" type="button" data-view-target="unterricht" data-view-title="Unterricht" onclick="window.UnterrichtsassistentApp.activateView('unterricht'); return false;">
           <span class="nav-link__icon" aria-hidden="true">U</span>
           <span class="nav-link__label">Unterricht</span>
         </button>
-        <button class="nav-link" type="button" data-view-target="klasse" data-view-title="Lerngruppe" data-view-description="Behalte Lerngruppe, Beobachtungen und Organisation an einem Ort." onclick="window.UnterrichtsassistentApp.activateView('klasse'); return false;">
+        <button class="nav-link" type="button" data-view-target="klasse" data-view-title="Lerngruppe" onclick="window.UnterrichtsassistentApp.activateView('klasse'); return false;">
           <span class="nav-link__icon" aria-hidden="true">L</span>
           <span class="nav-link__label">Lerngruppe</span>
         </button>
-        <button class="nav-link" type="button" data-view-target="stundenplan" data-view-title="Stundenplan" data-view-description="Strukturiere deine Woche mit Stunden, Terminen und Aufgaben." onclick="window.UnterrichtsassistentApp.activateView('stundenplan'); return false;">
+        <button class="nav-link" type="button" data-view-target="stundenplan" data-view-title="Stundenplan" onclick="window.UnterrichtsassistentApp.activateView('stundenplan'); return false;">
           <span class="nav-link__icon" aria-hidden="true">S</span>
           <span class="nav-link__label">Stundenplan</span>
         </button>
@@ -49,9 +53,7 @@
       </header>
 
       <section class="view is-active" id="unterricht" data-view></section>
-
       <section class="view" id="klasse" data-view hidden></section>
-
       <section class="view" id="stundenplan" data-view hidden></section>
     </main>
   </div>
@@ -95,7 +97,7 @@
         if (selectedLink) {
           viewTitle.textContent = selectedLink.getAttribute("data-view-title") || selectedLink.textContent;
           viewHeaderActions.innerHTML = viewId === "klasse"
-            ? '<button class="circle-action" type="button" aria-label="Neue Lerngruppe anlegen" onclick="return window.UnterrichtsassistentApp.openClassImportModal()">+</button>'
+            ? '<div class="header-action-group"><button class="circle-action circle-action--danger" type="button" aria-label="Aktive Lerngruppe loeschen" onclick="return window.UnterrichtsassistentApp.deleteActiveClass()">-</button><button class="circle-action" type="button" aria-label="Neue Lerngruppe anlegen" onclick="return window.UnterrichtsassistentApp.openClassImportModal()">+</button></div>'
             : "";
         }
       };
@@ -113,6 +115,10 @@
           menuToggle.setAttribute("aria-expanded", "false");
         }
 
+        return false;
+      };
+
+      window.UnterrichtsassistentApp.changeActiveClass = function () {
         return false;
       };
     }());

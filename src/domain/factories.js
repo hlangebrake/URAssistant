@@ -12,6 +12,7 @@ function createDomainSnapshot(rawData) {
   } = window.Unterrichtsassistent.domain;
 
   return {
+    activeClassId: rawData.activeClassId || (rawData.classes[0] ? rawData.classes[0].id : null),
     students: rawData.students.map((item) => new Student(item)),
     classes: rawData.classes.map((item) => new SchoolClass(item)),
     lessons: rawData.lessons.map((item) => new Lesson(item)),
@@ -36,6 +37,7 @@ function serializeDomainSnapshot(snapshot) {
   }
 
   return {
+    activeClassId: snapshot.activeClassId || null,
     students: cloneItems(snapshot.students, ["id", "firstName", "lastName", "className", "gender", "strengths", "gaps", "attendanceRate"]),
     classes: cloneItems(snapshot.classes, ["id", "name", "room", "subject", "studentIds"]),
     lessons: cloneItems(snapshot.lessons, ["id", "classId", "subject", "room", "weekday", "startTime", "endTime", "topic"]),

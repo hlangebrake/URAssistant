@@ -16,7 +16,18 @@ class SchoolService {
     this.snapshot = snapshot;
   }
 
+  getAllClasses() {
+    return this.snapshot.classes.slice();
+  }
+
   getActiveClass() {
+    if (this.snapshot.activeClassId) {
+      const activeClass = this.getClassById(this.snapshot.activeClassId);
+      if (activeClass) {
+        return activeClass;
+      }
+    }
+
     const currentLesson = this.getCurrentLesson();
 
     if (currentLesson) {
