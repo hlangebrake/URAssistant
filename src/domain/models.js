@@ -107,6 +107,18 @@ class SeatPlan {
   }
 }
 
+class SeatOrder {
+  constructor({ id, classId, room = "", validFrom = "", validTo = "", updatedAt, seats = [] }) {
+    this.id = id;
+    this.classId = classId;
+    this.room = room;
+    this.validFrom = validFrom;
+    this.validTo = validTo;
+    this.updatedAt = updatedAt;
+    this.seats = seats;
+  }
+}
+
 window.Unterrichtsassistent.domain.Student = Student;
 window.Unterrichtsassistent.domain.SchoolClass = SchoolClass;
 window.Unterrichtsassistent.domain.Lesson = Lesson;
@@ -115,3 +127,4 @@ window.Unterrichtsassistent.domain.TimetableRow = TimetableRow;
 window.Unterrichtsassistent.domain.Assessment = Assessment;
 window.Unterrichtsassistent.domain.TodoItem = TodoItem;
 window.Unterrichtsassistent.domain.SeatPlan = SeatPlan;
+window.Unterrichtsassistent.domain.SeatOrder = SeatOrder;

@@ -90,6 +90,20 @@ function normalizeSeatPlan(seatPlan) {
   };
 }
 
+function normalizeSeatOrder(seatOrder) {
+  const source = seatOrder || {};
+
+  return {
+    id: source.id || "",
+    classId: source.classId || "",
+    room: source.room || "",
+    validFrom: source.validFrom || "",
+    validTo: source.validTo || "",
+    updatedAt: source.updatedAt || "",
+    seats: Array.isArray(source.seats) ? source.seats : []
+  };
+}
+
 function normalizeDateValue(value) {
   return String(value || "").slice(0, 10);
 }
@@ -363,7 +377,8 @@ class SchoolService {
   getCurrentSeatPlan(classId, room, date) {
     const effectiveDate = date || this.getReferenceDate();
     const todayValue = getLocalDateValue(effectiveDate);
-    const matchingSeatPlans = this.getSeatPlansForClassAndRoom(classId, room).filter(function (seatPlan) {
+    const seatPlans = this.getSeatPlansForClassAndRoom(classId, room);
+    const matchingSeatPlans = seatPlans.filter(function (seatPlan) {
       const validFrom = normalizeDateValue(seatPlan.validFrom);
       const validTo = normalizeDateValue(seatPlan.validTo);
       const startsBefore = !validFrom || compareDateValues(validFrom, todayValue) <= 0;
@@ -373,8 +388,22 @@ class SchoolService {
     }).sort(function (left, right) {
       return compareDateValues(right.validFrom, left.validFrom);
     });
+    const futureSeatPlans = seatPlans.filter(function (seatPlan) {
+      const validFrom = normalizeDateValue(seatPlan.validFrom);
 
-    return matchingSeatPlans[0] || this.getSeatPlansForClassAndRoom(classId, room)[0] || null;
+      return validFrom && compareDateValues(validFrom, todayValue) > 0;
+    }).sort(function (left, right) {
+      return compareDateValues(left.validFrom, right.validFrom);
+    });
+    const pastSeatPlans = seatPlans.filter(function (seatPlan) {
+      const validTo = normalizeDateValue(seatPlan.validTo);
+
+      return validTo && compareDateValues(validTo, todayValue) < 0;
+    }).sort(function (left, right) {
+      return compareDateValues(right.validTo, left.validTo);
+    });
+
+    return matchingSeatPlans[0] || futureSeatPlans[0] || pastSeatPlans[0] || seatPlans[0] || null;
   }
 
   getManagedSeatPlan(classId, room) {
@@ -389,6 +418,70 @@ class SchoolService {
     }
 
     return this.getCurrentSeatPlan(classId, room, this.getReferenceDate());
+  }
+
+  getAllSeatOrders() {
+    return (this.snapshot.seatOrders || []).map(normalizeSeatOrder).sort(function (left, right) {
+      return compareDateValues(right.validFrom, left.validFrom);
+    });
+  }
+
+  getSeatOrdersForClass(classId) {
+    return this.getAllSeatOrders().filter(function (seatOrder) {
+      return seatOrder.classId === classId;
+    });
+  }
+
+  getSeatOrdersForClassAndRoom(classId, room) {
+    return this.getSeatOrdersForClass(classId).filter(function (seatOrder) {
+      return (seatOrder.room || "") === (room || "");
+    });
+  }
+
+  getCurrentSeatOrder(classId, room, date) {
+    const effectiveDate = date || this.getReferenceDate();
+    const todayValue = getLocalDateValue(effectiveDate);
+    const seatOrders = this.getSeatOrdersForClassAndRoom(classId, room);
+    const matchingSeatOrders = seatOrders.filter(function (seatOrder) {
+      const validFrom = normalizeDateValue(seatOrder.validFrom);
+      const validTo = normalizeDateValue(seatOrder.validTo);
+      const startsBefore = !validFrom || compareDateValues(validFrom, todayValue) <= 0;
+      const endsAfter = !validTo || compareDateValues(validTo, todayValue) >= 0;
+
+      return startsBefore && endsAfter;
+    }).sort(function (left, right) {
+      return compareDateValues(right.validFrom, left.validFrom);
+    });
+    const futureSeatOrders = seatOrders.filter(function (seatOrder) {
+      const validFrom = normalizeDateValue(seatOrder.validFrom);
+
+      return validFrom && compareDateValues(validFrom, todayValue) > 0;
+    }).sort(function (left, right) {
+      return compareDateValues(left.validFrom, right.validFrom);
+    });
+    const pastSeatOrders = seatOrders.filter(function (seatOrder) {
+      const validTo = normalizeDateValue(seatOrder.validTo);
+
+      return validTo && compareDateValues(validTo, todayValue) < 0;
+    }).sort(function (left, right) {
+      return compareDateValues(right.validTo, left.validTo);
+    });
+
+    return matchingSeatOrders[0] || futureSeatOrders[0] || pastSeatOrders[0] || seatOrders[0] || null;
+  }
+
+  getManagedSeatOrder(classId, room) {
+    if (this.snapshot.activeSeatOrderId) {
+      const activeSeatOrder = this.getAllSeatOrders().find(function (seatOrder) {
+        return seatOrder.id === String(this.snapshot.activeSeatOrderId || "");
+      }, this);
+
+      if (activeSeatOrder && activeSeatOrder.classId === classId && activeSeatOrder.room === (room || "")) {
+        return activeSeatOrder;
+      }
+    }
+
+    return this.getCurrentSeatOrder(classId, room, this.getReferenceDate());
   }
 
   getScheduledLessons(date) {

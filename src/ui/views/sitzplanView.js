@@ -7,12 +7,10 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
   title: "Sitzplan",
   render: function (service) {
     const activeClass = service.getActiveClass();
+    const students = activeClass ? service.getStudentsForClass(activeClass.id) : [];
     const seatPlanViewMode = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getSeatPlanViewMode === "function"
       ? window.UnterrichtsassistentApp.getSeatPlanViewMode()
       : "ansicht";
-    const seatPlanManageMode = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getSeatPlanManageMode === "function"
-      ? window.UnterrichtsassistentApp.getSeatPlanManageMode()
-      : "sitzordnung";
     const seatPlanDeskToolMode = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getSeatPlanDeskToolMode === "function"
       ? window.UnterrichtsassistentApp.getSeatPlanDeskToolMode()
       : "move";
@@ -46,13 +44,34 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
     const managedSeatPlan = activeClass
       ? service.getManagedSeatPlan(activeClass.id, activeRoom)
       : null;
+    const currentSeatOrder = activeClass && typeof service.getCurrentSeatOrder === "function"
+      ? service.getCurrentSeatOrder(activeClass.id, activeRoom, service.getReferenceDate())
+      : null;
+    const managedSeatOrder = activeClass && typeof service.getManagedSeatOrder === "function"
+      ? service.getManagedSeatOrder(activeClass.id, activeRoom)
+      : null;
+    const seatOrder = activeClass
+      ? (seatPlanViewMode === "sitzordnung" ? managedSeatOrder : currentSeatOrder)
+      : null;
+    const seatOrderReferenceDate = seatOrder && seatOrder.validFrom
+      ? new Date(String(seatOrder.validFrom) + "T12:00:00")
+      : service.getReferenceDate();
     const seatPlan = activeClass
-      ? (seatPlanViewMode === "verwalten"
-        ? (seatPlanManageMode === "tischordnung" ? managedSeatPlan : currentSeatPlan)
-        : currentSeatPlan)
+      ? (seatPlanViewMode === "tischordnung"
+        ? managedSeatPlan
+        : service.getCurrentSeatPlan(activeClass.id, activeRoom, seatOrderReferenceDate))
       : null;
     const deskLayoutItems = seatPlan && Array.isArray(seatPlan.deskLayoutItems) ? seatPlan.deskLayoutItems : [];
     const deskLayoutLinks = seatPlan && Array.isArray(seatPlan.deskLayoutLinks) ? seatPlan.deskLayoutLinks : [];
+    const seatAssignments = seatOrder && Array.isArray(seatOrder.seats) ? seatOrder.seats : [];
+    const assignedStudentIds = seatAssignments.filter(function (seat) {
+      return seat && seat.studentId;
+    }).map(function (seat) {
+      return seat.studentId;
+    });
+    const unassignedStudents = students.filter(function (student) {
+      return assignedStudentIds.indexOf(student.id) === -1;
+    });
     const roomWindowSide = seatPlan && typeof seatPlan.roomWindowSide === "string" ? seatPlan.roomWindowSide : "";
     const roomWidth = seatPlan && Number(seatPlan.roomWidth) ? Number(seatPlan.roomWidth) : 720;
     const roomHeight = seatPlan && Number(seatPlan.roomHeight) ? Number(seatPlan.roomHeight) : 720;
@@ -67,6 +86,101 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
 
     function formatDateValue(dateValue) {
       return String(dateValue || "").slice(0, 10);
+    }
+
+    function getStudentShortLabel(student) {
+      const firstName = String(student && student.firstName || "").trim();
+      const lastName = String(student && student.lastName || "").trim();
+      const lastInitial = lastName ? lastName.charAt(0).toUpperCase() + "." : "";
+
+      return [firstName, lastInitial].join(" ").trim();
+    }
+
+    function getSeatAssignmentByDeskSlot(deskItemId, slotName) {
+      return seatAssignments.find(function (seat) {
+        return seat.deskItemId === deskItemId && seat.slot === slotName;
+      }) || null;
+    }
+
+    function getStudentById(studentId) {
+      return students.find(function (student) {
+        return student.id === studentId;
+      }) || null;
+    }
+
+    function getDeskItemMetrics(item) {
+      const itemType = item && item.type === "tafel"
+        ? "tafel"
+        : (item && item.type === "pult"
+          ? "pult"
+          : (item && item.type === "double" ? "double" : "single"));
+
+      return {
+        type: itemType,
+        width: Number(item && item.width) || (itemType === "tafel" ? 320 : ((itemType === "double" || itemType === "pult") ? 156 : 88)),
+        height: Number(item && item.height) || (itemType === "tafel" ? 28 : 88)
+      };
+    }
+
+    function getDeskItemCenter(item, offsetX, offsetY) {
+      const metrics = getDeskItemMetrics(item);
+
+      return {
+        x: (Number(item && item.x) || 0) - (Number(offsetX) || 0) + (metrics.width / 2),
+        y: (Number(item && item.y) || 0) - (Number(offsetY) || 0) + (metrics.height / 2)
+      };
+    }
+
+    function getSeatOrderReferenceTarget(item, offsetX, offsetY, canvasWidth, canvasHeight) {
+      const targetItem = deskLayoutItems.find(function (candidate) {
+        return candidate && candidate.type === "tafel";
+      }) || deskLayoutItems.find(function (candidate) {
+        return candidate && candidate.type === "pult";
+      });
+      const deskCenter = getDeskItemCenter(item, offsetX, offsetY);
+
+      if (targetItem) {
+        return getDeskItemCenter(targetItem, offsetX, offsetY);
+      }
+
+      return {
+        x: deskCenter.x,
+        y: Number(canvasHeight) || 0
+      };
+    }
+
+    function getDoubleDeskSlotLayout(item, offsetX, offsetY, canvasWidth, canvasHeight) {
+      const metrics = getDeskItemMetrics(item);
+      const deskCenter = getDeskItemCenter(item, offsetX, offsetY);
+      const targetPoint = getSeatOrderReferenceTarget(item, offsetX, offsetY, canvasWidth, canvasHeight);
+      let facingX = (Number(targetPoint.x) || 0) - deskCenter.x;
+      let facingY = (Number(targetPoint.y) || 0) - deskCenter.y;
+      const longAxis = metrics.width >= metrics.height ? "horizontal" : "vertical";
+      const leftVectorFallback = longAxis === "horizontal"
+        ? { x: -1, y: 0 }
+        : { x: 0, y: -1 };
+      let leftVector;
+      let orderedSlots;
+
+      if (!facingX && !facingY) {
+        facingY = 1;
+      }
+
+      leftVector = {
+        x: facingY || leftVectorFallback.x,
+        y: -facingX || leftVectorFallback.y
+      };
+
+      if (longAxis === "horizontal") {
+        orderedSlots = leftVector.x <= 0 ? ["left", "right"] : ["right", "left"];
+      } else {
+        orderedSlots = leftVector.y <= 0 ? ["left", "right"] : ["right", "left"];
+      }
+
+      return {
+        axis: longAxis,
+        orderedSlots: orderedSlots
+      };
     }
 
     function renderDeskLayoutItems() {
@@ -102,6 +216,80 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
           "width:" + itemWidth + "px",
           "height:" + itemHeight + "px"
         ].join(";");
+
+        return '<div class="desk-layout-item desk-layout-item--' + itemType + ' desk-layout-item--static" style="' + inlineStyle + '" aria-hidden="true"></div>';
+      }).join("");
+    }
+
+    function renderSeatOrderDeskItems(offsetX, offsetY, canvasWidth, canvasHeight, options) {
+      const settings = options || {};
+      const isInteractive = settings.interactive !== false;
+
+      return deskLayoutItems.map(function (item) {
+        const metrics = getDeskItemMetrics(item);
+        const itemType = metrics.type;
+        const itemWidth = String(metrics.width);
+        const itemHeight = String(metrics.height);
+        const inlineStyle = [
+          "left:" + String((Number(item.x) || 0) - (Number(offsetX) || 0)) + "px",
+          "top:" + String((Number(item.y) || 0) - (Number(offsetY) || 0)) + "px",
+          "width:" + itemWidth + "px",
+          "height:" + itemHeight + "px"
+        ].join(";");
+        const singleAssignment = getSeatAssignmentByDeskSlot(item.id, "single");
+        const leftAssignment = getSeatAssignmentByDeskSlot(item.id, "left");
+        const rightAssignment = getSeatAssignmentByDeskSlot(item.id, "right");
+
+        function renderSeatSlot(slotName, assignment, slotLabel, extraClassName) {
+          const assignedStudent = assignment ? getStudentById(assignment.studentId) : null;
+          const studentLabel = assignedStudent ? getStudentShortLabel(assignedStudent) : "";
+          const isLocked = Boolean(assignment && assignment.isLocked);
+          let chipHtml;
+
+          if (!isInteractive) {
+            if (!assignedStudent) {
+              return '<div class="seat-order-slot seat-order-slot--readonly seat-order-slot--' + slotName + (extraClassName ? ' ' + extraClassName : '') + '"></div>';
+            }
+
+            return '<div class="seat-order-slot seat-order-slot--readonly seat-order-slot--' + slotName + (extraClassName ? ' ' + extraClassName : '') + '"><span class="seat-order-desk__label seat-order-desk__label--readonly">' + escapeValue(studentLabel) + "</span></div>";
+          }
+
+          if (assignedStudent) {
+            chipHtml = isInteractive
+              ? '<span class="seat-order-desk__label' + (isLocked ? ' is-locked' : '') + '" draggable="true" onclick="event.stopPropagation(); return window.UnterrichtsassistentApp.toggleSeatLockFromClick(\'' + escapeValue(item.id) + '\', \'' + escapeValue(slotName) + '\')" ondragstart="return window.UnterrichtsassistentApp.startSeatAssignmentDrag(event, \'' + escapeValue(assignedStudent.id) + '\')" ondragend="return window.UnterrichtsassistentApp.endSeatAssignmentDrag(event, \'' + escapeValue(assignedStudent.id) + '\', \'desk\')" onpointerdown="return window.UnterrichtsassistentApp.startSeatAssignmentPointerDrag(event, \'' + escapeValue(assignedStudent.id) + '\', \'desk\')">' + escapeValue(studentLabel) + "</span>"
+              : '<span class="seat-order-desk__label' + (isLocked ? ' is-locked' : '') + '">' + escapeValue(studentLabel) + "</span>";
+          } else {
+            chipHtml = '<span class="seat-order-desk__placeholder' + (isLocked ? ' is-locked' : '') + '">' + escapeValue(isLocked ? "Frei" : slotLabel) + "</span>";
+          }
+
+          return '<button class="seat-order-slot seat-order-slot--' + slotName + (extraClassName ? ' ' + extraClassName : '') + (isLocked ? ' is-locked' : '') + '" type="button" data-seat-order-desk-id="' + escapeValue(item.id) + '" data-seat-order-slot="' + escapeValue(slotName) + '" onclick="return window.UnterrichtsassistentApp.toggleSeatLockFromClick(\'' + escapeValue(item.id) + '\', \'' + escapeValue(slotName) + '\')" ondragover="return window.UnterrichtsassistentApp.allowSeatAssignmentDrop(event)" ondrop="return window.UnterrichtsassistentApp.dropSeatAssignmentOnDesk(event, \'' + escapeValue(item.id) + '\', \'' + escapeValue(slotName) + '\')" aria-label="Schueler diesem Platz zuordnen">' + chipHtml + '</button>';
+        }
+
+        if (itemType === "single" || itemType === "double") {
+          const doubleDeskLayout = itemType === "double"
+            ? getDoubleDeskSlotLayout(item, offsetX, offsetY, canvasWidth, canvasHeight)
+            : null;
+          const slotGridClass = itemType === "double"
+            ? "seat-order-slot-grid seat-order-slot-grid--double seat-order-slot-grid--double-" + doubleDeskLayout.axis
+            : "seat-order-slot-grid";
+          const doubleSlotsHtml = itemType === "double"
+            ? doubleDeskLayout.orderedSlots.map(function (slotName, slotIndex) {
+                const assignment = slotName === "left" ? leftAssignment : rightAssignment;
+                const slotLabel = slotName === "left" ? "Links" : "Rechts";
+                const positionClass = doubleDeskLayout.axis === "horizontal"
+                  ? (slotIndex === 0 ? "visual-left" : "visual-right")
+                  : (slotIndex === 0 ? "visual-top" : "visual-bottom");
+
+                return renderSeatSlot(slotName, assignment, slotLabel, "seat-order-slot--" + positionClass);
+              }).join("")
+            : "";
+
+          return '<div class="desk-layout-item desk-layout-item--' + itemType + ' desk-layout-item--seat-order" style="' + inlineStyle + '" aria-label="Sitzplaetze dieses Tisches">' + (
+            itemType === "double"
+              ? '<div class="' + slotGridClass + '">' + doubleSlotsHtml + "</div>"
+              : '<div class="seat-order-slot-grid">' + renderSeatSlot("single", singleAssignment, "Platz") + "</div>"
+          ) + '</div>';
+        }
 
         return '<div class="desk-layout-item desk-layout-item--' + itemType + ' desk-layout-item--static" style="' + inlineStyle + '" aria-hidden="true"></div>';
       }).join("");
@@ -549,23 +737,95 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
       const readonlyPadding = 56;
       const offsetX = deskBounds ? Math.max(Math.floor(deskBounds.minX) - readonlyPadding, 0) : 0;
       const offsetY = deskBounds ? Math.max(Math.floor(deskBounds.minY) - readonlyPadding, 0) : 0;
+      const canvasWidth = deskBounds
+        ? Math.max(Math.ceil(deskBounds.maxX - deskBounds.minX) + (readonlyPadding * 2), 220)
+        : roomWidth;
+      const canvasHeight = deskBounds
+        ? Math.max(Math.ceil(deskBounds.maxY - deskBounds.minY) + (readonlyPadding * 2), 220)
+        : roomHeight;
       const canvasStyle = deskBounds
         ? [
-            "width:" + String(Math.max(Math.ceil(deskBounds.maxX - deskBounds.minX) + (readonlyPadding * 2), 220)) + "px",
-            "height:" + String(Math.max(Math.ceil(deskBounds.maxY - deskBounds.minY) + (readonlyPadding * 2), 220)) + "px"
+            "width:" + String(canvasWidth) + "px",
+            "height:" + String(canvasHeight) + "px"
           ].join(";")
         : "width:" + String(roomWidth) + "px;height:" + String(roomHeight) + "px";
 
+      if (!seatOrder) {
+        return '<div class="seat-plan-placeholder">Fuer diese Lerngruppe und diesen Raum ist noch keine aktuelle Sitzordnung hinterlegt.</div>';
+      }
+
       if (!seatPlan) {
-        return '<div class="seat-plan-placeholder">Fuer diese Lerngruppe und diesen Raum ist noch keine aktuelle Tischordnung hinterlegt.</div>';
+        return '<div class="seat-plan-placeholder">Fuer diese Sitzordnung ist noch keine passende Tischordnung hinterlegt.</div>';
       }
 
       return [
+        '<div class="schedule-toolbar seat-plan-toolbar">',
+        '<label class="schedule-toolbar__field">',
+        "<span>Gueltig ab</span>",
+        '<input class="student-table__input schedule-toolbar__time" type="date" value="', escapeValue(formatDateValue(seatOrder ? seatOrder.validFrom : "")), '" onchange="return window.UnterrichtsassistentApp.updateSeatPlanDateField(\'validFrom\', this.value)">',
+        "</label>",
+        '<label class="schedule-toolbar__field">',
+        "<span>Gueltig bis</span>",
+        '<input class="student-table__input schedule-toolbar__time" type="date" value="', escapeValue(formatDateValue(seatOrder ? seatOrder.validTo : "")), '" onchange="return window.UnterrichtsassistentApp.updateSeatPlanDateField(\'validTo\', this.value)">',
+        "</label>",
+        "</div>",
+        '<div class="seat-order-layout">',
+        '<aside class="seat-order-student-list" aria-label="Schuelerliste der aktiven Lerngruppe">',
+        unassignedStudents.length
+          ? unassignedStudents.map(function (student) {
+              return '<button class="seat-order-student" type="button" draggable="true" ondragstart="return window.UnterrichtsassistentApp.startSeatAssignmentDrag(event, \'' + escapeValue(student.id) + '\')" ondragend="return window.UnterrichtsassistentApp.endSeatAssignmentDrag(event, \'' + escapeValue(student.id) + '\', \'list\')" onpointerdown="return window.UnterrichtsassistentApp.startSeatAssignmentPointerDrag(event, \'' + escapeValue(student.id) + '\', \'list\')" aria-label="Schueler auf einen Tisch ziehen">' + escapeValue(getStudentShortLabel(student)) + '</button>';
+            }).join("")
+          : '<div class="seat-order-student-list__empty">Alle Schueler sind aktuell zugeordnet.</div>',
+        '<div class="seat-order-student-actions">',
+        '<button class="seat-order-action" type="button" onclick="return window.UnterrichtsassistentApp.resetSeatAssignments()">Reset</button>',
+        '<button class="seat-order-action" type="button" onclick="return window.UnterrichtsassistentApp.shuffleSeatAssignments()">Zufaellig</button>',
+        '</div>',
+        '</aside>',
         '<div class="desk-layout-builder desk-layout-builder--readonly">',
         '<div class="desk-layout-builder__canvas-wrap desk-layout-builder__canvas-wrap--readonly">',
         '<div class="desk-layout-builder__canvas desk-layout-builder__canvas--readonly" style="', canvasStyle, '">',
         renderRoomWindowEdgesStatic(),
-        renderDeskLayoutItemsStatic(offsetX, offsetY),
+        renderSeatOrderDeskItems(offsetX, offsetY, canvasWidth, canvasHeight),
+        deskLayoutItems.length ? "" : '<div class="desk-layout-builder__hint">Diese Tischordnung enthaelt noch keine Tische.</div>',
+        '</div>',
+        '</div>',
+        '</div>',
+        '</div>'
+      ].join("");
+    }
+
+    function renderSeatOrderReadOnlyView() {
+      const deskBounds = getDeskBounds();
+      const readonlyPadding = 56;
+      const offsetX = deskBounds ? Math.max(Math.floor(deskBounds.minX) - readonlyPadding, 0) : 0;
+      const offsetY = deskBounds ? Math.max(Math.floor(deskBounds.minY) - readonlyPadding, 0) : 0;
+      const canvasWidth = deskBounds
+        ? Math.max(Math.ceil(deskBounds.maxX - deskBounds.minX) + (readonlyPadding * 2), 220)
+        : roomWidth;
+      const canvasHeight = deskBounds
+        ? Math.max(Math.ceil(deskBounds.maxY - deskBounds.minY) + (readonlyPadding * 2), 220)
+        : roomHeight;
+      const canvasStyle = deskBounds
+        ? [
+            "width:" + String(canvasWidth) + "px",
+            "height:" + String(canvasHeight) + "px"
+          ].join(";")
+        : "width:" + String(roomWidth) + "px;height:" + String(roomHeight) + "px";
+
+      if (!currentSeatOrder) {
+        return '<div class="seat-plan-placeholder">Fuer diese Lerngruppe und diesen Raum ist aktuell keine Sitzordnung hinterlegt.</div>';
+      }
+
+      if (!currentSeatPlan) {
+        return '<div class="seat-plan-placeholder">Fuer die aktuelle Sitzordnung ist keine passende Tischordnung hinterlegt.</div>';
+      }
+
+      return [
+        '<div class="desk-layout-builder desk-layout-builder--readonly desk-layout-builder--readonly-single">',
+        '<div class="desk-layout-builder__canvas-wrap desk-layout-builder__canvas-wrap--readonly">',
+        '<div class="desk-layout-builder__canvas desk-layout-builder__canvas--readonly" style="', canvasStyle, '">',
+        renderRoomWindowEdgesStatic(),
+        renderSeatOrderDeskItems(offsetX, offsetY, canvasWidth, canvasHeight, { interactive: false }),
         deskLayoutItems.length ? "" : '<div class="desk-layout-builder__hint">Diese Tischordnung enthaelt noch keine Tische.</div>',
         '</div>',
         '</div>',
@@ -583,8 +843,8 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
       activeClass
         ? (
           seatPlanViewMode === "ansicht"
-            ? renderPlaceholder("Die Ansicht des Sitzplans wird als naechstes aufgebaut.")
-            : (seatPlanManageMode === "tischordnung"
+            ? renderSeatOrderReadOnlyView()
+            : (seatPlanViewMode === "tischordnung"
               ? renderManageDeskLayout()
               : renderSeatOrderView())
         )

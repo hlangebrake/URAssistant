@@ -48,9 +48,13 @@ let seatPlanRotateMode = "90";
 let seatPlanMirrorMode = "horizontal";
 const timetableWeekdayKeys = ["1", "2", "3", "4", "5"];
 let liveDateTimeIntervalId = null;
+let isClassImportModalOpen = false;
 let activeDeskLayoutDrag = null;
 let activeDeskLayoutResize = null;
 let deskLayoutDragFrameId = 0;
+let activeSeatAssignmentDrag = null;
+let lastSeatAssignmentNativeDrop = null;
+let lastSeatLockPointerToggleAt = 0;
 
 function getClassImportModal() {
   return document.getElementById("classImportModal");
@@ -146,8 +150,27 @@ function isLiveDateTimeMode() {
   return !schoolService || String(schoolService.snapshot.activeDateTimeMode || "live") === "live";
 }
 
+function isEditingFocusableInput() {
+  const activeElement = document.activeElement;
+  const tagName = activeElement && activeElement.tagName ? String(activeElement.tagName).toUpperCase() : "";
+  const isTextInput = tagName === "TEXTAREA"
+    || (tagName === "INPUT" && ["button", "checkbox", "color", "file", "hidden", "image", "radio", "range", "reset", "submit"].indexOf(String(activeElement.type || "").toLowerCase()) === -1)
+    || tagName === "SELECT";
+  const isEditableContent = Boolean(activeElement && activeElement.isContentEditable);
+
+  if (!activeElement) {
+    return false;
+  }
+
+  if (activeElement.disabled || activeElement.readOnly) {
+    return false;
+  }
+
+  return isTextInput || isEditableContent;
+}
+
 function syncLiveDateTimeUi() {
-  if (!schoolService || !isLiveDateTimeMode() || activeDeskLayoutDrag || activeDeskLayoutResize) {
+  if (!schoolService || !isLiveDateTimeMode() || activeDeskLayoutDrag || activeDeskLayoutResize || isClassImportModalOpen || isEditingFocusableInput()) {
     return;
   }
 
@@ -419,27 +442,43 @@ function getSeatPlansForActiveRoom() {
   return schoolService.getSeatPlansForClassAndRoom(activeClass.id, activeRoom);
 }
 
-function buildSeatPlanDropdownHtml() {
+function getSeatOrdersForActiveRoom() {
   const activeClass = getActiveSeatPlanClass();
   const activeRoom = getActiveSeatPlanRoom(activeClass);
-  const allSeatPlans = getSeatPlansForActiveRoom();
-  const currentSeatPlan = schoolService && activeClass
-    ? schoolService.getCurrentSeatPlan(activeClass.id, activeRoom, schoolService.getReferenceDate())
-    : null;
-  const managedSeatPlan = schoolService && activeClass
-    ? schoolService.getManagedSeatPlan(activeClass.id, activeRoom)
-    : null;
-  const options = allSeatPlans.length
-    ? allSeatPlans.map(function (seatPlan) {
-        const label = currentSeatPlan && seatPlan.id === currentSeatPlan.id
-          ? "aktuell"
-          : "Gueltig bis: " + formatDateLabel(seatPlan.validTo);
-        const selected = managedSeatPlan && seatPlan.id === managedSeatPlan.id ? ' selected' : "";
-        return '<option value="' + escapeHtml(seatPlan.id) + '"' + selected + ">" + escapeHtml(label) + "</option>";
-      }).join("")
-    : '<option value="">Keine Tischordnungen</option>';
 
-  return '<select id="activeSeatPlanSelect" class="sidebar__class-select timetable-select" aria-label="Gespeicherte Tischordnung waehlen" onchange="return window.UnterrichtsassistentApp.changeActiveSeatPlan(this.value)">' + options + "</select>";
+  if (!schoolService || !activeClass) {
+    return [];
+  }
+
+  return schoolService.getSeatOrdersForClassAndRoom(activeClass.id, activeRoom);
+}
+
+function buildSeatPlanDropdownHtml(modeLabel) {
+  const activeClass = getActiveSeatPlanClass();
+  const activeRoom = getActiveSeatPlanRoom(activeClass);
+  const isSeatOrderMode = seatPlanViewMode === "sitzordnung";
+  const allItems = isSeatOrderMode ? getSeatOrdersForActiveRoom() : getSeatPlansForActiveRoom();
+  const currentItem = schoolService && activeClass
+    ? (isSeatOrderMode
+      ? schoolService.getCurrentSeatOrder(activeClass.id, activeRoom, schoolService.getReferenceDate())
+      : schoolService.getCurrentSeatPlan(activeClass.id, activeRoom, schoolService.getReferenceDate()))
+    : null;
+  const managedItem = schoolService && activeClass
+    ? (isSeatOrderMode
+      ? schoolService.getManagedSeatOrder(activeClass.id, activeRoom)
+      : schoolService.getManagedSeatPlan(activeClass.id, activeRoom))
+    : null;
+  const options = allItems.length
+    ? allItems.map(function (item) {
+        const label = currentItem && item.id === currentItem.id
+          ? "aktuell"
+          : "Gueltig bis: " + formatDateLabel(item.validTo);
+        const selected = managedItem && item.id === managedItem.id ? ' selected' : "";
+        return '<option value="' + escapeHtml(item.id) + '"' + selected + ">" + escapeHtml(label) + "</option>";
+      }).join("")
+    : '<option value="">Keine ' + escapeHtml(modeLabel || "Tischordnungen") + '</option>';
+
+  return '<select id="activeSeatPlanSelect" class="sidebar__class-select timetable-select" aria-label="Gespeicherte ' + escapeHtml(modeLabel || "Tischordnung") + ' waehlen" onchange="return window.UnterrichtsassistentApp.changeActiveSeatPlan(this.value)">' + options + "</select>";
 }
 
 function buildTimetableDropdownHtml() {
@@ -465,6 +504,16 @@ function buildViewModeToggleHtml(options) {
 
 function buildSecondaryModeToggleHtml(options) {
   return '<div class="class-view-mode-toggle class-view-mode-toggle--header class-view-mode-toggle--secondary" role="tablist" aria-label="' + options.ariaLabel + '"><button class="class-view-mode-toggle__button' + (options.activeMode === options.leftMode ? " is-active" : "") + '" type="button" role="tab" aria-selected="' + (options.activeMode === options.leftMode ? "true" : "false") + '" onclick="return ' + options.leftAction + '">' + options.leftLabel + '</button><button class="class-view-mode-toggle__button' + (options.activeMode === options.rightMode ? " is-active" : "") + '" type="button" role="tab" aria-selected="' + (options.activeMode === options.rightMode ? "true" : "false") + '" onclick="return ' + options.rightAction + '">' + options.rightLabel + '</button></div>';
+}
+
+function buildMultiModeToggleHtml(options) {
+  const modes = Array.isArray(options.modes) ? options.modes : [];
+  const columns = Math.max(1, modes.length);
+
+  return '<div class="header-action-group"><div class="class-view-mode-toggle class-view-mode-toggle--header class-view-mode-toggle--multi" style="grid-template-columns: repeat(' + columns + ', minmax(0, 1fr));" role="tablist" aria-label="' + options.ariaLabel + '">' + modes.map(function (mode) {
+    const isActive = options.activeMode === mode.value;
+    return '<button class="class-view-mode-toggle__button' + (isActive ? ' is-active' : '') + '" type="button" role="tab" aria-selected="' + (isActive ? "true" : "false") + '" onclick="return ' + mode.action + '">' + mode.label + '</button>';
+  }).join("") + '</div>' + (options.trailingHtml ? '<div class="header-action-group__secondary">' + options.trailingHtml + "</div>" : "") + "</div>";
 }
 
 function renderActiveClassContext() {
@@ -599,45 +648,45 @@ function updateHeaderActions(viewId) {
       rightLabel: "Verwalten",
       rightAction: "window.UnterrichtsassistentApp.setTimetableViewMode('verwalten')",
       trailingHtml: isTimetableManageMode()
-        ? buildTimetableDropdownHtml() + '<button class="circle-action" type="button" aria-label="Neuen Stundenplan anlegen" onclick="return window.UnterrichtsassistentApp.createTimetable()">+</button>'
+        ? buildTimetableDropdownHtml() + '<button class="circle-action circle-action--danger" type="button" aria-label="Aktuellen Stundenplan loeschen" onclick="return window.UnterrichtsassistentApp.deleteActiveTimetable()">-</button><button class="circle-action" type="button" aria-label="Neuen Stundenplan anlegen" onclick="return window.UnterrichtsassistentApp.createTimetable()">+</button>'
         : ""
     });
     return;
   }
 
   if (viewId === "sitzplan") {
-    if (contentHeader && seatPlanViewMode === "verwalten") {
+    if (contentHeader && seatPlanViewMode !== "ansicht") {
       contentHeader.classList.add("has-secondary-actions");
 
-      if (seatPlanManageMode === "sitzordnung") {
+      if (seatPlanViewMode === "sitzordnung") {
         contentHeader.classList.add("has-secondary-actions--compact");
       } else {
         contentHeader.classList.add("has-secondary-actions--stacked");
       }
     }
 
-    viewHeaderActions.innerHTML = buildViewModeToggleHtml({
+    viewHeaderActions.innerHTML = buildMultiModeToggleHtml({
       ariaLabel: "Ansicht des Sitzplans wechseln",
       activeMode: seatPlanViewMode,
-      leftMode: "ansicht",
-      leftLabel: "Ansicht",
-      leftAction: "window.UnterrichtsassistentApp.setSeatPlanViewMode('ansicht')",
-      rightMode: "verwalten",
-      rightLabel: "Verwalten",
-      rightAction: "window.UnterrichtsassistentApp.setSeatPlanViewMode('verwalten')",
-      trailingHtml: seatPlanViewMode === "verwalten"
-        ? '<div class="header-action-stack"><div class="header-action-stack__row">' + buildSecondaryModeToggleHtml({
-            ariaLabel: "Verwaltungsmodus des Sitzplans wechseln",
-            activeMode: seatPlanManageMode,
-            leftMode: "sitzordnung",
-            leftLabel: "Sitzordnung",
-            leftAction: "window.UnterrichtsassistentApp.setSeatPlanManageMode('sitzordnung')",
-            rightMode: "tischordnung",
-            rightLabel: "Tischordnung",
-            rightAction: "window.UnterrichtsassistentApp.setSeatPlanManageMode('tischordnung')"
-          }) + '</div>' + (seatPlanManageMode === "tischordnung"
-            ? '<div class="header-action-stack__row">' + buildSeatPlanDropdownHtml() + '<button class="circle-action" type="button" aria-label="Neue Tischordnung anlegen" onclick="return window.UnterrichtsassistentApp.createSeatPlan()">+</button></div>'
-            : "") + "</div>"
+      modes: [
+        {
+          value: "ansicht",
+          label: "Ansicht",
+          action: "window.UnterrichtsassistentApp.setSeatPlanViewMode('ansicht')"
+        },
+        {
+          value: "sitzordnung",
+          label: "Sitzordnung",
+          action: "window.UnterrichtsassistentApp.setSeatPlanViewMode('sitzordnung')"
+        },
+        {
+          value: "tischordnung",
+          label: "Tischordnung",
+          action: "window.UnterrichtsassistentApp.setSeatPlanViewMode('tischordnung')"
+        }
+      ],
+      trailingHtml: seatPlanViewMode === "sitzordnung" || seatPlanViewMode === "tischordnung"
+        ? buildSeatPlanDropdownHtml(seatPlanViewMode === "sitzordnung" ? "Sitzordnung" : "Tischordnung") + '<button class="circle-action circle-action--danger" type="button" aria-label="Aktive ' + (seatPlanViewMode === "sitzordnung" ? 'Sitzordnung' : 'Tischordnung') + ' loeschen" onclick="return window.UnterrichtsassistentApp.deleteActiveSeatPlan()">-</button><button class="circle-action" type="button" aria-label="Neue ' + (seatPlanViewMode === "sitzordnung" ? 'Sitzordnung' : 'Tischordnung') + ' anlegen" onclick="return window.UnterrichtsassistentApp.createSeatPlan()">+</button>'
         : ""
     });
     return;
@@ -696,6 +745,10 @@ function setActiveView(viewId) {
   updateHeaderSubtitle(viewId, config);
   updateHeaderActions(viewId);
   renderActiveClassContext();
+
+  if (viewId === "klasse" && isClassImportModalOpen && window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.openClassImportModal === "function") {
+    window.UnterrichtsassistentApp.openClassImportModal();
+  }
 }
 
 function toggleMenu() {
@@ -758,6 +811,42 @@ function createDeskLayoutItemId() {
 
 function createDeskLayoutLinkId() {
   return "desk-layout-link-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+}
+
+function createSeatAssignmentId() {
+  return "seat-assignment-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+}
+
+function getDeskSeatSlots(deskType) {
+  if (deskType === "double") {
+    return ["left", "right"];
+  }
+
+  if (deskType === "single") {
+    return ["single"];
+  }
+
+  return [];
+}
+
+function getSeatAssignmentByDeskSlot(seatPlan, deskItemId, slotName) {
+  return seatPlan && Array.isArray(seatPlan.seats)
+    ? seatPlan.seats.find(function (seat) {
+        return seat && seat.deskItemId === deskItemId && seat.slot === slotName;
+      }) || null
+    : null;
+}
+
+function getSeatAssignmentByStudentId(seatPlan, studentId) {
+  return seatPlan && Array.isArray(seatPlan.seats)
+    ? seatPlan.seats.find(function (seat) {
+        return seat && seat.studentId === studentId;
+      }) || null
+    : null;
+}
+
+function isSeatAssignmentLocked(seat) {
+  return Boolean(seat && seat.isLocked);
 }
 
 function getCurrentTimestamp() {
@@ -2231,6 +2320,9 @@ function removeDeskLayoutItem(itemId) {
   seatPlan.deskLayoutLinks = currentLinks.filter(function (link) {
     return groupIds.indexOf(link.itemAId) === -1 && groupIds.indexOf(link.itemBId) === -1;
   });
+  seatPlan.seats = (seatPlan.seats || []).filter(function (seat) {
+    return groupIds.indexOf(seat.deskItemId) === -1;
+  });
   seatPlan.updatedAt = getCurrentTimestamp();
   saveAndRefreshSnapshot(currentRawSnapshot, "sitzplan");
   return true;
@@ -2246,6 +2338,230 @@ function setDeskLayoutWindowSide(side) {
   }
 
   seatPlan.roomWindowSide = normalizedSide;
+  seatPlan.updatedAt = getCurrentTimestamp();
+  saveAndRefreshSnapshot(currentRawSnapshot, "sitzplan");
+  return false;
+}
+
+function assignStudentToDesk(studentId, deskItemId, slotName) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  let seatPlan = currentRawSnapshot && activeClass
+    ? getEditableSeatOrderForActiveContextFromSnapshot(currentRawSnapshot)
+    : null;
+  const deskLayoutSeatPlan = currentRawSnapshot && activeClass
+    ? getSeatPlanFromSnapshotForDateValue(
+        currentRawSnapshot,
+        activeClass.id,
+        getActiveSeatPlanRoomFromSnapshot(currentRawSnapshot, activeClass),
+        seatPlan && seatPlan.validFrom ? seatPlan.validFrom : getReferenceDateValue()
+      )
+    : null;
+  const deskItem = deskLayoutSeatPlan ? getDeskLayoutItemById(deskLayoutSeatPlan.deskLayoutItems, deskItemId) : null;
+  const validSlots = getDeskSeatSlots(String(deskItem && deskItem.type || ""));
+  const normalizedSlot = validSlots.indexOf(slotName) >= 0 ? slotName : (validSlots[0] || "");
+  let previousSeat = null;
+  let targetSeat = null;
+  let nextSeats = null;
+
+  if (!repository || !schoolService || !activeClass || !studentId || !deskItemId) {
+    return false;
+  }
+
+  if (!seatPlan) {
+    seatPlan = createSeatOrderRecord(activeClass.id, getActiveSeatPlanRoomFromSnapshot(currentRawSnapshot, activeClass));
+    currentRawSnapshot.seatOrders.unshift(seatPlan);
+  }
+
+  if (!deskItem) {
+    return false;
+  }
+
+  if (["single", "double"].indexOf(String(deskItem.type || "")) === -1 || !normalizedSlot) {
+    return false;
+  }
+
+  previousSeat = getSeatAssignmentByStudentId(seatPlan, studentId);
+  targetSeat = getSeatAssignmentByDeskSlot(seatPlan, deskItemId, normalizedSlot);
+
+  if (previousSeat && isSeatAssignmentLocked(previousSeat) && !(previousSeat.deskItemId === deskItemId && previousSeat.slot === normalizedSlot)) {
+    return false;
+  }
+
+  if (targetSeat && isSeatAssignmentLocked(targetSeat) && targetSeat.studentId !== studentId) {
+    return false;
+  }
+
+  nextSeats = (seatPlan.seats || []).filter(function (seat) {
+    return seat.studentId !== studentId && !(seat.deskItemId === deskItemId && seat.slot === normalizedSlot);
+  });
+
+  nextSeats.push({
+    id: previousSeat ? previousSeat.id : createSeatAssignmentId(),
+    studentId: studentId,
+    deskItemId: deskItemId,
+    slot: normalizedSlot,
+    isLocked: previousSeat ? Boolean(previousSeat.isLocked) : false
+  });
+
+  if (targetSeat && targetSeat.studentId !== studentId && previousSeat && !(previousSeat.deskItemId === deskItemId && previousSeat.slot === normalizedSlot)) {
+    nextSeats.push({
+      id: targetSeat.id || createSeatAssignmentId(),
+      studentId: targetSeat.studentId,
+      deskItemId: previousSeat.deskItemId,
+      slot: previousSeat.slot,
+      isLocked: Boolean(targetSeat.isLocked)
+    });
+  }
+
+  seatPlan.seats = nextSeats;
+  seatPlan.updatedAt = getCurrentTimestamp();
+  saveAndRefreshSnapshot(currentRawSnapshot, "sitzplan");
+  return false;
+}
+
+function unassignStudentFromSeat(studentId, forceUnlock) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const seatPlan = currentRawSnapshot && activeClass
+    ? getEditableSeatOrderForActiveContextFromSnapshot(currentRawSnapshot)
+    : null;
+  const currentSeats = seatPlan && Array.isArray(seatPlan.seats) ? seatPlan.seats : [];
+  const currentSeat = getSeatAssignmentByStudentId(seatPlan, studentId);
+
+  if (!repository || !schoolService || !seatPlan || !studentId) {
+    return false;
+  }
+
+  if (currentSeat && isSeatAssignmentLocked(currentSeat) && !forceUnlock) {
+    return false;
+  }
+
+  seatPlan.seats = currentSeats.filter(function (seat) {
+    return seat.studentId !== studentId;
+  });
+
+  if (seatPlan.seats.length === currentSeats.length) {
+    return false;
+  }
+
+  seatPlan.updatedAt = getCurrentTimestamp();
+  saveAndRefreshSnapshot(currentRawSnapshot, "sitzplan");
+  return false;
+}
+
+function resetSeatAssignments() {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const seatPlan = currentRawSnapshot && activeClass
+    ? getEditableSeatOrderForActiveContextFromSnapshot(currentRawSnapshot)
+    : null;
+
+  if (!repository || !schoolService || !seatPlan) {
+    return false;
+  }
+
+  seatPlan.seats = [];
+  seatPlan.updatedAt = getCurrentTimestamp();
+  saveAndRefreshSnapshot(currentRawSnapshot, "sitzplan");
+  return false;
+}
+
+function shuffleSeatAssignments() {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const seatPlan = currentRawSnapshot && activeClass
+    ? getEditableSeatOrderForActiveContextFromSnapshot(currentRawSnapshot)
+    : null;
+  const deskLayoutSeatPlan = currentRawSnapshot && activeClass
+    ? getSeatPlanFromSnapshotForDateValue(
+        currentRawSnapshot,
+        activeClass.id,
+        getActiveSeatPlanRoomFromSnapshot(currentRawSnapshot, activeClass),
+        seatPlan && seatPlan.validFrom ? seatPlan.validFrom : getReferenceDateValue()
+      )
+    : null;
+  const students = activeClass ? schoolService.getStudentsForClass(activeClass.id).slice() : [];
+  let desks = deskLayoutSeatPlan && Array.isArray(deskLayoutSeatPlan.deskLayoutItems)
+    ? deskLayoutSeatPlan.deskLayoutItems.filter(function (item) {
+        return item && ["single", "double"].indexOf(String(item.type || "")) >= 0;
+      }).slice()
+    : [];
+  let index = 0;
+  const lockedSeats = seatPlan && Array.isArray(seatPlan.seats)
+    ? seatPlan.seats.filter(function (seat) {
+        return seat && seat.isLocked;
+      }).map(function (seat) {
+        return {
+          id: seat.id || createSeatAssignmentId(),
+          studentId: String(seat.studentId || "").trim(),
+          deskItemId: seat.deskItemId,
+          slot: seat.slot,
+          isLocked: true
+        };
+      })
+    : [];
+  const lockedStudentIds = lockedSeats.filter(function (seat) {
+    return seat.studentId;
+  }).map(function (seat) {
+    return seat.studentId;
+  });
+  const lockedSlotKeys = lockedSeats.map(function (seat) {
+    return seat.deskItemId + "::" + seat.slot;
+  });
+  let shuffledStudents;
+
+  function shuffleItems(items) {
+    let currentIndex = items.length;
+    let temporaryValue;
+    let randomIndex;
+
+    while (currentIndex > 0) {
+      randomIndex = Math.floor(Math.random() * currentIndex);
+      currentIndex -= 1;
+      temporaryValue = items[currentIndex];
+      items[currentIndex] = items[randomIndex];
+      items[randomIndex] = temporaryValue;
+    }
+
+    return items;
+  }
+
+  if (!repository || !schoolService || !seatPlan || !students.length || !desks.length) {
+    return false;
+  }
+
+  desks = shuffleItems(desks);
+  shuffledStudents = shuffleItems(students.filter(function (student) {
+    return lockedStudentIds.indexOf(student.id) === -1;
+  }));
+  seatPlan.seats = lockedSeats.slice();
+
+  index = 0;
+
+  desks.forEach(function (desk) {
+    getDeskSeatSlots(String(desk.type || "")).forEach(function (slot) {
+      if (lockedSlotKeys.indexOf(desk.id + "::" + slot) >= 0) {
+        return;
+      }
+
+      if (index < shuffledStudents.length) {
+        seatPlan.seats.push({
+          id: createSeatAssignmentId(),
+          studentId: shuffledStudents[index].id,
+          deskItemId: desk.id,
+          slot: slot,
+          isLocked: false
+        });
+        index += 1;
+      }
+    });
+  });
+
+  if (!seatPlan.seats.length) {
+    return false;
+  }
+
   seatPlan.updatedAt = getCurrentTimestamp();
   saveAndRefreshSnapshot(currentRawSnapshot, "sitzplan");
   return false;
@@ -2271,9 +2587,75 @@ function saveDeskLayoutRoomSize(width, height) {
   return true;
 }
 
+function removeSeatAssignmentPreview() {
+  if (activeSeatAssignmentDrag && activeSeatAssignmentDrag.previewElement && activeSeatAssignmentDrag.previewElement.parentNode) {
+    activeSeatAssignmentDrag.previewElement.parentNode.removeChild(activeSeatAssignmentDrag.previewElement);
+  }
+}
+
+function clearSeatAssignmentDropTarget() {
+  if (activeSeatAssignmentDrag && activeSeatAssignmentDrag.activeTargetElement) {
+    activeSeatAssignmentDrag.activeTargetElement.classList.remove("is-seat-drop-target");
+  }
+}
+
+function getSeatAssignmentDeskTargetFromPoint(clientX, clientY) {
+  const targetElement = document.elementFromPoint(clientX, clientY);
+  const slotElement = targetElement && typeof targetElement.closest === "function"
+    ? targetElement.closest("[data-seat-order-slot]")
+    : null;
+  const deskElement = slotElement || (targetElement && typeof targetElement.closest === "function"
+    ? targetElement.closest("[data-seat-order-desk-id]")
+    : null);
+
+  if (!deskElement) {
+    return null;
+  }
+
+  return {
+    deskId: String(deskElement.getAttribute("data-seat-order-desk-id") || ""),
+    slot: String(deskElement.getAttribute("data-seat-order-slot") || ""),
+    element: deskElement
+  };
+}
+
+function updateSeatAssignmentPreview(clientX, clientY) {
+  if (!activeSeatAssignmentDrag || !activeSeatAssignmentDrag.previewElement) {
+    return;
+  }
+
+  activeSeatAssignmentDrag.previewElement.style.transform = "translate3d(" + Math.round(clientX) + "px, " + Math.round(clientY) + "px, 0)";
+}
+
+function finishSeatAssignmentDrag(options) {
+  const settings = options || {};
+
+  clearSeatAssignmentDropTarget();
+  removeSeatAssignmentPreview();
+
+  if (activeSeatAssignmentDrag && activeSeatAssignmentDrag.sourceElement && typeof activeSeatAssignmentDrag.sourceElement.releasePointerCapture === "function" && typeof activeSeatAssignmentDrag.pointerId === "number") {
+    try {
+      activeSeatAssignmentDrag.sourceElement.releasePointerCapture(activeSeatAssignmentDrag.pointerId);
+    } catch (error) {
+      // ignore
+    }
+  }
+
+  window.removeEventListener("pointermove", window.UnterrichtsassistentApp.handleSeatAssignmentPointerMove);
+  window.removeEventListener("pointerup", window.UnterrichtsassistentApp.handleSeatAssignmentPointerEnd);
+  window.removeEventListener("pointercancel", window.UnterrichtsassistentApp.handleSeatAssignmentPointerEnd);
+  document.body.classList.remove("is-seat-assignment-dragging");
+  activeSeatAssignmentDrag = null;
+
+  if (settings.refreshView && activeViewId === "sitzplan") {
+    setActiveView("sitzplan");
+  }
+}
+
 function ensureSeatPlans(rawSnapshot) {
   rawSnapshot.seatPlans = Array.isArray(rawSnapshot.seatPlans) ? rawSnapshot.seatPlans : [];
   rawSnapshot.activeSeatPlanId = rawSnapshot.activeSeatPlanId || null;
+  rawSnapshot.activeSeatOrderId = rawSnapshot.activeSeatOrderId || null;
   rawSnapshot.activeSeatPlanRoom = String(rawSnapshot.activeSeatPlanRoom || "").trim();
 
   rawSnapshot.seatPlans = rawSnapshot.seatPlans.map(function (seatPlan, index) {
@@ -2297,11 +2679,64 @@ function ensureSeatPlans(rawSnapshot) {
     nextSeatPlan.deskLayoutLinks = nextSeatPlan.deskLayoutLinks.filter(function (link) {
       return getDeskLayoutItemById(nextSeatPlan.deskLayoutItems, link.itemAId) && getDeskLayoutItemById(nextSeatPlan.deskLayoutItems, link.itemBId);
     });
+    nextSeatPlan.seats = nextSeatPlan.seats.filter(function (seat) {
+      return seat && getDeskLayoutItemById(nextSeatPlan.deskLayoutItems, seat.deskItemId);
+    }).map(function (seat) {
+      const deskItem = getDeskLayoutItemById(nextSeatPlan.deskLayoutItems, seat.deskItemId);
+      const slots = getDeskSeatSlots(String(deskItem && deskItem.type || ""));
+      const defaultSlot = slots[0] || "";
+      const normalizedStudentId = String(seat.studentId || "").trim();
+
+      return {
+        id: seat.id || createSeatAssignmentId(),
+        studentId: normalizedStudentId,
+        deskItemId: seat.deskItemId,
+        slot: slots.indexOf(seat.slot) >= 0 ? seat.slot : defaultSlot,
+        isLocked: Boolean(seat.isLocked)
+      };
+    }).filter(function (seat) {
+      return Boolean(seat.slot) && (Boolean(seat.studentId) || seat.isLocked);
+    });
 
     return nextSeatPlan;
   });
 
   return rawSnapshot.seatPlans;
+}
+
+function ensureSeatOrders(rawSnapshot) {
+  rawSnapshot.seatOrders = Array.isArray(rawSnapshot.seatOrders) ? rawSnapshot.seatOrders : [];
+  rawSnapshot.activeSeatOrderId = rawSnapshot.activeSeatOrderId || null;
+
+  rawSnapshot.seatOrders = rawSnapshot.seatOrders.map(function (seatOrder, index) {
+    const nextSeatOrder = seatOrder || {};
+
+    if (!nextSeatOrder.id) {
+      nextSeatOrder.id = createSeatAssignmentId() + "-order-" + index;
+    }
+
+    nextSeatOrder.classId = nextSeatOrder.classId || "";
+    nextSeatOrder.room = String(nextSeatOrder.room || "").trim();
+    nextSeatOrder.validFrom = normalizeDateValue(nextSeatOrder.validFrom);
+    nextSeatOrder.validTo = normalizeDateValue(nextSeatOrder.validTo);
+    nextSeatOrder.updatedAt = nextSeatOrder.updatedAt || getCurrentTimestamp();
+    nextSeatOrder.seats = Array.isArray(nextSeatOrder.seats) ? nextSeatOrder.seats : [];
+    nextSeatOrder.seats = nextSeatOrder.seats.map(function (seat) {
+      return {
+        id: seat && seat.id ? seat.id : createSeatAssignmentId(),
+        studentId: String(seat && seat.studentId || "").trim(),
+        deskItemId: seat ? seat.deskItemId : "",
+        slot: String(seat && seat.slot || ""),
+        isLocked: Boolean(seat && seat.isLocked)
+      };
+    }).filter(function (seat) {
+      return Boolean(seat.deskItemId) && Boolean(seat.slot) && (Boolean(seat.studentId) || seat.isLocked);
+    });
+
+    return nextSeatOrder;
+  });
+
+  return rawSnapshot.seatOrders;
 }
 
 function createSeatPlanRecord(classId, roomValue) {
@@ -2318,6 +2753,18 @@ function createSeatPlanRecord(classId, roomValue) {
     roomWindowSide: "",
     roomWidth: 720,
     roomHeight: 720
+  };
+}
+
+function createSeatOrderRecord(classId, roomValue) {
+  return {
+    id: createSeatAssignmentId() + "-order",
+    classId: classId,
+    room: String(roomValue || "").trim(),
+    validFrom: getTodayDateValue(),
+    validTo: "",
+    updatedAt: getCurrentTimestamp(),
+    seats: []
   };
 }
 
@@ -2341,10 +2788,12 @@ function getActiveSeatPlanRoomFromSnapshot(rawSnapshot, activeClass) {
   return "";
 }
 
-function getCurrentSeatPlanFromSnapshot(rawSnapshot, classId, roomValue) {
-  const todayValue = getReferenceDateValue();
-
-  return ensureSeatPlans(rawSnapshot)
+function getSeatPlanFromSnapshotForDateValue(rawSnapshot, classId, roomValue, dateValue) {
+  const todayValue = String(dateValue || getReferenceDateValue()).slice(0, 10);
+  const seatPlans = ensureSeatPlans(rawSnapshot).filter(function (seatPlan) {
+    return seatPlan.classId === classId && String(seatPlan.room || "") === String(roomValue || "");
+  });
+  const matchingSeatPlans = seatPlans
     .filter(function (seatPlan) {
       const matchesClass = seatPlan.classId === classId;
       const matchesRoom = String(seatPlan.room || "") === String(roomValue || "");
@@ -2355,7 +2804,50 @@ function getCurrentSeatPlanFromSnapshot(rawSnapshot, classId, roomValue) {
     })
     .sort(function (left, right) {
       return compareDateValues(right.validFrom, left.validFrom);
-    })[0] || null;
+    });
+  const futureSeatPlans = seatPlans.filter(function (seatPlan) {
+    return seatPlan.validFrom && compareDateValues(seatPlan.validFrom, todayValue) > 0;
+  }).sort(function (left, right) {
+    return compareDateValues(left.validFrom, right.validFrom);
+  });
+  const pastSeatPlans = seatPlans.filter(function (seatPlan) {
+    return seatPlan.validTo && compareDateValues(seatPlan.validTo, todayValue) < 0;
+  }).sort(function (left, right) {
+    return compareDateValues(right.validTo, left.validTo);
+  });
+
+  return matchingSeatPlans[0] || futureSeatPlans[0] || pastSeatPlans[0] || seatPlans[0] || null;
+}
+
+function getCurrentSeatPlanFromSnapshot(rawSnapshot, classId, roomValue) {
+  return getSeatPlanFromSnapshotForDateValue(rawSnapshot, classId, roomValue, getReferenceDateValue());
+}
+
+function getCurrentSeatOrderFromSnapshot(rawSnapshot, classId, roomValue) {
+  const todayValue = getReferenceDateValue();
+  const seatOrders = ensureSeatOrders(rawSnapshot).filter(function (seatOrder) {
+    return seatOrder.classId === classId && String(seatOrder.room || "") === String(roomValue || "");
+  });
+  const matchingSeatOrders = seatOrders.filter(function (seatOrder) {
+    const startsBefore = !seatOrder.validFrom || compareDateValues(seatOrder.validFrom, todayValue) <= 0;
+    const endsAfter = !seatOrder.validTo || compareDateValues(seatOrder.validTo, todayValue) >= 0;
+
+    return startsBefore && endsAfter;
+  }).sort(function (left, right) {
+    return compareDateValues(right.validFrom, left.validFrom);
+  });
+  const futureSeatOrders = seatOrders.filter(function (seatOrder) {
+    return seatOrder.validFrom && compareDateValues(seatOrder.validFrom, todayValue) > 0;
+  }).sort(function (left, right) {
+    return compareDateValues(left.validFrom, right.validFrom);
+  });
+  const pastSeatOrders = seatOrders.filter(function (seatOrder) {
+    return seatOrder.validTo && compareDateValues(seatOrder.validTo, todayValue) < 0;
+  }).sort(function (left, right) {
+    return compareDateValues(right.validTo, left.validTo);
+  });
+
+  return matchingSeatOrders[0] || futureSeatOrders[0] || pastSeatOrders[0] || seatOrders[0] || null;
 }
 
 function ensureSeatPlanForActiveClass(rawSnapshot) {
@@ -2394,6 +2886,113 @@ function ensureSeatPlanForActiveClass(rawSnapshot) {
   return seatPlan;
 }
 
+function ensureSeatOrderForActiveClass(rawSnapshot) {
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  let activeRoom;
+  let availableSeatOrders;
+  let seatOrder;
+
+  if (!activeClass) {
+    return null;
+  }
+
+  activeRoom = getActiveSeatPlanRoomFromSnapshot(rawSnapshot, activeClass);
+  availableSeatOrders = ensureSeatOrders(rawSnapshot).filter(function (currentSeatOrder) {
+    return currentSeatOrder.classId === activeClass.id && String(currentSeatOrder.room || "") === String(activeRoom || "");
+  });
+  seatOrder = availableSeatOrders.find(function (item) {
+    return item.id === rawSnapshot.activeSeatOrderId;
+  });
+
+  if (!seatOrder) {
+    seatOrder = getCurrentSeatOrderFromSnapshot(rawSnapshot, activeClass.id, activeRoom);
+  }
+
+  if (!seatOrder) {
+    seatOrder = availableSeatOrders[0] || null;
+  }
+
+  if (!seatOrder) {
+    seatOrder = createSeatOrderRecord(activeClass.id, activeRoom);
+    rawSnapshot.seatOrders.unshift(seatOrder);
+  }
+
+  rawSnapshot.activeSeatOrderId = seatOrder.id;
+  rawSnapshot.activeSeatPlanRoom = activeRoom;
+  return seatOrder;
+}
+
+function getCurrentSeatPlanForActiveContextFromSnapshot(rawSnapshot) {
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const activeRoom = activeClass ? getActiveSeatPlanRoomFromSnapshot(rawSnapshot, activeClass) : "";
+
+  if (!rawSnapshot || !activeClass) {
+    return null;
+  }
+
+  return getCurrentSeatPlanFromSnapshot(rawSnapshot, activeClass.id, activeRoom);
+}
+
+function getEditableSeatPlanForActiveContextFromSnapshot(rawSnapshot) {
+  if (!rawSnapshot) {
+    return null;
+  }
+
+  return ensureSeatPlanForActiveClass(rawSnapshot);
+}
+
+function getEditableSeatOrderForActiveContextFromSnapshot(rawSnapshot) {
+  if (!rawSnapshot) {
+    return null;
+  }
+
+  return ensureSeatOrderForActiveClass(rawSnapshot);
+}
+
+function syncManagedTimetableToCurrent(targetViewId) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const currentTimetable = schoolService ? schoolService.getCurrentTimetable(schoolService.getReferenceDate()) : null;
+
+  if (!repository || !schoolService || !currentRawSnapshot || !currentTimetable) {
+    if (activeViewId === "stundenplan") {
+      setActiveView(targetViewId || "stundenplan");
+    }
+    return false;
+  }
+
+  ensureTimetables(currentRawSnapshot);
+  currentRawSnapshot.activeTimetableId = currentTimetable.id || null;
+  saveAndRefreshSnapshot(currentRawSnapshot, targetViewId || "stundenplan");
+  return false;
+}
+
+function syncManagedSeatPlanToCurrent(targetViewId) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const activeRoom = activeClass ? getActiveSeatPlanRoom(activeClass) : "";
+  const currentSeatPlan = schoolService && activeClass
+    ? schoolService.getCurrentSeatPlan(activeClass.id, activeRoom, schoolService.getReferenceDate())
+    : null;
+  const currentSeatOrder = schoolService && activeClass
+    ? schoolService.getCurrentSeatOrder(activeClass.id, activeRoom, schoolService.getReferenceDate())
+    : null;
+
+  if (!repository || !schoolService || !currentRawSnapshot || !activeClass) {
+    if (activeViewId === "sitzplan") {
+      setActiveView(targetViewId || "sitzplan");
+    }
+    return false;
+  }
+
+  ensureSeatPlans(currentRawSnapshot);
+  ensureSeatOrders(currentRawSnapshot);
+  currentRawSnapshot.activeSeatPlanRoom = activeRoom;
+  currentRawSnapshot.activeSeatPlanId = currentSeatPlan ? currentSeatPlan.id : null;
+  currentRawSnapshot.activeSeatOrderId = currentSeatOrder ? currentSeatOrder.id : null;
+  saveAndRefreshSnapshot(currentRawSnapshot, targetViewId || "sitzplan");
+  return false;
+}
+
 window.UnterrichtsassistentApp = window.UnterrichtsassistentApp || {};
 window.UnterrichtsassistentApp.activateView = setActiveView;
 window.UnterrichtsassistentApp.toggleMenu = toggleMenu;
@@ -2417,6 +3016,10 @@ window.UnterrichtsassistentApp.getTimetableViewMode = function () {
 window.UnterrichtsassistentApp.setTimetableViewMode = function (nextMode) {
   timetableViewMode = nextMode === "verwalten" ? "verwalten" : "ansicht";
 
+  if (timetableViewMode === "verwalten") {
+    return syncManagedTimetableToCurrent("stundenplan");
+  }
+
   if (activeViewId === "stundenplan") {
     setActiveView("stundenplan");
   }
@@ -2427,7 +3030,7 @@ window.UnterrichtsassistentApp.getSeatPlanViewMode = function () {
   return seatPlanViewMode;
 };
 window.UnterrichtsassistentApp.getSeatPlanManageMode = function () {
-  return seatPlanManageMode;
+  return seatPlanViewMode === "tischordnung" ? "tischordnung" : "sitzordnung";
 };
 window.UnterrichtsassistentApp.getSeatPlanDeskToolMode = function () {
   return seatPlanDeskToolMode;
@@ -2447,10 +3050,11 @@ window.UnterrichtsassistentApp.getSeatPlanMirrorMode = function () {
   return seatPlanMirrorMode;
 };
 window.UnterrichtsassistentApp.setSeatPlanViewMode = function (nextMode) {
-  seatPlanViewMode = nextMode === "verwalten" ? "verwalten" : "ansicht";
+  seatPlanViewMode = ["sitzordnung", "tischordnung"].indexOf(nextMode) >= 0 ? nextMode : "ansicht";
+  seatPlanManageMode = seatPlanViewMode === "tischordnung" ? "tischordnung" : "sitzordnung";
 
-  if (seatPlanViewMode === "verwalten" && ["sitzordnung", "tischordnung"].indexOf(seatPlanManageMode) === -1) {
-    seatPlanManageMode = "sitzordnung";
+  if (seatPlanViewMode !== "ansicht") {
+    return syncManagedSeatPlanToCurrent("sitzplan");
   }
 
   if (activeViewId === "sitzplan") {
@@ -2460,14 +3064,7 @@ window.UnterrichtsassistentApp.setSeatPlanViewMode = function (nextMode) {
   return false;
 };
 window.UnterrichtsassistentApp.setSeatPlanManageMode = function (nextMode) {
-  seatPlanManageMode = nextMode === "tischordnung" ? "tischordnung" : "sitzordnung";
-  seatPlanViewMode = "verwalten";
-
-  if (activeViewId === "sitzplan") {
-    setActiveView("sitzplan");
-  }
-
-  return false;
+  return window.UnterrichtsassistentApp.setSeatPlanViewMode(nextMode === "tischordnung" ? "tischordnung" : "sitzordnung");
 };
 window.UnterrichtsassistentApp.changeActiveSeatPlanRoom = function (roomValue) {
   if (!repository || !schoolService) {
@@ -2480,8 +3077,10 @@ window.UnterrichtsassistentApp.changeActiveSeatPlanRoom = function (roomValue) {
   const currentParts = getNowDateParts();
 
   ensureSeatPlans(currentRawSnapshot);
+  ensureSeatOrders(currentRawSnapshot);
   currentRawSnapshot.activeSeatPlanRoom = String(roomValue || "").trim();
   currentRawSnapshot.activeSeatPlanId = null;
+  currentRawSnapshot.activeSeatOrderId = null;
 
   if (wasLiveMode) {
     currentRawSnapshot.activeDateTime = currentParts.date + "T" + currentParts.time;
@@ -2501,14 +3100,23 @@ window.UnterrichtsassistentApp.changeActiveSeatPlan = function (seatPlanId) {
   }
 
   const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
-  let selectedSeatPlan = null;
+  let selectedItem = null;
 
-  ensureSeatPlans(currentRawSnapshot);
-  selectedSeatPlan = currentRawSnapshot.seatPlans.find(function (seatPlan) {
-    return seatPlan.id === seatPlanId;
-  }) || null;
-  currentRawSnapshot.activeSeatPlanId = seatPlanId || null;
-  currentRawSnapshot.activeSeatPlanRoom = selectedSeatPlan ? String(selectedSeatPlan.room || "").trim() : currentRawSnapshot.activeSeatPlanRoom;
+  if (seatPlanViewMode === "sitzordnung") {
+    ensureSeatOrders(currentRawSnapshot);
+    selectedItem = currentRawSnapshot.seatOrders.find(function (seatOrder) {
+      return seatOrder.id === seatPlanId;
+    }) || null;
+    currentRawSnapshot.activeSeatOrderId = seatPlanId || null;
+  } else {
+    ensureSeatPlans(currentRawSnapshot);
+    selectedItem = currentRawSnapshot.seatPlans.find(function (seatPlan) {
+      return seatPlan.id === seatPlanId;
+    }) || null;
+    currentRawSnapshot.activeSeatPlanId = seatPlanId || null;
+  }
+
+  currentRawSnapshot.activeSeatPlanRoom = selectedItem ? String(selectedItem.room || "").trim() : currentRawSnapshot.activeSeatPlanRoom;
   saveAndRefreshSnapshot(currentRawSnapshot, "sitzplan");
   return false;
 };
@@ -2519,34 +3127,148 @@ window.UnterrichtsassistentApp.createSeatPlan = function () {
   const currentSeatPlan = schoolService && activeClass
     ? schoolService.getCurrentSeatPlan(activeClass.id, activeRoom, schoolService.getReferenceDate())
     : null;
+  const currentSeatOrder = schoolService && activeClass
+    ? schoolService.getCurrentSeatOrder(activeClass.id, activeRoom, schoolService.getReferenceDate())
+    : null;
   const nextSeatPlan = activeClass ? createSeatPlanRecord(activeClass.id, activeRoom) : null;
+  const nextSeatOrder = activeClass ? createSeatOrderRecord(activeClass.id, activeRoom) : null;
   const yesterdayValue = getYesterdayDateValue();
+  const isSeatOrderMode = seatPlanViewMode === "sitzordnung";
+  const isDeskLayoutMode = seatPlanViewMode === "tischordnung";
+  const shouldCopyCurrentMode = (isSeatOrderMode ? currentSeatOrder : currentSeatPlan)
+    ? window.confirm("Soll die Konfiguration der aktuellen " + (isSeatOrderMode ? "Sitzordnung" : "Tischordnung") + " in die neue " + (isSeatOrderMode ? "Sitzordnung" : "Tischordnung") + " kopiert werden?")
+    : false;
 
-  if (!repository || !schoolService || !activeClass || !nextSeatPlan || seatPlanViewMode !== "verwalten" || seatPlanManageMode !== "tischordnung") {
+  if (!repository || !schoolService || !activeClass || (!isSeatOrderMode && !isDeskLayoutMode)) {
     return false;
   }
 
   ensureSeatPlans(currentRawSnapshot);
+  ensureSeatOrders(currentRawSnapshot);
 
-  if (currentSeatPlan) {
-    currentRawSnapshot.seatPlans = currentRawSnapshot.seatPlans.map(function (seatPlan) {
-      if (seatPlan.id === currentSeatPlan.id) {
-        seatPlan.validTo = yesterdayValue;
-      }
+  if (isSeatOrderMode) {
+    if (!nextSeatOrder) {
+      return false;
+    }
 
-      return seatPlan;
+    if (currentSeatOrder) {
+      currentRawSnapshot.seatOrders = currentRawSnapshot.seatOrders.map(function (seatOrder) {
+        if (seatOrder.id === currentSeatOrder.id) {
+          seatOrder.validTo = yesterdayValue;
+        }
+
+        return seatOrder;
+      });
+    }
+
+    if (currentSeatOrder && shouldCopyCurrentMode) {
+      nextSeatOrder.seats = (currentSeatOrder.seats || []).map(function (seat) {
+        return Object.assign({}, seat);
+      });
+    }
+
+    currentRawSnapshot.seatOrders.unshift(nextSeatOrder);
+    currentRawSnapshot.activeSeatOrderId = nextSeatOrder.id;
+  } else {
+    if (!nextSeatPlan) {
+      return false;
+    }
+
+    if (currentSeatPlan) {
+      currentRawSnapshot.seatPlans = currentRawSnapshot.seatPlans.map(function (seatPlan) {
+        if (seatPlan.id === currentSeatPlan.id) {
+          seatPlan.validTo = yesterdayValue;
+        }
+
+        return seatPlan;
+      });
+    }
+
+    if (currentSeatPlan && shouldCopyCurrentMode) {
+      nextSeatPlan.deskLayoutItems = (currentSeatPlan.deskLayoutItems || []).map(function (item) {
+        return Object.assign({}, item);
+      });
+      nextSeatPlan.deskLayoutLinks = (currentSeatPlan.deskLayoutLinks || []).map(function (link) {
+        return Object.assign({}, link);
+      });
+      nextSeatPlan.roomWindowSide = String(currentSeatPlan.roomWindowSide || "");
+      nextSeatPlan.roomWidth = Number(currentSeatPlan.roomWidth) || nextSeatPlan.roomWidth;
+      nextSeatPlan.roomHeight = Number(currentSeatPlan.roomHeight) || nextSeatPlan.roomHeight;
+    }
+
+    currentRawSnapshot.seatPlans.unshift(nextSeatPlan);
+    currentRawSnapshot.activeSeatPlanId = nextSeatPlan.id;
+  }
+
+  currentRawSnapshot.activeSeatPlanRoom = activeRoom;
+  saveAndRefreshSnapshot(currentRawSnapshot, "sitzplan");
+  return false;
+};
+window.UnterrichtsassistentApp.deleteActiveSeatPlan = function () {
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const activeRoom = getActiveSeatPlanRoom(activeClass);
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const currentSeatPlan = schoolService && activeClass
+    ? schoolService.getManagedSeatPlan(activeClass.id, activeRoom)
+    : null;
+  const currentSeatOrder = schoolService && activeClass
+    ? schoolService.getManagedSeatOrder(activeClass.id, activeRoom)
+    : null;
+  let remainingItems = [];
+  let nextActiveItem = null;
+  const isSeatOrderMode = seatPlanViewMode === "sitzordnung";
+  const currentItem = isSeatOrderMode ? currentSeatOrder : currentSeatPlan;
+
+  if (!repository || !schoolService || !activeClass || !currentRawSnapshot || !currentItem || ["sitzordnung", "tischordnung"].indexOf(seatPlanViewMode) === -1) {
+    return false;
+  }
+
+  if (!window.confirm("Soll diese " + (seatPlanViewMode === "sitzordnung" ? "Sitzordnung" : "Tischordnung") + " wirklich dauerhaft geloescht werden?")) {
+    return false;
+  }
+
+  ensureSeatPlans(currentRawSnapshot);
+  ensureSeatOrders(currentRawSnapshot);
+  if (isSeatOrderMode) {
+    currentRawSnapshot.seatOrders = currentRawSnapshot.seatOrders.filter(function (seatOrder) {
+      return seatOrder.id !== currentItem.id;
+    });
+    remainingItems = currentRawSnapshot.seatOrders.filter(function (seatOrder) {
+      return seatOrder.classId === activeClass.id && String(seatOrder.room || "") === String(activeRoom || "");
+    });
+  } else {
+    currentRawSnapshot.seatPlans = currentRawSnapshot.seatPlans.filter(function (seatPlan) {
+      return seatPlan.id !== currentItem.id;
+    });
+    remainingItems = currentRawSnapshot.seatPlans.filter(function (seatPlan) {
+      return seatPlan.classId === activeClass.id && String(seatPlan.room || "") === String(activeRoom || "");
     });
   }
 
-  currentRawSnapshot.seatPlans.unshift(nextSeatPlan);
+  nextActiveItem = remainingItems.find(function (item) {
+    const todayValue = getReferenceDateValue();
+    const startsBefore = !item.validFrom || compareDateValues(item.validFrom, todayValue) <= 0;
+    const endsAfter = !item.validTo || compareDateValues(item.validTo, todayValue) >= 0;
+
+    return startsBefore && endsAfter;
+  }) || remainingItems[0] || null;
+
+  if (isSeatOrderMode) {
+    currentRawSnapshot.activeSeatOrderId = nextActiveItem ? nextActiveItem.id : null;
+  } else {
+    currentRawSnapshot.activeSeatPlanId = nextActiveItem ? nextActiveItem.id : null;
+  }
   currentRawSnapshot.activeSeatPlanRoom = activeRoom;
-  currentRawSnapshot.activeSeatPlanId = nextSeatPlan.id;
   saveAndRefreshSnapshot(currentRawSnapshot, "sitzplan");
   return false;
 };
 window.UnterrichtsassistentApp.updateSeatPlanDateField = function (fieldName, nextValue) {
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
-  const seatPlan = currentRawSnapshot ? ensureSeatPlanForActiveClass(currentRawSnapshot) : null;
+  const seatPlan = currentRawSnapshot
+    ? (seatPlanViewMode === "sitzordnung"
+      ? ensureSeatOrderForActiveClass(currentRawSnapshot)
+      : ensureSeatPlanForActiveClass(currentRawSnapshot))
+    : null;
 
   if (!repository || !schoolService || !seatPlan || ["validFrom", "validTo"].indexOf(fieldName) === -1) {
     return false;
@@ -2555,6 +3277,258 @@ window.UnterrichtsassistentApp.updateSeatPlanDateField = function (fieldName, ne
   seatPlan[fieldName] = normalizeDateValue(nextValue);
   seatPlan.updatedAt = getCurrentTimestamp();
   saveAndRefreshSnapshot(currentRawSnapshot, "sitzplan");
+  return false;
+};
+window.UnterrichtsassistentApp.startSeatAssignmentDrag = function (event, studentId) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const seatPlan = currentRawSnapshot && activeClass
+    ? getEditableSeatOrderForActiveContextFromSnapshot(currentRawSnapshot)
+    : null;
+  const currentSeat = getSeatAssignmentByStudentId(seatPlan, studentId);
+
+  if (!event || !studentId || !event.dataTransfer) {
+    return false;
+  }
+
+  if (currentSeat && isSeatAssignmentLocked(currentSeat)) {
+    return false;
+  }
+
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", String(studentId));
+  return true;
+};
+window.UnterrichtsassistentApp.allowSeatAssignmentDrop = function (event) {
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  if (event && event.dataTransfer) {
+    event.dataTransfer.dropEffect = "move";
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.dropSeatAssignmentOnDesk = function (event, deskItemId, slotName) {
+  const studentId = event && event.dataTransfer ? String(event.dataTransfer.getData("text/plain") || "").trim() : "";
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  if (!studentId || !deskItemId) {
+    return false;
+  }
+
+  lastSeatAssignmentNativeDrop = {
+    studentId: studentId,
+    timestamp: Date.now()
+  };
+  return assignStudentToDesk(studentId, deskItemId, slotName);
+};
+window.UnterrichtsassistentApp.endSeatAssignmentDrag = function (event, studentId, sourceKind) {
+  const target = event ? getSeatAssignmentDeskTargetFromPoint(event.clientX || 0, event.clientY || 0) : null;
+
+  if (!studentId) {
+    return false;
+  }
+
+  if (lastSeatAssignmentNativeDrop && lastSeatAssignmentNativeDrop.studentId === studentId && (Date.now() - lastSeatAssignmentNativeDrop.timestamp) < 300) {
+    lastSeatAssignmentNativeDrop = null;
+    return false;
+  }
+
+  if (target && target.deskId) {
+    return assignStudentToDesk(studentId, target.deskId, target.slot);
+  }
+
+  if (sourceKind === "desk") {
+    return unassignStudentFromSeat(studentId);
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.resetSeatAssignments = function () {
+  return resetSeatAssignments();
+};
+window.UnterrichtsassistentApp.shuffleSeatAssignments = function () {
+  return shuffleSeatAssignments();
+};
+window.UnterrichtsassistentApp.toggleSeatLock = function (deskItemId, slotName) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const seatPlan = currentRawSnapshot && activeClass
+    ? getEditableSeatOrderForActiveContextFromSnapshot(currentRawSnapshot)
+    : null;
+  const seat = getSeatAssignmentByDeskSlot(seatPlan, deskItemId, slotName);
+
+  if (!repository || !schoolService || !seatPlan || !deskItemId || !slotName) {
+    return false;
+  }
+
+  if (!seat) {
+    seatPlan.seats.push({
+      id: createSeatAssignmentId(),
+      studentId: "",
+      deskItemId: deskItemId,
+      slot: slotName,
+      isLocked: true
+    });
+  } else if (seat.isLocked) {
+    if (seat.studentId) {
+      seat.isLocked = false;
+    } else {
+      seatPlan.seats = (seatPlan.seats || []).filter(function (item) {
+        return item !== seat;
+      });
+    }
+  } else {
+    seat.isLocked = true;
+  }
+
+  seatPlan.updatedAt = getCurrentTimestamp();
+  saveAndRefreshSnapshot(currentRawSnapshot, "sitzplan");
+  return false;
+};
+window.UnterrichtsassistentApp.toggleSeatLockFromClick = function (deskItemId, slotName) {
+  if ((Date.now() - lastSeatLockPointerToggleAt) < 400) {
+    return false;
+  }
+
+  return window.UnterrichtsassistentApp.toggleSeatLock(deskItemId, slotName);
+};
+window.UnterrichtsassistentApp.startSeatAssignmentPointerDrag = function (event, studentId, sourceKind) {
+  const sourceElement = event ? event.currentTarget : null;
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const seatPlan = currentRawSnapshot && activeClass
+    ? getEditableSeatOrderForActiveContextFromSnapshot(currentRawSnapshot)
+    : null;
+  const currentSeat = getSeatAssignmentByStudentId(seatPlan, studentId);
+
+  if (!event || !studentId || !sourceElement) {
+    return false;
+  }
+
+  finishSeatAssignmentDrag();
+
+  activeSeatAssignmentDrag = {
+    studentId: studentId,
+    sourceKind: sourceKind === "desk" ? "desk" : "list",
+    pointerId: typeof event.pointerId === "number" ? event.pointerId : null,
+    previewElement: null,
+    sourceElement: sourceElement,
+    activeTargetElement: null,
+    startClientX: Number(event.clientX) || 0,
+    startClientY: Number(event.clientY) || 0,
+    hasMoved: false,
+    sourceIsLocked: Boolean(currentSeat && currentSeat.isLocked)
+  };
+
+  if (typeof sourceElement.setPointerCapture === "function" && typeof event.pointerId === "number") {
+    try {
+      sourceElement.setPointerCapture(event.pointerId);
+    } catch (error) {
+      // ignore
+    }
+  }
+
+  window.addEventListener("pointermove", window.UnterrichtsassistentApp.handleSeatAssignmentPointerMove);
+  window.addEventListener("pointerup", window.UnterrichtsassistentApp.handleSeatAssignmentPointerEnd);
+  window.addEventListener("pointercancel", window.UnterrichtsassistentApp.handleSeatAssignmentPointerEnd);
+  return false;
+};
+window.UnterrichtsassistentApp.handleSeatAssignmentPointerMove = function (event) {
+  const target = activeSeatAssignmentDrag ? getSeatAssignmentDeskTargetFromPoint(event.clientX || 0, event.clientY || 0) : null;
+  const moveDistanceX = activeSeatAssignmentDrag ? Math.abs((Number(event.clientX) || 0) - (Number(activeSeatAssignmentDrag.startClientX) || 0)) : 0;
+  const moveDistanceY = activeSeatAssignmentDrag ? Math.abs((Number(event.clientY) || 0) - (Number(activeSeatAssignmentDrag.startClientY) || 0)) : 0;
+  let previewElement;
+
+  if (!activeSeatAssignmentDrag) {
+    return false;
+  }
+
+  if (activeSeatAssignmentDrag.pointerId !== null && typeof event.pointerId === "number" && event.pointerId !== activeSeatAssignmentDrag.pointerId) {
+    return false;
+  }
+
+  if (activeSeatAssignmentDrag.sourceIsLocked) {
+    return false;
+  }
+
+  if (!activeSeatAssignmentDrag.hasMoved && Math.max(moveDistanceX, moveDistanceY) < 8) {
+    return false;
+  }
+
+  if (!activeSeatAssignmentDrag.hasMoved) {
+    activeSeatAssignmentDrag.hasMoved = true;
+    previewElement = document.createElement("div");
+    previewElement.className = "seat-order-drag-preview";
+    previewElement.textContent = activeSeatAssignmentDrag.sourceElement ? (activeSeatAssignmentDrag.sourceElement.textContent || "") : "";
+    document.body.appendChild(previewElement);
+    activeSeatAssignmentDrag.previewElement = previewElement;
+    document.body.classList.add("is-seat-assignment-dragging");
+  }
+
+  if (typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  clearSeatAssignmentDropTarget();
+
+  if (target && target.element) {
+    activeSeatAssignmentDrag.activeTargetElement = target.element;
+    target.element.classList.add("is-seat-drop-target");
+    activeSeatAssignmentDrag.activeDeskId = target.deskId;
+    activeSeatAssignmentDrag.activeDeskSlot = target.slot;
+  } else {
+    activeSeatAssignmentDrag.activeTargetElement = null;
+    activeSeatAssignmentDrag.activeDeskId = "";
+    activeSeatAssignmentDrag.activeDeskSlot = "";
+  }
+
+  updateSeatAssignmentPreview(event.clientX || 0, event.clientY || 0);
+  return false;
+};
+window.UnterrichtsassistentApp.handleSeatAssignmentPointerEnd = function (event) {
+  const shouldUnassign = activeSeatAssignmentDrag && activeSeatAssignmentDrag.sourceKind === "desk" && !activeSeatAssignmentDrag.activeDeskId;
+  const studentId = activeSeatAssignmentDrag ? activeSeatAssignmentDrag.studentId : "";
+  const deskId = activeSeatAssignmentDrag ? activeSeatAssignmentDrag.activeDeskId : "";
+  const deskSlot = activeSeatAssignmentDrag ? activeSeatAssignmentDrag.activeDeskSlot : "";
+  const didMove = activeSeatAssignmentDrag ? activeSeatAssignmentDrag.hasMoved : false;
+  const sourceDeskElement = activeSeatAssignmentDrag && activeSeatAssignmentDrag.sourceElement && typeof activeSeatAssignmentDrag.sourceElement.closest === "function"
+    ? activeSeatAssignmentDrag.sourceElement.closest("[data-seat-order-slot]")
+    : null;
+  const sourceDeskId = sourceDeskElement ? String(sourceDeskElement.getAttribute("data-seat-order-desk-id") || "") : "";
+  const sourceDeskSlot = sourceDeskElement ? String(sourceDeskElement.getAttribute("data-seat-order-slot") || "") : "";
+
+  if (!activeSeatAssignmentDrag) {
+    return false;
+  }
+
+  if (activeSeatAssignmentDrag.pointerId !== null && typeof event.pointerId === "number" && event.pointerId !== activeSeatAssignmentDrag.pointerId) {
+    return false;
+  }
+
+  finishSeatAssignmentDrag();
+
+  if (!didMove) {
+    if (event && event.pointerType && event.pointerType !== "mouse" && sourceDeskId && sourceDeskSlot) {
+      lastSeatLockPointerToggleAt = Date.now();
+      return window.UnterrichtsassistentApp.toggleSeatLock(sourceDeskId, sourceDeskSlot);
+    }
+    return false;
+  }
+
+  if (deskId) {
+    return assignStudentToDesk(studentId, deskId, deskSlot);
+  }
+
+  if (shouldUnassign) {
+    return unassignStudentFromSeat(studentId);
+  }
+
   return false;
 };
 window.UnterrichtsassistentApp.setSeatPlanDeskToolMode = function (nextMode) {
@@ -3001,6 +3975,34 @@ window.UnterrichtsassistentApp.createTimetable = function () {
   saveAndRefreshSnapshot(currentRawSnapshot, "stundenplan");
   return false;
 };
+window.UnterrichtsassistentApp.deleteActiveTimetable = function () {
+  const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
+  const currentTimetable = schoolService ? schoolService.getManagedTimetable() : null;
+  const timetables = ensureTimetables(currentRawSnapshot);
+  let nextActiveTimetable = null;
+
+  if (!isTimetableManageMode() || !repository || !schoolService || !currentTimetable) {
+    return false;
+  }
+
+  if (!window.confirm("Soll dieser Stundenplan wirklich dauerhaft geloescht werden?")) {
+    return false;
+  }
+
+  currentRawSnapshot.timetables = timetables.filter(function (timetable) {
+    return timetable.id !== currentTimetable.id;
+  });
+  nextActiveTimetable = currentRawSnapshot.timetables.find(function (timetable) {
+    const todayValue = getReferenceDateValue();
+    const startsBefore = !timetable.validFrom || compareDateValues(timetable.validFrom, todayValue) <= 0;
+    const endsAfter = !timetable.validTo || compareDateValues(timetable.validTo, todayValue) >= 0;
+
+    return startsBefore && endsAfter;
+  }) || currentRawSnapshot.timetables[0] || null;
+  currentRawSnapshot.activeTimetableId = nextActiveTimetable ? nextActiveTimetable.id : null;
+  saveAndRefreshSnapshot(currentRawSnapshot, "stundenplan");
+  return false;
+};
 window.UnterrichtsassistentApp.changeActiveClass = function (classId) {
   if (!repository || !schoolService) {
     return false;
@@ -3010,6 +4012,7 @@ window.UnterrichtsassistentApp.changeActiveClass = function (classId) {
 
   currentRawSnapshot.activeClassId = classId || null;
   currentRawSnapshot.activeSeatPlanId = null;
+  currentRawSnapshot.activeSeatOrderId = null;
   currentRawSnapshot.activeSeatPlanRoom = "";
   currentRawSnapshot.activeDateTimeMode = "manual";
   saveAndRefreshSnapshot(currentRawSnapshot, activeViewId);
@@ -3027,6 +4030,7 @@ window.UnterrichtsassistentApp.setContextFromTimetableCell = function (classId, 
   currentRawSnapshot.activeDateTime = String(dateValue) + "T" + String(timeValue);
   currentRawSnapshot.activeDateTimeMode = "manual";
   currentRawSnapshot.activeSeatPlanId = null;
+  currentRawSnapshot.activeSeatOrderId = null;
   currentRawSnapshot.activeSeatPlanRoom = "";
 
   if (timetableId) {
@@ -3052,6 +4056,7 @@ window.UnterrichtsassistentApp.setLiveDateTimeMode = function () {
   currentRawSnapshot.activeDateTime = currentParts.date + "T" + currentParts.time;
   currentRawSnapshot.activeDateTimeMode = "live";
   currentRawSnapshot.activeSeatPlanId = null;
+  currentRawSnapshot.activeSeatOrderId = null;
   currentRawSnapshot.activeSeatPlanRoom = liveRoom || "";
   saveAndRefreshSnapshot(currentRawSnapshot, activeViewId);
   return false;
@@ -3098,6 +4103,7 @@ window.UnterrichtsassistentApp.openClassImportModal = function () {
   }
 
   if (modal) {
+    isClassImportModalOpen = true;
     modal.hidden = false;
     modal.classList.add("is-open");
   }
@@ -3108,6 +4114,7 @@ window.UnterrichtsassistentApp.closeClassImportModal = function () {
   const modal = getClassImportModal();
 
   if (modal) {
+    isClassImportModalOpen = false;
     modal.hidden = true;
     modal.classList.remove("is-open");
   }
@@ -3284,6 +4291,12 @@ window.UnterrichtsassistentApp.deleteStudent = function (studentId) {
       return seat.studentId !== studentId;
     });
     return seatPlan;
+  });
+  currentRawSnapshot.seatOrders = (currentRawSnapshot.seatOrders || []).map(function (seatOrder) {
+    seatOrder.seats = (seatOrder.seats || []).filter(function (seat) {
+      return seat.studentId !== studentId;
+    });
+    return seatOrder;
   });
 
   saveAndRefreshSnapshot(currentRawSnapshot, "klasse");
@@ -3489,6 +4502,9 @@ window.UnterrichtsassistentApp.deleteActiveClass = function () {
   currentRawSnapshot.seatPlans = currentRawSnapshot.seatPlans.filter(function (seatPlan) {
     return seatPlan.classId !== activeClass.id;
   });
+  currentRawSnapshot.seatOrders = (currentRawSnapshot.seatOrders || []).filter(function (seatOrder) {
+    return seatOrder.classId !== activeClass.id;
+  });
   ensureTimetables(currentRawSnapshot).forEach(function (timetable) {
     timetable.rows = timetable.rows.map(function (row) {
       timetableWeekdayKeys.forEach(function (weekdayKey) {
@@ -3506,6 +4522,7 @@ window.UnterrichtsassistentApp.deleteActiveClass = function () {
 
   currentRawSnapshot.activeClassId = nextActiveClassId;
   currentRawSnapshot.activeSeatPlanId = null;
+  currentRawSnapshot.activeSeatOrderId = null;
   currentRawSnapshot.activeSeatPlanRoom = "";
 
   saveAndRefreshSnapshot(currentRawSnapshot, "klasse");
