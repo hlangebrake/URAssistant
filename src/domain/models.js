@@ -19,12 +19,13 @@ class Student {
 }
 
 class SchoolClass {
-  constructor({ id, name, room, subject, studentIds = [] }) {
+  constructor({ id, name, room, subject, studentIds = [], displayColor = "" }) {
     this.id = id;
     this.name = name;
     this.room = room;
     this.subject = subject;
     this.studentIds = studentIds;
+    this.displayColor = displayColor;
   }
 }
 
@@ -38,6 +39,22 @@ class Lesson {
     this.startTime = startTime;
     this.endTime = endTime;
     this.topic = topic;
+  }
+}
+
+class TimetableRow {
+  constructor({ id, type = "lesson", durationMinutes = 45, days = {} }) {
+    this.id = id;
+    this.type = type === "pause" ? "pause" : "lesson";
+    this.durationMinutes = Number(durationMinutes) || (this.type === "pause" ? 5 : 45);
+    this.days = days;
+  }
+}
+
+class Timetable {
+  constructor({ startTime = "07:50", rows = [] }) {
+    this.startTime = startTime || "07:50";
+    this.rows = rows.map((row) => new TimetableRow(row));
   }
 }
 
@@ -82,6 +99,8 @@ class SeatPlan {
 window.Unterrichtsassistent.domain.Student = Student;
 window.Unterrichtsassistent.domain.SchoolClass = SchoolClass;
 window.Unterrichtsassistent.domain.Lesson = Lesson;
+window.Unterrichtsassistent.domain.Timetable = Timetable;
+window.Unterrichtsassistent.domain.TimetableRow = TimetableRow;
 window.Unterrichtsassistent.domain.Assessment = Assessment;
 window.Unterrichtsassistent.domain.TodoItem = TodoItem;
 window.Unterrichtsassistent.domain.SeatPlan = SeatPlan;

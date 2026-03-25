@@ -27,12 +27,15 @@ const serializeSnapshot = domainLayer.serializeDomainSnapshot;
 const parseStudentCsvFn = dataLayer.parseStudentCsv;
 const createEmptyClassFn = dataLayer.createEmptyClass;
 const mergeImportedStudentsFn = dataLayer.mergeImportedStudents;
+const createPastelColorFn = dataLayer.createPastelColor;
 
 const repository = RepositoryClass ? new RepositoryClass() : null;
 
 let schoolService = null;
 let activeViewId = "unterricht";
 let classViewMode = "analyse";
+let timetableViewMode = "ansicht";
+const timetableWeekdayKeys = ["1", "2", "3", "4", "5"];
 
 function getClassImportModal() {
   return document.getElementById("classImportModal");
@@ -40,6 +43,101 @@ function getClassImportModal() {
 
 function isClassManageMode() {
   return classViewMode === "verwalten";
+}
+
+function isTimetableManageMode() {
+  return timetableViewMode === "verwalten";
+}
+
+function createDefaultTimetableDay() {
+  return {
+    classId: "",
+    room: "",
+    isDouble: false
+  };
+}
+
+function createTimetableRow(type) {
+  const rowType = type === "pause" ? "pause" : "lesson";
+  const days = {};
+
+  timetableWeekdayKeys.forEach(function (weekdayKey) {
+    days[weekdayKey] = createDefaultTimetableDay();
+  });
+
+  return {
+    id: "timetable-row-" + Date.now() + "-" + Math.floor(Math.random() * 1000),
+    type: rowType,
+    durationMinutes: rowType === "pause" ? 5 : 45,
+    days: days
+  };
+}
+
+function ensureTimetable(snapshot) {
+  if (!snapshot.timetable) {
+    snapshot.timetable = {
+      startTime: "07:50",
+      rows: []
+    };
+  }
+
+  if (!Array.isArray(snapshot.timetable.rows)) {
+    snapshot.timetable.rows = [];
+  }
+
+  if (!snapshot.timetable.startTime) {
+    snapshot.timetable.startTime = "07:50";
+  }
+
+  snapshot.timetable.rows = snapshot.timetable.rows.map(function (row) {
+    const nextRow = row || {};
+
+    if (!nextRow.days) {
+      nextRow.days = {};
+    }
+
+    timetableWeekdayKeys.forEach(function (weekdayKey) {
+      if (!nextRow.days[weekdayKey]) {
+        nextRow.days[weekdayKey] = createDefaultTimetableDay();
+      } else {
+        nextRow.days[weekdayKey].classId = nextRow.days[weekdayKey].classId || "";
+        nextRow.days[weekdayKey].room = nextRow.days[weekdayKey].room || "";
+        nextRow.days[weekdayKey].isDouble = Boolean(nextRow.days[weekdayKey].isDouble);
+      }
+    });
+
+    nextRow.type = nextRow.type === "pause" ? "pause" : "lesson";
+    nextRow.durationMinutes = Number(nextRow.durationMinutes) || (nextRow.type === "pause" ? 5 : 45);
+    return nextRow;
+  });
+
+  return snapshot.timetable;
+}
+
+function isValidTimeValue(value) {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value || ""));
+}
+
+function clearFollowingDoubleSpan(rows, startIndex, weekdayKey) {
+  let rowIndex;
+
+  for (rowIndex = startIndex + 1; rowIndex < rows.length; rowIndex += 1) {
+    if (!rows[rowIndex].days) {
+      rows[rowIndex].days = {};
+    }
+
+    if (!rows[rowIndex].days[weekdayKey]) {
+      rows[rowIndex].days[weekdayKey] = createDefaultTimetableDay();
+    }
+
+    rows[rowIndex].days[weekdayKey].classId = "";
+    rows[rowIndex].days[weekdayKey].room = "";
+    rows[rowIndex].days[weekdayKey].isDouble = false;
+
+    if (rows[rowIndex].type === "lesson") {
+      break;
+    }
+  }
 }
 
 function eachNode(nodeList, callback) {
@@ -76,6 +174,26 @@ function getClassDisplayName(schoolClass) {
   return [schoolClass.name || "", schoolClass.subject || ""].join(" ").trim() || "Keine Lerngruppe";
 }
 
+function getClassDisplayColor(schoolClass) {
+  if (!schoolClass) {
+    return "#d9d4cb";
+  }
+
+  if (schoolClass.displayColor) {
+    return schoolClass.displayColor;
+  }
+
+  if (typeof createPastelColorFn === "function") {
+    return createPastelColorFn((schoolClass.name || "") + "::" + (schoolClass.subject || "") + "::" + (schoolClass.id || ""));
+  }
+
+  return "#d9d4cb";
+}
+
+function buildViewModeToggleHtml(options) {
+  return '<div class="header-action-group"><div class="class-view-mode-toggle class-view-mode-toggle--header" role="tablist" aria-label="' + options.ariaLabel + '"><button class="class-view-mode-toggle__button' + (options.activeMode === options.leftMode ? " is-active" : "") + '" type="button" role="tab" aria-selected="' + (options.activeMode === options.leftMode ? "true" : "false") + '" onclick="return ' + options.leftAction + '">' + options.leftLabel + '</button><button class="class-view-mode-toggle__button' + (options.activeMode === options.rightMode ? " is-active" : "") + '" type="button" role="tab" aria-selected="' + (options.activeMode === options.rightMode ? "true" : "false") + '" onclick="return ' + options.rightAction + '">' + options.rightLabel + '</button></div>' + (options.trailingHtml || "") + "</div>";
+}
+
 function renderActiveClassContext() {
   const classes = schoolService ? schoolService.getAllClasses() : [];
   const activeClass = schoolService ? schoolService.getActiveClass() : null;
@@ -83,6 +201,8 @@ function renderActiveClassContext() {
 
   if (activeClassBadge) {
     activeClassBadge.textContent = badgeLabel;
+    activeClassBadge.style.background = getClassDisplayColor(activeClass);
+    activeClassBadge.style.color = "var(--text)";
   }
 
   if (activeClassSelect) {
@@ -122,14 +242,39 @@ function updateHeaderSubtitle(viewId, config) {
 }
 
 function updateHeaderActions(viewId) {
-  const isManageMode = isClassManageMode();
-
   if (!viewHeaderActions) {
     return;
   }
 
   if (viewId === "klasse") {
-    viewHeaderActions.innerHTML = '<div class="header-action-group"><div class="class-view-mode-toggle class-view-mode-toggle--header" role="tablist" aria-label="Ansicht der Lerngruppe wechseln"><button class="class-view-mode-toggle__button' + (isManageMode ? "" : " is-active") + '" type="button" role="tab" aria-selected="' + (isManageMode ? "false" : "true") + '" onclick="return window.UnterrichtsassistentApp.setClassViewMode(\'analyse\')">Analyse</button><button class="class-view-mode-toggle__button' + (isManageMode ? " is-active" : "") + '" type="button" role="tab" aria-selected="' + (isManageMode ? "true" : "false") + '" onclick="return window.UnterrichtsassistentApp.setClassViewMode(\'verwalten\')">Verwalten</button></div>' + (isManageMode ? '<button class="circle-action circle-action--danger" type="button" aria-label="Aktive Lerngruppe loeschen" onclick="return window.UnterrichtsassistentApp.deleteActiveClass()">-</button><button class="circle-action" type="button" aria-label="Neue Lerngruppe anlegen" onclick="return window.UnterrichtsassistentApp.openClassImportModal()">+</button>' : "") + '</div>';
+    viewHeaderActions.innerHTML = buildViewModeToggleHtml({
+      ariaLabel: "Ansicht der Lerngruppe wechseln",
+      activeMode: classViewMode,
+      leftMode: "analyse",
+      leftLabel: "Analyse",
+      leftAction: "window.UnterrichtsassistentApp.setClassViewMode('analyse')",
+      rightMode: "verwalten",
+      rightLabel: "Verwalten",
+      rightAction: "window.UnterrichtsassistentApp.setClassViewMode('verwalten')",
+      trailingHtml: isClassManageMode()
+        ? '<button class="circle-action circle-action--danger" type="button" aria-label="Aktive Lerngruppe loeschen" onclick="return window.UnterrichtsassistentApp.deleteActiveClass()">-</button><button class="circle-action" type="button" aria-label="Neue Lerngruppe anlegen" onclick="return window.UnterrichtsassistentApp.openClassImportModal()">+</button>'
+        : ""
+    });
+    return;
+  }
+
+  if (viewId === "stundenplan") {
+    viewHeaderActions.innerHTML = buildViewModeToggleHtml({
+      ariaLabel: "Ansicht des Stundenplans wechseln",
+      activeMode: timetableViewMode,
+      leftMode: "ansicht",
+      leftLabel: "Ansicht",
+      leftAction: "window.UnterrichtsassistentApp.setTimetableViewMode('ansicht')",
+      rightMode: "verwalten",
+      rightLabel: "Verwalten",
+      rightAction: "window.UnterrichtsassistentApp.setTimetableViewMode('verwalten')",
+      trailingHtml: ""
+    });
     return;
   }
 
@@ -143,6 +288,10 @@ function setActiveView(viewId) {
 
   if (viewId === "klasse" && previousViewId !== "klasse") {
     classViewMode = "analyse";
+  }
+
+  if (viewId === "stundenplan" && previousViewId !== "stundenplan") {
+    timetableViewMode = "ansicht";
   }
 
   eachNode(navLinks, function (link) {
@@ -229,6 +378,7 @@ window.UnterrichtsassistentApp = window.UnterrichtsassistentApp || {};
 window.UnterrichtsassistentApp.activateView = setActiveView;
 window.UnterrichtsassistentApp.toggleMenu = toggleMenu;
 window.UnterrichtsassistentApp.toggleCollapsedClassPicker = toggleCollapsedClassPicker;
+window.UnterrichtsassistentApp.getClassDisplayColor = getClassDisplayColor;
 window.UnterrichtsassistentApp.getClassViewMode = function () {
   return classViewMode;
 };
@@ -237,6 +387,18 @@ window.UnterrichtsassistentApp.setClassViewMode = function (nextMode) {
 
   if (activeViewId === "klasse") {
     setActiveView("klasse");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.getTimetableViewMode = function () {
+  return timetableViewMode;
+};
+window.UnterrichtsassistentApp.setTimetableViewMode = function (nextMode) {
+  timetableViewMode = nextMode === "verwalten" ? "verwalten" : "ansicht";
+
+  if (activeViewId === "stundenplan") {
+    setActiveView("stundenplan");
   }
 
   return false;
@@ -355,7 +517,7 @@ window.UnterrichtsassistentApp.updateActiveClassField = function (fieldName, nex
   const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
   const trimmedValue = String(nextValue || "").trim();
 
-  if (!activeClass || ["name", "subject"].indexOf(fieldName) === -1) {
+  if (!activeClass || ["name", "subject", "displayColor"].indexOf(fieldName) === -1) {
     return false;
   }
 
@@ -452,6 +614,145 @@ window.UnterrichtsassistentApp.deleteStudent = function (studentId) {
   saveAndRefreshSnapshot(currentRawSnapshot, "klasse");
   return false;
 };
+window.UnterrichtsassistentApp.updateTimetableStartTime = function (nextValue) {
+  if (!isTimetableManageMode()) {
+    return false;
+  }
+
+  const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
+
+  if (!isValidTimeValue(nextValue)) {
+    return false;
+  }
+
+  ensureTimetable(currentRawSnapshot).startTime = nextValue;
+  saveAndRefreshSnapshot(currentRawSnapshot, "stundenplan");
+  return false;
+};
+window.UnterrichtsassistentApp.addTimetableRow = function () {
+  if (!isTimetableManageMode()) {
+    return false;
+  }
+
+  const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
+  const timetable = ensureTimetable(currentRawSnapshot);
+
+  timetable.rows.push(createTimetableRow("lesson"));
+  saveAndRefreshSnapshot(currentRawSnapshot, "stundenplan");
+  return false;
+};
+window.UnterrichtsassistentApp.updateTimetableRowField = function (rowId, fieldName, nextValue) {
+  if (!isTimetableManageMode()) {
+    return false;
+  }
+
+  const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
+  const timetable = ensureTimetable(currentRawSnapshot);
+  const row = timetable.rows.find(function (item) {
+    return item.id === rowId;
+  });
+
+  if (!row) {
+    return false;
+  }
+
+  if (fieldName === "type") {
+    row.type = nextValue === "pause" ? "pause" : "lesson";
+    row.durationMinutes = row.type === "pause" ? 5 : 45;
+
+    timetableWeekdayKeys.forEach(function (weekdayKey) {
+      row.days[weekdayKey] = createDefaultTimetableDay();
+    });
+  }
+
+  if (fieldName === "durationMinutes") {
+    row.durationMinutes = Number(nextValue) || (row.type === "pause" ? 5 : 45);
+  }
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "stundenplan");
+  return false;
+};
+window.UnterrichtsassistentApp.updateTimetableClass = function (rowId, weekdayKey, classId) {
+  if (!isTimetableManageMode()) {
+    return false;
+  }
+
+  const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
+  const timetable = ensureTimetable(currentRawSnapshot);
+  const row = timetable.rows.find(function (item) {
+    return item.id === rowId;
+  });
+  const selectedClass = currentRawSnapshot.classes.find(function (schoolClass) {
+    return schoolClass.id === classId;
+  });
+
+  if (!row || row.type !== "lesson" || timetableWeekdayKeys.indexOf(String(weekdayKey)) === -1) {
+    return false;
+  }
+
+  row.days[weekdayKey].classId = classId || "";
+
+  if (!row.days[weekdayKey].classId) {
+    row.days[weekdayKey].room = "";
+    row.days[weekdayKey].isDouble = false;
+    clearFollowingDoubleSpan(timetable.rows, timetable.rows.indexOf(row), weekdayKey);
+  } else if (!row.days[weekdayKey].room) {
+    row.days[weekdayKey].room = selectedClass && selectedClass.room ? selectedClass.room : "";
+  }
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "stundenplan");
+  return false;
+};
+window.UnterrichtsassistentApp.updateTimetableRoom = function (rowId, weekdayKey, roomValue) {
+  if (!isTimetableManageMode()) {
+    return false;
+  }
+
+  const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
+  const timetable = ensureTimetable(currentRawSnapshot);
+  const row = timetable.rows.find(function (item) {
+    return item.id === rowId;
+  });
+
+  if (!row || row.type !== "lesson" || timetableWeekdayKeys.indexOf(String(weekdayKey)) === -1) {
+    return false;
+  }
+
+  row.days[weekdayKey].room = String(roomValue || "").trim();
+  saveAndRefreshSnapshot(currentRawSnapshot, "stundenplan");
+  return false;
+};
+window.UnterrichtsassistentApp.toggleTimetableDouble = function (rowId, weekdayKey, isChecked) {
+  if (!isTimetableManageMode()) {
+    return false;
+  }
+
+  const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
+  const timetable = ensureTimetable(currentRawSnapshot);
+  const rowIndex = timetable.rows.findIndex(function (item) {
+    return item.id === rowId;
+  });
+  const row = rowIndex >= 0 ? timetable.rows[rowIndex] : null;
+
+  if (!row || row.type !== "lesson" || timetableWeekdayKeys.indexOf(String(weekdayKey)) === -1) {
+    return false;
+  }
+
+  if (!row.days[weekdayKey].classId) {
+    row.days[weekdayKey].isDouble = false;
+    saveAndRefreshSnapshot(currentRawSnapshot, "stundenplan");
+    return false;
+  }
+
+  row.days[weekdayKey].isDouble = Boolean(isChecked);
+
+  if (row.days[weekdayKey].isDouble) {
+    clearFollowingDoubleSpan(timetable.rows, rowIndex, weekdayKey);
+  }
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "stundenplan");
+  return false;
+};
 window.UnterrichtsassistentApp.deleteActiveClass = function () {
   if (!isClassManageMode()) {
     return false;
@@ -491,6 +792,14 @@ window.UnterrichtsassistentApp.deleteActiveClass = function () {
   });
   currentRawSnapshot.seatPlans = currentRawSnapshot.seatPlans.filter(function (seatPlan) {
     return seatPlan.classId !== activeClass.id;
+  });
+  ensureTimetable(currentRawSnapshot).rows = ensureTimetable(currentRawSnapshot).rows.map(function (row) {
+    timetableWeekdayKeys.forEach(function (weekdayKey) {
+      if (row.days[weekdayKey] && row.days[weekdayKey].classId === activeClass.id) {
+        row.days[weekdayKey] = createDefaultTimetableDay();
+      }
+    });
+    return row;
   });
 
   if (currentRawSnapshot.classes.length) {

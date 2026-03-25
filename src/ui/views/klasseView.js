@@ -20,6 +20,9 @@ window.Unterrichtsassistent.ui.views.klasse = {
     const classViewMode = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getClassViewMode === "function"
       ? window.UnterrichtsassistentApp.getClassViewMode()
       : "analyse";
+    const classDisplayColor = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getClassDisplayColor === "function"
+      ? window.UnterrichtsassistentApp.getClassDisplayColor(schoolClass)
+      : "#d9d4cb";
     const isManageMode = classViewMode === "verwalten";
     function escapeValue(value) {
       return String(value || "")
@@ -69,6 +72,10 @@ window.Unterrichtsassistent.ui.views.klasse = {
         '<label class="class-meta-editor__field">',
         '<span>Fach</span>',
         '<input class="student-table__input" type="text" value="', escapeValue(schoolClass.subject), '" onchange="window.UnterrichtsassistentApp.updateActiveClassField(\'subject\', this.value)">',
+        '</label>',
+        '<label class="class-meta-editor__field">',
+        '<span>Anzeigefarbe</span>',
+        '<input class="student-table__input class-color-input" type="color" value="', escapeValue(classDisplayColor), '" onchange="window.UnterrichtsassistentApp.updateActiveClassField(\'displayColor\', this.value)">',
         '</label>',
         '</div>'
       ].join("") : "",

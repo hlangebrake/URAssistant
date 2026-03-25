@@ -9,6 +9,31 @@ function normalizeClassName(className) {
   return String(className).replace(/^0+(\d)/, "$1").trim();
 }
 
+function createPastelColor(seed) {
+  const palette = [
+    "#f4c7c3",
+    "#f7d9a8",
+    "#f5e6a7",
+    "#cfe7b0",
+    "#b8e0d2",
+    "#bcdff5",
+    "#cfd2f6",
+    "#e1c8f2",
+    "#f5cfe0",
+    "#d9d4cb"
+  ];
+  const normalizedSeed = String(seed || "");
+  let hash = 0;
+  let index;
+
+  for (index = 0; index < normalizedSeed.length; index += 1) {
+    hash = ((hash << 5) - hash) + normalizedSeed.charCodeAt(index);
+    hash |= 0;
+  }
+
+  return palette[Math.abs(hash) % palette.length];
+}
+
 function createEmptyClass(rawSnapshot, className, subjectName) {
   const nextSnapshot = JSON.parse(JSON.stringify(rawSnapshot));
   const normalizedClassName = normalizeClassName(className) || "Neue Lerngruppe";
@@ -18,7 +43,8 @@ function createEmptyClass(rawSnapshot, className, subjectName) {
     name: normalizedClassName,
     room: "",
     subject: trimmedSubject,
-    studentIds: []
+    studentIds: [],
+    displayColor: createPastelColor(normalizedClassName + "::" + trimmedSubject)
   };
 
   nextSnapshot.classes.push(newClass);
@@ -113,13 +139,15 @@ function mergeImportedStudents(rawSnapshot, importedStudents, className, subject
         name: importedClassName,
         room: "",
         subject: subjectName || "",
-        studentIds: []
+        studentIds: [],
+        displayColor: createPastelColor(importedClassName + "::" + (subjectName || ""))
       };
       nextSnapshot.classes.push(schoolClass);
       classMap[classKey] = schoolClass;
     }
 
     schoolClass.subject = subjectName || schoolClass.subject || "";
+    schoolClass.displayColor = schoolClass.displayColor || createPastelColor(importedClassName + "::" + (schoolClass.subject || ""));
     targetClasses[schoolClass.id] = true;
     lastActiveClassId = schoolClass.id;
   }
@@ -155,3 +183,4 @@ function mergeImportedStudents(rawSnapshot, importedStudents, className, subject
 window.Unterrichtsassistent.data.parseStudentCsv = parseStudentCsv;
 window.Unterrichtsassistent.data.createEmptyClass = createEmptyClass;
 window.Unterrichtsassistent.data.mergeImportedStudents = mergeImportedStudents;
+window.Unterrichtsassistent.data.createPastelColor = createPastelColor;
