@@ -95,7 +95,7 @@ class AttendanceRecord {
 }
 
 class HomeworkRecord {
-  constructor({ id, studentId, classId, lessonId = "", lessonDate = "", room = "", recordedAt = "" }) {
+  constructor({ id, studentId, classId, lessonId = "", lessonDate = "", room = "", recordedAt = "", quality = "fehlt" }) {
     this.id = id;
     this.studentId = studentId;
     this.classId = classId;
@@ -103,6 +103,21 @@ class HomeworkRecord {
     this.lessonDate = lessonDate;
     this.room = room;
     this.recordedAt = recordedAt;
+    this.quality = quality;
+  }
+}
+
+class WarningRecord {
+  constructor({ id, studentId, classId, lessonId = "", lessonDate = "", room = "", recordedAt = "", category = "stoerung", note = "" }) {
+    this.id = id;
+    this.studentId = studentId;
+    this.classId = classId;
+    this.lessonId = lessonId;
+    this.lessonDate = lessonDate;
+    this.room = room;
+    this.recordedAt = recordedAt;
+    this.category = category;
+    this.note = note;
   }
 }
 
@@ -153,6 +168,7 @@ window.Unterrichtsassistent.domain.TimetableRow = TimetableRow;
 window.Unterrichtsassistent.domain.Assessment = Assessment;
 window.Unterrichtsassistent.domain.AttendanceRecord = AttendanceRecord;
 window.Unterrichtsassistent.domain.HomeworkRecord = HomeworkRecord;
+window.Unterrichtsassistent.domain.WarningRecord = WarningRecord;
 window.Unterrichtsassistent.domain.TodoItem = TodoItem;
 window.Unterrichtsassistent.domain.SeatPlan = SeatPlan;
 window.Unterrichtsassistent.domain.SeatOrder = SeatOrder;

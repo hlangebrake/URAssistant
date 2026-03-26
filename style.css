@@ -682,6 +682,10 @@ button {
   cursor: inherit;
 }
 
+.unterricht-seatplan-student.is-interactive {
+  touch-action: none;
+}
+
 .unterricht-seatplan-student.is-absent .seat-order-desk__label--readonly {
   color: #8f3d18;
 }
@@ -708,12 +712,194 @@ button {
   background: rgba(78, 152, 76, 0.92);
   color: #ffffff;
   box-shadow: 0 0 0 1px rgba(63, 138, 64, 0.18);
+  opacity: 0.62;
 }
 
 .unterricht-seatplan-homework-badge.is-missing {
   background: rgba(199, 104, 55, 0.96);
   color: #ffffff;
   box-shadow: 0 0 0 1px rgba(199, 104, 55, 0.24);
+}
+
+.unterricht-seatplan-homework-badge.is-excellent {
+  background: rgba(52, 121, 104, 0.96);
+  color: #ffffff;
+  box-shadow: 0 0 0 1px rgba(52, 121, 104, 0.24);
+}
+
+.unterricht-seatplan-homework-badge.is-muted {
+  opacity: 0.44;
+  filter: saturate(0.45);
+}
+
+.unterricht-seatplan-homework-badge.is-emphasized {
+  opacity: 1;
+  filter: none;
+}
+
+.unterricht-seatplan-warning-badge {
+  position: absolute;
+  top: 6px;
+  right: 7px;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(205, 154, 55, 0.96);
+  color: #ffffff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 0 0 1px rgba(205, 154, 55, 0.24);
+  opacity: 0.62;
+}
+
+.unterricht-seatplan-warning-badge__count {
+  display: inline-block;
+  min-width: 8px;
+  text-align: center;
+}
+
+.unterricht-seatplan-warning-badge.is-muted {
+  opacity: 0.44;
+  filter: saturate(0.45);
+}
+
+.unterricht-seatplan-warning-badge.is-emphasized {
+  opacity: 1;
+  filter: none;
+}
+
+.unterricht-homework-radial-menu {
+  position: fixed;
+  z-index: 1200;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.92);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.unterricht-homework-radial-menu.is-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.unterricht-homework-radial-menu__item {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 118px;
+  min-height: 38px;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid rgba(23, 49, 62, 0.16);
+  border-radius: 999px;
+  background: rgba(251, 248, 241, 0.98);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 10px 24px rgba(23, 49, 62, 0.16);
+  transform: translate(-50%, -50%);
+}
+
+.unterricht-homework-radial-menu__item--left {
+  left: -104px;
+}
+
+.unterricht-homework-radial-menu__item--right {
+  left: 104px;
+}
+
+.unterricht-homework-radial-menu__item--top {
+  top: -42px;
+}
+
+.unterricht-homework-radial-menu__item--middle {
+  top: 0;
+}
+
+.unterricht-homework-radial-menu__item--bottom {
+  top: 42px;
+}
+
+.unterricht-homework-radial-menu__item.is-active {
+  background: rgba(23, 49, 62, 0.95);
+  color: #ffffff;
+  border-color: rgba(23, 49, 62, 0.95);
+}
+
+.unterricht-warning-radial-menu {
+  position: fixed;
+  z-index: 1200;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.92);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.unterricht-warning-radial-menu.is-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.unterricht-warning-radial-menu__item {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 118px;
+  min-height: 38px;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid rgba(23, 49, 62, 0.16);
+  border-radius: 999px;
+  background: rgba(251, 248, 241, 0.98);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 10px 24px rgba(23, 49, 62, 0.16);
+  transform: translate(-50%, -50%);
+}
+
+.unterricht-warning-radial-menu__item--left {
+  left: -128px;
+}
+
+.unterricht-warning-radial-menu__item--left.unterricht-warning-radial-menu__item--top {
+  top: -24px;
+}
+
+.unterricht-warning-radial-menu__item--left.unterricht-warning-radial-menu__item--bottom {
+  top: 24px;
+}
+
+.unterricht-warning-radial-menu__item--right {
+  left: 118px;
+  top: 0;
+}
+
+.unterricht-warning-radial-menu__item--top:not(.unterricht-warning-radial-menu__item--left) {
+  left: 0;
+  top: -46px;
+}
+
+.unterricht-warning-radial-menu__item--bottom:not(.unterricht-warning-radial-menu__item--left) {
+  left: 0;
+  top: 46px;
+}
+
+.unterricht-warning-radial-menu__item.is-active {
+  background: rgba(23, 49, 62, 0.95);
+  color: #ffffff;
+  border-color: rgba(23, 49, 62, 0.95);
 }
 
 .panel {
@@ -918,6 +1104,15 @@ button {
 .import-modal__actions {
   display: flex;
   justify-content: flex-end;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.import-modal__actions .circle-action {
+  width: auto;
+  min-width: 120px;
+  padding: 0 1.15rem;
+  font-size: 1rem;
 }
 
 .student-table-wrap {

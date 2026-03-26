@@ -75,10 +75,22 @@ window.Unterrichtsassistent.ui.views.unterricht = {
 
     function getHomeworkStateForStudent(studentId) {
       if (!studentId || !activeClass || typeof service.getHomeworkStateForStudent !== "function") {
-        return "done";
+        return "vorhanden";
       }
 
       return service.getHomeworkStateForStudent(studentId, activeClass.id, service.getReferenceDate());
+    }
+
+    function getHomeworkBadgeClass(homeworkState) {
+      if (["fehlt", "unvollstaendig", "abgeschrieben"].indexOf(homeworkState) >= 0) {
+        return "is-missing";
+      }
+
+      if (homeworkState === "besondersgut") {
+        return "is-excellent";
+      }
+
+      return "is-done";
     }
 
     function getToolButtonClass(toolKey) {
@@ -87,16 +99,37 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         : "unterricht-seatplan-action";
     }
 
+    function getWarningCountForStudent(studentId) {
+      if (!studentId || !activeClass || typeof service.getWarningCountForStudent !== "function") {
+        return 0;
+      }
+
+      return service.getWarningCountForStudent(studentId, activeClass.id, service.getReferenceDate());
+    }
+
     function renderReadonlySeatSlot(student, extraClasses) {
       const classes = ["seat-order-slot", "unterricht-seatplan-slot"];
       const attendanceState = student ? getAttendanceStateForStudent(student.id) : "present";
-      const homeworkState = student ? getHomeworkStateForStudent(student.id) : "done";
-      const isInteractive = Boolean(student && currentClassLesson && ["attendance", "homework"].indexOf(toolMode) >= 0);
-      const onclick = isInteractive
+      const homeworkState = student ? getHomeworkStateForStudent(student.id) : "vorhanden";
+      const warningCount = student ? getWarningCountForStudent(student.id) : 0;
+      const isAttendanceInteractive = Boolean(student && currentClassLesson && toolMode === "attendance");
+      const isHomeworkInteractive = Boolean(student && currentClassLesson && toolMode === "homework" && attendanceState !== "absent");
+      const isWarningInteractive = Boolean(student && currentClassLesson && toolMode === "warning" && attendanceState !== "absent");
+      const isInteractive = isAttendanceInteractive || isHomeworkInteractive || isWarningInteractive;
+      const onclick = isAttendanceInteractive
         ? ' onclick="return window.UnterrichtsassistentApp.handleUnterrichtSeatClick(\'' + escapeValue(student.id) + '\', \'' + escapeValue(currentClassLesson.id) + '\', \'' + escapeValue(currentClassLesson.startTime || "") + '\', \'' + escapeValue(currentClassLesson.room || "") + '\')"'
         : "";
+      const pointerdown = isHomeworkInteractive
+        ? ' onpointerdown="return window.UnterrichtsassistentApp.startUnterrichtHomeworkPointer(event, \'' + escapeValue(student.id) + '\', \'' + escapeValue(currentClassLesson.id) + '\', \'' + escapeValue(currentClassLesson.startTime || "") + '\', \'' + escapeValue(currentClassLesson.room || "") + '\')" oncontextmenu="return false"'
+        : "";
+      const warningPointerdown = isWarningInteractive
+        ? ' onpointerdown="return window.UnterrichtsassistentApp.startUnterrichtWarningPointer(event, \'' + escapeValue(student.id) + '\', \'' + escapeValue(currentClassLesson.id) + '\', \'' + escapeValue(currentClassLesson.startTime || "") + '\', \'' + escapeValue(currentClassLesson.room || "") + '\')" oncontextmenu="return false"'
+        : "";
       const homeworkBadge = student && currentClassLesson
-        ? '<span class="unterricht-seatplan-homework-badge ' + (homeworkState === "missing" ? 'is-missing' : 'is-done') + '">H</span>'
+        ? '<span class="unterricht-seatplan-homework-badge ' + getHomeworkBadgeClass(homeworkState) + (toolMode === "homework" ? ' is-emphasized' : ' is-muted') + '">H</span>'
+        : "";
+      const warningBadge = warningCount > 0
+        ? '<span class="unterricht-seatplan-warning-badge' + (toolMode === "warning" ? ' is-emphasized' : ' is-muted') + '">&#9888;<span class="unterricht-seatplan-warning-badge__count">' + escapeValue(String(warningCount)) + '</span></span>'
         : "";
 
       if (extraClasses) {
@@ -108,7 +141,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         if (isInteractive) {
           classes.push("is-interactive");
         }
-        classes.push(homeworkState === "missing" ? "is-homework-missing" : "is-homework-done");
+        classes.push("is-homework-" + getHomeworkBadgeClass(homeworkState).replace("is-", ""));
       } else {
         classes.push("seat-order-slot--readonly");
       }
@@ -117,7 +150,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         classes.push(toolMode === "attendance" ? "is-absent" : "is-muted");
       }
 
-      return '<div class="' + classes.join(" ") + '"' + onclick + '>' + homeworkBadge + (student ? '<span class="seat-order-desk__label seat-order-desk__label--readonly">' + escapeValue(getStudentShortLabel(student)) + "</span>" : "") + "</div>";
+      return '<div class="' + classes.join(" ") + '"' + onclick + pointerdown + warningPointerdown + '>' + homeworkBadge + warningBadge + (student ? '<span class="seat-order-desk__label seat-order-desk__label--readonly">' + escapeValue(getStudentShortLabel(student)) + "</span>" : "") + "</div>";
     }
 
     function getDeskItemMetrics(item) {
@@ -127,6 +160,33 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         type: itemType,
         width: Number(item && item.width) || (itemType === "double" ? 156 : 88),
         height: Number(item && item.height) || 88
+      };
+    }
+
+    function getDeskItemCenter(item, offsetX, offsetY) {
+      const metrics = getDeskItemMetrics(item);
+
+      return {
+        x: (Number(item && item.x) || 0) - (Number(offsetX) || 0) + (metrics.width / 2),
+        y: (Number(item && item.y) || 0) - (Number(offsetY) || 0) + (metrics.height / 2)
+      };
+    }
+
+    function getSeatOrderReferenceTarget(item, offsetX, offsetY, canvasWidth, canvasHeight) {
+      const targetItem = deskLayoutItemsSource.find(function (candidate) {
+        return candidate && candidate.type === "tafel";
+      }) || deskLayoutItemsSource.find(function (candidate) {
+        return candidate && candidate.type === "pult";
+      });
+      const deskCenter = getDeskItemCenter(item, offsetX, offsetY);
+
+      if (targetItem) {
+        return getDeskItemCenter(targetItem, offsetX, offsetY);
+      }
+
+      return {
+        x: deskCenter.x,
+        y: Number(canvasHeight) || 0
       };
     }
 
@@ -155,30 +215,31 @@ window.Unterrichtsassistent.ui.views.unterricht = {
     }
 
     function getDoubleDeskSlotLayout(item, offsetX, offsetY, canvasWidth, canvasHeight) {
-      const x = (Number(item && item.x) || 0) - (Number(offsetX) || 0);
-      const y = (Number(item && item.y) || 0) - (Number(offsetY) || 0);
       const metrics = getDeskItemMetrics(item);
-      const centerX = x + (metrics.width / 2);
-      const centerY = y + (metrics.height / 2);
-      const referenceTargets = deskLayoutItemsSource.filter(function (candidate) {
-        return candidate && (candidate.type === "tafel" || candidate.type === "pult");
-      });
-      const referenceItem = referenceTargets.length ? referenceTargets[0] : null;
-      const targetCenter = referenceItem
-        ? {
-            x: (Number(referenceItem.x) || 0) - (Number(offsetX) || 0) + ((Number(referenceItem.width) || (referenceItem.type === "tafel" ? 320 : 156)) / 2),
-            y: (Number(referenceItem.y) || 0) - (Number(offsetY) || 0) + ((Number(referenceItem.height) || (referenceItem.type === "tafel" ? 28 : 88)) / 2)
-          }
-        : { x: centerX, y: canvasHeight };
-      const dx = targetCenter.x - centerX;
-      const dy = targetCenter.y - centerY;
+      const deskCenter = getDeskItemCenter(item, offsetX, offsetY);
+      const targetPoint = getSeatOrderReferenceTarget(item, offsetX, offsetY, canvasWidth, canvasHeight);
+      let facingX = (Number(targetPoint.x) || 0) - deskCenter.x;
+      let facingY = (Number(targetPoint.y) || 0) - deskCenter.y;
       const longAxis = metrics.width >= metrics.height ? "horizontal" : "vertical";
+      const leftVectorFallback = longAxis === "horizontal"
+        ? { x: -1, y: 0 }
+        : { x: 0, y: -1 };
+      let leftVector;
       let orderedSlots;
 
+      if (!facingX && !facingY) {
+        facingY = 1;
+      }
+
+      leftVector = {
+        x: facingY || leftVectorFallback.x,
+        y: -facingX || leftVectorFallback.y
+      };
+
       if (longAxis === "horizontal") {
-        orderedSlots = dy >= 0 ? ["left", "right"] : ["right", "left"];
+        orderedSlots = leftVector.x <= 0 ? ["left", "right"] : ["right", "left"];
       } else {
-        orderedSlots = dx >= 0 ? ["left", "right"] : ["right", "left"];
+        orderedSlots = leftVector.y <= 0 ? ["left", "right"] : ["right", "left"];
       }
 
       return {
@@ -296,6 +357,25 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         '<article class="panel unterricht-layout__seatplan unterricht-layout__seatplan--full">',
         renderLiveNotice(),
         renderCompactSeatPlan(),
+        '<div class="import-modal" id="unterrichtWarningOtherModal" hidden>',
+        '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeUnterrichtWarningOtherModal()"></div>',
+        '<div class="import-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="unterrichtWarningOtherTitle">',
+        '<div class="import-modal__header">',
+        '<h3 id="unterrichtWarningOtherTitle">Andere Verwarnung</h3>',
+        '<button class="import-modal__close" type="button" aria-label="Pop-up schliessen" onclick="return window.UnterrichtsassistentApp.closeUnterrichtWarningOtherModal()">x</button>',
+        '</div>',
+        '<form class="import-modal__form" onsubmit="return window.UnterrichtsassistentApp.submitUnterrichtWarningOtherModal(event)">',
+        '<label class="import-modal__field">',
+        '<span>Kurztext</span>',
+        '<input id="unterrichtWarningOtherInput" type="text" maxlength="120" placeholder="Kurzer Hinweis">',
+        '</label>',
+        '<div class="import-modal__actions">',
+        '<button class="circle-action circle-action--danger" type="button" onclick="return window.UnterrichtsassistentApp.closeUnterrichtWarningOtherModal()">Abbrechen</button>',
+        '<button class="circle-action" type="submit">OK</button>',
+        '</div>',
+        '</form>',
+        '</div>',
+        '</div>',
         '</article>',
         '</div>'
       ].join("");

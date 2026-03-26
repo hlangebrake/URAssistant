@@ -58,7 +58,28 @@ let deskLayoutDragFrameId = 0;
 let activeSeatAssignmentDrag = null;
 let lastSeatAssignmentNativeDrop = null;
 let lastSeatLockPointerToggleAt = 0;
+let activeUnterrichtHomeworkPress = null;
+let unterrichtHomeworkRadialMenu = null;
+let activeUnterrichtWarningPress = null;
+let unterrichtWarningRadialMenu = null;
+let activeUnterrichtWarningOtherDraft = null;
 const AUTOSAVE_DELAY_MS = 30000;
+const HOMEWORK_LONG_PRESS_DELAY_MS = 380;
+const HOMEWORK_RADIAL_OPTIONS = [
+  { quality: "fehlt", label: "fehlt", side: "left", row: "top" },
+  { quality: "unvollstaendig", label: "unvollstaendig", side: "left", row: "middle" },
+  { quality: "abgeschrieben", label: "abgeschrieben", side: "left", row: "bottom" },
+  { quality: "besondersgut", label: "besonders gut", side: "right", row: "top" },
+  { quality: "vorhanden", label: "vorhanden", side: "right", row: "middle" }
+];
+const WARNING_LONG_PRESS_DELAY_MS = 380;
+const WARNING_RADIAL_OPTIONS = [
+  { category: "letzteentfernen", label: "letzte entfernen", side: "left", row: "top" },
+  { category: "andere", label: "andere", side: "left", row: "bottom" },
+  { category: "stoerung", label: "Stoerung", side: "top", row: "center" },
+  { category: "arbeitsorganisation", label: "Arbeitsorganisation", side: "right", row: "middle" },
+  { category: "material", label: "Material", side: "bottom", row: "center" }
+];
 let pendingPersistTimerId = 0;
 let pendingPersistSnapshot = null;
 let persistenceHasStoredState = false;
@@ -1049,6 +1070,10 @@ function createHomeworkRecordId() {
   return "homework-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
 }
 
+function createWarningRecordId() {
+  return "warning-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+}
+
 function timeStringToMinutes(timeValue) {
   const parts = String(timeValue || "").split(":");
   const hours = Number(parts[0]);
@@ -1068,6 +1093,26 @@ function getReferenceDateTimeValue() {
   const minutes = String(referenceDate.getMinutes()).padStart(2, "0");
 
   return dateValue + "T" + hours + ":" + minutes;
+}
+
+function normalizeHomeworkQualityValue(qualityValue) {
+  const normalized = String(qualityValue || "").trim();
+
+  if (["fehlt", "unvollstaendig", "abgeschrieben", "vorhanden", "besondersgut"].indexOf(normalized) >= 0) {
+    return normalized;
+  }
+
+  return "fehlt";
+}
+
+function normalizeWarningCategoryValue(categoryValue) {
+  const normalized = String(categoryValue || "").trim();
+
+  if (["stoerung", "arbeitsorganisation", "material", "letzteentfernen", "andere"].indexOf(normalized) >= 0) {
+    return normalized;
+  }
+
+  return "stoerung";
 }
 
 function getDeskSeatSlots(deskType) {
@@ -1147,6 +1192,7 @@ function ensureHomeworkRecords(rawSnapshot) {
     nextRecord.lessonDate = normalizeDateValue(nextRecord.lessonDate);
     nextRecord.room = String(nextRecord.room || "").trim();
     nextRecord.recordedAt = String(nextRecord.recordedAt || "").trim();
+    nextRecord.quality = normalizeHomeworkQualityValue(nextRecord.quality);
 
     return nextRecord;
   }).filter(function (record) {
@@ -1154,6 +1200,32 @@ function ensureHomeworkRecords(rawSnapshot) {
   });
 
   return rawSnapshot.homeworkRecords;
+}
+
+function ensureWarningRecords(rawSnapshot) {
+  rawSnapshot.warningRecords = Array.isArray(rawSnapshot.warningRecords) ? rawSnapshot.warningRecords : [];
+  rawSnapshot.warningRecords = rawSnapshot.warningRecords.map(function (record, index) {
+    const nextRecord = record || {};
+
+    if (!nextRecord.id) {
+      nextRecord.id = createWarningRecordId() + "-" + String(index);
+    }
+
+    nextRecord.studentId = String(nextRecord.studentId || "").trim();
+    nextRecord.classId = String(nextRecord.classId || "").trim();
+    nextRecord.lessonId = String(nextRecord.lessonId || "").trim();
+    nextRecord.lessonDate = normalizeDateValue(nextRecord.lessonDate);
+    nextRecord.room = String(nextRecord.room || "").trim();
+    nextRecord.recordedAt = String(nextRecord.recordedAt || "").trim();
+    nextRecord.category = normalizeWarningCategoryValue(nextRecord.category);
+    nextRecord.note = String(nextRecord.note || "").trim();
+
+    return nextRecord;
+  }).filter(function (record) {
+    return Boolean(record.studentId) && Boolean(record.classId) && Boolean(record.lessonId) && Boolean(record.lessonDate);
+  });
+
+  return rawSnapshot.warningRecords;
 }
 
 function getRelevantUnterrichtLesson(activeClass, referenceDate) {
@@ -1234,6 +1306,199 @@ function getHomeworkRecordsForLessonOccurrenceFromSnapshot(rawSnapshot, studentI
   }).sort(function (left, right) {
     return String(left.recordedAt || "").localeCompare(String(right.recordedAt || ""));
   });
+}
+
+function getWarningRecordsForLessonOccurrenceFromSnapshot(rawSnapshot, studentId, classId, lessonId, lessonDate) {
+  return ensureWarningRecords(rawSnapshot).filter(function (record) {
+    return (!studentId || record.studentId === studentId)
+      && record.classId === classId
+      && record.lessonId === lessonId
+      && normalizeDateValue(record.lessonDate) === normalizeDateValue(lessonDate);
+  }).sort(function (left, right) {
+    return String(left.recordedAt || "").localeCompare(String(right.recordedAt || ""));
+  });
+}
+
+function ensureUnterrichtHomeworkRadialMenu() {
+  if (unterrichtHomeworkRadialMenu && document.body.contains(unterrichtHomeworkRadialMenu)) {
+    return unterrichtHomeworkRadialMenu;
+  }
+
+  unterrichtHomeworkRadialMenu = document.createElement("div");
+  unterrichtHomeworkRadialMenu.className = "unterricht-homework-radial-menu";
+  unterrichtHomeworkRadialMenu.setAttribute("aria-hidden", "true");
+  unterrichtHomeworkRadialMenu.innerHTML = HOMEWORK_RADIAL_OPTIONS.map(function (option) {
+    return '<div class="unterricht-homework-radial-menu__item unterricht-homework-radial-menu__item--' + option.side + ' unterricht-homework-radial-menu__item--' + option.row + '" data-quality="' + option.quality + '">' + escapeHtml(option.label) + "</div>";
+  }).join("");
+  document.body.appendChild(unterrichtHomeworkRadialMenu);
+  return unterrichtHomeworkRadialMenu;
+}
+
+function hideUnterrichtHomeworkRadialMenu() {
+  const menu = ensureUnterrichtHomeworkRadialMenu();
+
+  menu.classList.remove("is-visible");
+  menu.setAttribute("aria-hidden", "true");
+  menu.querySelectorAll("[data-quality]").forEach(function (item) {
+    item.classList.remove("is-active");
+  });
+}
+
+function setUnterrichtHomeworkRadialSelection(qualityValue) {
+  const menu = ensureUnterrichtHomeworkRadialMenu();
+  const normalized = qualityValue ? normalizeHomeworkQualityValue(qualityValue) : "";
+
+  menu.querySelectorAll("[data-quality]").forEach(function (item) {
+    item.classList.toggle("is-active", item.getAttribute("data-quality") === normalized);
+  });
+}
+
+function showUnterrichtHomeworkRadialMenu(clientX, clientY) {
+  const menu = ensureUnterrichtHomeworkRadialMenu();
+
+  menu.style.left = String(clientX) + "px";
+  menu.style.top = String(clientY) + "px";
+  menu.classList.add("is-visible");
+  menu.setAttribute("aria-hidden", "false");
+}
+
+function getUnterrichtHomeworkRadialQuality(clientX, clientY, anchorX, anchorY) {
+  const dx = clientX - anchorX;
+  const dy = clientY - anchorY;
+
+  if (dx <= -24) {
+    if (dy <= -26) {
+      return "fehlt";
+    }
+
+    if (dy >= 26) {
+      return "abgeschrieben";
+    }
+
+    return "unvollstaendig";
+  }
+
+  if (dx >= 24) {
+    return dy <= -18 ? "besondersgut" : "vorhanden";
+  }
+
+  return "";
+}
+
+function clearUnterrichtHomeworkPressListeners() {
+  window.removeEventListener("pointermove", window.UnterrichtsassistentApp.handleUnterrichtHomeworkPointerMove);
+  window.removeEventListener("pointerup", window.UnterrichtsassistentApp.handleUnterrichtHomeworkPointerEnd);
+  window.removeEventListener("pointercancel", window.UnterrichtsassistentApp.handleUnterrichtHomeworkPointerEnd);
+}
+
+function openUnterrichtHomeworkRadialMenuImmediately() {
+  if (!activeUnterrichtHomeworkPress || activeUnterrichtHomeworkPress.menuVisible) {
+    return;
+  }
+
+  if (activeUnterrichtHomeworkPress.timerId) {
+    window.clearTimeout(activeUnterrichtHomeworkPress.timerId);
+    activeUnterrichtHomeworkPress.timerId = 0;
+  }
+
+  activeUnterrichtHomeworkPress.menuVisible = true;
+  showUnterrichtHomeworkRadialMenu(activeUnterrichtHomeworkPress.clientX, activeUnterrichtHomeworkPress.clientY);
+  setUnterrichtHomeworkRadialSelection("");
+}
+
+function ensureUnterrichtWarningRadialMenu() {
+  if (unterrichtWarningRadialMenu && document.body.contains(unterrichtWarningRadialMenu)) {
+    return unterrichtWarningRadialMenu;
+  }
+
+  unterrichtWarningRadialMenu = document.createElement("div");
+  unterrichtWarningRadialMenu.className = "unterricht-warning-radial-menu";
+  unterrichtWarningRadialMenu.setAttribute("aria-hidden", "true");
+  unterrichtWarningRadialMenu.innerHTML = WARNING_RADIAL_OPTIONS.map(function (option) {
+    return '<div class="unterricht-warning-radial-menu__item unterricht-warning-radial-menu__item--' + option.side + ' unterricht-warning-radial-menu__item--' + option.row + '" data-category="' + option.category + '">' + escapeHtml(option.label) + "</div>";
+  }).join("");
+  document.body.appendChild(unterrichtWarningRadialMenu);
+  return unterrichtWarningRadialMenu;
+}
+
+function hideUnterrichtWarningRadialMenu() {
+  const menu = ensureUnterrichtWarningRadialMenu();
+
+  menu.classList.remove("is-visible");
+  menu.setAttribute("aria-hidden", "true");
+  menu.querySelectorAll("[data-category]").forEach(function (item) {
+    item.classList.remove("is-active");
+  });
+}
+
+function setUnterrichtWarningRadialSelection(categoryValue) {
+  const menu = ensureUnterrichtWarningRadialMenu();
+  const normalized = categoryValue ? normalizeWarningCategoryValue(categoryValue) : "";
+
+  menu.querySelectorAll("[data-category]").forEach(function (item) {
+    item.classList.toggle("is-active", item.getAttribute("data-category") === normalized);
+  });
+}
+
+function showUnterrichtWarningRadialMenu(clientX, clientY) {
+  const menu = ensureUnterrichtWarningRadialMenu();
+
+  menu.style.left = String(clientX) + "px";
+  menu.style.top = String(clientY) + "px";
+  menu.classList.add("is-visible");
+  menu.setAttribute("aria-hidden", "false");
+}
+
+function getUnterrichtWarningRadialCategory(clientX, clientY, anchorX, anchorY) {
+  const dx = clientX - anchorX;
+  const dy = clientY - anchorY;
+
+  if (dx <= -24 && dy <= -8) {
+    return "letzteentfernen";
+  }
+
+  if (dx <= -24 && dy >= 8) {
+    return "andere";
+  }
+
+  if (dx >= 24 && Math.abs(dy) <= 36) {
+    return "arbeitsorganisation";
+  }
+
+  if (dy <= -24 && Math.abs(dx) <= 42) {
+    return "stoerung";
+  }
+
+  if (dy >= 24 && Math.abs(dx) <= 42) {
+    return "material";
+  }
+
+  return "";
+}
+
+function clearUnterrichtWarningPressListeners() {
+  window.removeEventListener("pointermove", window.UnterrichtsassistentApp.handleUnterrichtWarningPointerMove);
+  window.removeEventListener("pointerup", window.UnterrichtsassistentApp.handleUnterrichtWarningPointerEnd);
+  window.removeEventListener("pointercancel", window.UnterrichtsassistentApp.handleUnterrichtWarningPointerEnd);
+}
+
+function openUnterrichtWarningRadialMenuImmediately() {
+  if (!activeUnterrichtWarningPress || activeUnterrichtWarningPress.menuVisible) {
+    return;
+  }
+
+  if (activeUnterrichtWarningPress.timerId) {
+    window.clearTimeout(activeUnterrichtWarningPress.timerId);
+    activeUnterrichtWarningPress.timerId = 0;
+  }
+
+  activeUnterrichtWarningPress.menuVisible = true;
+  showUnterrichtWarningRadialMenu(activeUnterrichtWarningPress.clientX, activeUnterrichtWarningPress.clientY);
+  setUnterrichtWarningRadialSelection("");
+}
+
+function getUnterrichtWarningOtherModal() {
+  return document.getElementById("unterrichtWarningOtherModal");
 }
 
 function getMinutesBetweenDateTimeValues(leftValue, rightValue) {
@@ -3468,7 +3733,7 @@ window.UnterrichtsassistentApp.setUnterrichtToolMode = function (nextMode) {
 
   return false;
 };
-window.UnterrichtsassistentApp.handleUnterrichtSeatClick = function (studentId, lessonId, lessonStartTime, lessonRoom) {
+window.UnterrichtsassistentApp.handleUnterrichtSeatClick = function (studentId, lessonId, lessonStartTime, lessonRoom, homeworkQuality, homeworkAction) {
   const activeClass = schoolService ? schoolService.getActiveClass() : null;
   const currentRawSnapshot = schoolService && serializeSnapshot ? serializeSnapshot(schoolService.snapshot) : null;
   const referenceDate = schoolService ? schoolService.getReferenceDate() : new Date();
@@ -3496,6 +3761,10 @@ window.UnterrichtsassistentApp.handleUnterrichtSeatClick = function (studentId, 
   let homeworkRecords;
   let existingHomeworkRecord;
   let nextHomeworkRecords;
+  let normalizedHomeworkQuality;
+  let warningRecords;
+  let warningCategory;
+  let existingWarningRecords;
 
   if (!schoolService || !activeClass || !currentRawSnapshot || !studentId) {
     return false;
@@ -3515,8 +3784,28 @@ window.UnterrichtsassistentApp.handleUnterrichtSeatClick = function (studentId, 
       lessonDate
     )[0] || null;
     nextHomeworkRecords = homeworkRecords.slice();
+    normalizedHomeworkQuality = normalizeHomeworkQualityValue(homeworkQuality);
 
-    if (existingHomeworkRecord) {
+    if (homeworkAction === "set") {
+      nextHomeworkRecords = nextHomeworkRecords.filter(function (record) {
+        return !(record.studentId === String(studentId)
+          && record.classId === activeClass.id
+          && record.lessonId === lesson.id
+          && normalizeDateValue(record.lessonDate) === normalizeDateValue(lessonDate));
+      });
+      if (normalizedHomeworkQuality !== "vorhanden") {
+        nextHomeworkRecords.push({
+          id: existingHomeworkRecord ? existingHomeworkRecord.id : createHomeworkRecordId(),
+          studentId: String(studentId),
+          classId: activeClass.id,
+          lessonId: lesson.id,
+          lessonDate: lessonDate,
+          room: String(lesson.room || "").trim(),
+          recordedAt: recordedAt,
+          quality: normalizedHomeworkQuality
+        });
+      }
+    } else if (existingHomeworkRecord) {
       nextHomeworkRecords = nextHomeworkRecords.filter(function (record) {
         return record.id !== existingHomeworkRecord.id;
       });
@@ -3528,11 +3817,60 @@ window.UnterrichtsassistentApp.handleUnterrichtSeatClick = function (studentId, 
         lessonId: lesson.id,
         lessonDate: lessonDate,
         room: String(lesson.room || "").trim(),
-        recordedAt: recordedAt
+        recordedAt: recordedAt,
+        quality: "fehlt"
       });
     }
 
     currentRawSnapshot.homeworkRecords = nextHomeworkRecords;
+    saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
+    return false;
+  }
+
+  if (unterrichtToolMode === "warning") {
+    warningRecords = ensureWarningRecords(currentRawSnapshot).slice();
+    warningCategory = normalizeWarningCategoryValue(homeworkQuality);
+    existingWarningRecords = getWarningRecordsForLessonOccurrenceFromSnapshot(
+      currentRawSnapshot,
+      String(studentId),
+      activeClass.id,
+      lesson.id,
+      lessonDate
+    );
+
+    if (warningCategory === "letzteentfernen") {
+      if (existingWarningRecords.length) {
+        warningRecords = warningRecords.filter(function (record) {
+          return record.id !== existingWarningRecords[existingWarningRecords.length - 1].id;
+        });
+      }
+    } else if (warningCategory === "andere") {
+      warningRecords.push({
+        id: createWarningRecordId(),
+        studentId: String(studentId),
+        classId: activeClass.id,
+        lessonId: lesson.id,
+        lessonDate: lessonDate,
+        room: String(lesson.room || "").trim(),
+        recordedAt: recordedAt,
+        category: warningCategory,
+        note: String(homeworkAction || "").trim()
+      });
+    } else {
+      warningRecords.push({
+        id: createWarningRecordId(),
+        studentId: String(studentId),
+        classId: activeClass.id,
+        lessonId: lesson.id,
+        lessonDate: lessonDate,
+        room: String(lesson.room || "").trim(),
+        recordedAt: recordedAt,
+        category: warningCategory,
+        note: ""
+      });
+    }
+
+    currentRawSnapshot.warningRecords = warningRecords;
     saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
     return false;
   }
@@ -3589,6 +3927,307 @@ window.UnterrichtsassistentApp.handleUnterrichtSeatClick = function (studentId, 
   }
 
   saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
+  return false;
+};
+window.UnterrichtsassistentApp.startUnterrichtHomeworkPointer = function (event, studentId, lessonId, lessonStartTime, lessonRoom) {
+  if (unterrichtToolMode !== "homework" || !studentId || !lessonId) {
+    return false;
+  }
+
+  if (activeUnterrichtHomeworkPress && activeUnterrichtHomeworkPress.timerId) {
+    window.clearTimeout(activeUnterrichtHomeworkPress.timerId);
+  }
+
+  clearUnterrichtHomeworkPressListeners();
+  hideUnterrichtHomeworkRadialMenu();
+
+  activeUnterrichtHomeworkPress = {
+    pointerId: event.pointerId,
+    studentId: String(studentId),
+    lessonId: String(lessonId),
+    lessonStartTime: String(lessonStartTime || ""),
+    lessonRoom: String(lessonRoom || ""),
+    anchorX: Number(event.clientX) || 0,
+    anchorY: Number(event.clientY) || 0,
+    clientX: Number(event.clientX) || 0,
+    clientY: Number(event.clientY) || 0,
+    selectedQuality: "",
+    menuVisible: false,
+    timerId: window.setTimeout(function () {
+      if (!activeUnterrichtHomeworkPress) {
+        return;
+      }
+
+      activeUnterrichtHomeworkPress.menuVisible = true;
+      showUnterrichtHomeworkRadialMenu(activeUnterrichtHomeworkPress.clientX, activeUnterrichtHomeworkPress.clientY);
+      setUnterrichtHomeworkRadialSelection("");
+    }, HOMEWORK_LONG_PRESS_DELAY_MS)
+  };
+
+  if (event.target && typeof event.target.setPointerCapture === "function") {
+    try {
+      event.target.setPointerCapture(event.pointerId);
+    } catch (error) {
+      void error;
+    }
+  }
+
+  window.addEventListener("pointermove", window.UnterrichtsassistentApp.handleUnterrichtHomeworkPointerMove);
+  window.addEventListener("pointerup", window.UnterrichtsassistentApp.handleUnterrichtHomeworkPointerEnd);
+  window.addEventListener("pointercancel", window.UnterrichtsassistentApp.handleUnterrichtHomeworkPointerEnd);
+  event.preventDefault();
+  return false;
+};
+window.UnterrichtsassistentApp.startUnterrichtWarningPointer = function (event, studentId, lessonId, lessonStartTime, lessonRoom) {
+  if (unterrichtToolMode !== "warning" || !studentId || !lessonId) {
+    return false;
+  }
+
+  if (activeUnterrichtWarningPress && activeUnterrichtWarningPress.timerId) {
+    window.clearTimeout(activeUnterrichtWarningPress.timerId);
+  }
+
+  clearUnterrichtWarningPressListeners();
+  hideUnterrichtWarningRadialMenu();
+
+  activeUnterrichtWarningPress = {
+    pointerId: event.pointerId,
+    studentId: String(studentId),
+    lessonId: String(lessonId),
+    lessonStartTime: String(lessonStartTime || ""),
+    lessonRoom: String(lessonRoom || ""),
+    anchorX: Number(event.clientX) || 0,
+    anchorY: Number(event.clientY) || 0,
+    clientX: Number(event.clientX) || 0,
+    clientY: Number(event.clientY) || 0,
+    selectedCategory: "",
+    menuVisible: false,
+    timerId: window.setTimeout(function () {
+      if (!activeUnterrichtWarningPress) {
+        return;
+      }
+
+      activeUnterrichtWarningPress.menuVisible = true;
+      showUnterrichtWarningRadialMenu(activeUnterrichtWarningPress.clientX, activeUnterrichtWarningPress.clientY);
+      setUnterrichtWarningRadialSelection("");
+    }, WARNING_LONG_PRESS_DELAY_MS)
+  };
+
+  if (event.target && typeof event.target.setPointerCapture === "function") {
+    try {
+      event.target.setPointerCapture(event.pointerId);
+    } catch (error) {
+      void error;
+    }
+  }
+
+  window.addEventListener("pointermove", window.UnterrichtsassistentApp.handleUnterrichtWarningPointerMove);
+  window.addEventListener("pointerup", window.UnterrichtsassistentApp.handleUnterrichtWarningPointerEnd);
+  window.addEventListener("pointercancel", window.UnterrichtsassistentApp.handleUnterrichtWarningPointerEnd);
+  event.preventDefault();
+  return false;
+};
+window.UnterrichtsassistentApp.handleUnterrichtWarningPointerMove = function (event) {
+  if (!activeUnterrichtWarningPress || event.pointerId !== activeUnterrichtWarningPress.pointerId) {
+    return false;
+  }
+
+  activeUnterrichtWarningPress.clientX = Number(event.clientX) || 0;
+  activeUnterrichtWarningPress.clientY = Number(event.clientY) || 0;
+
+  if (!activeUnterrichtWarningPress.menuVisible) {
+    if (Math.abs(activeUnterrichtWarningPress.clientX - activeUnterrichtWarningPress.anchorX) >= 8
+      || Math.abs(activeUnterrichtWarningPress.clientY - activeUnterrichtWarningPress.anchorY) >= 8) {
+      openUnterrichtWarningRadialMenuImmediately();
+    }
+  }
+
+  if (activeUnterrichtWarningPress.menuVisible) {
+    activeUnterrichtWarningPress.selectedCategory = getUnterrichtWarningRadialCategory(
+      activeUnterrichtWarningPress.clientX,
+      activeUnterrichtWarningPress.clientY,
+      activeUnterrichtWarningPress.anchorX,
+      activeUnterrichtWarningPress.anchorY
+    );
+    setUnterrichtWarningRadialSelection(activeUnterrichtWarningPress.selectedCategory);
+  }
+
+  event.preventDefault();
+  return false;
+};
+window.UnterrichtsassistentApp.handleUnterrichtWarningPointerEnd = function (event) {
+  const pressState = activeUnterrichtWarningPress;
+
+  if (!pressState || event.pointerId !== pressState.pointerId) {
+    return false;
+  }
+
+  if (pressState.timerId) {
+    window.clearTimeout(pressState.timerId);
+  }
+
+  clearUnterrichtWarningPressListeners();
+  activeUnterrichtWarningPress = null;
+
+  if (pressState.menuVisible) {
+    hideUnterrichtWarningRadialMenu();
+    if (pressState.selectedCategory) {
+      if (pressState.selectedCategory === "andere") {
+        activeUnterrichtWarningOtherDraft = {
+          studentId: pressState.studentId,
+          lessonId: pressState.lessonId,
+          lessonStartTime: pressState.lessonStartTime,
+          lessonRoom: pressState.lessonRoom
+        };
+        window.UnterrichtsassistentApp.openUnterrichtWarningOtherModal();
+        event.preventDefault();
+        return false;
+      }
+
+      window.UnterrichtsassistentApp.handleUnterrichtSeatClick(
+        pressState.studentId,
+        pressState.lessonId,
+        pressState.lessonStartTime,
+        pressState.lessonRoom,
+        pressState.selectedCategory
+      );
+    }
+    event.preventDefault();
+    return false;
+  }
+
+  hideUnterrichtWarningRadialMenu();
+  window.UnterrichtsassistentApp.handleUnterrichtSeatClick(
+    pressState.studentId,
+    pressState.lessonId,
+    pressState.lessonStartTime,
+    pressState.lessonRoom,
+    "stoerung"
+  );
+  event.preventDefault();
+  return false;
+};
+window.UnterrichtsassistentApp.openUnterrichtWarningOtherModal = function () {
+  const modal = getUnterrichtWarningOtherModal();
+  const input = document.getElementById("unterrichtWarningOtherInput");
+
+  if (!modal || !activeUnterrichtWarningOtherDraft) {
+    return false;
+  }
+
+  modal.hidden = false;
+  modal.classList.add("is-open");
+
+  if (input) {
+    input.value = "";
+    window.setTimeout(function () {
+      input.focus();
+    }, 0);
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.closeUnterrichtWarningOtherModal = function () {
+  const modal = getUnterrichtWarningOtherModal();
+
+  if (modal) {
+    modal.hidden = true;
+    modal.classList.remove("is-open");
+  }
+
+  activeUnterrichtWarningOtherDraft = null;
+  return false;
+};
+window.UnterrichtsassistentApp.submitUnterrichtWarningOtherModal = function (event) {
+  const input = document.getElementById("unterrichtWarningOtherInput");
+  const noteValue = String(input && input.value || "").trim();
+  const draft = activeUnterrichtWarningOtherDraft;
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  if (!draft || !noteValue) {
+    return window.UnterrichtsassistentApp.closeUnterrichtWarningOtherModal();
+  }
+
+  window.UnterrichtsassistentApp.handleUnterrichtSeatClick(
+    draft.studentId,
+    draft.lessonId,
+    draft.lessonStartTime,
+    draft.lessonRoom,
+    "andere",
+    noteValue
+  );
+
+  return window.UnterrichtsassistentApp.closeUnterrichtWarningOtherModal();
+};
+window.UnterrichtsassistentApp.handleUnterrichtHomeworkPointerMove = function (event) {
+  if (!activeUnterrichtHomeworkPress || event.pointerId !== activeUnterrichtHomeworkPress.pointerId) {
+    return false;
+  }
+
+  activeUnterrichtHomeworkPress.clientX = Number(event.clientX) || 0;
+  activeUnterrichtHomeworkPress.clientY = Number(event.clientY) || 0;
+
+  if (!activeUnterrichtHomeworkPress.menuVisible) {
+    if (Math.abs(activeUnterrichtHomeworkPress.clientX - activeUnterrichtHomeworkPress.anchorX) >= 8
+      || Math.abs(activeUnterrichtHomeworkPress.clientY - activeUnterrichtHomeworkPress.anchorY) >= 8) {
+      openUnterrichtHomeworkRadialMenuImmediately();
+    }
+  }
+
+  if (activeUnterrichtHomeworkPress.menuVisible) {
+    activeUnterrichtHomeworkPress.selectedQuality = getUnterrichtHomeworkRadialQuality(
+      activeUnterrichtHomeworkPress.clientX,
+      activeUnterrichtHomeworkPress.clientY,
+      activeUnterrichtHomeworkPress.anchorX,
+      activeUnterrichtHomeworkPress.anchorY
+    );
+    setUnterrichtHomeworkRadialSelection(activeUnterrichtHomeworkPress.selectedQuality);
+  }
+
+  event.preventDefault();
+  return false;
+};
+window.UnterrichtsassistentApp.handleUnterrichtHomeworkPointerEnd = function (event) {
+  const pressState = activeUnterrichtHomeworkPress;
+
+  if (!pressState || event.pointerId !== pressState.pointerId) {
+    return false;
+  }
+
+  if (pressState.timerId) {
+    window.clearTimeout(pressState.timerId);
+  }
+
+  clearUnterrichtHomeworkPressListeners();
+  activeUnterrichtHomeworkPress = null;
+
+  if (pressState.menuVisible) {
+    hideUnterrichtHomeworkRadialMenu();
+    if (pressState.selectedQuality) {
+      window.UnterrichtsassistentApp.handleUnterrichtSeatClick(
+        pressState.studentId,
+        pressState.lessonId,
+        pressState.lessonStartTime,
+        pressState.lessonRoom,
+        pressState.selectedQuality,
+        "set"
+      );
+    }
+    event.preventDefault();
+    return false;
+  }
+
+  hideUnterrichtHomeworkRadialMenu();
+  window.UnterrichtsassistentApp.handleUnterrichtSeatClick(
+    pressState.studentId,
+    pressState.lessonId,
+    pressState.lessonStartTime,
+    pressState.lessonRoom
+  );
+  event.preventDefault();
   return false;
 };
 window.UnterrichtsassistentApp.getClassViewMode = function () {
@@ -4890,6 +5529,9 @@ window.UnterrichtsassistentApp.deleteStudent = function (studentId) {
   currentRawSnapshot.homeworkRecords = ensureHomeworkRecords(currentRawSnapshot).filter(function (record) {
     return record.studentId !== studentId;
   });
+  currentRawSnapshot.warningRecords = ensureWarningRecords(currentRawSnapshot).filter(function (record) {
+    return record.studentId !== studentId;
+  });
   currentRawSnapshot.seatPlans = currentRawSnapshot.seatPlans.map(function (seatPlan) {
     seatPlan.seats = (seatPlan.seats || []).filter(function (seat) {
       return seat.studentId !== studentId;
@@ -5104,6 +5746,9 @@ window.UnterrichtsassistentApp.deleteActiveClass = function () {
     return record.classId !== activeClass.id && !studentIdsToDelete[record.studentId];
   });
   currentRawSnapshot.homeworkRecords = ensureHomeworkRecords(currentRawSnapshot).filter(function (record) {
+    return record.classId !== activeClass.id && !studentIdsToDelete[record.studentId];
+  });
+  currentRawSnapshot.warningRecords = ensureWarningRecords(currentRawSnapshot).filter(function (record) {
     return record.classId !== activeClass.id && !studentIdsToDelete[record.studentId];
   });
   currentRawSnapshot.todos = currentRawSnapshot.todos.filter(function (todo) {

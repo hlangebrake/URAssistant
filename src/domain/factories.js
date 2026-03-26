@@ -12,7 +12,8 @@ function createDomainSnapshot(rawData) {
     SeatPlan,
     Student,
     Timetable,
-    TodoItem
+    TodoItem,
+    WarningRecord
   } = window.Unterrichtsassistent.domain;
 
   function normalizeTimetables(rawSnapshot) {
@@ -46,6 +47,7 @@ function createDomainSnapshot(rawData) {
     assessments: rawData.assessments.map((item) => new Assessment(item)),
     attendanceRecords: (Array.isArray(rawData.attendanceRecords) ? rawData.attendanceRecords : []).map((item) => new AttendanceRecord(item)),
     homeworkRecords: (Array.isArray(rawData.homeworkRecords) ? rawData.homeworkRecords : []).map((item) => new HomeworkRecord(item)),
+    warningRecords: (Array.isArray(rawData.warningRecords) ? rawData.warningRecords : []).map((item) => new WarningRecord(item)),
     todos: rawData.todos.map((item) => new TodoItem(item)),
     seatPlans: rawData.seatPlans.map((item) => new SeatPlan(item)),
     seatOrders: (Array.isArray(rawData.seatOrders) ? rawData.seatOrders : rawData.seatPlans.map(function (item) {
@@ -122,7 +124,8 @@ function serializeDomainSnapshot(snapshot) {
     lessons: cloneItems(snapshot.lessons, ["id", "classId", "subject", "room", "weekday", "startTime", "endTime", "topic"]),
     assessments: cloneItems(snapshot.assessments, ["id", "studentId", "classId", "type", "score", "maxScore", "date"]),
     attendanceRecords: cloneItems(snapshot.attendanceRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "status", "recordedAt", "effectiveAt"]),
-    homeworkRecords: cloneItems(snapshot.homeworkRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt"]),
+    homeworkRecords: cloneItems(snapshot.homeworkRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "quality"]),
+    warningRecords: cloneItems(snapshot.warningRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "category", "note"]),
     todos: cloneItems(snapshot.todos, ["id", "title", "dueDate", "relatedClassId", "done"]),
     seatPlans: cloneItems(snapshot.seatPlans, ["id", "classId", "room", "validFrom", "validTo", "updatedAt", "seats", "deskLayoutItems", "deskLayoutLinks", "roomWindowSide", "roomWidth", "roomHeight"]),
     seatOrders: cloneItems(snapshot.seatOrders || [], ["id", "classId", "room", "validFrom", "validTo", "updatedAt", "seats"])

@@ -122,6 +122,9 @@ function normalizeAttendanceRecord(attendanceRecord) {
 
 function normalizeHomeworkRecord(homeworkRecord) {
   const source = homeworkRecord || {};
+  const quality = ["fehlt", "unvollstaendig", "abgeschrieben", "vorhanden", "besondersgut"].indexOf(String(source.quality || "").trim()) >= 0
+    ? String(source.quality || "").trim()
+    : "fehlt";
 
   return {
     id: source.id || "",
@@ -130,7 +133,27 @@ function normalizeHomeworkRecord(homeworkRecord) {
     lessonId: source.lessonId || "",
     lessonDate: source.lessonDate || "",
     room: source.room || "",
-    recordedAt: source.recordedAt || ""
+    recordedAt: source.recordedAt || "",
+    quality: quality
+  };
+}
+
+function normalizeWarningRecord(warningRecord) {
+  const source = warningRecord || {};
+  const category = ["stoerung", "arbeitsorganisation", "material", "andere"].indexOf(String(source.category || "").trim()) >= 0
+    ? String(source.category || "").trim()
+    : "stoerung";
+
+  return {
+    id: source.id || "",
+    studentId: source.studentId || "",
+    classId: source.classId || "",
+    lessonId: source.lessonId || "",
+    lessonDate: source.lessonDate || "",
+    room: source.room || "",
+    recordedAt: source.recordedAt || "",
+    category: category,
+    note: String(source.note || "").trim()
   };
 }
 
@@ -327,10 +350,15 @@ class SchoolService {
 
   getRelevantRoomForClass(classId, date) {
     const effectiveDate = date || this.getReferenceDate();
+    const currentLessonUnit = this.getCurrentLessonForClass(classId, effectiveDate);
     const weekday = getCurrentWeekdayIndex(effectiveDate);
     const currentMinutes = (effectiveDate.getHours() * 60) + effectiveDate.getMinutes();
     const currentTimetable = this.getCurrentTimetable(effectiveDate);
     let fallbackRoom = "";
+
+    if (currentLessonUnit && currentLessonUnit.room) {
+      return currentLessonUnit.room;
+    }
 
     if (!currentTimetable) {
       return this.getRoomsForClass(classId)[0] || "";
@@ -361,6 +389,7 @@ class SchoolService {
 
   getLiveRoomForClass(classId, date) {
     const effectiveDate = date || this.getReferenceDate();
+    const currentLessonUnit = this.getCurrentLessonForClass(classId, effectiveDate);
     const weekday = getCurrentWeekdayIndex(effectiveDate);
     const currentMinutes = (effectiveDate.getHours() * 60) + effectiveDate.getMinutes();
     const matchingLessons = this.getScheduledLessons(effectiveDate)
@@ -382,6 +411,10 @@ class SchoolService {
 
         return timeToMinutes(right.startTime) - timeToMinutes(left.startTime);
       });
+
+    if (currentLessonUnit && currentLessonUnit.room) {
+      return currentLessonUnit.room;
+    }
 
     return matchingLessons[0] ? matchingLessons[0].room : this.getRelevantRoomForClass(classId, effectiveDate);
   }
@@ -628,17 +661,13 @@ class SchoolService {
 
   getCurrentLessonForClass(classId, date) {
     const effectiveDate = date || this.getReferenceDate();
-    const weekday = getCurrentWeekdayIndex(effectiveDate);
     const currentMinutes = (effectiveDate.getHours() * 60) + effectiveDate.getMinutes();
 
-    return this.getScheduledLessons(effectiveDate).find(function (lesson) {
-      const starts = timeToMinutes(lesson.startTime);
-      const ends = timeToMinutes(lesson.endTime);
+    return this.getLessonUnitsForClass(classId, effectiveDate).find(function (lessonUnit) {
+      const starts = timeToMinutes(lessonUnit.startTime);
+      const ends = timeToMinutes(lessonUnit.endTime);
 
-      return lesson.classId === classId
-        && lesson.weekday === weekday
-        && currentMinutes >= starts
-        && currentMinutes <= ends;
+      return currentMinutes >= starts && currentMinutes <= ends;
     }) || null;
   }
 
@@ -646,10 +675,7 @@ class SchoolService {
     const effectiveDate = date || this.getReferenceDate();
     const weekday = getCurrentWeekdayIndex(effectiveDate);
     const currentMinutes = (effectiveDate.getHours() * 60) + effectiveDate.getMinutes();
-    const classLessons = this.getScheduledLessons(effectiveDate)
-      .filter(function (lesson) {
-        return lesson.classId === classId;
-      });
+    const classLessons = this.getLessonUnitsForClass(classId, effectiveDate);
     const currentLesson = classLessons.find(function (lesson) {
       const starts = timeToMinutes(lesson.startTime);
       const ends = timeToMinutes(lesson.endTime);
@@ -700,12 +726,76 @@ class SchoolService {
     return startedLessons[0] || upcomingLessons[0] || pastLessons[0] || futureLessons[0] || null;
   }
 
+  getLessonUnitsForClass(classId, date) {
+    const effectiveDate = date || this.getReferenceDate();
+    const weekdayKey = String(getCurrentWeekdayIndex(effectiveDate));
+    const currentTimetable = this.getCurrentTimetable(effectiveDate);
+    const activeClass = this.getClassById(classId);
+    const unitsBySourceRowId = {};
+
+    if (!currentTimetable) {
+      return [];
+    }
+
+    this.getTimetableRows(currentTimetable).forEach(function (row) {
+      const cell = row.cells[weekdayKey] || normalizeDayEntry();
+      const effectiveClassId = row.type === "lesson"
+        ? (cell.isBlocked ? cell.inheritedClassId : cell.classId)
+        : (cell.isBlocked ? cell.inheritedClassId : "");
+      const effectiveRoom = row.type === "lesson"
+        ? (cell.isBlocked ? cell.inheritedRoom : cell.room)
+        : (cell.isBlocked ? cell.inheritedRoom : "");
+      const sourceRowId = cell.isBlocked ? (cell.sourceRowId || row.id) : (row.type === "lesson" ? row.id : "");
+      let lessonUnit;
+
+      if (effectiveClassId !== classId || !sourceRowId) {
+        return;
+      }
+
+      lessonUnit = unitsBySourceRowId[sourceRowId];
+
+      if (!lessonUnit) {
+        lessonUnit = {
+          id: "timetable-" + weekdayKey + "-" + sourceRowId,
+          sourceRowId: sourceRowId,
+          classId: classId,
+          subject: activeClass ? (activeClass.subject || "") : "",
+          room: effectiveRoom || (activeClass ? (activeClass.room || "") : ""),
+          weekday: Number(weekdayKey),
+          startTime: row.startTime,
+          endTime: row.endTime,
+          topic: ""
+        };
+        unitsBySourceRowId[sourceRowId] = lessonUnit;
+      } else {
+        lessonUnit.endTime = row.endTime;
+        if (!lessonUnit.room && effectiveRoom) {
+          lessonUnit.room = effectiveRoom;
+        }
+      }
+    });
+
+    return Object.keys(unitsBySourceRowId).map(function (sourceRowId) {
+      return unitsBySourceRowId[sourceRowId];
+    }).sort(function (left, right) {
+      if (left.weekday !== right.weekday) {
+        return left.weekday - right.weekday;
+      }
+
+      return timeToMinutes(left.startTime) - timeToMinutes(right.startTime);
+    });
+  }
+
   getAllAttendanceRecords() {
     return (this.snapshot.attendanceRecords || []).map(normalizeAttendanceRecord);
   }
 
   getAllHomeworkRecords() {
     return (this.snapshot.homeworkRecords || []).map(normalizeHomeworkRecord);
+  }
+
+  getAllWarningRecords() {
+    return (this.snapshot.warningRecords || []).map(normalizeWarningRecord);
   }
 
   getAttendanceRecordsForLessonOccurrence(classId, lessonId, lessonDate, studentId) {
@@ -774,17 +864,44 @@ class SchoolService {
     });
   }
 
+  getWarningRecordsForLessonOccurrence(classId, lessonId, lessonDate, studentId) {
+    return this.getAllWarningRecords().filter(function (record) {
+      const matchesClass = record.classId === classId;
+      const matchesLesson = record.lessonId === lessonId;
+      const matchesDate = normalizeDateValue(record.lessonDate) === normalizeDateValue(lessonDate);
+      const matchesStudent = !studentId || record.studentId === studentId;
+
+      return matchesClass && matchesLesson && matchesDate && matchesStudent;
+    }).sort(function (left, right) {
+      return String(left.recordedAt || "").localeCompare(String(right.recordedAt || ""));
+    });
+  }
+
   getHomeworkStateForStudent(studentId, classId, date) {
+    const effectiveDate = date || this.getReferenceDate();
+    const context = this.getAttendanceContextForClass(classId, effectiveDate);
+    const records = context
+      ? this.getHomeworkRecordsForLessonOccurrence(classId, context.id, context.lessonDate, studentId)
+      : [];
+
+    if (!context) {
+      return "vorhanden";
+    }
+
+    return records.length
+      ? String(records[records.length - 1].quality || "fehlt")
+      : "vorhanden";
+  }
+
+  getWarningCountForStudent(studentId, classId, date) {
     const effectiveDate = date || this.getReferenceDate();
     const context = this.getAttendanceContextForClass(classId, effectiveDate);
 
     if (!context) {
-      return "done";
+      return 0;
     }
 
-    return this.getHomeworkRecordsForLessonOccurrence(classId, context.id, context.lessonDate, studentId).length
-      ? "missing"
-      : "done";
+    return this.getWarningRecordsForLessonOccurrence(classId, context.id, context.lessonDate, studentId).length;
   }
 
   getNextLesson(date) {
