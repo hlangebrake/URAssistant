@@ -1014,6 +1014,94 @@ button {
   box-shadow: 0 10px 24px rgba(23, 49, 62, 0.14);
 }
 
+.assessment-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 3.35fr) minmax(112px, 0.5fr) minmax(240px, 1.15fr);
+  gap: 1.15rem;
+  align-items: start;
+}
+
+.assessment-column {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+  align-content: start;
+}
+
+.assessment-column:nth-child(2) {
+  justify-items: center;
+}
+
+.assessment-column:nth-child(3) .import-modal__field input {
+  width: 100%;
+}
+
+.assessment-column__title {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.98rem;
+  font-weight: 800;
+}
+
+.assessment-grid-chart {
+  width: 100%;
+  border: 1px solid rgba(23, 49, 62, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.74);
+  overflow: hidden;
+  touch-action: none;
+}
+
+.assessment-grid-chart__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 280px;
+}
+
+.assessment-grid-chart__hint {
+  margin-top: 0.45rem;
+  color: var(--text-soft);
+  font-size: 0.82rem;
+}
+
+.assessment-grade-buttons {
+  display: grid;
+  gap: 0.45rem;
+  justify-content: start;
+}
+
+.assessment-grade-buttons--vertical {
+  grid-template-columns: 1fr;
+  justify-items: start;
+}
+
+.assessment-grade-button {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  border: 1px solid rgba(23, 49, 62, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.86rem;
+  cursor: pointer;
+  transition: background-color 0.16s ease, color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.assessment-grade-button.is-active {
+  background: linear-gradient(180deg, rgba(37, 76, 93, 0.98), rgba(23, 49, 62, 0.98));
+  color: var(--text-on-dark);
+  border-color: rgba(23, 49, 62, 0.24);
+  box-shadow: 0 10px 24px rgba(23, 49, 62, 0.14);
+}
+
 .panel {
   min-height: 220px;
   padding: 1.4rem;
@@ -1238,7 +1326,8 @@ button {
 }
 
 .import-modal__dialog--assessment {
-  max-width: 640px;
+  width: min(980px, calc(100% - 2rem));
+  max-width: 980px;
 }
 
 .import-modal__meta {
@@ -1283,7 +1372,9 @@ button {
 .assessment-behavior-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.9rem;
+  gap: 0.8rem;
+  justify-items: center;
+  align-items: start;
 }
 
 .student-table-wrap {

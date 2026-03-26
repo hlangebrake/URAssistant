@@ -65,6 +65,7 @@ let activeUnterrichtWarningPress = null;
 let unterrichtWarningRadialMenu = null;
 let activeUnterrichtWarningOtherDraft = null;
 let activeUnterrichtAssessmentDraft = null;
+let activeUnterrichtAssessmentGridDrag = null;
 const AUTOSAVE_DELAY_MS = 30000;
 const HOMEWORK_LONG_PRESS_DELAY_MS = 380;
 const HOMEWORK_RADIAL_OPTIONS = [
@@ -1511,6 +1512,272 @@ function getUnterrichtAssessmentModal() {
   return document.getElementById("unterrichtAssessmentModal");
 }
 
+function getUnterrichtAssessmentGridSvg() {
+  return document.getElementById("unterrichtAssessmentGridSvg");
+}
+
+function getAssessmentGridConfig() {
+  return {
+    width: 360,
+    height: 260,
+    marginTop: 18,
+    marginRight: 24,
+    marginBottom: 44,
+    marginLeft: 42,
+    afbValues: [1, 2, 3],
+    qualityValues: [2, 1, 0, -1, -2]
+  };
+}
+
+function getAssessmentGridInnerSize(config) {
+  return {
+    innerWidth: config.width - config.marginLeft - config.marginRight,
+    innerHeight: config.height - config.marginTop - config.marginBottom
+  };
+}
+
+function afbQualityToValue(label) {
+  const normalizedLabel = String(label || "").trim();
+
+  if (!normalizedLabel) {
+    return null;
+  }
+  if (normalizedLabel === "2" || normalizedLabel === "++") {
+    return 2;
+  }
+  if (normalizedLabel === "1" || normalizedLabel === "+") {
+    return 1;
+  }
+  if (normalizedLabel === "0") {
+    return 0;
+  }
+  if (normalizedLabel === "-1" || normalizedLabel === "-") {
+    return -1;
+  }
+  if (normalizedLabel === "-2" || normalizedLabel === "--") {
+    return -2;
+  }
+  return null;
+}
+
+function formatAfbQualityLabel(value) {
+  if (value === 2) {
+    return "++";
+  }
+  if (value === 1) {
+    return "+";
+  }
+  if (value === 0) {
+    return "0";
+  }
+  if (value === -1) {
+    return "-";
+  }
+  if (value === -2) {
+    return "--";
+  }
+  return "";
+}
+
+function buildAssessmentSvgElement(tagName, attributes, textContent) {
+  const element = document.createElementNS("http://www.w3.org/2000/svg", tagName);
+
+  Object.keys(attributes || {}).forEach(function (key) {
+    element.setAttribute(key, attributes[key]);
+  });
+
+  if (textContent !== undefined && textContent !== null) {
+    element.textContent = String(textContent);
+  }
+
+  return element;
+}
+
+function getAssessmentGridX(afb, config) {
+  const inner = getAssessmentGridInnerSize(config);
+  const step = inner.innerWidth / (config.afbValues.length - 1);
+  return config.marginLeft + ((afb - 1) * step);
+}
+
+function getAssessmentGridY(qualityValue, config) {
+  const inner = getAssessmentGridInnerSize(config);
+  const qualityIndex = config.qualityValues.indexOf(qualityValue);
+  const step = inner.innerHeight / (config.qualityValues.length - 1);
+  return config.marginTop + (qualityIndex * step);
+}
+
+function renderUnterrichtAssessmentGrid() {
+  const svg = getUnterrichtAssessmentGridSvg();
+  const afb1Input = document.getElementById("unterrichtAssessmentAfb1");
+  const afb2Input = document.getElementById("unterrichtAssessmentAfb2");
+  const afb3Input = document.getElementById("unterrichtAssessmentAfb3");
+  const config = getAssessmentGridConfig();
+  const inner = getAssessmentGridInnerSize(config);
+  const afbValues = {
+    1: afbQualityToValue(String(afb1Input && afb1Input.value || "").trim()),
+    2: afbQualityToValue(String(afb2Input && afb2Input.value || "").trim()),
+    3: afbQualityToValue(String(afb3Input && afb3Input.value || "").trim())
+  };
+  let polylinePoints = [];
+
+  if (!svg) {
+    return;
+  }
+
+  svg.innerHTML = "";
+
+  svg.appendChild(buildAssessmentSvgElement("rect", {
+    x: config.marginLeft,
+    y: config.marginTop,
+    width: inner.innerWidth,
+    height: inner.innerHeight,
+    rx: 18,
+    fill: "rgba(255,255,255,0.9)",
+    stroke: "rgba(23, 49, 62, 0.12)"
+  }));
+
+  config.qualityValues.forEach(function (qualityValue) {
+    const y = getAssessmentGridY(qualityValue, config);
+    svg.appendChild(buildAssessmentSvgElement("line", {
+      x1: config.marginLeft,
+      y1: y,
+      x2: config.width - config.marginRight,
+      y2: y,
+      stroke: qualityValue === 0 ? "#94a3b8" : "#d9e1ee",
+      "stroke-width": qualityValue === 0 ? 2 : 1
+    }));
+    svg.appendChild(buildAssessmentSvgElement("text", {
+      x: config.marginLeft - 12,
+      y: y + 4,
+      "text-anchor": "end",
+      "font-size": 13,
+      fill: "#334155",
+      "font-weight": qualityValue === 0 ? 700 : 500
+    }, formatAfbQualityLabel(qualityValue)));
+  });
+
+  config.afbValues.forEach(function (afb) {
+    const x = getAssessmentGridX(afb, config);
+    svg.appendChild(buildAssessmentSvgElement("line", {
+      x1: x,
+      y1: config.marginTop,
+      x2: x,
+      y2: config.height - config.marginBottom,
+      stroke: "#d9e1ee",
+      "stroke-width": 1
+    }));
+    svg.appendChild(buildAssessmentSvgElement("text", {
+      x: x,
+      y: config.height - config.marginBottom + 22,
+      "text-anchor": "middle",
+      "font-size": 14,
+      fill: "#334155",
+      "font-weight": 700
+    }, "AFB " + String(afb)));
+  });
+
+  config.afbValues.forEach(function (afb) {
+    config.qualityValues.forEach(function (qualityValue) {
+      svg.appendChild(buildAssessmentSvgElement("circle", {
+        cx: getAssessmentGridX(afb, config),
+        cy: getAssessmentGridY(qualityValue, config),
+        r: 6,
+        fill: "#ffffff",
+        stroke: "#94a3b8",
+        "stroke-width": 1.5
+      }));
+    });
+  });
+
+  polylinePoints = config.afbValues
+    .filter(function (afb) {
+      return afbValues[afb] !== null;
+    })
+    .map(function (afb) {
+      return String(getAssessmentGridX(afb, config)) + "," + String(getAssessmentGridY(afbValues[afb], config));
+    });
+
+  if (polylinePoints.length > 1) {
+    svg.appendChild(buildAssessmentSvgElement("polyline", {
+      points: polylinePoints.join(" "),
+      fill: "none",
+      stroke: "#254c5d",
+      "stroke-width": 4,
+      "stroke-linecap": "round",
+      "stroke-linejoin": "round"
+    }));
+  }
+
+  config.afbValues.forEach(function (afb) {
+    const qualityValue = afbValues[afb];
+
+    if (qualityValue === null) {
+      return;
+    }
+
+    svg.appendChild(buildAssessmentSvgElement("circle", {
+      cx: getAssessmentGridX(afb, config),
+      cy: getAssessmentGridY(qualityValue, config),
+      r: 10,
+      fill: "rgba(37, 76, 93, 0.16)",
+      stroke: "#254c5d",
+      "stroke-width": 2.5
+    }));
+  });
+}
+
+function getUnterrichtAssessmentGridPoint(event) {
+  const svg = getUnterrichtAssessmentGridSvg();
+  const config = getAssessmentGridConfig();
+  const inner = getAssessmentGridInnerSize(config);
+  const xTolerance = inner.innerWidth / ((config.afbValues.length - 1) * 2);
+  let rect;
+  let rawX;
+  let rawY;
+  let afb;
+  let qualityIndex;
+  let qualityValue;
+
+  if (!svg) {
+    return null;
+  }
+
+  rect = svg.getBoundingClientRect();
+  rawX = ((Number(event.clientX) - rect.left) / rect.width) * config.width;
+  rawY = ((Number(event.clientY) - rect.top) / rect.height) * config.height;
+
+  if (rawX < (config.marginLeft - xTolerance)
+    || rawX > ((config.width - config.marginRight) + xTolerance)
+    || rawY < config.marginTop
+    || rawY > (config.height - config.marginBottom)) {
+    return null;
+  }
+
+  rawX = Math.max(config.marginLeft - xTolerance, Math.min((config.width - config.marginRight) + xTolerance, rawX));
+  afb = config.afbValues.reduce(function (bestAfb, currentAfb) {
+    const bestDistance = Math.abs(rawX - getAssessmentGridX(bestAfb, config));
+    const currentDistance = Math.abs(rawX - getAssessmentGridX(currentAfb, config));
+    return currentDistance < bestDistance ? currentAfb : bestAfb;
+  }, config.afbValues[0]);
+  qualityIndex = Math.max(0, Math.min(4, Math.round(((rawY - config.marginTop) / inner.innerHeight) * 4)));
+  qualityValue = config.qualityValues[qualityIndex];
+
+  return {
+    afb: afb,
+    qualityValue: qualityValue
+  };
+}
+
+function setUnterrichtAssessmentGridValue(afb, qualityValue) {
+  const targetInput = document.getElementById("unterrichtAssessmentAfb" + String(afb));
+
+  if (!targetInput) {
+    return;
+  }
+
+  targetInput.value = String(qualityValue);
+}
+
 function syncUnterrichtAssessmentCategoryUi() {
   const hiddenInput = document.getElementById("unterrichtAssessmentCategory");
   const buttons = Array.from(document.querySelectorAll(".assessment-category-button"));
@@ -1519,6 +1786,22 @@ function syncUnterrichtAssessmentCategoryUi() {
   buttons.forEach(function (button) {
     const buttonCategory = String(button.getAttribute("data-category") || "").trim();
     const isActive = Boolean(selectedCategory) && buttonCategory === selectedCategory;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+}
+
+function syncUnterrichtAssessmentGradeUi() {
+  const workInput = document.getElementById("unterrichtAssessmentWorkBehavior");
+  const socialInput = document.getElementById("unterrichtAssessmentSocialBehavior");
+  const workValue = workInput ? String(workInput.value || "").trim() : "";
+  const socialValue = socialInput ? String(socialInput.value || "").trim() : "";
+
+  Array.from(document.querySelectorAll(".assessment-grade-button")).forEach(function (button) {
+    const target = String(button.getAttribute("data-target") || "").trim();
+    const value = String(button.getAttribute("data-value") || "").trim();
+    const selectedValue = target === "work" ? workValue : socialValue;
+    const isActive = Boolean(selectedValue) && selectedValue === value;
     button.classList.toggle("is-active", isActive);
     button.setAttribute("aria-pressed", isActive ? "true" : "false");
   });
@@ -4243,9 +4526,10 @@ window.UnterrichtsassistentApp.openUnterrichtAssessmentModal = function () {
 
   [afb1Input, afb2Input, afb3Input].forEach(function (input) {
     if (input) {
-      input.value = "--";
+      input.value = "";
     }
   });
+  renderUnterrichtAssessmentGrid();
 
   if (workInput) {
     workInput.value = "";
@@ -4254,6 +4538,7 @@ window.UnterrichtsassistentApp.openUnterrichtAssessmentModal = function () {
   if (socialInput) {
     socialInput.value = "";
   }
+  syncUnterrichtAssessmentGradeUi();
 
   if (gapInput) {
     gapInput.value = "";
@@ -4279,6 +4564,21 @@ window.UnterrichtsassistentApp.toggleUnterrichtAssessmentCategory = function (ca
   syncUnterrichtAssessmentCategoryUi();
   return false;
 };
+window.UnterrichtsassistentApp.toggleUnterrichtAssessmentGrade = function (target, value) {
+  const normalizedTarget = String(target || "").trim();
+  const nextValue = String(value || "").trim();
+  const hiddenInput = normalizedTarget === "social"
+    ? document.getElementById("unterrichtAssessmentSocialBehavior")
+    : document.getElementById("unterrichtAssessmentWorkBehavior");
+
+  if (!hiddenInput) {
+    return false;
+  }
+
+  hiddenInput.value = hiddenInput.value === nextValue ? "" : nextValue;
+  syncUnterrichtAssessmentGradeUi();
+  return false;
+};
 window.UnterrichtsassistentApp.closeUnterrichtAssessmentModal = function () {
   const modal = getUnterrichtAssessmentModal();
 
@@ -4288,7 +4588,57 @@ window.UnterrichtsassistentApp.closeUnterrichtAssessmentModal = function () {
   }
 
   isUnterrichtAssessmentModalOpen = false;
+  activeUnterrichtAssessmentGridDrag = null;
   activeUnterrichtAssessmentDraft = null;
+  return false;
+};
+window.UnterrichtsassistentApp.startUnterrichtAssessmentGridPointer = function (event) {
+  const point = getUnterrichtAssessmentGridPoint(event);
+
+  if (!point) {
+    return false;
+  }
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  activeUnterrichtAssessmentGridDrag = {
+    pointerId: event.pointerId,
+    afbs: {}
+  };
+  activeUnterrichtAssessmentGridDrag.afbs[point.afb] = true;
+  setUnterrichtAssessmentGridValue(point.afb, point.qualityValue);
+  renderUnterrichtAssessmentGrid();
+
+  if (event.target && typeof event.target.setPointerCapture === "function") {
+    event.target.setPointerCapture(event.pointerId);
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.handleUnterrichtAssessmentGridPointerMove = function (event) {
+  const point = getUnterrichtAssessmentGridPoint(event);
+
+  if (!activeUnterrichtAssessmentGridDrag || event.pointerId !== activeUnterrichtAssessmentGridDrag.pointerId || !point) {
+    return false;
+  }
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  activeUnterrichtAssessmentGridDrag.afbs[point.afb] = true;
+  setUnterrichtAssessmentGridValue(point.afb, point.qualityValue);
+  renderUnterrichtAssessmentGrid();
+  return false;
+};
+window.UnterrichtsassistentApp.handleUnterrichtAssessmentGridPointerUp = function (event) {
+  if (!activeUnterrichtAssessmentGridDrag || event.pointerId !== activeUnterrichtAssessmentGridDrag.pointerId) {
+    return false;
+  }
+
+  activeUnterrichtAssessmentGridDrag = null;
   return false;
 };
 window.UnterrichtsassistentApp.submitUnterrichtAssessmentModal = function (event) {
@@ -4323,9 +4673,9 @@ window.UnterrichtsassistentApp.submitUnterrichtAssessmentModal = function (event
     lessonDate: draft.lessonDate,
     room: draft.lessonRoom,
     category: String(categoryInput && categoryInput.value || "").trim(),
-    afb1: String(afb1Input && afb1Input.value || "--").trim(),
-    afb2: String(afb2Input && afb2Input.value || "--").trim(),
-    afb3: String(afb3Input && afb3Input.value || "--").trim(),
+    afb1: String(afb1Input && afb1Input.value || "").trim() === "" ? "" : Number(afb1Input.value),
+    afb2: String(afb2Input && afb2Input.value || "").trim() === "" ? "" : Number(afb2Input.value),
+    afb3: String(afb3Input && afb3Input.value || "").trim() === "" ? "" : Number(afb3Input.value),
     workBehavior: String(workInput && workInput.value || "").trim(),
     socialBehavior: String(socialInput && socialInput.value || "").trim(),
     knowledgeGap: String(gapInput && gapInput.value || "").trim()
