@@ -541,6 +541,87 @@ button {
   grid-column: 1 / -1;
 }
 
+.unterricht-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  gap: 1.2rem;
+  align-items: start;
+}
+
+.unterricht-layout--live {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.unterricht-layout__seatplan,
+.unterricht-layout__content {
+  min-height: 220px;
+}
+
+.unterricht-layout__seatplan--full {
+  width: 100%;
+}
+
+.unterricht-layout--live .unterricht-layout__seatplan--full {
+  min-height: auto;
+  padding: 0 0 4.4rem 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.unterricht-seatplan {
+  display: flex;
+  justify-content: flex-start;
+  width: 100%;
+}
+
+.unterricht-seatplan-frame {
+  display: inline-block;
+  width: max-content;
+  max-width: 100%;
+}
+
+.unterricht-seatplan-canvas-anchor {
+  position: relative;
+  display: inline-block;
+  width: max-content;
+  max-width: 100%;
+}
+
+.unterricht-seatplan-actions {
+  position: absolute;
+  left: 50%;
+  top: calc(100% - 1px);
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid rgba(23, 49, 62, 0.12);
+  border-top: 0;
+  border-radius: 0 0 18px 18px;
+  background: rgba(239, 231, 214, 0.58);
+  justify-items: center;
+}
+
+.unterricht-seatplan-action {
+  display: inline-grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(23, 49, 62, 0.08);
+}
+
 .panel {
   min-height: 220px;
   padding: 1.4rem;
@@ -1201,6 +1282,24 @@ button {
   width: 100%;
 }
 
+.desk-layout-builder__canvas-wrap--tight {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.desk-layout-builder__canvas-wrap--unterricht {
+  overflow-x: auto;
+  overflow-y: hidden;
+  width: 100%;
+  margin: 0;
+}
+
+.desk-layout-builder__canvas--tight {
+  margin: 0;
+}
+
 .desk-layout-builder__tools {
   display: grid;
   gap: 0.75rem;
@@ -1317,6 +1416,13 @@ button {
 
 .desk-layout-builder__canvas-wrap--readonly {
   margin: 0 auto;
+}
+
+.unterricht-seatplan .desk-layout-builder__canvas-wrap--unterricht,
+.unterricht-seatplan .desk-layout-builder__canvas-wrap--readonly.desk-layout-builder__canvas-wrap--unterricht {
+  margin-left: 0;
+  margin-right: 0;
+  overflow: visible;
 }
 
 .desk-layout-builder__canvas {
@@ -1774,6 +1880,10 @@ body.is-desk-dragging {
 
   .panel--hero {
     grid-column: span 2;
+  }
+
+  .unterricht-layout {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -39,6 +39,7 @@ const repository = RepositoryClass ? new RepositoryClass() : null;
 
 let schoolService = null;
 let activeViewId = "unterricht";
+let unterrichtViewMode = "live";
 let classViewMode = "analyse";
 let timetableViewMode = "ansicht";
 let seatPlanViewMode = "ansicht";
@@ -744,6 +745,20 @@ function updateHeaderSubtitle(viewId, config) {
     return;
   }
 
+  if (viewId === "unterricht" && schoolService) {
+    const activeClass = schoolService.getActiveClass();
+    const referenceDate = schoolService.getReferenceDate();
+    const room = activeClass ? schoolService.getRelevantRoomForClass(activeClass.id, referenceDate) : "";
+    const subtitleParts = activeClass
+      ? [activeClass.name || "", activeClass.subject || "", room || ""].filter(Boolean)
+      : [];
+    const subtitle = subtitleParts.join(" ").trim();
+
+    viewSubtitle.textContent = subtitle;
+    viewSubtitle.hidden = !subtitle;
+    return;
+  }
+
   if (viewId === "sitzplan" && schoolService) {
     const activeClass = schoolService.getActiveClass();
     const subtitle = activeClass
@@ -802,6 +817,31 @@ function updateHeaderActions(viewId) {
       trailingHtml: isClassManageMode()
         ? '<button class="circle-action circle-action--danger" type="button" aria-label="Aktive Lerngruppe loeschen" onclick="return window.UnterrichtsassistentApp.deleteActiveClass()">-</button><button class="circle-action" type="button" aria-label="Neue Lerngruppe anlegen" onclick="return window.UnterrichtsassistentApp.openClassImportModal()">+</button>'
         : ""
+    });
+    return;
+  }
+
+  if (viewId === "unterricht") {
+    viewHeaderActions.innerHTML = buildMultiModeToggleHtml({
+      ariaLabel: "Modus des Unterrichts wechseln",
+      activeMode: unterrichtViewMode,
+      modes: [
+        {
+          value: "live",
+          label: "Live",
+          action: "window.UnterrichtsassistentApp.setUnterrichtViewMode('live')"
+        },
+        {
+          value: "nachpflege",
+          label: "Nachpflege",
+          action: "window.UnterrichtsassistentApp.setUnterrichtViewMode('nachpflege')"
+        },
+        {
+          value: "analyse",
+          label: "Analyse",
+          action: "window.UnterrichtsassistentApp.setUnterrichtViewMode('analyse')"
+        }
+      ]
     });
     return;
   }
@@ -875,6 +915,10 @@ function setActiveView(viewId) {
 
   if (viewId === "klasse" && previousViewId !== "klasse") {
     classViewMode = "analyse";
+  }
+
+  if (viewId === "unterricht" && previousViewId !== "unterricht") {
+    unterrichtViewMode = "live";
   }
 
   if (viewId === "stundenplan" && previousViewId !== "stundenplan") {
@@ -3204,6 +3248,18 @@ window.UnterrichtsassistentApp.activateView = setActiveView;
 window.UnterrichtsassistentApp.toggleMenu = toggleMenu;
 window.UnterrichtsassistentApp.toggleCollapsedClassPicker = toggleCollapsedClassPicker;
 window.UnterrichtsassistentApp.getClassDisplayColor = getClassDisplayColor;
+window.UnterrichtsassistentApp.getUnterrichtViewMode = function () {
+  return unterrichtViewMode;
+};
+window.UnterrichtsassistentApp.setUnterrichtViewMode = function (nextMode) {
+  unterrichtViewMode = ["nachpflege", "analyse"].indexOf(nextMode) >= 0 ? nextMode : "live";
+
+  if (activeViewId === "unterricht") {
+    setActiveView("unterricht");
+  }
+
+  return false;
+};
 window.UnterrichtsassistentApp.getClassViewMode = function () {
   return classViewMode;
 };
