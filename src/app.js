@@ -40,6 +40,7 @@ const repository = RepositoryClass ? new RepositoryClass() : null;
 let schoolService = null;
 let activeViewId = "unterricht";
 let unterrichtViewMode = "live";
+let unterrichtToolMode = "attendance";
 let classViewMode = "analyse";
 let timetableViewMode = "ansicht";
 let seatPlanViewMode = "ansicht";
@@ -1031,6 +1032,31 @@ function createSeatAssignmentId() {
   return "seat-assignment-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
 }
 
+function createAttendanceRecordId() {
+  return "attendance-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+}
+
+function timeStringToMinutes(timeValue) {
+  const parts = String(timeValue || "").split(":");
+  const hours = Number(parts[0]);
+  const minutes = Number(parts[1]);
+
+  if (parts.length !== 2 || Number.isNaN(hours) || Number.isNaN(minutes)) {
+    return 0;
+  }
+
+  return (hours * 60) + minutes;
+}
+
+function getReferenceDateTimeValue() {
+  const referenceDate = schoolService ? schoolService.getReferenceDate() : new Date();
+  const dateValue = normalizeDateValue(getReferenceDateValue());
+  const hours = String(referenceDate.getHours()).padStart(2, "0");
+  const minutes = String(referenceDate.getMinutes()).padStart(2, "0");
+
+  return dateValue + "T" + hours + ":" + minutes;
+}
+
 function getDeskSeatSlots(deskType) {
   if (deskType === "double") {
     return ["left", "right"];
@@ -1065,6 +1091,98 @@ function isSeatAssignmentLocked(seat) {
 
 function getCurrentTimestamp() {
   return new Date().toISOString();
+}
+
+function ensureAttendanceRecords(rawSnapshot) {
+  rawSnapshot.attendanceRecords = Array.isArray(rawSnapshot.attendanceRecords) ? rawSnapshot.attendanceRecords : [];
+  rawSnapshot.attendanceRecords = rawSnapshot.attendanceRecords.map(function (record, index) {
+    const nextRecord = record || {};
+
+    if (!nextRecord.id) {
+      nextRecord.id = createAttendanceRecordId() + "-" + String(index);
+    }
+
+    nextRecord.studentId = String(nextRecord.studentId || "").trim();
+    nextRecord.classId = String(nextRecord.classId || "").trim();
+    nextRecord.lessonId = String(nextRecord.lessonId || "").trim();
+    nextRecord.lessonDate = normalizeDateValue(nextRecord.lessonDate);
+    nextRecord.room = String(nextRecord.room || "").trim();
+    nextRecord.status = nextRecord.status === "present" ? "present" : "absent";
+    nextRecord.recordedAt = String(nextRecord.recordedAt || "").trim();
+    nextRecord.effectiveAt = String(nextRecord.effectiveAt || "").trim();
+
+    return nextRecord;
+  }).filter(function (record) {
+    return Boolean(record.studentId) && Boolean(record.classId) && Boolean(record.lessonId) && Boolean(record.lessonDate) && Boolean(record.status);
+  });
+
+  return rawSnapshot.attendanceRecords;
+}
+
+function getRelevantUnterrichtLesson(activeClass, referenceDate) {
+  if (!schoolService || !activeClass) {
+    return null;
+  }
+
+  if (typeof schoolService.getAttendanceContextForClass === "function") {
+    return schoolService.getAttendanceContextForClass(activeClass.id, referenceDate || schoolService.getReferenceDate());
+  }
+
+  if (typeof schoolService.getRelevantLessonForClass === "function") {
+    return schoolService.getRelevantLessonForClass(activeClass.id, referenceDate || schoolService.getReferenceDate());
+  }
+
+  return null;
+}
+
+function getAttendanceRecordsForLessonOccurrenceFromSnapshot(rawSnapshot, studentId, classId, lessonId, lessonDate) {
+  return ensureAttendanceRecords(rawSnapshot).filter(function (record) {
+    return record.studentId === studentId
+      && record.classId === classId
+      && record.lessonId === lessonId
+      && normalizeDateValue(record.lessonDate) === normalizeDateValue(lessonDate);
+  }).sort(function (left, right) {
+    const leftKey = String(left.effectiveAt || left.recordedAt || "");
+    const rightKey = String(right.effectiveAt || right.recordedAt || "");
+
+    if (leftKey === rightKey) {
+      return String(left.id || "").localeCompare(String(right.id || ""));
+    }
+
+    return leftKey.localeCompare(rightKey);
+  });
+}
+
+function getAttendanceStateForLessonOccurrenceFromSnapshot(rawSnapshot, studentId, classId, lessonId, lessonDate) {
+  const records = getAttendanceRecordsForLessonOccurrenceFromSnapshot(rawSnapshot, studentId, classId, lessonId, lessonDate);
+
+  return records.length && records[records.length - 1].status === "absent" ? "absent" : "present";
+}
+
+function getMinutesBetweenDateTimeValues(leftValue, rightValue) {
+  const left = String(leftValue || "").trim();
+  const right = String(rightValue || "").trim();
+  const leftDate = left ? new Date(left) : null;
+  const rightDate = right ? new Date(right) : null;
+
+  if (!left || !right || !leftDate || !rightDate || Number.isNaN(leftDate.getTime()) || Number.isNaN(rightDate.getTime())) {
+    return Infinity;
+  }
+
+  return Math.abs(rightDate.getTime() - leftDate.getTime()) / 60000;
+}
+
+function getSecondsBetweenDateTimeValues(leftValue, rightValue) {
+  const left = String(leftValue || "").trim();
+  const right = String(rightValue || "").trim();
+  const leftDate = left ? new Date(left) : null;
+  const rightDate = right ? new Date(right) : null;
+
+  if (!left || !right || !leftDate || !rightDate || Number.isNaN(leftDate.getTime()) || Number.isNaN(rightDate.getTime())) {
+    return Infinity;
+  }
+
+  return Math.abs(rightDate.getTime() - leftDate.getTime()) / 1000;
 }
 
 function getDeskTemplateMetrics(deskType) {
@@ -3260,6 +3378,96 @@ window.UnterrichtsassistentApp.setUnterrichtViewMode = function (nextMode) {
 
   return false;
 };
+window.UnterrichtsassistentApp.getUnterrichtToolMode = function () {
+  return unterrichtToolMode;
+};
+window.UnterrichtsassistentApp.setUnterrichtToolMode = function (nextMode) {
+  const allowedModes = ["attendance", "homework", "warning", "assessment"];
+  unterrichtToolMode = allowedModes.indexOf(nextMode) >= 0 ? nextMode : "attendance";
+
+  if (activeViewId === "unterricht") {
+    setActiveView("unterricht");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.handleUnterrichtSeatClick = function (studentId) {
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const currentRawSnapshot = schoolService && serializeSnapshot ? serializeSnapshot(schoolService.snapshot) : null;
+  const referenceDate = schoolService ? schoolService.getReferenceDate() : new Date();
+  const lesson = getRelevantUnterrichtLesson(activeClass, referenceDate);
+  const lessonDate = normalizeDateValue(getReferenceDateValue());
+  const recordedAt = getReferenceDateTimeValue();
+  const existingRecords = currentRawSnapshot && activeClass && lesson
+    ? getAttendanceRecordsForLessonOccurrenceFromSnapshot(currentRawSnapshot, String(studentId), activeClass.id, lesson.id, lessonDate)
+    : [];
+  const lastRecord = existingRecords.length ? existingRecords[existingRecords.length - 1] : null;
+  let effectiveAt = recordedAt;
+  let currentStatus;
+  let nextStatus;
+  let lessonStartMinutes;
+  let referenceMinutes;
+  let withinFirstTenMinutes = false;
+  let shouldUpdateLastRecord = false;
+
+  if (!schoolService || !activeClass || !currentRawSnapshot || !studentId) {
+    return false;
+  }
+
+  if (unterrichtToolMode !== "attendance" || !lesson) {
+    return false;
+  }
+
+  currentStatus = lastRecord && lastRecord.status === "absent" ? "absent" : "present";
+  nextStatus = currentStatus === "absent" ? "present" : "absent";
+
+  if (!lesson.isFallback) {
+    lessonStartMinutes = timeStringToMinutes(lesson.startTime);
+    referenceMinutes = (referenceDate.getHours() * 60) + referenceDate.getMinutes();
+    withinFirstTenMinutes = referenceMinutes <= (lessonStartMinutes + 10);
+  }
+
+  if (nextStatus === "absent" && !lesson.isFallback) {
+    if (withinFirstTenMinutes) {
+      effectiveAt = lessonDate + "T" + String(lesson.startTime || "00:00");
+    }
+  }
+
+  if (lastRecord) {
+    shouldUpdateLastRecord = withinFirstTenMinutes
+      ? getSecondsBetweenDateTimeValues(lastRecord.recordedAt || lastRecord.effectiveAt, recordedAt) < 30
+      : getMinutesBetweenDateTimeValues(lastRecord.recordedAt || lastRecord.effectiveAt, recordedAt) < 5;
+  }
+
+  if (lastRecord && shouldUpdateLastRecord) {
+    currentRawSnapshot.attendanceRecords = ensureAttendanceRecords(currentRawSnapshot).map(function (record) {
+      if (record.id !== lastRecord.id) {
+        return record;
+      }
+
+      record.status = nextStatus;
+      record.recordedAt = recordedAt;
+      record.effectiveAt = effectiveAt;
+      record.room = String(lesson.room || "").trim();
+      return record;
+    });
+  } else {
+    ensureAttendanceRecords(currentRawSnapshot).push({
+      id: createAttendanceRecordId(),
+      studentId: String(studentId),
+      classId: activeClass.id,
+      lessonId: lesson.id,
+      lessonDate: lessonDate,
+      room: String(lesson.room || "").trim(),
+      status: nextStatus,
+      recordedAt: recordedAt,
+      effectiveAt: effectiveAt
+    });
+  }
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
+  return false;
+};
 window.UnterrichtsassistentApp.getClassViewMode = function () {
   return classViewMode;
 };
@@ -4553,6 +4761,9 @@ window.UnterrichtsassistentApp.deleteStudent = function (studentId) {
   currentRawSnapshot.assessments = currentRawSnapshot.assessments.filter(function (assessment) {
     return assessment.studentId !== studentId;
   });
+  currentRawSnapshot.attendanceRecords = ensureAttendanceRecords(currentRawSnapshot).filter(function (record) {
+    return record.studentId !== studentId;
+  });
   currentRawSnapshot.seatPlans = currentRawSnapshot.seatPlans.map(function (seatPlan) {
     seatPlan.seats = (seatPlan.seats || []).filter(function (seat) {
       return seat.studentId !== studentId;
@@ -4762,6 +4973,9 @@ window.UnterrichtsassistentApp.deleteActiveClass = function () {
   });
   currentRawSnapshot.assessments = currentRawSnapshot.assessments.filter(function (assessment) {
     return assessment.classId !== activeClass.id && !studentIdsToDelete[assessment.studentId];
+  });
+  currentRawSnapshot.attendanceRecords = ensureAttendanceRecords(currentRawSnapshot).filter(function (record) {
+    return record.classId !== activeClass.id && !studentIdsToDelete[record.studentId];
   });
   currentRawSnapshot.todos = currentRawSnapshot.todos.filter(function (todo) {
     return todo.relatedClassId !== activeClass.id;

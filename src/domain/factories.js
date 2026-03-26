@@ -4,6 +4,7 @@ window.Unterrichtsassistent.domain = window.Unterrichtsassistent.domain || {};
 function createDomainSnapshot(rawData) {
   const {
     Assessment,
+    AttendanceRecord,
     Lesson,
     SchoolClass,
     SeatOrder,
@@ -42,6 +43,7 @@ function createDomainSnapshot(rawData) {
     classes: rawData.classes.map((item) => new SchoolClass(item)),
     lessons: rawData.lessons.map((item) => new Lesson(item)),
     assessments: rawData.assessments.map((item) => new Assessment(item)),
+    attendanceRecords: (Array.isArray(rawData.attendanceRecords) ? rawData.attendanceRecords : []).map((item) => new AttendanceRecord(item)),
     todos: rawData.todos.map((item) => new TodoItem(item)),
     seatPlans: rawData.seatPlans.map((item) => new SeatPlan(item)),
     seatOrders: (Array.isArray(rawData.seatOrders) ? rawData.seatOrders : rawData.seatPlans.map(function (item) {
@@ -117,6 +119,7 @@ function serializeDomainSnapshot(snapshot) {
     classes: cloneItems(snapshot.classes, ["id", "name", "room", "subject", "studentIds", "displayColor"]),
     lessons: cloneItems(snapshot.lessons, ["id", "classId", "subject", "room", "weekday", "startTime", "endTime", "topic"]),
     assessments: cloneItems(snapshot.assessments, ["id", "studentId", "classId", "type", "score", "maxScore", "date"]),
+    attendanceRecords: cloneItems(snapshot.attendanceRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "status", "recordedAt", "effectiveAt"]),
     todos: cloneItems(snapshot.todos, ["id", "title", "dueDate", "relatedClassId", "done"]),
     seatPlans: cloneItems(snapshot.seatPlans, ["id", "classId", "room", "validFrom", "validTo", "updatedAt", "seats", "deskLayoutItems", "deskLayoutLinks", "roomWindowSide", "roomWidth", "roomHeight"]),
     seatOrders: cloneItems(snapshot.seatOrders || [], ["id", "classId", "room", "validFrom", "validTo", "updatedAt", "seats"])

@@ -104,6 +104,22 @@ function normalizeSeatOrder(seatOrder) {
   };
 }
 
+function normalizeAttendanceRecord(attendanceRecord) {
+  const source = attendanceRecord || {};
+
+  return {
+    id: source.id || "",
+    studentId: source.studentId || "",
+    classId: source.classId || "",
+    lessonId: source.lessonId || "",
+    lessonDate: source.lessonDate || "",
+    room: source.room || "",
+    status: source.status === "present" ? "present" : "absent",
+    recordedAt: source.recordedAt || "",
+    effectiveAt: source.effectiveAt || ""
+  };
+}
+
 function normalizeDateValue(value) {
   return String(value || "").slice(0, 10);
 }
@@ -594,6 +610,137 @@ class SchoolService {
       const ends = timeToMinutes(lesson.endTime);
       return lesson.weekday === weekday && currentMinutes >= starts && currentMinutes <= ends;
     }) || this.getNextLesson(effectiveDate);
+  }
+
+  getCurrentLessonForClass(classId, date) {
+    const effectiveDate = date || this.getReferenceDate();
+    const weekday = getCurrentWeekdayIndex(effectiveDate);
+    const currentMinutes = (effectiveDate.getHours() * 60) + effectiveDate.getMinutes();
+
+    return this.getScheduledLessons(effectiveDate).find(function (lesson) {
+      const starts = timeToMinutes(lesson.startTime);
+      const ends = timeToMinutes(lesson.endTime);
+
+      return lesson.classId === classId
+        && lesson.weekday === weekday
+        && currentMinutes >= starts
+        && currentMinutes <= ends;
+    }) || null;
+  }
+
+  getRelevantLessonForClass(classId, date) {
+    const effectiveDate = date || this.getReferenceDate();
+    const weekday = getCurrentWeekdayIndex(effectiveDate);
+    const currentMinutes = (effectiveDate.getHours() * 60) + effectiveDate.getMinutes();
+    const classLessons = this.getScheduledLessons(effectiveDate)
+      .filter(function (lesson) {
+        return lesson.classId === classId;
+      });
+    const currentLesson = classLessons.find(function (lesson) {
+      const starts = timeToMinutes(lesson.startTime);
+      const ends = timeToMinutes(lesson.endTime);
+      return lesson.weekday === weekday && currentMinutes >= starts && currentMinutes <= ends;
+    });
+
+    if (currentLesson) {
+      return currentLesson;
+    }
+
+    const startedLessons = classLessons
+      .filter(function (lesson) {
+        return lesson.weekday === weekday && timeToMinutes(lesson.startTime) <= currentMinutes;
+      })
+      .sort(function (left, right) {
+        return timeToMinutes(right.startTime) - timeToMinutes(left.startTime);
+      });
+    const upcomingLessons = classLessons
+      .filter(function (lesson) {
+        return lesson.weekday === weekday && timeToMinutes(lesson.startTime) > currentMinutes;
+      })
+      .sort(function (left, right) {
+        return timeToMinutes(left.startTime) - timeToMinutes(right.startTime);
+      });
+    const pastLessons = classLessons
+      .filter(function (lesson) {
+        return lesson.weekday < weekday;
+      })
+      .sort(function (left, right) {
+        if (left.weekday !== right.weekday) {
+          return right.weekday - left.weekday;
+        }
+
+        return timeToMinutes(right.startTime) - timeToMinutes(left.startTime);
+      });
+    const futureLessons = classLessons
+      .filter(function (lesson) {
+        return lesson.weekday > weekday;
+      })
+      .sort(function (left, right) {
+        if (left.weekday !== right.weekday) {
+          return left.weekday - right.weekday;
+        }
+
+        return timeToMinutes(left.startTime) - timeToMinutes(right.startTime);
+      });
+
+    return startedLessons[0] || upcomingLessons[0] || pastLessons[0] || futureLessons[0] || null;
+  }
+
+  getAllAttendanceRecords() {
+    return (this.snapshot.attendanceRecords || []).map(normalizeAttendanceRecord);
+  }
+
+  getAttendanceRecordsForLessonOccurrence(classId, lessonId, lessonDate, studentId) {
+    return this.getAllAttendanceRecords().filter(function (record) {
+      const matchesClass = record.classId === classId;
+      const matchesLesson = record.lessonId === lessonId;
+      const matchesDate = normalizeDateValue(record.lessonDate) === normalizeDateValue(lessonDate);
+      const matchesStudent = !studentId || record.studentId === studentId;
+
+      return matchesClass && matchesLesson && matchesDate && matchesStudent;
+    }).sort(function (left, right) {
+      const leftKey = String(left.effectiveAt || left.recordedAt || "");
+      const rightKey = String(right.effectiveAt || right.recordedAt || "");
+
+      if (leftKey === rightKey) {
+        return String(left.id || "").localeCompare(String(right.id || ""));
+      }
+
+      return leftKey.localeCompare(rightKey);
+    });
+  }
+
+  getAttendanceContextForClass(classId, date) {
+    const effectiveDate = date || this.getReferenceDate();
+    const lesson = this.getCurrentLessonForClass(classId, effectiveDate);
+    const lessonDate = getLocalDateValue(effectiveDate);
+    const room = this.getRelevantRoomForClass(classId, effectiveDate) || "";
+
+    if (!lesson) {
+      return null;
+    }
+
+    return {
+      id: lesson.id,
+      classId: classId,
+      lessonDate: lessonDate,
+      room: lesson.room || room || "",
+      startTime: lesson.startTime || "",
+      isFallback: false
+    };
+  }
+
+  getAttendanceStateForStudent(studentId, classId, date) {
+    const effectiveDate = date || this.getReferenceDate();
+    const context = this.getAttendanceContextForClass(classId, effectiveDate);
+    let records;
+
+    if (!context) {
+      return "present";
+    }
+
+    records = this.getAttendanceRecordsForLessonOccurrence(classId, context.id, context.lessonDate, studentId);
+    return records.length && records[records.length - 1].status === "absent" ? "absent" : "present";
   }
 
   getNextLesson(date) {

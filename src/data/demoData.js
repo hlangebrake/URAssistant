@@ -10,6 +10,8 @@ window.Unterrichtsassistent.data.demoData = {
   classes: [],
   lessons: [],
   assessments: [],
+  attendanceRecords: [],
   todos: [],
-  seatPlans: []
+  seatPlans: [],
+  seatOrders: []
 };

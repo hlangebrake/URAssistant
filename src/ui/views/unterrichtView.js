@@ -10,6 +10,15 @@ window.Unterrichtsassistent.ui.views.unterricht = {
     const viewMode = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getUnterrichtViewMode === "function"
       ? window.UnterrichtsassistentApp.getUnterrichtViewMode()
       : "live";
+    const toolMode = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getUnterrichtToolMode === "function"
+      ? window.UnterrichtsassistentApp.getUnterrichtToolMode()
+      : "attendance";
+    const currentClassLesson = activeClass && typeof service.getCurrentLessonForClass === "function"
+      ? service.getCurrentLessonForClass(activeClass.id, service.getReferenceDate())
+      : null;
+    const activeDateTimeMode = service && service.snapshot
+      ? String(service.snapshot.activeDateTimeMode || "live")
+      : "live";
     const activeRoom = activeClass ? service.getRelevantRoomForClass(activeClass.id, service.getReferenceDate()) : "";
     const currentSeatOrder = activeClass && typeof service.getCurrentSeatOrder === "function"
       ? service.getCurrentSeatOrder(activeClass.id, activeRoom, service.getReferenceDate())
@@ -54,6 +63,48 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       return seatAssignments.find(function (seat) {
         return seat.deskItemId === deskItemId && seat.slot === slotName;
       }) || null;
+    }
+
+    function getAttendanceStateForStudent(studentId) {
+      if (!studentId || !activeClass || typeof service.getAttendanceStateForStudent !== "function") {
+        return "present";
+      }
+
+      return service.getAttendanceStateForStudent(studentId, activeClass.id, service.getReferenceDate());
+    }
+
+    function getToolButtonClass(toolKey) {
+      return toolMode === toolKey
+        ? "unterricht-seatplan-action is-active"
+        : "unterricht-seatplan-action";
+    }
+
+    function renderReadonlySeatSlot(student, extraClasses) {
+      const classes = ["seat-order-slot", "unterricht-seatplan-slot"];
+      const attendanceState = student ? getAttendanceStateForStudent(student.id) : "present";
+      const isInteractive = Boolean(student && currentClassLesson && toolMode === "attendance");
+      const onclick = isInteractive
+        ? ' onclick="return window.UnterrichtsassistentApp.handleUnterrichtSeatClick(\'' + escapeValue(student.id) + '\')"'
+        : "";
+
+      if (extraClasses) {
+        classes.push(extraClasses);
+      }
+
+      if (student) {
+        classes.push("unterricht-seatplan-student");
+        if (isInteractive) {
+          classes.push("is-interactive");
+        }
+      } else {
+        classes.push("seat-order-slot--readonly");
+      }
+
+      if (student && attendanceState === "absent") {
+        classes.push("is-absent");
+      }
+
+      return '<div class="' + classes.join(" ") + '"' + onclick + '>' + (student ? '<span class="seat-order-desk__label seat-order-desk__label--readonly">' + escapeValue(getStudentShortLabel(student)) + "</span>" : "") + "</div>";
     }
 
     function getDeskItemMetrics(item) {
@@ -168,7 +219,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
             const singleAssignment = getSeatAssignmentByDeskSlot(item.id, "single");
             const singleStudent = singleAssignment ? getStudentById(singleAssignment.studentId) : null;
 
-            return '<div class="desk-layout-item desk-layout-item--single desk-layout-item--seat-order" style="' + inlineStyle + '"><div class="seat-order-slot-grid"><div class="seat-order-slot seat-order-slot--readonly">' + (singleStudent ? '<span class="seat-order-desk__label seat-order-desk__label--readonly">' + escapeValue(getStudentShortLabel(singleStudent)) + "</span>" : "") + "</div></div></div>";
+            return '<div class="desk-layout-item desk-layout-item--single desk-layout-item--seat-order" style="' + inlineStyle + '"><div class="seat-order-slot-grid">' + renderReadonlySeatSlot(singleStudent, "") + "</div></div>";
           }
 
           {
@@ -181,7 +232,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
                 ? (slotIndex === 0 ? "visual-left" : "visual-right")
                 : (slotIndex === 0 ? "visual-top" : "visual-bottom");
 
-              return '<div class="seat-order-slot seat-order-slot--readonly seat-order-slot--' + slotName + ' seat-order-slot--' + positionClass + '">' + (student ? '<span class="seat-order-desk__label seat-order-desk__label--readonly">' + escapeValue(getStudentShortLabel(student)) + "</span>" : "") + "</div>";
+              return renderReadonlySeatSlot(student, 'seat-order-slot--' + slotName + ' seat-order-slot--' + positionClass);
             }).join("");
 
             return '<div class="desk-layout-item desk-layout-item--double desk-layout-item--seat-order" style="' + inlineStyle + '"><div class="' + slotGridClass + '">' + doubleSlotsHtml + "</div></div>";
@@ -189,9 +240,10 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         }).join(""),
         '</div>',
         '<div class="unterricht-seatplan-actions" aria-label="Unterrichtsaktionen">',
-        '<button class="unterricht-seatplan-action" type="button" aria-label="Anwesenheit markieren">&#10003;</button>',
-        '<button class="unterricht-seatplan-action" type="button" aria-label="Hausaufgabe markieren">H</button>',
-        '<button class="unterricht-seatplan-action" type="button" aria-label="Bewertung oeffnen">&#128269;</button>',
+        '<button class="' + getToolButtonClass("attendance") + '" type="button" aria-label="Anwesenheit markieren" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'attendance\')">&#10003;</button>',
+        '<button class="' + getToolButtonClass("homework") + '" type="button" aria-label="Hausaufgabe markieren" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'homework\')">H</button>',
+        '<button class="' + getToolButtonClass("warning") + '" type="button" aria-label="Warnung vergeben" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'warning\')">&#9888;</button>',
+        '<button class="' + getToolButtonClass("assessment") + '" type="button" aria-label="Bewertung oeffnen" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'assessment\')">&#128269;</button>',
         '</div>',
         '</div>',
         '</div>',
@@ -200,10 +252,36 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       ].join("");
     }
 
+    function renderLiveNotice() {
+      const classLabel = activeClass
+        ? [String(activeClass.name || "").trim(), String(activeClass.subject || "").trim()].filter(Boolean).join(" ")
+        : "die aktive Lerngruppe";
+
+      if (!activeClass || currentClassLesson) {
+        if (activeDateTimeMode !== "manual") {
+          return "";
+        }
+
+        return '<div class="unterricht-live-notice unterricht-live-notice--manual" role="status">' + escapeValue("Warnung: Manuelle Zeitangabe") + "</div>";
+      }
+
+      return [
+        '<div class="unterricht-live-notice" role="status">',
+        '<div>', escapeValue(activeDateTimeMode === "live"
+          ? "Kein Unterricht: " + classLabel
+          : "Kein Unterricht: " + classLabel), '</div>',
+        activeDateTimeMode === "manual"
+          ? '<div class="unterricht-live-notice__subline">' + escapeValue("Warnung: Manuelle Zeitangabe") + '</div>'
+          : "",
+        '</div>'
+      ].join("");
+    }
+
     if (viewMode === "live") {
       return [
         '<div class="unterricht-layout unterricht-layout--live">',
         '<article class="panel unterricht-layout__seatplan unterricht-layout__seatplan--full">',
+        renderLiveNotice(),
         renderCompactSeatPlan(),
         '</article>',
         '</div>'
