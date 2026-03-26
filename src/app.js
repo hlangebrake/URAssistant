@@ -2136,26 +2136,50 @@ function separateDeskLayoutGroupsAfterUnlink(seatPlan, removedLink, canvasWidth,
   const groupBIds = getLinkedDeskGroupItemIds(items, links, removedLink.itemBId);
   const boundsA = getDeskLayoutGroupBounds(items, groupAIds);
   const boundsB = getDeskLayoutGroupBounds(items, groupBIds);
-  const gap = 48;
+  const itemA = getDeskLayoutItemById(items, removedLink.itemAId);
+  const itemB = getDeskLayoutItemById(items, removedLink.itemBId);
+  const gap = 18;
+  const areaA = boundsA ? Math.max(boundsA.maxRight - boundsA.minX, 0) * Math.max(boundsA.maxBottom - boundsA.minY, 0) : 0;
+  const areaB = boundsB ? Math.max(boundsB.maxRight - boundsB.minX, 0) * Math.max(boundsB.maxBottom - boundsB.minY, 0) : 0;
+  const shouldMoveGroupA = areaA < areaB || (areaA === areaB && groupAIds.length < groupBIds.length);
+  const movingGroupIds = shouldMoveGroupA ? groupAIds : groupBIds;
+  const movingBounds = shouldMoveGroupA ? boundsA : boundsB;
+  const movingItem = shouldMoveGroupA ? itemA : itemB;
+  const anchorItem = shouldMoveGroupA ? itemB : itemA;
+  const movingFromSide = shouldMoveGroupA
+    ? ({ right: "left", left: "right", bottom: "top", top: "bottom" }[removedLink.sideA] || "top")
+    : removedLink.sideA;
+  const movingItemWidth = Number(movingItem && movingItem.width) || getDeskTemplateMetrics(movingItem && movingItem.type).width;
+  const movingItemHeight = Number(movingItem && movingItem.height) || getDeskTemplateMetrics(movingItem && movingItem.type).height;
+  const anchorItemWidth = Number(anchorItem && anchorItem.width) || getDeskTemplateMetrics(anchorItem && anchorItem.type).width;
+  const anchorItemHeight = Number(anchorItem && anchorItem.height) || getDeskTemplateMetrics(anchorItem && anchorItem.type).height;
+  const movingItemLeft = Number(movingItem && movingItem.x) || 0;
+  const movingItemTop = Number(movingItem && movingItem.y) || 0;
+  const movingItemRight = movingItemLeft + movingItemWidth;
+  const movingItemBottom = movingItemTop + movingItemHeight;
+  const anchorItemLeft = Number(anchorItem && anchorItem.x) || 0;
+  const anchorItemTop = Number(anchorItem && anchorItem.y) || 0;
+  const anchorItemRight = anchorItemLeft + anchorItemWidth;
+  const anchorItemBottom = anchorItemTop + anchorItemHeight;
   let deltaX = 0;
   let deltaY = 0;
 
-  if (!boundsA || !boundsB || groupAIds.indexOf(removedLink.itemBId) >= 0 || groupBIds.indexOf(removedLink.itemAId) >= 0) {
+  if (!boundsA || !boundsB || !movingItem || !anchorItem || groupAIds.indexOf(removedLink.itemBId) >= 0 || groupBIds.indexOf(removedLink.itemAId) >= 0) {
     return;
   }
 
-  if (removedLink.sideA === "right") {
-    deltaX = (boundsA.maxRight + gap) - boundsB.minX;
-    deltaX = Math.min(deltaX, Math.max((canvasWidth || 0) - boundsB.maxRight, 0));
-  } else if (removedLink.sideA === "left") {
-    deltaX = (boundsA.minX - gap) - boundsB.maxRight;
-    deltaX = Math.max(deltaX, -(boundsB.minX));
-  } else if (removedLink.sideA === "bottom") {
-    deltaY = (boundsA.maxBottom + gap) - boundsB.minY;
-    deltaY = Math.min(deltaY, Math.max((canvasHeight || 0) - boundsB.maxBottom, 0));
+  if (movingFromSide === "right") {
+    deltaX = (anchorItemRight + gap) - movingItemLeft;
+    deltaX = Math.min(deltaX, Math.max((canvasWidth || 0) - movingBounds.maxRight, 0));
+  } else if (movingFromSide === "left") {
+    deltaX = (anchorItemLeft - gap) - movingItemRight;
+    deltaX = Math.max(deltaX, -(movingBounds.minX));
+  } else if (movingFromSide === "bottom") {
+    deltaY = (anchorItemBottom + gap) - movingItemTop;
+    deltaY = Math.min(deltaY, Math.max((canvasHeight || 0) - movingBounds.maxBottom, 0));
   } else {
-    deltaY = (boundsA.minY - gap) - boundsB.maxBottom;
-    deltaY = Math.max(deltaY, -(boundsB.minY));
+    deltaY = (anchorItemTop - gap) - movingItemBottom;
+    deltaY = Math.max(deltaY, -(movingBounds.minY));
   }
 
   if (!deltaX && !deltaY) {
@@ -2163,7 +2187,7 @@ function separateDeskLayoutGroupsAfterUnlink(seatPlan, removedLink, canvasWidth,
   }
 
   seatPlan.deskLayoutItems = items.map(function (item) {
-    if (groupBIds.indexOf(item.id) === -1) {
+    if (movingGroupIds.indexOf(item.id) === -1) {
       return item;
     }
 
