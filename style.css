@@ -1756,6 +1756,48 @@ button {
   display: block;
 }
 
+.schedule-compact__weekday-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+}
+
+.schedule-compact__weekday-wrap {
+  display: block;
+  text-align: center;
+}
+
+.schedule-compact__week-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid rgba(23, 49, 62, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--text);
+  font: inherit;
+  font-size: 1.2rem;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(23, 49, 62, 0.08);
+}
+
+.schedule-compact__week-nav--prev {
+  left: 0;
+}
+
+.schedule-compact__week-nav--next {
+  right: 0;
+}
+
 .schedule-compact__weekday-date {
   margin-top: 0.18rem;
   color: rgba(31, 36, 48, 0.52);

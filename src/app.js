@@ -1604,8 +1604,14 @@ function getUnterrichtAssessmentQuickSelection(clientX, clientY, anchorX, anchor
   const dy = clientY - anchorY;
   const qualityStepNear = 52;
   const qualityStepFar = 118;
+  const qualityStepMax = 300;
+  const afbStepMax = 300;
   let afb = 2;
   let qualityValue = 0;
+
+  if (Math.abs(dy) > qualityStepMax || Math.abs(dx) > afbStepMax) {
+    return null;
+  }
 
   if (dx <= -28) {
     afb = 1;
@@ -4688,17 +4694,22 @@ window.UnterrichtsassistentApp.handleUnterrichtAssessmentPointerMove = function 
       activeUnterrichtAssessmentPress.anchorX,
       activeUnterrichtAssessmentPress.anchorY
     );
-    showUnterrichtAssessmentQuickMenu(
-      activeUnterrichtAssessmentPress.clientX,
-      activeUnterrichtAssessmentPress.clientY,
-      activeUnterrichtAssessmentPress.selection.label
-    );
-    showUnterrichtAssessmentQuickOverlay(
-      activeUnterrichtAssessmentPress.anchorX,
-      activeUnterrichtAssessmentPress.anchorY,
-      activeUnterrichtAssessmentPress.selection.qualityValue,
-      activeUnterrichtAssessmentPress.selection.afb
-    );
+
+    if (activeUnterrichtAssessmentPress.selection) {
+      showUnterrichtAssessmentQuickMenu(
+        activeUnterrichtAssessmentPress.clientX,
+        activeUnterrichtAssessmentPress.clientY,
+        activeUnterrichtAssessmentPress.selection.label
+      );
+      showUnterrichtAssessmentQuickOverlay(
+        activeUnterrichtAssessmentPress.anchorX,
+        activeUnterrichtAssessmentPress.anchorY,
+        activeUnterrichtAssessmentPress.selection.qualityValue,
+        activeUnterrichtAssessmentPress.selection.afb
+      );
+    } else {
+      hideUnterrichtAssessmentQuickMenu();
+    }
   }
 
   event.preventDefault();
@@ -4739,6 +4750,12 @@ window.UnterrichtsassistentApp.handleUnterrichtAssessmentPointerEnd = function (
       knowledgeGap: ""
     });
     saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
+    event.preventDefault();
+    return false;
+  }
+
+  if (pressState.menuVisible) {
+    hideUnterrichtAssessmentQuickMenu();
     event.preventDefault();
     return false;
   }
@@ -6161,6 +6178,41 @@ window.UnterrichtsassistentApp.updateActiveDateTime = function (partName, nextVa
   }
 
   currentRawSnapshot.activeDateTime = currentParts.date + "T" + currentParts.time;
+  currentRawSnapshot.activeDateTimeMode = "manual";
+
+  if (wasLiveMode && activeClass) {
+    currentRawSnapshot.activeClassId = activeClass.id;
+  }
+
+  refreshSnapshotInMemory(currentRawSnapshot, activeViewId);
+  return false;
+};
+window.UnterrichtsassistentApp.shiftActiveDateByDays = function (dayOffset) {
+  if (!repository || !schoolService) {
+    return false;
+  }
+
+  const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
+  const currentParts = getActiveDateTimeParts();
+  const currentDate = new Date(String(currentParts.date) + "T" + String(currentParts.time || "00:00"));
+  const offset = Number(dayOffset) || 0;
+  const activeClass = schoolService.getActiveClass();
+  const wasLiveMode = isLiveDateTimeMode();
+  let nextDate;
+
+  if (Number.isNaN(currentDate.getTime()) || !offset) {
+    return false;
+  }
+
+  nextDate = new Date(currentDate);
+  nextDate.setDate(nextDate.getDate() + offset);
+
+  currentRawSnapshot.activeDateTime = nextDate.getFullYear()
+    + "-" + String(nextDate.getMonth() + 1).padStart(2, "0")
+    + "-" + String(nextDate.getDate()).padStart(2, "0")
+    + "T"
+    + String(nextDate.getHours()).padStart(2, "0")
+    + ":" + String(nextDate.getMinutes()).padStart(2, "0");
   currentRawSnapshot.activeDateTimeMode = "manual";
 
   if (wasLiveMode && activeClass) {

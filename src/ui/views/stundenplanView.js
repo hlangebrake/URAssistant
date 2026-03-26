@@ -364,8 +364,14 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
             currentWeekdayKey === weekday.key ? "is-current-day" : "",
             pastWeekdayKeys[weekday.key] ? "is-past-day" : ""
           ].join(" ").trim();
+          const previousWeekButton = weekday.key === "1"
+            ? '<button class="schedule-compact__week-nav schedule-compact__week-nav--prev" type="button" aria-label="Eine Woche zurueck" onclick="return window.UnterrichtsassistentApp.shiftActiveDateByDays(-7)">&lsaquo;</button>'
+            : "";
+          const nextWeekButton = weekday.key === "5"
+            ? '<button class="schedule-compact__week-nav schedule-compact__week-nav--next" type="button" aria-label="Eine Woche weiter" onclick="return window.UnterrichtsassistentApp.shiftActiveDateByDays(7)">&rsaquo;</button>'
+            : "";
 
-          return '<th class="' + headerClasses + '"><span class="schedule-compact__weekday">' + escapeValue(weekday.shortLabel) + '</span><span class="schedule-compact__weekday-date">' + escapeValue(weekDates[weekday.key].label) + "</span></th>";
+          return '<th class="' + headerClasses + '"><div class="schedule-compact__weekday-header">' + previousWeekButton + '<span class="schedule-compact__weekday-wrap"><span class="schedule-compact__weekday">' + escapeValue(weekday.shortLabel) + '</span><span class="schedule-compact__weekday-date">' + escapeValue(weekDates[weekday.key].label) + '</span></span>' + nextWeekButton + "</div></th>";
         }).join(""),
         "</tr></thead>",
         "<tbody>",
