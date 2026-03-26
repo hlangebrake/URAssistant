@@ -66,6 +66,9 @@ let unterrichtWarningRadialMenu = null;
 let activeUnterrichtWarningOtherDraft = null;
 let activeUnterrichtAssessmentDraft = null;
 let activeUnterrichtAssessmentGridDrag = null;
+let activeUnterrichtAssessmentPress = null;
+let unterrichtAssessmentQuickMenu = null;
+let unterrichtAssessmentQuickOverlay = null;
 const AUTOSAVE_DELAY_MS = 30000;
 const HOMEWORK_LONG_PRESS_DELAY_MS = 380;
 const HOMEWORK_RADIAL_OPTIONS = [
@@ -76,6 +79,7 @@ const HOMEWORK_RADIAL_OPTIONS = [
   { quality: "vorhanden", label: "vorhanden", side: "right", row: "middle" }
 ];
 const WARNING_LONG_PRESS_DELAY_MS = 380;
+const ASSESSMENT_LONG_PRESS_DELAY_MS = 380;
 const WARNING_RADIAL_OPTIONS = [
   { category: "letzteentfernen", label: "letzte entfernen", side: "left", row: "top" },
   { category: "andere", label: "andere", side: "left", row: "bottom" },
@@ -1504,6 +1508,158 @@ function openUnterrichtWarningRadialMenuImmediately() {
   setUnterrichtWarningRadialSelection("");
 }
 
+function ensureUnterrichtAssessmentQuickMenu() {
+  if (unterrichtAssessmentQuickMenu && document.body.contains(unterrichtAssessmentQuickMenu)) {
+    return unterrichtAssessmentQuickMenu;
+  }
+
+  unterrichtAssessmentQuickMenu = document.createElement("div");
+  unterrichtAssessmentQuickMenu.className = "unterricht-assessment-quick-menu";
+  unterrichtAssessmentQuickMenu.setAttribute("aria-hidden", "true");
+  document.body.appendChild(unterrichtAssessmentQuickMenu);
+  return unterrichtAssessmentQuickMenu;
+}
+
+function ensureUnterrichtAssessmentQuickOverlay() {
+  const labels = ["++", "+", "0", "-", "--"];
+
+  if (unterrichtAssessmentQuickOverlay && document.body.contains(unterrichtAssessmentQuickOverlay)) {
+    return unterrichtAssessmentQuickOverlay;
+  }
+
+  unterrichtAssessmentQuickOverlay = document.createElement("div");
+  unterrichtAssessmentQuickOverlay.className = "unterricht-assessment-quick-overlay";
+  unterrichtAssessmentQuickOverlay.setAttribute("aria-hidden", "true");
+  unterrichtAssessmentQuickOverlay.innerHTML = [
+    '<div class="unterricht-assessment-quick-overlay__quality">',
+    labels.map(function (label) {
+      return '<div class="unterricht-assessment-quick-overlay__band" data-quality-label="' + escapeHtml(label) + '"><span class="unterricht-assessment-quick-overlay__label">' + escapeHtml(label) + "</span></div>";
+    }).join(""),
+    '</div>',
+    '<div class="unterricht-assessment-quick-overlay__afb">',
+    '<div class="unterricht-assessment-quick-overlay__afb-band" data-afb-label="1"><span class="unterricht-assessment-quick-overlay__afb-label">AFB 1</span></div>',
+    '<div class="unterricht-assessment-quick-overlay__afb-band" data-afb-label="2"><span class="unterricht-assessment-quick-overlay__afb-label">AFB 2</span></div>',
+    '<div class="unterricht-assessment-quick-overlay__afb-band" data-afb-label="3"><span class="unterricht-assessment-quick-overlay__afb-label">AFB 3</span></div>',
+    '</div>'
+  ].join("");
+  document.body.appendChild(unterrichtAssessmentQuickOverlay);
+  return unterrichtAssessmentQuickOverlay;
+}
+
+function hideUnterrichtAssessmentQuickMenu() {
+  const menu = ensureUnterrichtAssessmentQuickMenu();
+  const overlay = ensureUnterrichtAssessmentQuickOverlay();
+
+  menu.classList.remove("is-visible");
+  menu.setAttribute("aria-hidden", "true");
+  menu.textContent = "";
+  overlay.classList.remove("is-visible");
+  overlay.setAttribute("aria-hidden", "true");
+  overlay.querySelectorAll("[data-quality-label]").forEach(function (item) {
+    item.classList.remove("is-active");
+  });
+  overlay.querySelectorAll("[data-afb-label]").forEach(function (item) {
+    item.classList.remove("is-active");
+  });
+}
+
+function showUnterrichtAssessmentQuickMenu(clientX, clientY, label) {
+  const menu = ensureUnterrichtAssessmentQuickMenu();
+
+  menu.style.left = String(clientX + 16) + "px";
+  menu.style.top = String(clientY - 18) + "px";
+  menu.textContent = label || "";
+  menu.classList.add("is-visible");
+  menu.setAttribute("aria-hidden", "false");
+}
+
+function showUnterrichtAssessmentQuickOverlay(anchorX, anchorY, qualityValue, afb) {
+  const overlay = ensureUnterrichtAssessmentQuickOverlay();
+  const activeLabel = formatAssessmentQuickQuality(qualityValue);
+
+  overlay.style.left = String(anchorX) + "px";
+  overlay.style.top = String(anchorY) + "px";
+  overlay.classList.add("is-visible");
+  overlay.setAttribute("aria-hidden", "false");
+  overlay.querySelectorAll("[data-quality-label]").forEach(function (item) {
+    item.classList.toggle("is-active", item.getAttribute("data-quality-label") === activeLabel);
+  });
+  overlay.querySelectorAll("[data-afb-label]").forEach(function (item) {
+    item.classList.toggle("is-active", item.getAttribute("data-afb-label") === String(afb || 2));
+  });
+}
+
+function clearUnterrichtAssessmentPressListeners() {
+  window.removeEventListener("pointermove", window.UnterrichtsassistentApp.handleUnterrichtAssessmentPointerMove);
+  window.removeEventListener("pointerup", window.UnterrichtsassistentApp.handleUnterrichtAssessmentPointerEnd);
+  window.removeEventListener("pointercancel", window.UnterrichtsassistentApp.handleUnterrichtAssessmentPointerEnd);
+}
+
+function formatAssessmentQuickQuality(value) {
+  return formatAfbQualityLabel(value) || "0";
+}
+
+function getUnterrichtAssessmentQuickSelection(clientX, clientY, anchorX, anchorY) {
+  const dx = clientX - anchorX;
+  const dy = clientY - anchorY;
+  const qualityStepNear = 52;
+  const qualityStepFar = 118;
+  let afb = 2;
+  let qualityValue = 0;
+
+  if (dx <= -28) {
+    afb = 1;
+  } else if (dx >= 28) {
+    afb = 3;
+  }
+
+  if (dy <= -qualityStepFar) {
+    qualityValue = 2;
+  } else if (dy <= -qualityStepNear) {
+    qualityValue = 1;
+  } else if (dy >= qualityStepFar) {
+    qualityValue = -2;
+  } else if (dy >= qualityStepNear) {
+    qualityValue = -1;
+  }
+
+  return {
+    afb: afb,
+    qualityValue: qualityValue,
+    label: "AFB " + String(afb) + " " + formatAssessmentQuickQuality(qualityValue)
+  };
+}
+
+function openUnterrichtAssessmentQuickMenuImmediately() {
+  if (!activeUnterrichtAssessmentPress || activeUnterrichtAssessmentPress.menuVisible) {
+    return;
+  }
+
+  if (activeUnterrichtAssessmentPress.timerId) {
+    window.clearTimeout(activeUnterrichtAssessmentPress.timerId);
+    activeUnterrichtAssessmentPress.timerId = 0;
+  }
+
+  activeUnterrichtAssessmentPress.menuVisible = true;
+  activeUnterrichtAssessmentPress.selection = getUnterrichtAssessmentQuickSelection(
+    activeUnterrichtAssessmentPress.clientX,
+    activeUnterrichtAssessmentPress.clientY,
+    activeUnterrichtAssessmentPress.anchorX,
+    activeUnterrichtAssessmentPress.anchorY
+  );
+  showUnterrichtAssessmentQuickMenu(
+    activeUnterrichtAssessmentPress.clientX,
+    activeUnterrichtAssessmentPress.clientY,
+    activeUnterrichtAssessmentPress.selection.label
+  );
+  showUnterrichtAssessmentQuickOverlay(
+    activeUnterrichtAssessmentPress.anchorX,
+    activeUnterrichtAssessmentPress.anchorY,
+    activeUnterrichtAssessmentPress.selection.qualityValue,
+    activeUnterrichtAssessmentPress.selection.afb
+  );
+}
+
 function getUnterrichtWarningOtherModal() {
   return document.getElementById("unterrichtWarningOtherModal");
 }
@@ -1525,7 +1681,8 @@ function getAssessmentGridConfig() {
     marginBottom: 44,
     marginLeft: 42,
     afbValues: [1, 2, 3],
-    qualityValues: [2, 1, 0, -1, -2]
+    qualityValues: [2, 1, 0, -1, -2],
+    activeAfbHalfWidth: 42
   };
 }
 
@@ -1534,6 +1691,33 @@ function getAssessmentGridInnerSize(config) {
     innerWidth: config.width - config.marginLeft - config.marginRight,
     innerHeight: config.height - config.marginTop - config.marginBottom
   };
+}
+
+function appendUnterrichtAssessmentRecord(rawSnapshot, draft, values) {
+  if (!rawSnapshot || !draft) {
+    return;
+  }
+
+  rawSnapshot.assessments = Array.isArray(rawSnapshot.assessments) ? rawSnapshot.assessments : [];
+  rawSnapshot.assessments.push({
+    id: createAssessmentRecordId(),
+    studentId: draft.studentId,
+    classId: draft.classId,
+    type: "unterricht",
+    score: 0,
+    maxScore: 0,
+    date: draft.lessonDate,
+    lessonId: draft.lessonId,
+    lessonDate: draft.lessonDate,
+    room: draft.lessonRoom,
+    category: String(values && values.category || "").trim(),
+    afb1: values && values.afb1 !== undefined ? values.afb1 : "",
+    afb2: values && values.afb2 !== undefined ? values.afb2 : "",
+    afb3: values && values.afb3 !== undefined ? values.afb3 : "",
+    workBehavior: String(values && values.workBehavior || "").trim(),
+    socialBehavior: String(values && values.socialBehavior || "").trim(),
+    knowledgeGap: String(values && values.knowledgeGap || "").trim()
+  });
 }
 
 function afbQualityToValue(label) {
@@ -1730,11 +1914,10 @@ function getUnterrichtAssessmentGridPoint(event) {
   const svg = getUnterrichtAssessmentGridSvg();
   const config = getAssessmentGridConfig();
   const inner = getAssessmentGridInnerSize(config);
-  const xTolerance = inner.innerWidth / ((config.afbValues.length - 1) * 2);
   let rect;
   let rawX;
   let rawY;
-  let afb;
+  let afb = null;
   let qualityIndex;
   let qualityValue;
 
@@ -1746,19 +1929,26 @@ function getUnterrichtAssessmentGridPoint(event) {
   rawX = ((Number(event.clientX) - rect.left) / rect.width) * config.width;
   rawY = ((Number(event.clientY) - rect.top) / rect.height) * config.height;
 
-  if (rawX < (config.marginLeft - xTolerance)
-    || rawX > ((config.width - config.marginRight) + xTolerance)
+  if (rawX < config.marginLeft
+    || rawX > (config.width - config.marginRight)
     || rawY < config.marginTop
     || rawY > (config.height - config.marginBottom)) {
     return null;
   }
 
-  rawX = Math.max(config.marginLeft - xTolerance, Math.min((config.width - config.marginRight) + xTolerance, rawX));
-  afb = config.afbValues.reduce(function (bestAfb, currentAfb) {
-    const bestDistance = Math.abs(rawX - getAssessmentGridX(bestAfb, config));
-    const currentDistance = Math.abs(rawX - getAssessmentGridX(currentAfb, config));
-    return currentDistance < bestDistance ? currentAfb : bestAfb;
-  }, config.afbValues[0]);
+  config.afbValues.some(function (currentAfb) {
+    if (Math.abs(rawX - getAssessmentGridX(currentAfb, config)) <= config.activeAfbHalfWidth) {
+      afb = currentAfb;
+      return true;
+    }
+
+    return false;
+  });
+
+  if (afb === null) {
+    return null;
+  }
+
   qualityIndex = Math.max(0, Math.min(4, Math.round(((rawY - config.marginTop) / inner.innerHeight) * 4)));
   qualityValue = config.qualityValues[qualityIndex];
 
@@ -4346,6 +4536,54 @@ window.UnterrichtsassistentApp.startUnterrichtWarningPointer = function (event, 
   event.preventDefault();
   return false;
 };
+window.UnterrichtsassistentApp.startUnterrichtAssessmentPointer = function (event, studentId, lessonId, lessonStartTime, lessonRoom) {
+  if (unterrichtToolMode !== "assessment" || !studentId || !lessonId) {
+    return false;
+  }
+
+  if (activeUnterrichtAssessmentPress && activeUnterrichtAssessmentPress.timerId) {
+    window.clearTimeout(activeUnterrichtAssessmentPress.timerId);
+  }
+
+  clearUnterrichtAssessmentPressListeners();
+  hideUnterrichtAssessmentQuickMenu();
+
+  activeUnterrichtAssessmentPress = {
+    pointerId: event.pointerId,
+    studentId: String(studentId),
+    lessonId: String(lessonId),
+    lessonStartTime: String(lessonStartTime || ""),
+    lessonRoom: String(lessonRoom || ""),
+    anchorX: Number(event.clientX) || 0,
+    anchorY: Number(event.clientY) || 0,
+    clientX: Number(event.clientX) || 0,
+    clientY: Number(event.clientY) || 0,
+    menuVisible: false,
+    moved: false,
+    selection: null,
+    timerId: window.setTimeout(function () {
+      if (!activeUnterrichtAssessmentPress) {
+        return;
+      }
+
+      openUnterrichtAssessmentQuickMenuImmediately();
+    }, ASSESSMENT_LONG_PRESS_DELAY_MS)
+  };
+
+  if (event.target && typeof event.target.setPointerCapture === "function") {
+    try {
+      event.target.setPointerCapture(event.pointerId);
+    } catch (error) {
+      void error;
+    }
+  }
+
+  window.addEventListener("pointermove", window.UnterrichtsassistentApp.handleUnterrichtAssessmentPointerMove);
+  window.addEventListener("pointerup", window.UnterrichtsassistentApp.handleUnterrichtAssessmentPointerEnd);
+  window.addEventListener("pointercancel", window.UnterrichtsassistentApp.handleUnterrichtAssessmentPointerEnd);
+  event.preventDefault();
+  return false;
+};
 window.UnterrichtsassistentApp.handleUnterrichtWarningPointerMove = function (event) {
   if (!activeUnterrichtWarningPress || event.pointerId !== activeUnterrichtWarningPress.pointerId) {
     return false;
@@ -4422,6 +4660,95 @@ window.UnterrichtsassistentApp.handleUnterrichtWarningPointerEnd = function (eve
     pressState.lessonStartTime,
     pressState.lessonRoom,
     "stoerung"
+  );
+  event.preventDefault();
+  return false;
+};
+window.UnterrichtsassistentApp.handleUnterrichtAssessmentPointerMove = function (event) {
+  if (!activeUnterrichtAssessmentPress || event.pointerId !== activeUnterrichtAssessmentPress.pointerId) {
+    return false;
+  }
+
+  activeUnterrichtAssessmentPress.clientX = Number(event.clientX) || 0;
+  activeUnterrichtAssessmentPress.clientY = Number(event.clientY) || 0;
+
+  if (Math.abs(activeUnterrichtAssessmentPress.clientX - activeUnterrichtAssessmentPress.anchorX) >= 8
+    || Math.abs(activeUnterrichtAssessmentPress.clientY - activeUnterrichtAssessmentPress.anchorY) >= 8) {
+    activeUnterrichtAssessmentPress.moved = true;
+  }
+
+  if (!activeUnterrichtAssessmentPress.menuVisible && activeUnterrichtAssessmentPress.moved) {
+    openUnterrichtAssessmentQuickMenuImmediately();
+  }
+
+  if (activeUnterrichtAssessmentPress.menuVisible) {
+    activeUnterrichtAssessmentPress.selection = getUnterrichtAssessmentQuickSelection(
+      activeUnterrichtAssessmentPress.clientX,
+      activeUnterrichtAssessmentPress.clientY,
+      activeUnterrichtAssessmentPress.anchorX,
+      activeUnterrichtAssessmentPress.anchorY
+    );
+    showUnterrichtAssessmentQuickMenu(
+      activeUnterrichtAssessmentPress.clientX,
+      activeUnterrichtAssessmentPress.clientY,
+      activeUnterrichtAssessmentPress.selection.label
+    );
+    showUnterrichtAssessmentQuickOverlay(
+      activeUnterrichtAssessmentPress.anchorX,
+      activeUnterrichtAssessmentPress.anchorY,
+      activeUnterrichtAssessmentPress.selection.qualityValue,
+      activeUnterrichtAssessmentPress.selection.afb
+    );
+  }
+
+  event.preventDefault();
+  return false;
+};
+window.UnterrichtsassistentApp.handleUnterrichtAssessmentPointerEnd = function (event) {
+  const pressState = activeUnterrichtAssessmentPress;
+  const currentRawSnapshot = schoolService && serializeSnapshot ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const lessonDate = normalizeDateValue(getReferenceDateValue());
+
+  if (!pressState || event.pointerId !== pressState.pointerId) {
+    return false;
+  }
+
+  if (pressState.timerId) {
+    window.clearTimeout(pressState.timerId);
+  }
+
+  clearUnterrichtAssessmentPressListeners();
+  activeUnterrichtAssessmentPress = null;
+
+  if (pressState.menuVisible && pressState.selection && currentRawSnapshot && activeClass) {
+    hideUnterrichtAssessmentQuickMenu();
+    appendUnterrichtAssessmentRecord(currentRawSnapshot, {
+      studentId: pressState.studentId,
+      classId: activeClass.id,
+      lessonId: pressState.lessonId,
+      lessonDate: lessonDate,
+      lessonRoom: pressState.lessonRoom
+    }, {
+      category: "",
+      afb1: pressState.selection.afb === 1 ? pressState.selection.qualityValue : "",
+      afb2: pressState.selection.afb === 2 ? pressState.selection.qualityValue : "",
+      afb3: pressState.selection.afb === 3 ? pressState.selection.qualityValue : "",
+      workBehavior: "",
+      socialBehavior: "",
+      knowledgeGap: ""
+    });
+    saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
+    event.preventDefault();
+    return false;
+  }
+
+  hideUnterrichtAssessmentQuickMenu();
+  window.UnterrichtsassistentApp.handleUnterrichtSeatClick(
+    pressState.studentId,
+    pressState.lessonId,
+    pressState.lessonStartTime,
+    pressState.lessonRoom
   );
   event.preventDefault();
   return false;
@@ -4660,18 +4987,7 @@ window.UnterrichtsassistentApp.submitUnterrichtAssessmentModal = function (event
     return window.UnterrichtsassistentApp.closeUnterrichtAssessmentModal();
   }
 
-  currentRawSnapshot.assessments = Array.isArray(currentRawSnapshot.assessments) ? currentRawSnapshot.assessments : [];
-  currentRawSnapshot.assessments.push({
-    id: createAssessmentRecordId(),
-    studentId: draft.studentId,
-    classId: draft.classId,
-    type: "unterricht",
-    score: 0,
-    maxScore: 0,
-    date: draft.lessonDate,
-    lessonId: draft.lessonId,
-    lessonDate: draft.lessonDate,
-    room: draft.lessonRoom,
+  appendUnterrichtAssessmentRecord(currentRawSnapshot, draft, {
     category: String(categoryInput && categoryInput.value || "").trim(),
     afb1: String(afb1Input && afb1Input.value || "").trim() === "" ? "" : Number(afb1Input.value),
     afb2: String(afb2Input && afb2Input.value || "").trim() === "" ? "" : Number(afb2Input.value),

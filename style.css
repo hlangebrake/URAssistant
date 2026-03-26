@@ -987,6 +987,130 @@ button {
   border-color: rgba(23, 49, 62, 0.95);
 }
 
+.unterricht-assessment-quick-menu {
+  position: fixed;
+  z-index: 1200;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid rgba(23, 49, 62, 0.16);
+  border-radius: 999px;
+  background: rgba(251, 248, 241, 0.98);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 10px 24px rgba(23, 49, 62, 0.16);
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.92);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.unterricht-assessment-quick-menu.is-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.unterricht-assessment-quick-overlay {
+  position: fixed;
+  z-index: 1190;
+  width: 220px;
+  height: 250px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.96);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.unterricht-assessment-quick-overlay.is-visible {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.unterricht-assessment-quick-overlay__band {
+  display: grid;
+  place-items: center;
+  color: rgba(37, 76, 93, 0.62);
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.unterricht-assessment-quick-overlay__band.is-active {
+  background: rgba(37, 76, 93, 0.18);
+  color: rgba(23, 49, 62, 0.92);
+}
+
+.unterricht-assessment-quick-overlay__quality {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 78px;
+  height: 250px;
+  display: grid;
+  grid-template-rows: repeat(5, 1fr);
+  transform: translateX(-50%);
+  border-radius: 28px;
+  background: rgba(251, 248, 241, 0.34);
+  box-shadow: inset 0 0 0 1px rgba(23, 49, 62, 0.12);
+  backdrop-filter: blur(2px);
+}
+
+.unterricht-assessment-quick-overlay__afb {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 234px;
+  height: 50px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background: rgba(251, 248, 241, 0.38);
+  box-shadow: inset 0 0 0 1px rgba(23, 49, 62, 0.12);
+  backdrop-filter: blur(2px);
+}
+
+.unterricht-assessment-quick-overlay__afb-band {
+  display: grid;
+  place-items: center;
+  color: rgba(37, 76, 93, 0.58);
+  font-size: 0.9rem;
+  font-weight: 700;
+  border-left: 1px solid rgba(23, 49, 62, 0.08);
+}
+
+.unterricht-assessment-quick-overlay__afb-band:first-child {
+  border-left: 0;
+}
+
+.unterricht-assessment-quick-overlay__afb-band.is-active {
+  background: rgba(37, 76, 93, 0.16);
+  color: rgba(23, 49, 62, 0.94);
+}
+
+.unterricht-assessment-quick-overlay__afb-band:first-child.is-active {
+  border-top-left-radius: 999px;
+  border-bottom-left-radius: 999px;
+}
+
+.unterricht-assessment-quick-overlay__afb-band:last-child.is-active {
+  border-top-right-radius: 999px;
+  border-bottom-right-radius: 999px;
+}
+
+.unterricht-assessment-quick-overlay__band:first-child {
+  border-top-left-radius: 28px;
+  border-top-right-radius: 28px;
+}
+
+.unterricht-assessment-quick-overlay__band:last-child {
+  border-bottom-left-radius: 28px;
+  border-bottom-right-radius: 28px;
+}
+
 .assessment-category-buttons {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
