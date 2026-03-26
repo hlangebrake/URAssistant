@@ -424,6 +424,18 @@ button {
   font-weight: 600;
 }
 
+.content__subtitle-main,
+.content__subtitle-subtle {
+  display: block;
+}
+
+.content__subtitle-subtle {
+  margin-top: 0.24rem;
+  color: rgba(23, 49, 62, 0.58);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
 .content__subtitle-inline {
   display: inline-flex;
   align-items: center;
@@ -1018,7 +1030,7 @@ button {
   position: fixed;
   z-index: 1190;
   width: 220px;
-  height: 250px;
+  height: 300px;
   pointer-events: none;
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.96);
@@ -1028,6 +1040,18 @@ button {
 .unterricht-assessment-quick-overlay.is-visible {
   opacity: 1;
   transform: translate(-50%, -50%) scale(1);
+}
+
+.unterricht-assessment-quick-overlay.is-flash .unterricht-assessment-quick-overlay__quality,
+.unterricht-assessment-quick-overlay.is-flash .unterricht-assessment-quick-overlay__afb {
+  background: rgba(251, 248, 241, 0.6);
+  box-shadow: inset 0 0 0 1px rgba(23, 49, 62, 0.18), 0 0 0 3px rgba(94, 166, 90, 0.22);
+}
+
+.unterricht-assessment-quick-overlay.is-flash .unterricht-assessment-quick-overlay__band.is-active,
+.unterricht-assessment-quick-overlay.is-flash .unterricht-assessment-quick-overlay__afb-band.is-active {
+  background: rgba(94, 166, 90, 0.26);
+  color: rgba(23, 49, 62, 0.98);
 }
 
 .unterricht-assessment-quick-overlay__band {
@@ -1048,7 +1072,7 @@ button {
   left: 50%;
   top: 0;
   width: 78px;
-  height: 250px;
+  height: 300px;
   display: grid;
   grid-template-rows: repeat(5, 1fr);
   transform: translateX(-50%);
@@ -1063,7 +1087,7 @@ button {
   left: 50%;
   top: 50%;
   width: 234px;
-  height: 50px;
+  height: 60px;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   transform: translate(-50%, -50%);
@@ -1508,6 +1532,18 @@ button {
   background: rgba(255, 255, 255, 0.55);
 }
 
+.student-table-wrap--analysis {
+  --analysis-name-column-width: 176px;
+  --analysis-date-column-width: 84px;
+  cursor: grab;
+  touch-action: pan-x;
+  scrollbar-width: thin;
+}
+
+.student-table-wrap--analysis.is-dragging {
+  cursor: grabbing;
+}
+
 .table-header {
   display: flex;
   align-items: center;
@@ -1526,10 +1562,75 @@ button {
   font-size: 0.95rem;
 }
 
+.class-analysis-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.9rem;
+}
+
+.class-analysis-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.85rem 1rem;
+  margin-bottom: 0.9rem;
+}
+
+.class-analysis-toolbar__cluster {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.85rem 1rem;
+}
+
+.class-analysis-toolbar__group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.class-analysis-toolbar__label {
+  color: var(--text-soft);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.class-analysis-toolbar .class-analysis-tools {
+  margin-bottom: 0;
+}
+
+.class-analysis-grouping {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.class-analysis-grouping .student-table__input {
+  min-width: 140px;
+  width: auto;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.class-analysis-tool {
+  width: 40px;
+  height: 40px;
+}
+
 .student-table {
   width: 100%;
   min-width: 420px;
   border-collapse: collapse;
+}
+
+.student-table--analysis {
+  width: max-content;
+  min-width: 100%;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
 .student-table th,
@@ -1543,6 +1644,172 @@ button {
 .student-table th {
   background: rgba(23, 49, 62, 0.08);
   color: var(--text);
+}
+
+.student-table--analysis th,
+.student-table--analysis td {
+  min-width: var(--analysis-date-column-width);
+  width: var(--analysis-date-column-width);
+  text-align: center;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.student-table__name-cell,
+.student-table__name-cell--head {
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  min-width: var(--analysis-name-column-width);
+  width: var(--analysis-name-column-width);
+  text-align: left !important;
+  background: rgba(249, 245, 237, 0.98);
+  box-shadow: 1px 0 0 rgba(23, 49, 62, 0.08), 18px 0 24px -22px rgba(23, 49, 62, 0.28);
+}
+
+.student-table__name-cell--head {
+  z-index: 6;
+  background: rgba(236, 229, 215, 0.98);
+}
+
+.student-table__date-head {
+  white-space: nowrap;
+}
+
+.student-table__date-head--empty,
+.student-table__date-cell--empty {
+  color: transparent;
+}
+
+.student-table__date-cell {
+  color: rgba(23, 49, 62, 0.84);
+}
+
+.student-table__date-cell--interactive {
+  cursor: pointer;
+}
+
+.student-table__date-cell--interactive:hover {
+  background: rgba(23, 49, 62, 0.04);
+}
+
+.student-table__record-cell {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.4rem;
+  align-items: start;
+}
+
+.student-table__record-total {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.4rem;
+  font-weight: 800;
+  color: rgba(23, 49, 62, 0.94);
+}
+
+.student-table__record-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  justify-content: flex-start;
+}
+
+.student-table__record-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  font-size: 0.78rem;
+  color: rgba(23, 49, 62, 0.72);
+  white-space: nowrap;
+}
+
+.student-table__record-symbol {
+  font-weight: 800;
+}
+
+.student-table__record-value {
+  font-weight: 700;
+}
+
+.student-table__sort-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.25rem;
+  width: 100%;
+  min-height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.student-table__sort-button--center {
+  justify-content: center;
+}
+
+.student-table__sort-arrow {
+  min-width: 0.8rem;
+  color: rgba(23, 49, 62, 0.58);
+}
+
+.import-modal__dialog--analysis-detail {
+  width: min(760px, calc(100% - 2rem));
+  max-width: 760px;
+  max-height: min(86vh, 920px);
+  display: flex;
+  flex-direction: column;
+}
+
+.class-analysis-detail {
+  display: grid;
+  min-height: 0;
+  overflow: auto;
+}
+
+.class-analysis-detail__row {
+  cursor: pointer;
+}
+
+.class-analysis-detail__row:hover td {
+  background: rgba(23, 49, 62, 0.04);
+}
+
+.class-analysis-detail__table {
+  width: 100%;
+  min-width: 0;
+}
+
+.class-analysis-detail__type-cell {
+  width: 72px;
+  text-align: center;
+  font-size: 1rem;
+}
+
+.class-analysis-detail__summary-cell {
+  color: rgba(23, 49, 62, 0.84);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.class-analysis-detail__action-cell {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.row-delete-button--small {
+  padding: 0.4rem 0.7rem;
+  font-size: 0.82rem;
+}
+
+#classAnalysisRecordEditForm {
+  min-height: 0;
+  overflow: auto;
 }
 
 .student-table tbody tr:last-child td {

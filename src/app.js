@@ -42,6 +42,15 @@ let activeViewId = "unterricht";
 let unterrichtViewMode = "live";
 let unterrichtToolMode = "attendance";
 let classViewMode = "analyse";
+let classAnalysisSort = { key: "name", direction: "asc" };
+let classAnalysisGrouping = "day";
+let classAnalysisCriterion = "count";
+let classAnalysisEnabledTypes = {
+  attendance: true,
+  homework: true,
+  warning: true,
+  assessment: true
+};
 let timetableViewMode = "ansicht";
 let seatPlanViewMode = "ansicht";
 let seatPlanManageMode = "sitzordnung";
@@ -52,6 +61,11 @@ let seatPlanMirrorMode = "horizontal";
 const timetableWeekdayKeys = ["1", "2", "3", "4", "5"];
 let liveDateTimeIntervalId = null;
 let isClassImportModalOpen = false;
+let isClassAnalysisDetailModalOpen = false;
+let activeClassAnalysisDetailDraft = null;
+let isClassAnalysisRecordEditModalOpen = false;
+let activeClassAnalysisRecordEditDraft = null;
+let activeClassAnalysisAssessmentGridDrag = null;
 let isUnterrichtAssessmentModalOpen = false;
 let activeDeskLayoutDrag = null;
 let activeDeskLayoutResize = null;
@@ -69,6 +83,9 @@ let activeUnterrichtAssessmentGridDrag = null;
 let activeUnterrichtAssessmentPress = null;
 let unterrichtAssessmentQuickMenu = null;
 let unterrichtAssessmentQuickOverlay = null;
+let activeClassAnalysisDragScroll = null;
+let hasBoundClassAnalysisResize = false;
+let classAnalysisScrollLeftByClassId = {};
 const AUTOSAVE_DELAY_MS = 30000;
 const HOMEWORK_LONG_PRESS_DELAY_MS = 380;
 const HOMEWORK_RADIAL_OPTIONS = [
@@ -98,6 +115,14 @@ let forcePersistAfterCurrentSave = false;
 
 function getClassImportModal() {
   return document.getElementById("classImportModal");
+}
+
+function getClassAnalysisDetailModal() {
+  return document.getElementById("classAnalysisDetailModal");
+}
+
+function getClassAnalysisRecordEditModal() {
+  return document.getElementById("classAnalysisRecordEditModal");
 }
 
 function isClassManageMode() {
@@ -210,7 +235,7 @@ function isEditingFocusableInput() {
 }
 
 function syncLiveDateTimeUi() {
-  if (!schoolService || !isLiveDateTimeMode() || activeDeskLayoutDrag || activeDeskLayoutResize || isClassImportModalOpen || isUnterrichtAssessmentModalOpen || isEditingFocusableInput()) {
+  if (!schoolService || !isLiveDateTimeMode() || activeDeskLayoutDrag || activeDeskLayoutResize || isClassImportModalOpen || isClassAnalysisDetailModalOpen || isClassAnalysisRecordEditModalOpen || isUnterrichtAssessmentModalOpen || isEditingFocusableInput()) {
     return;
   }
 
@@ -782,9 +807,18 @@ function updateHeaderSubtitle(viewId, config) {
       ? [activeClass.name || "", activeClass.subject || "", room || ""].filter(Boolean)
       : [];
     const subtitle = subtitleParts.join(" ").trim();
+    const dateLabel = referenceDate && !Number.isNaN(referenceDate.getTime())
+      ? String(referenceDate.getDate()).padStart(2, "0") + "." + String(referenceDate.getMonth() + 1).padStart(2, "0") + "." + referenceDate.getFullYear()
+      : "";
 
-    viewSubtitle.textContent = subtitle;
-    viewSubtitle.hidden = !subtitle;
+    if (!subtitle && !dateLabel) {
+      viewSubtitle.textContent = "";
+      viewSubtitle.hidden = true;
+      return;
+    }
+
+    viewSubtitle.innerHTML = '<span class="content__subtitle-main">' + escapeHtml(subtitle) + '</span>' + (dateLabel ? '<span class="content__subtitle-subtle">' + escapeHtml(dateLabel) + '</span>' : "");
+    viewSubtitle.hidden = false;
     return;
   }
 
@@ -937,6 +971,99 @@ function updateHeaderActions(viewId) {
   viewHeaderActions.innerHTML = "";
 }
 
+function syncClassAnalysisTableLayout() {
+  const wraps = document.querySelectorAll(".student-table-wrap--analysis[data-drag-scroll='true']");
+
+  eachNode(wraps, function (wrap) {
+    const table = wrap.querySelector(".student-table--analysis");
+    const nameCell = table ? table.querySelector(".student-table__name-cell, .student-table__name-cell--head") : null;
+    const wrapWidth = wrap.clientWidth || 0;
+    const nameWidth = Math.max(156, Math.min(220, nameCell ? Math.ceil(nameCell.getBoundingClientRect().width) : 176));
+    const dateWidth = Math.max(76, Math.floor(Math.max(0, wrapWidth - nameWidth) / 8));
+    const classId = String(wrap.dataset.classId || "");
+    const storedScrollLeft = classId && Object.prototype.hasOwnProperty.call(classAnalysisScrollLeftByClassId, classId)
+      ? Number(classAnalysisScrollLeftByClassId[classId]) || 0
+      : wrap.scrollLeft;
+
+    wrap.style.setProperty("--analysis-name-column-width", String(nameWidth) + "px");
+    wrap.style.setProperty("--analysis-date-column-width", String(dateWidth) + "px");
+    wrap.scrollLeft = Math.max(0, Math.min(storedScrollLeft, Math.max(0, wrap.scrollWidth - wrap.clientWidth)));
+  });
+}
+
+function clearClassAnalysisDragScroll() {
+  if (!activeClassAnalysisDragScroll) {
+    return;
+  }
+
+  window.removeEventListener("pointermove", window.UnterrichtsassistentApp.handleClassAnalysisDragScrollMove);
+  window.removeEventListener("pointerup", window.UnterrichtsassistentApp.handleClassAnalysisDragScrollEnd);
+  window.removeEventListener("pointercancel", window.UnterrichtsassistentApp.handleClassAnalysisDragScrollEnd);
+  activeClassAnalysisDragScroll.wrap.classList.remove("is-dragging");
+  activeClassAnalysisDragScroll = null;
+}
+
+function initializeClassAnalysisInteractions() {
+  const wraps = document.querySelectorAll(".student-table-wrap--analysis[data-drag-scroll='true']");
+
+  if (!hasBoundClassAnalysisResize) {
+    hasBoundClassAnalysisResize = true;
+    window.addEventListener("resize", syncClassAnalysisTableLayout);
+  }
+
+  eachNode(wraps, function (wrap) {
+    if (wrap.dataset.dragScrollBound === "true") {
+      return;
+    }
+
+    wrap.dataset.dragScrollBound = "true";
+    wrap.addEventListener("scroll", function () {
+      const classId = String(wrap.dataset.classId || "");
+
+      if (!classId) {
+        return;
+      }
+
+      classAnalysisScrollLeftByClassId[classId] = wrap.scrollLeft;
+    }, { passive: true });
+    wrap.addEventListener("pointerdown", function (event) {
+      if ((event.pointerType === "mouse" && event.button !== 0)
+        || event.target.closest("button, input, select, textarea, a")) {
+        return;
+      }
+
+      if (wrap.scrollWidth <= wrap.clientWidth + 2) {
+        return;
+      }
+
+      clearClassAnalysisDragScroll();
+      activeClassAnalysisDragScroll = {
+        wrap: wrap,
+        classId: String(wrap.dataset.classId || ""),
+        pointerId: event.pointerId,
+        startX: Number(event.clientX) || 0,
+        startScrollLeft: wrap.scrollLeft
+      };
+      wrap.classList.add("is-dragging");
+
+      if (typeof wrap.setPointerCapture === "function") {
+        try {
+          wrap.setPointerCapture(event.pointerId);
+        } catch (error) {
+          void error;
+        }
+      }
+
+      window.addEventListener("pointermove", window.UnterrichtsassistentApp.handleClassAnalysisDragScrollMove);
+      window.addEventListener("pointerup", window.UnterrichtsassistentApp.handleClassAnalysisDragScrollEnd);
+      window.addEventListener("pointercancel", window.UnterrichtsassistentApp.handleClassAnalysisDragScrollEnd);
+      event.preventDefault();
+    });
+  });
+
+  window.requestAnimationFrame(syncClassAnalysisTableLayout);
+}
+
 function setActiveView(viewId) {
   const previousViewId = activeViewId;
   activeViewId = viewId;
@@ -944,6 +1071,15 @@ function setActiveView(viewId) {
 
   if (viewId === "klasse" && previousViewId !== "klasse") {
     classViewMode = "analyse";
+    classAnalysisSort = { key: "name", direction: "asc" };
+    classAnalysisGrouping = "day";
+    classAnalysisCriterion = "count";
+    classAnalysisEnabledTypes = {
+      attendance: true,
+      homework: true,
+      warning: true,
+      assessment: true
+    };
   }
 
   if (viewId === "unterricht" && previousViewId !== "unterricht") {
@@ -1003,6 +1139,20 @@ function setActiveView(viewId) {
 
   if (viewId === "klasse" && isClassImportModalOpen && window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.openClassImportModal === "function") {
     window.UnterrichtsassistentApp.openClassImportModal();
+  }
+
+  if (viewId === "klasse" && isClassAnalysisDetailModalOpen && window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.openClassAnalysisDetailModal === "function") {
+    window.UnterrichtsassistentApp.openClassAnalysisDetailModal();
+  }
+
+  if (viewId === "klasse" && isClassAnalysisRecordEditModalOpen && window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.openClassAnalysisRecordEditModal === "function") {
+    window.UnterrichtsassistentApp.openClassAnalysisRecordEditModal();
+  }
+
+  if (viewId === "klasse" && !isClassManageMode()) {
+    initializeClassAnalysisInteractions();
+  } else {
+    clearClassAnalysisDragScroll();
   }
 }
 
@@ -1589,6 +1739,18 @@ function showUnterrichtAssessmentQuickOverlay(anchorX, anchorY, qualityValue, af
   });
 }
 
+function flashUnterrichtAssessmentQuickOverlay() {
+  const overlay = ensureUnterrichtAssessmentQuickOverlay();
+
+  overlay.classList.remove("is-flash");
+  void overlay.offsetWidth;
+  overlay.classList.add("is-flash");
+
+  window.setTimeout(function () {
+    overlay.classList.remove("is-flash");
+  }, 220);
+}
+
 function clearUnterrichtAssessmentPressListeners() {
   window.removeEventListener("pointermove", window.UnterrichtsassistentApp.handleUnterrichtAssessmentPointerMove);
   window.removeEventListener("pointerup", window.UnterrichtsassistentApp.handleUnterrichtAssessmentPointerEnd);
@@ -1602,30 +1764,35 @@ function formatAssessmentQuickQuality(value) {
 function getUnterrichtAssessmentQuickSelection(clientX, clientY, anchorX, anchorY) {
   const dx = clientX - anchorX;
   const dy = clientY - anchorY;
-  const qualityStepNear = 52;
-  const qualityStepFar = 118;
-  const qualityStepMax = 300;
-  const afbStepMax = 300;
+  const qualityZoneHalf = 30;
+  const qualityOuterHalf = 90;
+  const qualityMax = 150;
+  const qualityTolerance = 120;
+  const afbZoneHalf = 39;
+  const afbMax = 117;
+  const afbTolerance = 120;
+  const clampedDx = Math.max(-afbMax, Math.min(afbMax, dx));
+  const clampedDy = Math.max(-qualityMax, Math.min(qualityMax, dy));
   let afb = 2;
   let qualityValue = 0;
 
-  if (Math.abs(dy) > qualityStepMax || Math.abs(dx) > afbStepMax) {
+  if (Math.abs(dy) > qualityMax + qualityTolerance || Math.abs(dx) > afbMax + afbTolerance) {
     return null;
   }
 
-  if (dx <= -28) {
+  if (clampedDx < -afbZoneHalf) {
     afb = 1;
-  } else if (dx >= 28) {
+  } else if (clampedDx > afbZoneHalf) {
     afb = 3;
   }
 
-  if (dy <= -qualityStepFar) {
+  if (clampedDy < -qualityOuterHalf) {
     qualityValue = 2;
-  } else if (dy <= -qualityStepNear) {
+  } else if (clampedDy < -qualityZoneHalf) {
     qualityValue = 1;
-  } else if (dy >= qualityStepFar) {
+  } else if (clampedDy > qualityOuterHalf) {
     qualityValue = -2;
-  } else if (dy >= qualityStepNear) {
+  } else if (clampedDy > qualityZoneHalf) {
     qualityValue = -1;
   }
 
@@ -2000,6 +2167,178 @@ function syncUnterrichtAssessmentGradeUi() {
     const isActive = Boolean(selectedValue) && selectedValue === value;
     button.classList.toggle("is-active", isActive);
     button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+}
+
+function getClassAnalysisRecordByDraft(rawSnapshot, draft) {
+  const type = String(draft && draft.recordType || "");
+  const recordId = String(draft && draft.recordId || "");
+  const collection = type === "assessment"
+    ? (rawSnapshot.assessments || [])
+    : (type === "attendance"
+      ? ensureAttendanceRecords(rawSnapshot)
+      : (type === "homework"
+        ? ensureHomeworkRecords(rawSnapshot)
+        : (type === "warning" ? ensureWarningRecords(rawSnapshot) : [])));
+
+  return collection.find(function (record) {
+    return String(record.id || "") === recordId;
+  }) || null;
+}
+
+function combineDateAndTimeValue(dateValue, timeValue) {
+  const normalizedDate = normalizeDateValue(dateValue);
+  const normalizedTime = String(timeValue || "").trim();
+
+  if (!normalizedDate || !normalizedTime) {
+    return "";
+  }
+
+  return normalizedDate + "T" + normalizedTime;
+}
+
+function getClassAnalysisAssessmentGridSvg() {
+  return document.getElementById("classAnalysisAssessmentGridSvg");
+}
+
+function getClassAnalysisAssessmentGridPoint(event) {
+  const svg = getClassAnalysisAssessmentGridSvg();
+  const config = getAssessmentGridConfig();
+  const inner = getAssessmentGridInnerSize(config);
+  let rect;
+  let rawX;
+  let rawY;
+  let afb = null;
+  let qualityIndex;
+
+  if (!svg) {
+    return null;
+  }
+
+  rect = svg.getBoundingClientRect();
+  rawX = ((Number(event.clientX) - rect.left) / rect.width) * config.width;
+  rawY = ((Number(event.clientY) - rect.top) / rect.height) * config.height;
+
+  if (rawX < config.marginLeft
+    || rawX > (config.width - config.marginRight)
+    || rawY < config.marginTop
+    || rawY > (config.height - config.marginBottom)) {
+    return null;
+  }
+
+  config.afbValues.some(function (currentAfb) {
+    if (Math.abs(rawX - getAssessmentGridX(currentAfb, config)) <= config.activeAfbHalfWidth) {
+      afb = currentAfb;
+      return true;
+    }
+
+    return false;
+  });
+
+  if (afb === null) {
+    return null;
+  }
+
+  qualityIndex = Math.max(0, Math.min(4, Math.round(((rawY - config.marginTop) / inner.innerHeight) * 4)));
+
+  return {
+    afb: afb,
+    qualityValue: config.qualityValues[qualityIndex]
+  };
+}
+
+function setClassAnalysisAssessmentGridValue(afb, qualityValue) {
+  const targetInput = document.getElementById("classAnalysisAssessmentAfb" + String(afb));
+
+  if (targetInput) {
+    targetInput.value = String(qualityValue);
+  }
+}
+
+function renderClassAnalysisAssessmentGrid() {
+  const svg = getClassAnalysisAssessmentGridSvg();
+  const afb1Input = document.getElementById("classAnalysisAssessmentAfb1");
+  const afb2Input = document.getElementById("classAnalysisAssessmentAfb2");
+  const afb3Input = document.getElementById("classAnalysisAssessmentAfb3");
+  const config = getAssessmentGridConfig();
+  const inner = getAssessmentGridInnerSize(config);
+  const afbValues = {
+    1: afbQualityToValue(String(afb1Input && afb1Input.value || "").trim()),
+    2: afbQualityToValue(String(afb2Input && afb2Input.value || "").trim()),
+    3: afbQualityToValue(String(afb3Input && afb3Input.value || "").trim())
+  };
+  let polylinePoints = [];
+
+  if (!svg) {
+    return;
+  }
+
+  svg.innerHTML = "";
+  svg.appendChild(buildAssessmentSvgElement("rect", { x: config.marginLeft, y: config.marginTop, width: inner.innerWidth, height: inner.innerHeight, rx: 18, fill: "rgba(255,255,255,0.9)", stroke: "rgba(23, 49, 62, 0.12)" }));
+  config.qualityValues.forEach(function (qualityValue) {
+    const y = getAssessmentGridY(qualityValue, config);
+    svg.appendChild(buildAssessmentSvgElement("line", { x1: config.marginLeft, y1: y, x2: config.width - config.marginRight, y2: y, stroke: qualityValue === 0 ? "#94a3b8" : "#d9e1ee", "stroke-width": qualityValue === 0 ? 2 : 1 }));
+    svg.appendChild(buildAssessmentSvgElement("text", { x: config.marginLeft - 12, y: y + 4, "text-anchor": "end", "font-size": 13, fill: "#334155", "font-weight": qualityValue === 0 ? 700 : 500 }, formatAfbQualityLabel(qualityValue)));
+  });
+  config.afbValues.forEach(function (afb) {
+    const x = getAssessmentGridX(afb, config);
+    svg.appendChild(buildAssessmentSvgElement("line", { x1: x, y1: config.marginTop, x2: x, y2: config.height - config.marginBottom, stroke: "#d9e1ee", "stroke-width": 1 }));
+    svg.appendChild(buildAssessmentSvgElement("text", { x: x, y: config.height - config.marginBottom + 22, "text-anchor": "middle", "font-size": 14, fill: "#334155", "font-weight": 700 }, "AFB " + String(afb)));
+  });
+  config.afbValues.forEach(function (afb) {
+    config.qualityValues.forEach(function (qualityValue) {
+      svg.appendChild(buildAssessmentSvgElement("circle", { cx: getAssessmentGridX(afb, config), cy: getAssessmentGridY(qualityValue, config), r: 6, fill: "#ffffff", stroke: "#94a3b8", "stroke-width": 1.5 }));
+    });
+  });
+  polylinePoints = config.afbValues.filter(function (afb) {
+    return afbValues[afb] !== null;
+  }).map(function (afb) {
+    return String(getAssessmentGridX(afb, config)) + "," + String(getAssessmentGridY(afbValues[afb], config));
+  });
+  if (polylinePoints.length >= 2) {
+    svg.appendChild(buildAssessmentSvgElement("polyline", { points: polylinePoints.join(" "), fill: "none", stroke: "#254c5d", "stroke-width": 3, "stroke-linecap": "round", "stroke-linejoin": "round", opacity: "0.35" }));
+  }
+  config.afbValues.forEach(function (afb) {
+    if (afbValues[afb] === null) {
+      return;
+    }
+    svg.appendChild(buildAssessmentSvgElement("circle", { cx: getAssessmentGridX(afb, config), cy: getAssessmentGridY(afbValues[afb], config), r: 8, fill: "#254c5d", stroke: "#ffffff", "stroke-width": 2.5 }));
+  });
+}
+
+function syncClassAnalysisAssessmentCategoryUi() {
+  const hiddenInput = document.getElementById("classAnalysisAssessmentCategory");
+  const selectedCategory = hiddenInput ? String(hiddenInput.value || "").trim() : "";
+  Array.from(document.querySelectorAll(".class-analysis-assessment-category-button")).forEach(function (button) {
+    button.classList.toggle("is-active", Boolean(selectedCategory) && String(button.getAttribute("data-category") || "").trim() === selectedCategory);
+  });
+}
+
+function syncClassAnalysisAssessmentGradeUi() {
+  const workInput = document.getElementById("classAnalysisAssessmentWorkBehavior");
+  const socialInput = document.getElementById("classAnalysisAssessmentSocialBehavior");
+  const workValue = workInput ? String(workInput.value || "").trim() : "";
+  const socialValue = socialInput ? String(socialInput.value || "").trim() : "";
+  Array.from(document.querySelectorAll(".class-analysis-assessment-grade-button")).forEach(function (button) {
+    const target = String(button.getAttribute("data-target") || "").trim();
+    const value = String(button.getAttribute("data-value") || "").trim();
+    button.classList.toggle("is-active", target === "social" ? socialValue === value : workValue === value);
+  });
+}
+
+function syncClassAnalysisHomeworkUi() {
+  const input = document.getElementById("classAnalysisHomeworkQuality");
+  const selectedValue = input ? String(input.value || "").trim() : "";
+  Array.from(document.querySelectorAll(".class-analysis-homework-button")).forEach(function (button) {
+    button.classList.toggle("is-active", String(button.getAttribute("data-quality") || "").trim() === selectedValue);
+  });
+}
+
+function syncClassAnalysisWarningUi() {
+  const input = document.getElementById("classAnalysisWarningCategory");
+  const selectedValue = input ? String(input.value || "").trim() : "";
+  Array.from(document.querySelectorAll(".class-analysis-warning-button")).forEach(function (button) {
+    button.classList.toggle("is-active", String(button.getAttribute("data-category") || "").trim() === selectedValue);
   });
 }
 
@@ -4733,7 +5072,13 @@ window.UnterrichtsassistentApp.handleUnterrichtAssessmentPointerEnd = function (
   activeUnterrichtAssessmentPress = null;
 
   if (pressState.menuVisible && pressState.selection && currentRawSnapshot && activeClass) {
-    hideUnterrichtAssessmentQuickMenu();
+    showUnterrichtAssessmentQuickOverlay(
+      pressState.anchorX,
+      pressState.anchorY,
+      pressState.selection.qualityValue,
+      pressState.selection.afb
+    );
+    flashUnterrichtAssessmentQuickOverlay();
     appendUnterrichtAssessmentRecord(currentRawSnapshot, {
       studentId: pressState.studentId,
       classId: activeClass.id,
@@ -4750,6 +5095,9 @@ window.UnterrichtsassistentApp.handleUnterrichtAssessmentPointerEnd = function (
       knowledgeGap: ""
     });
     saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
+    window.setTimeout(function () {
+      hideUnterrichtAssessmentQuickMenu();
+    }, 180);
     event.preventDefault();
     return false;
   }
@@ -5088,6 +5436,377 @@ window.UnterrichtsassistentApp.handleUnterrichtHomeworkPointerEnd = function (ev
 window.UnterrichtsassistentApp.getClassViewMode = function () {
   return classViewMode;
 };
+window.UnterrichtsassistentApp.getActiveClassAnalysisDetailDraft = function () {
+  return activeClassAnalysisDetailDraft
+    ? {
+      studentId: String(activeClassAnalysisDetailDraft.studentId || ""),
+      groupKey: String(activeClassAnalysisDetailDraft.groupKey || ""),
+      groupLabel: String(activeClassAnalysisDetailDraft.groupLabel || "")
+    }
+    : null;
+};
+window.UnterrichtsassistentApp.getActiveClassAnalysisRecordEditDraft = function () {
+  return activeClassAnalysisRecordEditDraft
+    ? {
+      recordType: String(activeClassAnalysisRecordEditDraft.recordType || ""),
+      recordId: String(activeClassAnalysisRecordEditDraft.recordId || "")
+    }
+    : null;
+};
+window.UnterrichtsassistentApp.getClassAnalysisSort = function () {
+  return {
+    key: classAnalysisSort && classAnalysisSort.key ? classAnalysisSort.key : "name",
+    direction: classAnalysisSort && classAnalysisSort.direction === "desc" ? "desc" : "asc"
+  };
+};
+window.UnterrichtsassistentApp.getClassAnalysisEnabledTypes = function () {
+  return {
+    attendance: classAnalysisEnabledTypes.attendance !== false,
+    homework: classAnalysisEnabledTypes.homework !== false,
+    warning: classAnalysisEnabledTypes.warning !== false,
+    assessment: classAnalysisEnabledTypes.assessment !== false
+  };
+};
+window.UnterrichtsassistentApp.getClassAnalysisGrouping = function () {
+  return ["day", "week", "month", "total"].indexOf(String(classAnalysisGrouping || "")) >= 0
+    ? classAnalysisGrouping
+    : "day";
+};
+window.UnterrichtsassistentApp.getClassAnalysisCriterion = function () {
+  return ["count", "performance", "workBehavior"].indexOf(String(classAnalysisCriterion || "")) >= 0
+    ? classAnalysisCriterion
+    : "count";
+};
+window.UnterrichtsassistentApp.setClassAnalysisGrouping = function (groupingKey) {
+  const normalizedGrouping = String(groupingKey || "").trim();
+
+  classAnalysisGrouping = ["day", "week", "month", "total"].indexOf(normalizedGrouping) >= 0
+    ? normalizedGrouping
+    : "day";
+  classAnalysisSort = { key: "name", direction: "asc" };
+  activeClassAnalysisDetailDraft = null;
+  activeClassAnalysisRecordEditDraft = null;
+  isClassAnalysisDetailModalOpen = false;
+  isClassAnalysisRecordEditModalOpen = false;
+
+  if (activeViewId === "klasse") {
+    setActiveView("klasse");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.setClassAnalysisCriterion = function (criterionKey) {
+  const normalizedCriterion = String(criterionKey || "").trim();
+
+  classAnalysisCriterion = ["count", "performance", "workBehavior"].indexOf(normalizedCriterion) >= 0
+    ? normalizedCriterion
+    : "count";
+  classAnalysisSort = { key: "name", direction: "asc" };
+  activeClassAnalysisDetailDraft = null;
+  activeClassAnalysisRecordEditDraft = null;
+  isClassAnalysisDetailModalOpen = false;
+  isClassAnalysisRecordEditModalOpen = false;
+
+  if (activeViewId === "klasse") {
+    setActiveView("klasse");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.toggleClassAnalysisType = function (typeKey) {
+  const normalizedType = String(typeKey || "").trim();
+
+  if (["attendance", "homework", "warning", "assessment"].indexOf(normalizedType) < 0) {
+    return false;
+  }
+
+  classAnalysisEnabledTypes[normalizedType] = !classAnalysisEnabledTypes[normalizedType];
+
+  if (activeViewId === "klasse") {
+    setActiveView("klasse");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.setClassAnalysisSort = function (key) {
+  const nextKey = String(key || "").trim() || "name";
+
+  if (classAnalysisSort.key === nextKey) {
+    classAnalysisSort.direction = classAnalysisSort.direction === "desc" ? "asc" : "desc";
+  } else {
+    classAnalysisSort = {
+      key: nextKey,
+      direction: "desc"
+    };
+  }
+
+  if (activeViewId === "klasse") {
+    setActiveView("klasse");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.openClassAnalysisDetailModal = function () {
+  const modal = getClassAnalysisDetailModal();
+
+  if (!modal || !activeClassAnalysisDetailDraft) {
+    return false;
+  }
+
+  isClassAnalysisDetailModalOpen = true;
+  modal.hidden = false;
+  modal.classList.add("is-open");
+  return false;
+};
+window.UnterrichtsassistentApp.closeClassAnalysisDetailModal = function () {
+  const modal = getClassAnalysisDetailModal();
+
+  if (modal) {
+    modal.hidden = true;
+    modal.classList.remove("is-open");
+  }
+
+  isClassAnalysisDetailModalOpen = false;
+  activeClassAnalysisDetailDraft = null;
+  return false;
+};
+window.UnterrichtsassistentApp.openClassAnalysisDetail = function (studentId, groupKey, groupLabel) {
+  if (!studentId || !groupKey || activeViewId !== "klasse" || isClassManageMode()) {
+    return false;
+  }
+
+  activeClassAnalysisDetailDraft = {
+    studentId: String(studentId),
+    groupKey: String(groupKey),
+    groupLabel: String(groupLabel || "")
+  };
+  isClassAnalysisDetailModalOpen = true;
+  setActiveView("klasse");
+  return false;
+};
+window.UnterrichtsassistentApp.openClassAnalysisRecordEditModal = function () {
+  const modal = getClassAnalysisRecordEditModal();
+
+  if (!modal || !activeClassAnalysisRecordEditDraft) {
+    return false;
+  }
+
+  isClassAnalysisRecordEditModalOpen = true;
+  modal.hidden = false;
+  modal.classList.add("is-open");
+  syncClassAnalysisAssessmentCategoryUi();
+  syncClassAnalysisAssessmentGradeUi();
+  syncClassAnalysisHomeworkUi();
+  syncClassAnalysisWarningUi();
+  renderClassAnalysisAssessmentGrid();
+  return false;
+};
+window.UnterrichtsassistentApp.closeClassAnalysisRecordEditModal = function () {
+  const modal = getClassAnalysisRecordEditModal();
+
+  if (modal) {
+    modal.hidden = true;
+    modal.classList.remove("is-open");
+  }
+
+  isClassAnalysisRecordEditModalOpen = false;
+  activeClassAnalysisAssessmentGridDrag = null;
+  activeClassAnalysisRecordEditDraft = null;
+  return false;
+};
+window.UnterrichtsassistentApp.openClassAnalysisRecordEdit = function (recordType, recordId) {
+  if (!recordType || !recordId || activeViewId !== "klasse") {
+    return false;
+  }
+
+  activeClassAnalysisRecordEditDraft = {
+    recordType: String(recordType),
+    recordId: String(recordId)
+  };
+  isClassAnalysisRecordEditModalOpen = true;
+  setActiveView("klasse");
+  return false;
+};
+window.UnterrichtsassistentApp.deleteClassAnalysisRecord = function (recordType, recordId) {
+  const currentRawSnapshot = schoolService && serializeSnapshot ? serializeSnapshot(schoolService.snapshot) : null;
+  const normalizedType = String(recordType || "").trim();
+  const normalizedId = String(recordId || "").trim();
+
+  if (!currentRawSnapshot || !normalizedType || !normalizedId) {
+    return false;
+  }
+
+  if (!window.confirm("Soll dieser Datensatz wirklich dauerhaft geloescht werden?")) {
+    return false;
+  }
+
+  if (normalizedType === "assessment") {
+    currentRawSnapshot.assessments = (currentRawSnapshot.assessments || []).filter(function (record) {
+      return String(record.id || "") !== normalizedId;
+    });
+  } else if (normalizedType === "attendance") {
+    currentRawSnapshot.attendanceRecords = ensureAttendanceRecords(currentRawSnapshot).filter(function (record) {
+      return String(record.id || "") !== normalizedId;
+    });
+  } else if (normalizedType === "homework") {
+    currentRawSnapshot.homeworkRecords = ensureHomeworkRecords(currentRawSnapshot).filter(function (record) {
+      return String(record.id || "") !== normalizedId;
+    });
+  } else if (normalizedType === "warning") {
+    currentRawSnapshot.warningRecords = ensureWarningRecords(currentRawSnapshot).filter(function (record) {
+      return String(record.id || "") !== normalizedId;
+    });
+  } else {
+    return false;
+  }
+
+  if (activeClassAnalysisRecordEditDraft
+    && String(activeClassAnalysisRecordEditDraft.recordType || "") === normalizedType
+    && String(activeClassAnalysisRecordEditDraft.recordId || "") === normalizedId) {
+    window.UnterrichtsassistentApp.closeClassAnalysisRecordEditModal();
+  }
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "klasse");
+  return false;
+};
+window.UnterrichtsassistentApp.toggleClassAnalysisAssessmentCategory = function (category) {
+  const hiddenInput = document.getElementById("classAnalysisAssessmentCategory");
+  const nextCategory = String(category || "").trim();
+
+  if (!hiddenInput) {
+    return false;
+  }
+
+  hiddenInput.value = hiddenInput.value === nextCategory ? "" : nextCategory;
+  syncClassAnalysisAssessmentCategoryUi();
+  return false;
+};
+window.UnterrichtsassistentApp.toggleClassAnalysisAssessmentGrade = function (target, value) {
+  const hiddenInput = String(target || "").trim() === "social"
+    ? document.getElementById("classAnalysisAssessmentSocialBehavior")
+    : document.getElementById("classAnalysisAssessmentWorkBehavior");
+  const nextValue = String(value || "").trim();
+
+  if (!hiddenInput) {
+    return false;
+  }
+
+  hiddenInput.value = hiddenInput.value === nextValue ? "" : nextValue;
+  syncClassAnalysisAssessmentGradeUi();
+  return false;
+};
+window.UnterrichtsassistentApp.startClassAnalysisAssessmentGridPointer = function (event) {
+  const point = getClassAnalysisAssessmentGridPoint(event);
+
+  if (!point) {
+    return false;
+  }
+
+  event.preventDefault();
+  activeClassAnalysisAssessmentGridDrag = { pointerId: event.pointerId };
+  setClassAnalysisAssessmentGridValue(point.afb, point.qualityValue);
+  renderClassAnalysisAssessmentGrid();
+  if (event.target && typeof event.target.setPointerCapture === "function") {
+    event.target.setPointerCapture(event.pointerId);
+  }
+  return false;
+};
+window.UnterrichtsassistentApp.handleClassAnalysisAssessmentGridPointerMove = function (event) {
+  const point = getClassAnalysisAssessmentGridPoint(event);
+
+  if (!activeClassAnalysisAssessmentGridDrag || event.pointerId !== activeClassAnalysisAssessmentGridDrag.pointerId || !point) {
+    return false;
+  }
+
+  event.preventDefault();
+  setClassAnalysisAssessmentGridValue(point.afb, point.qualityValue);
+  renderClassAnalysisAssessmentGrid();
+  return false;
+};
+window.UnterrichtsassistentApp.handleClassAnalysisAssessmentGridPointerUp = function (event) {
+  if (!activeClassAnalysisAssessmentGridDrag || event.pointerId !== activeClassAnalysisAssessmentGridDrag.pointerId) {
+    return false;
+  }
+
+  activeClassAnalysisAssessmentGridDrag = null;
+  return false;
+};
+window.UnterrichtsassistentApp.toggleClassAnalysisHomeworkQuality = function (quality) {
+  const input = document.getElementById("classAnalysisHomeworkQuality");
+  const nextValue = String(quality || "").trim();
+
+  if (!input) {
+    return false;
+  }
+
+  input.value = input.value === nextValue ? "" : nextValue;
+  syncClassAnalysisHomeworkUi();
+  return false;
+};
+window.UnterrichtsassistentApp.toggleClassAnalysisWarningCategory = function (category) {
+  const input = document.getElementById("classAnalysisWarningCategory");
+  const nextValue = String(category || "").trim();
+
+  if (!input) {
+    return false;
+  }
+
+  input.value = input.value === nextValue ? "" : nextValue;
+  syncClassAnalysisWarningUi();
+  return false;
+};
+window.UnterrichtsassistentApp.submitClassAnalysisRecordEditModal = function (event) {
+  const currentRawSnapshot = schoolService && serializeSnapshot ? serializeSnapshot(schoolService.snapshot) : null;
+  const draft = activeClassAnalysisRecordEditDraft;
+  let record;
+  let timeValue;
+  let statusValue;
+  let qualityValue;
+  let categoryValue;
+  let noteValue;
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  if (!currentRawSnapshot || !draft) {
+    return window.UnterrichtsassistentApp.closeClassAnalysisRecordEditModal();
+  }
+
+  record = getClassAnalysisRecordByDraft(currentRawSnapshot, draft);
+  if (!record) {
+    return window.UnterrichtsassistentApp.closeClassAnalysisRecordEditModal();
+  }
+
+  if (draft.recordType === "attendance") {
+    timeValue = String(document.getElementById("classAnalysisAttendanceTime") && document.getElementById("classAnalysisAttendanceTime").value || "").trim();
+    statusValue = String(document.getElementById("classAnalysisAttendanceStatus") && document.getElementById("classAnalysisAttendanceStatus").value || "absent").trim();
+    record.status = statusValue === "present" ? "present" : "absent";
+    if (timeValue) {
+      record.effectiveAt = combineDateAndTimeValue(record.lessonDate, timeValue);
+      record.recordedAt = combineDateAndTimeValue(record.lessonDate, timeValue);
+    }
+  } else if (draft.recordType === "homework") {
+    qualityValue = normalizeHomeworkQualityValue(document.getElementById("classAnalysisHomeworkQuality") && document.getElementById("classAnalysisHomeworkQuality").value);
+    record.quality = qualityValue;
+  } else if (draft.recordType === "warning") {
+    categoryValue = normalizeWarningCategoryValue(document.getElementById("classAnalysisWarningCategory") && document.getElementById("classAnalysisWarningCategory").value);
+    noteValue = String(document.getElementById("classAnalysisWarningNote") && document.getElementById("classAnalysisWarningNote").value || "").trim();
+    record.category = categoryValue;
+    record.note = categoryValue === "andere" ? noteValue : "";
+  } else if (draft.recordType === "assessment") {
+    record.category = String(document.getElementById("classAnalysisAssessmentCategory") && document.getElementById("classAnalysisAssessmentCategory").value || "").trim();
+    record.afb1 = String(document.getElementById("classAnalysisAssessmentAfb1") && document.getElementById("classAnalysisAssessmentAfb1").value || "").trim() === "" ? "" : Number(document.getElementById("classAnalysisAssessmentAfb1").value);
+    record.afb2 = String(document.getElementById("classAnalysisAssessmentAfb2") && document.getElementById("classAnalysisAssessmentAfb2").value || "").trim() === "" ? "" : Number(document.getElementById("classAnalysisAssessmentAfb2").value);
+    record.afb3 = String(document.getElementById("classAnalysisAssessmentAfb3") && document.getElementById("classAnalysisAssessmentAfb3").value || "").trim() === "" ? "" : Number(document.getElementById("classAnalysisAssessmentAfb3").value);
+    record.workBehavior = String(document.getElementById("classAnalysisAssessmentWorkBehavior") && document.getElementById("classAnalysisAssessmentWorkBehavior").value || "").trim();
+    record.socialBehavior = String(document.getElementById("classAnalysisAssessmentSocialBehavior") && document.getElementById("classAnalysisAssessmentSocialBehavior").value || "").trim();
+    record.knowledgeGap = String(document.getElementById("classAnalysisAssessmentKnowledgeGap") && document.getElementById("classAnalysisAssessmentKnowledgeGap").value || "").trim();
+  }
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "klasse");
+  return window.UnterrichtsassistentApp.closeClassAnalysisRecordEditModal();
+};
 window.UnterrichtsassistentApp.setClassViewMode = function (nextMode) {
   classViewMode = nextMode === "verwalten" ? "verwalten" : "analyse";
 
@@ -5095,6 +5814,27 @@ window.UnterrichtsassistentApp.setClassViewMode = function (nextMode) {
     setActiveView("klasse");
   }
 
+  return false;
+};
+window.UnterrichtsassistentApp.handleClassAnalysisDragScrollMove = function (event) {
+  if (!activeClassAnalysisDragScroll || event.pointerId !== activeClassAnalysisDragScroll.pointerId) {
+    return false;
+  }
+
+  activeClassAnalysisDragScroll.wrap.scrollLeft = activeClassAnalysisDragScroll.startScrollLeft - ((Number(event.clientX) || 0) - activeClassAnalysisDragScroll.startX);
+  if (activeClassAnalysisDragScroll.classId) {
+    classAnalysisScrollLeftByClassId[activeClassAnalysisDragScroll.classId] = activeClassAnalysisDragScroll.wrap.scrollLeft;
+  }
+  event.preventDefault();
+  return false;
+};
+window.UnterrichtsassistentApp.handleClassAnalysisDragScrollEnd = function (event) {
+  if (!activeClassAnalysisDragScroll || event.pointerId !== activeClassAnalysisDragScroll.pointerId) {
+    return false;
+  }
+
+  clearClassAnalysisDragScroll();
+  event.preventDefault();
   return false;
 };
 window.UnterrichtsassistentApp.getTimetableViewMode = function () {
