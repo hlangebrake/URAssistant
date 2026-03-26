@@ -62,7 +62,25 @@ class Timetable {
 }
 
 class Assessment {
-  constructor({ id, studentId, classId, type, score, maxScore, date }) {
+  constructor({
+    id,
+    studentId,
+    classId,
+    type = "",
+    score = 0,
+    maxScore = 0,
+    date = "",
+    lessonId = "",
+    lessonDate = "",
+    room = "",
+    category = "beitrag",
+    afb1 = "--",
+    afb2 = "--",
+    afb3 = "--",
+    workBehavior = "",
+    socialBehavior = "",
+    knowledgeGap = ""
+  }) {
     this.id = id;
     this.studentId = studentId;
     this.classId = classId;
@@ -70,6 +88,16 @@ class Assessment {
     this.score = score;
     this.maxScore = maxScore;
     this.date = date;
+    this.lessonId = lessonId;
+    this.lessonDate = lessonDate;
+    this.room = room;
+    this.category = category;
+    this.afb1 = afb1;
+    this.afb2 = afb2;
+    this.afb3 = afb3;
+    this.workBehavior = workBehavior;
+    this.socialBehavior = socialBehavior;
+    this.knowledgeGap = knowledgeGap;
   }
 
   get percentage() {

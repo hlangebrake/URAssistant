@@ -951,6 +951,75 @@ class SchoolService {
     });
   }
 
+  getAssessmentStatusForStudent(studentId, classId, date) {
+    const effectiveDate = date || this.getReferenceDate();
+    const context = this.getAttendanceContextForClass(classId, effectiveDate);
+    const assessments = this.getAssessmentsForClass(classId).filter(function (assessment) {
+      return assessment.studentId === studentId;
+    });
+    const currentCount = context
+      ? assessments.filter(function (assessment) {
+        return String(assessment.lessonId || "") === String(context.id || "")
+          && normalizeDateValue(assessment.lessonDate || assessment.date) === normalizeDateValue(context.lessonDate);
+      }).length
+      : 0;
+    const lastAssessment = assessments
+      .slice()
+      .sort(function (left, right) {
+        return String(right.recordedAt || right.lessonDate || right.date || "")
+          .localeCompare(String(left.recordedAt || left.lessonDate || left.date || ""));
+      })[0] || null;
+    let isOlderThanFourteenDays = true;
+    let lastDate = null;
+
+    if (lastAssessment) {
+      lastDate = new Date(String(lastAssessment.recordedAt || lastAssessment.lessonDate || lastAssessment.date || "").slice(0, 10) + "T00:00");
+      if (!Number.isNaN(lastDate.getTime())) {
+        isOlderThanFourteenDays = (effectiveDate.getTime() - lastDate.getTime()) > (14 * 24 * 60 * 60 * 1000);
+      }
+    }
+
+    return {
+      currentCount: currentCount,
+      hasCurrentAssessment: currentCount > 0,
+      isOlderThanFourteenDays: isOlderThanFourteenDays,
+      hasAnyAssessment: Boolean(lastAssessment)
+    };
+  }
+
+  getAssessmentCountForStudent(studentId, classId, date) {
+    if (!studentId) {
+      return 0;
+    }
+
+    return this.getAssessmentStatusForStudent(studentId, classId, date).currentCount;
+  }
+
+  isLastAssessmentOlderThanDays(studentId, classId, date, days) {
+    const effectiveDate = date || this.getReferenceDate();
+    const thresholdDays = Number(days) || 14;
+    const lastAssessment = this.getAssessmentsForClass(classId)
+      .filter(function (assessment) {
+        return assessment.studentId === studentId;
+      })
+      .sort(function (left, right) {
+        return String(right.lessonDate || right.date || "").localeCompare(String(left.lessonDate || left.date || ""));
+      })[0] || null;
+    let lastDate;
+
+    if (!lastAssessment) {
+      return true;
+    }
+
+    lastDate = new Date(String(lastAssessment.lessonDate || lastAssessment.date || "").slice(0, 10) + "T00:00");
+
+    if (Number.isNaN(lastDate.getTime())) {
+      return true;
+    }
+
+    return (effectiveDate.getTime() - lastDate.getTime()) > (thresholdDays * 24 * 60 * 60 * 1000);
+  }
+
   getSeatPlanForClass(classId) {
     const room = (this.snapshot.activeDateTimeMode || "live") === "live"
       ? this.getLiveRoomForClass(classId, this.getReferenceDate())

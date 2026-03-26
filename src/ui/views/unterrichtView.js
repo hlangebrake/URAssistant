@@ -55,8 +55,13 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       const firstName = String(student && student.firstName || "").trim();
       const lastName = String(student && student.lastName || "").trim();
       const lastInitial = lastName ? lastName.charAt(0).toUpperCase() + "." : "";
+      const hasDuplicateFirstName = students.filter(function (entry) {
+        return String(entry && entry.firstName || "").trim() === firstName;
+      }).length > 1;
 
-      return [firstName, lastInitial].join(" ").trim();
+      return hasDuplicateFirstName
+        ? [firstName, lastInitial].join(" ").trim()
+        : firstName;
     }
 
     function getSeatAssignmentByDeskSlot(deskItemId, slotName) {
@@ -107,16 +112,39 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       return service.getWarningCountForStudent(studentId, activeClass.id, service.getReferenceDate());
     }
 
+    function getAssessmentStatusForStudent(studentId) {
+      if (!studentId || !activeClass || typeof service.getAssessmentStatusForStudent !== "function") {
+        return {
+          currentCount: 0,
+          hasCurrentAssessment: false,
+          isOlderThanFourteenDays: true
+        };
+      }
+
+      return service.getAssessmentStatusForStudent(studentId, activeClass.id, service.getReferenceDate());
+    }
+
     function renderReadonlySeatSlot(student, extraClasses) {
       const classes = ["seat-order-slot", "unterricht-seatplan-slot"];
       const attendanceState = student ? getAttendanceStateForStudent(student.id) : "present";
+      const showStatusInfo = attendanceState !== "absent";
       const homeworkState = student ? getHomeworkStateForStudent(student.id) : "vorhanden";
       const warningCount = student ? getWarningCountForStudent(student.id) : 0;
+      const assessmentStatus = student ? getAssessmentStatusForStudent(student.id) : {
+        currentCount: 0,
+        hasCurrentAssessment: false,
+        isOlderThanFourteenDays: false
+      };
+      const assessmentCount = assessmentStatus.currentCount;
+      const assessmentStateClass = assessmentStatus.hasCurrentAssessment
+        ? "is-positive"
+        : (assessmentStatus.isOlderThanFourteenDays ? "is-overdue" : "is-empty");
       const isAttendanceInteractive = Boolean(student && currentClassLesson && toolMode === "attendance");
       const isHomeworkInteractive = Boolean(student && currentClassLesson && toolMode === "homework" && attendanceState !== "absent");
       const isWarningInteractive = Boolean(student && currentClassLesson && toolMode === "warning" && attendanceState !== "absent");
-      const isInteractive = isAttendanceInteractive || isHomeworkInteractive || isWarningInteractive;
-      const onclick = isAttendanceInteractive
+      const isAssessmentInteractive = Boolean(student && currentClassLesson && toolMode === "assessment" && attendanceState !== "absent");
+      const isInteractive = isAttendanceInteractive || isHomeworkInteractive || isWarningInteractive || isAssessmentInteractive;
+      const onclick = (isAttendanceInteractive || isAssessmentInteractive)
         ? ' onclick="return window.UnterrichtsassistentApp.handleUnterrichtSeatClick(\'' + escapeValue(student.id) + '\', \'' + escapeValue(currentClassLesson.id) + '\', \'' + escapeValue(currentClassLesson.startTime || "") + '\', \'' + escapeValue(currentClassLesson.room || "") + '\')"'
         : "";
       const pointerdown = isHomeworkInteractive
@@ -125,11 +153,17 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       const warningPointerdown = isWarningInteractive
         ? ' onpointerdown="return window.UnterrichtsassistentApp.startUnterrichtWarningPointer(event, \'' + escapeValue(student.id) + '\', \'' + escapeValue(currentClassLesson.id) + '\', \'' + escapeValue(currentClassLesson.startTime || "") + '\', \'' + escapeValue(currentClassLesson.room || "") + '\')" oncontextmenu="return false"'
         : "";
-      const homeworkBadge = student && currentClassLesson
+      const homeworkBadge = student && currentClassLesson && showStatusInfo
         ? '<span class="unterricht-seatplan-homework-badge ' + getHomeworkBadgeClass(homeworkState) + (toolMode === "homework" ? ' is-emphasized' : ' is-muted') + '">H</span>'
         : "";
-      const warningBadge = warningCount > 0
+      const warningBadge = showStatusInfo && warningCount > 0
         ? '<span class="unterricht-seatplan-warning-badge' + (toolMode === "warning" ? ' is-emphasized' : ' is-muted') + '">&#9888;<span class="unterricht-seatplan-warning-badge__count">' + escapeValue(String(warningCount)) + '</span></span>'
+        : "";
+      const assessmentBadge = student && currentClassLesson && showStatusInfo
+        ? '<div class="unterricht-seatplan-assessment-count ' + assessmentStateClass + (toolMode === "assessment" ? ' is-emphasized' : ' is-muted') + '"><span class="unterricht-seatplan-assessment-count__icon">&#128269;</span><span class="unterricht-seatplan-assessment-count__value">' + escapeValue(String(assessmentCount)) + '</span></div>'
+        : "";
+      const symbolRow = (homeworkBadge || warningBadge)
+        ? '<div class="unterricht-seatplan-symbol-row">' + homeworkBadge + warningBadge + '</div>'
         : "";
 
       if (extraClasses) {
@@ -150,7 +184,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         classes.push(toolMode === "attendance" ? "is-absent" : "is-muted");
       }
 
-      return '<div class="' + classes.join(" ") + '"' + onclick + pointerdown + warningPointerdown + '>' + homeworkBadge + warningBadge + (student ? '<span class="seat-order-desk__label seat-order-desk__label--readonly">' + escapeValue(getStudentShortLabel(student)) + "</span>" : "") + "</div>";
+      return '<div class="' + classes.join(" ") + '"' + onclick + pointerdown + warningPointerdown + '>' + assessmentBadge + (student ? '<span class="seat-order-desk__label seat-order-desk__label--readonly">' + escapeValue(getStudentShortLabel(student)) + "</span>" : "") + symbolRow + "</div>";
     }
 
     function getDeskItemMetrics(item) {
@@ -375,6 +409,44 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         '</div>',
         '</form>',
         '</div>',
+        '</div>',
+        '<div class="import-modal" id="unterrichtAssessmentModal" hidden>',
+        '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeUnterrichtAssessmentModal()"></div>',
+        '<div class="import-modal__dialog import-modal__dialog--assessment" role="dialog" aria-modal="true" aria-labelledby="unterrichtAssessmentStudent">',
+        '<div class="import-modal__header">',
+        '<div>',
+        '<h3 id="unterrichtAssessmentStudent">Schueler</h3>',
+        '<div class="import-modal__meta" id="unterrichtAssessmentDate"></div>',
+        '</div>',
+        '<div class="import-modal__icon-actions">',
+        '<button class="import-modal__icon-button import-modal__icon-button--confirm" type="submit" form="unterrichtAssessmentForm" aria-label="Bewertung uebernehmen">&#10003;</button>',
+        '<button class="import-modal__icon-button import-modal__icon-button--cancel" type="button" aria-label="Bewertung verwerfen" onclick="return window.UnterrichtsassistentApp.closeUnterrichtAssessmentModal()">&#10005;</button>',
+        '</div>',
+        '</div>',
+        '<form class="import-modal__form" id="unterrichtAssessmentForm" onsubmit="return window.UnterrichtsassistentApp.submitUnterrichtAssessmentModal(event)">',
+        '<label class="import-modal__field">',
+        '<span>Kategorie</span>',
+        '<select id="unterrichtAssessmentCategory">',
+        '<option value="beitrag">Beitrag</option>',
+        '<option value="ueberpruefung">Ueberpruefung</option>',
+        '<option value="praesentation">Praesentation</option>',
+        '<option value="abgabe">Abgabe</option>',
+        '</select>',
+        '</label>',
+        '<div class="assessment-afb-grid">',
+        '<label class="import-modal__field"><span>AFB 1</span><select id="unterrichtAssessmentAfb1"><option value="--">--</option><option value="-">-</option><option value="0">0</option><option value="+">+</option><option value="++">++</option></select></label>',
+        '<label class="import-modal__field"><span>AFB 2</span><select id="unterrichtAssessmentAfb2"><option value="--">--</option><option value="-">-</option><option value="0">0</option><option value="+">+</option><option value="++">++</option></select></label>',
+        '<label class="import-modal__field"><span>AFB 3</span><select id="unterrichtAssessmentAfb3"><option value="--">--</option><option value="-">-</option><option value="0">0</option><option value="+">+</option><option value="++">++</option></select></label>',
+        '</div>',
+        '<div class="assessment-behavior-grid">',
+        '<label class="import-modal__field"><span>Arbeitsverhalten</span><select id="unterrichtAssessmentWorkBehavior"><option value=""></option><option value="a">a</option><option value="b">b</option><option value="c">c</option><option value="d">d</option><option value="e">e</option></select></label>',
+        '<label class="import-modal__field"><span>Sozialverhalten</span><select id="unterrichtAssessmentSocialBehavior"><option value=""></option><option value="a">a</option><option value="b">b</option><option value="c">c</option><option value="d">d</option><option value="e">e</option></select></label>',
+        '</div>',
+        '<label class="import-modal__field">',
+        '<span>Wissensluecke</span>',
+        '<input id="unterrichtAssessmentKnowledgeGap" type="text" maxlength="180" placeholder="Diagnostizierte Wissensluecke">',
+        '</label>',
+        '</form>',
         '</div>',
         '</article>',
         '</div>'

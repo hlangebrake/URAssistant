@@ -302,17 +302,17 @@ button {
   border: 0;
   border-radius: 18px;
   background: transparent;
-  color: rgba(247, 243, 235, 0.38);
+  color: #f7f3eb;
   text-align: left;
   cursor: pointer;
   transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
-  opacity: 0.62;
+  opacity: 1;
 }
 
 .sidebar__storage-button.is-persisted {
   background: transparent;
-  color: #f7f3eb;
-  opacity: 1;
+  color: rgba(247, 243, 235, 0.38);
+  opacity: 0.62;
 }
 
 .sidebar__storage-button.is-saving {
@@ -686,6 +686,14 @@ button {
   touch-action: none;
 }
 
+.unterricht-seatplan-student {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.32rem;
+}
+
 .unterricht-seatplan-student.is-absent .seat-order-desk__label--readonly {
   color: #8f3d18;
 }
@@ -694,11 +702,14 @@ button {
   color: rgba(31, 36, 48, 0.56);
 }
 
+.unterricht-seatplan-student .seat-order-desk__label--readonly {
+  font-size: 0.98rem;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
 .unterricht-seatplan-homework-badge {
-  position: absolute;
-  top: 6px;
-  left: 7px;
-  z-index: 6;
+  position: static;
   display: inline-grid;
   place-items: center;
   min-width: 18px;
@@ -738,10 +749,7 @@ button {
 }
 
 .unterricht-seatplan-warning-badge {
-  position: absolute;
-  top: 6px;
-  right: 7px;
-  z-index: 6;
+  position: static;
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -771,6 +779,83 @@ button {
 .unterricht-seatplan-warning-badge.is-emphasized {
   opacity: 1;
   filter: none;
+}
+
+.unterricht-seatplan-assessment-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.18rem;
+  min-height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  text-align: center;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1;
+  background: rgba(205, 154, 55, 0.16);
+  color: #9e6d11;
+  box-shadow: 0 0 0 1px rgba(205, 154, 55, 0.18);
+  opacity: 0.72;
+}
+
+.unterricht-seatplan-assessment-count__icon,
+.unterricht-seatplan-assessment-count__value {
+  display: inline-block;
+}
+
+.unterricht-seatplan-assessment-count.is-empty {
+  background: rgba(205, 154, 55, 0.16);
+  color: #9e6d11;
+  box-shadow: 0 0 0 1px rgba(205, 154, 55, 0.18);
+}
+
+.unterricht-seatplan-assessment-count.is-positive {
+  background: rgba(78, 152, 76, 0.16);
+  color: #2f7a31;
+  box-shadow: 0 0 0 1px rgba(78, 152, 76, 0.18);
+}
+
+.unterricht-seatplan-assessment-count.is-overdue {
+  background: rgba(199, 104, 55, 0.16);
+  color: #a5451b;
+  box-shadow: 0 0 0 1px rgba(199, 104, 55, 0.18);
+}
+
+.unterricht-seatplan-assessment-count.is-muted {
+  opacity: 0.5;
+  filter: saturate(0.5);
+}
+
+.unterricht-seatplan-assessment-count.is-emphasized {
+  opacity: 1;
+  filter: none;
+}
+
+.unterricht-seatplan-assessment-count.is-empty.is-emphasized {
+  background: rgba(205, 154, 55, 0.96);
+  color: #ffffff;
+  box-shadow: 0 0 0 1px rgba(205, 154, 55, 0.24);
+}
+
+.unterricht-seatplan-assessment-count.is-positive.is-emphasized {
+  background: rgba(78, 152, 76, 0.96);
+  color: #ffffff;
+  box-shadow: 0 0 0 1px rgba(78, 152, 76, 0.24);
+}
+
+.unterricht-seatplan-assessment-count.is-overdue.is-emphasized {
+  background: rgba(199, 104, 55, 0.96);
+  color: #ffffff;
+  box-shadow: 0 0 0 1px rgba(199, 104, 55, 0.24);
+}
+
+.unterricht-seatplan-symbol-row {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 18px;
 }
 
 .unterricht-homework-radial-menu {
@@ -1101,6 +1186,16 @@ button {
   color: var(--text);
 }
 
+.import-modal__field select {
+  min-height: 48px;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(23, 49, 62, 0.16);
+  border-radius: 14px;
+  background: #fff;
+  font: inherit;
+  color: var(--text);
+}
+
 .import-modal__actions {
   display: flex;
   justify-content: flex-end;
@@ -1113,6 +1208,55 @@ button {
   min-width: 120px;
   padding: 0 1.15rem;
   font-size: 1rem;
+}
+
+.import-modal__dialog--assessment {
+  max-width: 640px;
+}
+
+.import-modal__meta {
+  margin-top: 0.25rem;
+  color: var(--text-soft);
+  font-size: 0.95rem;
+}
+
+.import-modal__icon-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.import-modal__icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 999px;
+  font-size: 1.25rem;
+  cursor: pointer;
+}
+
+.import-modal__icon-button--confirm {
+  background: rgba(52, 121, 104, 0.14);
+  color: #2d6c5f;
+}
+
+.import-modal__icon-button--cancel {
+  background: rgba(199, 104, 55, 0.14);
+  color: #9b4c26;
+}
+
+.assessment-afb-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.assessment-behavior-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
 }
 
 .student-table-wrap {

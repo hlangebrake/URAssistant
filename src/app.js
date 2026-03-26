@@ -52,6 +52,7 @@ let seatPlanMirrorMode = "horizontal";
 const timetableWeekdayKeys = ["1", "2", "3", "4", "5"];
 let liveDateTimeIntervalId = null;
 let isClassImportModalOpen = false;
+let isUnterrichtAssessmentModalOpen = false;
 let activeDeskLayoutDrag = null;
 let activeDeskLayoutResize = null;
 let deskLayoutDragFrameId = 0;
@@ -63,6 +64,7 @@ let unterrichtHomeworkRadialMenu = null;
 let activeUnterrichtWarningPress = null;
 let unterrichtWarningRadialMenu = null;
 let activeUnterrichtWarningOtherDraft = null;
+let activeUnterrichtAssessmentDraft = null;
 const AUTOSAVE_DELAY_MS = 30000;
 const HOMEWORK_LONG_PRESS_DELAY_MS = 380;
 const HOMEWORK_RADIAL_OPTIONS = [
@@ -203,7 +205,7 @@ function isEditingFocusableInput() {
 }
 
 function syncLiveDateTimeUi() {
-  if (!schoolService || !isLiveDateTimeMode() || activeDeskLayoutDrag || activeDeskLayoutResize || isClassImportModalOpen || isEditingFocusableInput()) {
+  if (!schoolService || !isLiveDateTimeMode() || activeDeskLayoutDrag || activeDeskLayoutResize || isClassImportModalOpen || isUnterrichtAssessmentModalOpen || isEditingFocusableInput()) {
     return;
   }
 
@@ -1074,6 +1076,10 @@ function createWarningRecordId() {
   return "warning-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
 }
 
+function createAssessmentRecordId() {
+  return "assessment-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+}
+
 function timeStringToMinutes(timeValue) {
   const parts = String(timeValue || "").split(":");
   const hours = Number(parts[0]);
@@ -1499,6 +1505,10 @@ function openUnterrichtWarningRadialMenuImmediately() {
 
 function getUnterrichtWarningOtherModal() {
   return document.getElementById("unterrichtWarningOtherModal");
+}
+
+function getUnterrichtAssessmentModal() {
+  return document.getElementById("unterrichtAssessmentModal");
 }
 
 function getMinutesBetweenDateTimeValues(leftValue, rightValue) {
@@ -3875,6 +3885,19 @@ window.UnterrichtsassistentApp.handleUnterrichtSeatClick = function (studentId, 
     return false;
   }
 
+  if (unterrichtToolMode === "assessment") {
+    activeUnterrichtAssessmentDraft = {
+      studentId: String(studentId),
+      classId: activeClass.id,
+      lessonId: lesson.id,
+      lessonDate: lessonDate,
+      lessonStartTime: String(lesson.startTime || ""),
+      lessonRoom: String(lesson.room || "").trim()
+    };
+    window.UnterrichtsassistentApp.openUnterrichtAssessmentModal();
+    return false;
+  }
+
   if (unterrichtToolMode !== "attendance") {
     return false;
   }
@@ -4161,6 +4184,128 @@ window.UnterrichtsassistentApp.submitUnterrichtWarningOtherModal = function (eve
   );
 
   return window.UnterrichtsassistentApp.closeUnterrichtWarningOtherModal();
+};
+window.UnterrichtsassistentApp.openUnterrichtAssessmentModal = function () {
+  const modal = getUnterrichtAssessmentModal();
+  const header = document.getElementById("unterrichtAssessmentStudent");
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const student = schoolService && activeUnterrichtAssessmentDraft
+    ? schoolService.snapshot.students.find(function (entry) {
+        return entry.id === activeUnterrichtAssessmentDraft.studentId;
+      }) || null
+    : null;
+  const dateLabel = document.getElementById("unterrichtAssessmentDate");
+  const categoryInput = document.getElementById("unterrichtAssessmentCategory");
+  const afb1Input = document.getElementById("unterrichtAssessmentAfb1");
+  const afb2Input = document.getElementById("unterrichtAssessmentAfb2");
+  const afb3Input = document.getElementById("unterrichtAssessmentAfb3");
+  const workInput = document.getElementById("unterrichtAssessmentWorkBehavior");
+  const socialInput = document.getElementById("unterrichtAssessmentSocialBehavior");
+  const gapInput = document.getElementById("unterrichtAssessmentKnowledgeGap");
+  const firstFocusable = categoryInput || afb1Input;
+
+  if (!modal || !activeUnterrichtAssessmentDraft) {
+    return false;
+  }
+
+  isUnterrichtAssessmentModalOpen = true;
+  modal.hidden = false;
+  modal.classList.add("is-open");
+
+  if (header) {
+    header.textContent = student
+      ? [String(student.firstName || "").trim(), String(student.lastName || "").trim()].filter(Boolean).join(" ")
+      : "Schueler";
+  }
+
+  if (dateLabel) {
+    dateLabel.textContent = [activeClass ? ((activeClass.name || "") + " " + (activeClass.subject || "")).trim() : "", formatDateLabel(activeUnterrichtAssessmentDraft.lessonDate)].filter(Boolean).join(" • ");
+  }
+
+  if (categoryInput) {
+    categoryInput.value = "beitrag";
+  }
+
+  [afb1Input, afb2Input, afb3Input].forEach(function (input) {
+    if (input) {
+      input.value = "--";
+    }
+  });
+
+  if (workInput) {
+    workInput.value = "";
+  }
+
+  if (socialInput) {
+    socialInput.value = "";
+  }
+
+  if (gapInput) {
+    gapInput.value = "";
+  }
+
+  if (firstFocusable) {
+    window.setTimeout(function () {
+      firstFocusable.focus();
+    }, 0);
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.closeUnterrichtAssessmentModal = function () {
+  const modal = getUnterrichtAssessmentModal();
+
+  if (modal) {
+    modal.hidden = true;
+    modal.classList.remove("is-open");
+  }
+
+  isUnterrichtAssessmentModalOpen = false;
+  activeUnterrichtAssessmentDraft = null;
+  return false;
+};
+window.UnterrichtsassistentApp.submitUnterrichtAssessmentModal = function (event) {
+  const currentRawSnapshot = schoolService && serializeSnapshot ? serializeSnapshot(schoolService.snapshot) : null;
+  const draft = activeUnterrichtAssessmentDraft;
+  const categoryInput = document.getElementById("unterrichtAssessmentCategory");
+  const afb1Input = document.getElementById("unterrichtAssessmentAfb1");
+  const afb2Input = document.getElementById("unterrichtAssessmentAfb2");
+  const afb3Input = document.getElementById("unterrichtAssessmentAfb3");
+  const workInput = document.getElementById("unterrichtAssessmentWorkBehavior");
+  const socialInput = document.getElementById("unterrichtAssessmentSocialBehavior");
+  const gapInput = document.getElementById("unterrichtAssessmentKnowledgeGap");
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  if (!currentRawSnapshot || !draft) {
+    return window.UnterrichtsassistentApp.closeUnterrichtAssessmentModal();
+  }
+
+  currentRawSnapshot.assessments = Array.isArray(currentRawSnapshot.assessments) ? currentRawSnapshot.assessments : [];
+  currentRawSnapshot.assessments.push({
+    id: createAssessmentRecordId(),
+    studentId: draft.studentId,
+    classId: draft.classId,
+    type: "unterricht",
+    score: 0,
+    maxScore: 0,
+    date: draft.lessonDate,
+    lessonId: draft.lessonId,
+    lessonDate: draft.lessonDate,
+    room: draft.lessonRoom,
+    category: String(categoryInput && categoryInput.value || "beitrag").trim(),
+    afb1: String(afb1Input && afb1Input.value || "--").trim(),
+    afb2: String(afb2Input && afb2Input.value || "--").trim(),
+    afb3: String(afb3Input && afb3Input.value || "--").trim(),
+    workBehavior: String(workInput && workInput.value || "").trim(),
+    socialBehavior: String(socialInput && socialInput.value || "").trim(),
+    knowledgeGap: String(gapInput && gapInput.value || "").trim()
+  });
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
+  return window.UnterrichtsassistentApp.closeUnterrichtAssessmentModal();
 };
 window.UnterrichtsassistentApp.handleUnterrichtHomeworkPointerMove = function (event) {
   if (!activeUnterrichtHomeworkPress || event.pointerId !== activeUnterrichtHomeworkPress.pointerId) {
