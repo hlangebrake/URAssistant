@@ -56,6 +56,12 @@
           <span class="nav-link__label">Sitzplan</span>
         </button>
       </nav>
+      <div class="sidebar__footer">
+        <button class="sidebar__storage-button" id="persistenceButton" type="button" aria-label="Daten manuell in IndexedDB speichern" title="Daten manuell in IndexedDB speichern" onclick="return window.UnterrichtsassistentApp.flushPersistence()">
+          <span class="sidebar__storage-icon" aria-hidden="true">&#128190;</span>
+          <span class="sidebar__storage-label">Speicher</span>
+        </button>
+      </div>
     </aside>
 
     <main class="content" id="mainContent">

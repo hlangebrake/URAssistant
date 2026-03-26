@@ -14,6 +14,7 @@ const activeDateInput = document.getElementById("activeDateInput");
 const activeTimeInput = document.getElementById("activeTimeInput");
 const liveDateTimeButton = document.getElementById("liveDateTimeButton");
 const collapsedLiveDateTimeButton = document.getElementById("collapsedLiveDateTimeButton");
+const persistenceButton = document.getElementById("persistenceButton");
 
 const namespace = window.Unterrichtsassistent || {};
 const dataLayer = namespace.data || {};
@@ -55,6 +56,15 @@ let deskLayoutDragFrameId = 0;
 let activeSeatAssignmentDrag = null;
 let lastSeatAssignmentNativeDrop = null;
 let lastSeatLockPointerToggleAt = 0;
+const AUTOSAVE_DELAY_MS = 30000;
+let pendingPersistTimerId = 0;
+let pendingPersistSnapshot = null;
+let persistenceHasStoredState = false;
+let persistenceHasPendingChanges = false;
+let persistenceIsSaving = false;
+let persistenceLastError = null;
+let persistInFlightPromise = null;
+let forcePersistAfterCurrentSave = false;
 
 function getClassImportModal() {
   return document.getElementById("classImportModal");
@@ -302,6 +312,167 @@ function createFallbackService() {
   }
 
   return new SchoolServiceClass(createSnapshot(demoSnapshot));
+}
+
+function cloneRawSnapshot(rawSnapshot) {
+  if (createSnapshot && serializeSnapshot) {
+    return serializeSnapshot(createSnapshot(rawSnapshot || {}));
+  }
+
+  return JSON.parse(JSON.stringify(rawSnapshot || {}));
+}
+
+function stripNonPersistentUiState(rawSnapshot) {
+  const snapshot = cloneRawSnapshot(rawSnapshot);
+
+  snapshot.activeClassId = null;
+  snapshot.activeTimetableId = null;
+  snapshot.activeSeatPlanId = null;
+  snapshot.activeSeatOrderId = null;
+  snapshot.activeSeatPlanRoom = "";
+  snapshot.activeDateTime = "";
+  snapshot.activeDateTimeMode = "live";
+
+  return snapshot;
+}
+
+function refreshSnapshotInMemory(nextRawSnapshot, nextViewId) {
+  schoolService = new SchoolServiceClass(createSnapshot(nextRawSnapshot));
+  setActiveView(nextViewId || activeViewId);
+  return Promise.resolve(true);
+}
+
+function clearPendingPersistTimer() {
+  if (!pendingPersistTimerId) {
+    return;
+  }
+
+  window.clearTimeout(pendingPersistTimerId);
+  pendingPersistTimerId = 0;
+}
+
+function renderPersistenceIndicator() {
+  if (!persistenceButton) {
+    return;
+  }
+
+  const isPersisted = persistenceHasStoredState && !persistenceHasPendingChanges && !persistenceIsSaving;
+  let title = "Daten manuell in IndexedDB speichern";
+
+  if (persistenceIsSaving) {
+    title = "Speichere Aenderungen in IndexedDB ...";
+  } else if (isPersisted) {
+    title = "Aenderungen sind in IndexedDB gespeichert. Klick fuer erneutes Speichern.";
+  } else if (persistenceHasPendingChanges) {
+    title = "Es gibt ungespeicherte Aenderungen. Klick zum Speichern.";
+  } else if (persistenceLastError) {
+    title = "Persistenz ist aktuell nicht verfuegbar. Klick fuer einen neuen Speicher-Versuch.";
+  }
+
+  persistenceButton.classList.toggle("is-persisted", isPersisted);
+  persistenceButton.classList.toggle("is-saving", persistenceIsSaving);
+  persistenceButton.setAttribute("aria-label", title);
+  persistenceButton.setAttribute("title", title);
+}
+
+function schedulePendingPersist(delayMs) {
+  if (!persistenceHasPendingChanges || persistenceIsSaving) {
+    return;
+  }
+
+  clearPendingPersistTimer();
+  pendingPersistTimerId = window.setTimeout(function () {
+    flushPendingPersist();
+  }, typeof delayMs === "number" ? delayMs : AUTOSAVE_DELAY_MS);
+}
+
+function persistSnapshotNow(snapshotToPersist) {
+  let didPersistSucceed = false;
+  const persistedSnapshot = stripNonPersistentUiState(snapshotToPersist);
+
+  persistenceIsSaving = true;
+  persistenceLastError = null;
+  renderPersistenceIndicator();
+
+  persistInFlightPromise = Promise.resolve()
+    .then(function () {
+      return repository.saveSnapshot(persistedSnapshot);
+    })
+    .then(function () {
+      didPersistSucceed = true;
+      persistenceHasStoredState = true;
+      persistenceLastError = null;
+      return true;
+    })
+    .catch(function (error) {
+      persistenceHasStoredState = false;
+      persistenceLastError = error;
+      persistenceHasPendingChanges = true;
+      if (!pendingPersistSnapshot) {
+        pendingPersistSnapshot = snapshotToPersist;
+      }
+      console.warn("Speichern in IndexedDB fehlgeschlagen.", error);
+      return false;
+    })
+    .finally(function () {
+      persistenceIsSaving = false;
+      persistInFlightPromise = null;
+      renderPersistenceIndicator();
+
+      if (forcePersistAfterCurrentSave && pendingPersistSnapshot) {
+        forcePersistAfterCurrentSave = false;
+        flushPendingPersist({ immediate: true });
+        return;
+      }
+
+      forcePersistAfterCurrentSave = false;
+
+      if (didPersistSucceed && persistenceHasPendingChanges && pendingPersistSnapshot && !pendingPersistTimerId) {
+        schedulePendingPersist(AUTOSAVE_DELAY_MS);
+      }
+    });
+
+  return persistInFlightPromise;
+}
+
+function flushPendingPersist(options) {
+  const config = options || {};
+  const snapshotToPersist = config.snapshot
+    || pendingPersistSnapshot
+    || (schoolService && serializeSnapshot ? serializeSnapshot(schoolService.snapshot) : null);
+
+  clearPendingPersistTimer();
+
+  if (!repository || typeof repository.saveSnapshot !== "function" || !snapshotToPersist) {
+    renderPersistenceIndicator();
+    return persistInFlightPromise || Promise.resolve(false);
+  }
+
+  if (persistenceIsSaving && persistInFlightPromise) {
+    pendingPersistSnapshot = snapshotToPersist;
+    persistenceHasPendingChanges = true;
+    forcePersistAfterCurrentSave = forcePersistAfterCurrentSave || Boolean(config.immediate);
+    renderPersistenceIndicator();
+    return persistInFlightPromise;
+  }
+
+  pendingPersistSnapshot = null;
+  persistenceHasPendingChanges = false;
+  return persistSnapshotNow(snapshotToPersist);
+}
+
+function queueSnapshotPersist(nextRawSnapshot, options) {
+  pendingPersistSnapshot = nextRawSnapshot;
+  persistenceHasPendingChanges = true;
+  persistenceLastError = null;
+  renderPersistenceIndicator();
+
+  if (options && options.immediate) {
+    return flushPendingPersist({ snapshot: nextRawSnapshot, immediate: true });
+  }
+
+  schedulePendingPersist(AUTOSAVE_DELAY_MS);
+  return Promise.resolve(true);
 }
 
 function renderStartupError(message) {
@@ -564,6 +735,8 @@ function renderActiveClassContext() {
     collapsedLiveDateTimeButton.classList.toggle("is-live", isLiveDateTimeMode());
     collapsedLiveDateTimeButton.setAttribute("aria-pressed", String(isLiveDateTimeMode()));
   }
+
+  renderPersistenceIndicator();
 }
 
 function updateHeaderSubtitle(viewId, config) {
@@ -787,13 +960,10 @@ function toggleCollapsedClassPicker() {
   return false;
 }
 
-function saveAndRefreshSnapshot(nextRawSnapshot, nextViewId) {
-  return repository.saveSnapshot(nextRawSnapshot).then(function () {
-    schoolService = new SchoolServiceClass(createSnapshot(nextRawSnapshot));
-    setActiveView(nextViewId || activeViewId);
-  }).catch(function () {
-    schoolService = new SchoolServiceClass(createSnapshot(nextRawSnapshot));
-    setActiveView(nextViewId || activeViewId);
+function saveAndRefreshSnapshot(nextRawSnapshot, nextViewId, options) {
+  refreshSnapshotInMemory(nextRawSnapshot, nextViewId);
+  return queueSnapshotPersist(nextRawSnapshot, {
+    immediate: Boolean(options && options.forcePersist)
   });
 }
 
@@ -2309,6 +2479,7 @@ function removeDeskLayoutItem(itemId) {
     return false;
   }
 
+  ensureSeatOrders(currentRawSnapshot);
   seatPlan.deskLayoutItems = currentItems.filter(function (item) {
     return groupIds.indexOf(item.id) === -1;
   });
@@ -2322,6 +2493,17 @@ function removeDeskLayoutItem(itemId) {
   });
   seatPlan.seats = (seatPlan.seats || []).filter(function (seat) {
     return groupIds.indexOf(seat.deskItemId) === -1;
+  });
+  currentRawSnapshot.seatOrders = (currentRawSnapshot.seatOrders || []).map(function (seatOrder) {
+    if (seatOrder.classId !== seatPlan.classId || String(seatOrder.room || "") !== String(seatPlan.room || "")) {
+      return seatOrder;
+    }
+
+    seatOrder.seats = (seatOrder.seats || []).filter(function (seat) {
+      return groupIds.indexOf(seat.deskItemId) === -1;
+    });
+
+    return seatOrder;
   });
   seatPlan.updatedAt = getCurrentTimestamp();
   saveAndRefreshSnapshot(currentRawSnapshot, "sitzplan");
@@ -2962,7 +3144,7 @@ function syncManagedTimetableToCurrent(targetViewId) {
 
   ensureTimetables(currentRawSnapshot);
   currentRawSnapshot.activeTimetableId = currentTimetable.id || null;
-  saveAndRefreshSnapshot(currentRawSnapshot, targetViewId || "stundenplan");
+  refreshSnapshotInMemory(currentRawSnapshot, targetViewId || "stundenplan");
   return false;
 }
 
@@ -2989,7 +3171,7 @@ function syncManagedSeatPlanToCurrent(targetViewId) {
   currentRawSnapshot.activeSeatPlanRoom = activeRoom;
   currentRawSnapshot.activeSeatPlanId = currentSeatPlan ? currentSeatPlan.id : null;
   currentRawSnapshot.activeSeatOrderId = currentSeatOrder ? currentSeatOrder.id : null;
-  saveAndRefreshSnapshot(currentRawSnapshot, targetViewId || "sitzplan");
+  refreshSnapshotInMemory(currentRawSnapshot, targetViewId || "sitzplan");
   return false;
 }
 
@@ -3091,7 +3273,7 @@ window.UnterrichtsassistentApp.changeActiveSeatPlanRoom = function (roomValue) {
     }
   }
 
-  saveAndRefreshSnapshot(currentRawSnapshot, "sitzplan");
+  refreshSnapshotInMemory(currentRawSnapshot, "sitzplan");
   return false;
 };
 window.UnterrichtsassistentApp.changeActiveSeatPlan = function (seatPlanId) {
@@ -3117,7 +3299,7 @@ window.UnterrichtsassistentApp.changeActiveSeatPlan = function (seatPlanId) {
   }
 
   currentRawSnapshot.activeSeatPlanRoom = selectedItem ? String(selectedItem.room || "").trim() : currentRawSnapshot.activeSeatPlanRoom;
-  saveAndRefreshSnapshot(currentRawSnapshot, "sitzplan");
+  refreshSnapshotInMemory(currentRawSnapshot, "sitzplan");
   return false;
 };
 window.UnterrichtsassistentApp.createSeatPlan = function () {
@@ -3259,7 +3441,7 @@ window.UnterrichtsassistentApp.deleteActiveSeatPlan = function () {
     currentRawSnapshot.activeSeatPlanId = nextActiveItem ? nextActiveItem.id : null;
   }
   currentRawSnapshot.activeSeatPlanRoom = activeRoom;
-  saveAndRefreshSnapshot(currentRawSnapshot, "sitzplan");
+  saveAndRefreshSnapshot(currentRawSnapshot, "sitzplan", { forcePersist: true });
   return false;
 };
 window.UnterrichtsassistentApp.updateSeatPlanDateField = function (fieldName, nextValue) {
@@ -3858,6 +4040,10 @@ window.UnterrichtsassistentApp.handleDeskLayoutPointerMove = function (event) {
   return false;
 };
 window.UnterrichtsassistentApp.handleDeskLayoutPointerEnd = function (event) {
+  let dragState;
+  let canvas;
+  let deskLayoutCanvas;
+  let resolvedPlacement;
   if (activeDeskLayoutResize) {
     if (activeDeskLayoutResize.pointerId !== null && typeof event.pointerId === "number" && event.pointerId !== activeDeskLayoutResize.pointerId) {
       return false;
@@ -3871,13 +4057,6 @@ window.UnterrichtsassistentApp.handleDeskLayoutPointerEnd = function (event) {
     return false;
   }
 
-  const canvas = document.elementFromPoint(event.clientX || 0, event.clientY || 0);
-  const deskLayoutCanvas = canvas && typeof canvas.closest === "function"
-    ? canvas.closest(".desk-layout-builder__canvas")
-    : null;
-  const resolvedPlacement = activeDeskLayoutDrag ? activeDeskLayoutDrag.resolvedPlacement : null;
-  let didApply = false;
-
   if (!activeDeskLayoutDrag) {
     return false;
   }
@@ -3886,30 +4065,38 @@ window.UnterrichtsassistentApp.handleDeskLayoutPointerEnd = function (event) {
     return false;
   }
 
+  dragState = activeDeskLayoutDrag;
+  canvas = document.elementFromPoint(event.clientX || 0, event.clientY || 0);
+  deskLayoutCanvas = canvas && typeof canvas.closest === "function"
+    ? canvas.closest(".desk-layout-builder__canvas")
+    : null;
+  resolvedPlacement = dragState.resolvedPlacement;
+  let didApply = false;
+
+  // Finish the drag before re-rendering so the new view is not rendered with hidden desks.
+  finishDeskLayoutDrag();
+
   if (deskLayoutCanvas) {
-    if (activeDeskLayoutDrag.mode === "move") {
+    if (dragState.mode === "move") {
       didApply = resolvedPlacement
-        ? applyDeskLayoutMovePlacement(activeDeskLayoutDrag.itemId, resolvedPlacement)
+        ? applyDeskLayoutMovePlacement(dragState.itemId, resolvedPlacement)
         : moveDeskLayoutItemToPoint(
-            activeDeskLayoutDrag.itemId,
+            dragState.itemId,
             event.clientX || 0,
             event.clientY || 0,
             deskLayoutCanvas,
-            activeDeskLayoutDrag.pointerOffsetX,
-            activeDeskLayoutDrag.pointerOffsetY
+            dragState.pointerOffsetX,
+            dragState.pointerOffsetY
           );
     } else {
       didApply = resolvedPlacement
-        ? applyDeskLayoutCreatePlacement(activeDeskLayoutDrag.deskType, resolvedPlacement)
-        : insertDeskLayoutItemFromPoint(activeDeskLayoutDrag.deskType, event.clientX || 0, event.clientY || 0, deskLayoutCanvas);
+        ? applyDeskLayoutCreatePlacement(dragState.deskType, resolvedPlacement)
+        : insertDeskLayoutItemFromPoint(dragState.deskType, event.clientX || 0, event.clientY || 0, deskLayoutCanvas);
     }
-  } else if (activeDeskLayoutDrag.mode === "move") {
-    didApply = removeDeskLayoutItem(activeDeskLayoutDrag.itemId);
+  } else if (dragState.mode === "move") {
+    didApply = removeDeskLayoutItem(dragState.itemId);
   }
 
-  finishDeskLayoutDrag({
-    restoreHiddenItems: !didApply
-  });
   return didApply ? false : false;
 };
 window.UnterrichtsassistentApp.allowDeskLayoutDrop = function (event) {
@@ -3947,7 +4134,7 @@ window.UnterrichtsassistentApp.changeActiveTimetable = function (timetableId) {
 
   ensureTimetables(currentRawSnapshot);
   currentRawSnapshot.activeTimetableId = timetableId || null;
-  saveAndRefreshSnapshot(currentRawSnapshot, "stundenplan");
+  refreshSnapshotInMemory(currentRawSnapshot, "stundenplan");
   return false;
 };
 window.UnterrichtsassistentApp.createTimetable = function () {
@@ -4000,7 +4187,7 @@ window.UnterrichtsassistentApp.deleteActiveTimetable = function () {
     return startsBefore && endsAfter;
   }) || currentRawSnapshot.timetables[0] || null;
   currentRawSnapshot.activeTimetableId = nextActiveTimetable ? nextActiveTimetable.id : null;
-  saveAndRefreshSnapshot(currentRawSnapshot, "stundenplan");
+  saveAndRefreshSnapshot(currentRawSnapshot, "stundenplan", { forcePersist: true });
   return false;
 };
 window.UnterrichtsassistentApp.changeActiveClass = function (classId) {
@@ -4015,7 +4202,7 @@ window.UnterrichtsassistentApp.changeActiveClass = function (classId) {
   currentRawSnapshot.activeSeatOrderId = null;
   currentRawSnapshot.activeSeatPlanRoom = "";
   currentRawSnapshot.activeDateTimeMode = "manual";
-  saveAndRefreshSnapshot(currentRawSnapshot, activeViewId);
+  refreshSnapshotInMemory(currentRawSnapshot, activeViewId);
   closeCollapsedClassPicker();
   return false;
 };
@@ -4037,7 +4224,7 @@ window.UnterrichtsassistentApp.setContextFromTimetableCell = function (classId, 
     currentRawSnapshot.activeTimetableId = timetableId;
   }
 
-  saveAndRefreshSnapshot(currentRawSnapshot, activeViewId);
+  refreshSnapshotInMemory(currentRawSnapshot, activeViewId);
   closeCollapsedClassPicker();
   return false;
 };
@@ -4058,7 +4245,7 @@ window.UnterrichtsassistentApp.setLiveDateTimeMode = function () {
   currentRawSnapshot.activeSeatPlanId = null;
   currentRawSnapshot.activeSeatOrderId = null;
   currentRawSnapshot.activeSeatPlanRoom = liveRoom || "";
-  saveAndRefreshSnapshot(currentRawSnapshot, activeViewId);
+  refreshSnapshotInMemory(currentRawSnapshot, activeViewId);
   return false;
 };
 window.UnterrichtsassistentApp.updateActiveDateTime = function (partName, nextValue) {
@@ -4092,7 +4279,7 @@ window.UnterrichtsassistentApp.updateActiveDateTime = function (partName, nextVa
     currentRawSnapshot.activeClassId = activeClass.id;
   }
 
-  saveAndRefreshSnapshot(currentRawSnapshot, activeViewId);
+  refreshSnapshotInMemory(currentRawSnapshot, activeViewId);
   return false;
 };
 window.UnterrichtsassistentApp.openClassImportModal = function () {
@@ -4299,7 +4486,7 @@ window.UnterrichtsassistentApp.deleteStudent = function (studentId) {
     return seatOrder;
   });
 
-  saveAndRefreshSnapshot(currentRawSnapshot, "klasse");
+  saveAndRefreshSnapshot(currentRawSnapshot, "klasse", { forcePersist: true });
   return false;
 };
 window.UnterrichtsassistentApp.updateTimetableStartTime = function (nextValue) {
@@ -4525,7 +4712,7 @@ window.UnterrichtsassistentApp.deleteActiveClass = function () {
   currentRawSnapshot.activeSeatOrderId = null;
   currentRawSnapshot.activeSeatPlanRoom = "";
 
-  saveAndRefreshSnapshot(currentRawSnapshot, "klasse");
+  saveAndRefreshSnapshot(currentRawSnapshot, "klasse", { forcePersist: true });
   return false;
 };
 
@@ -4535,11 +4722,17 @@ async function startApp() {
       throw new Error("App-Module konnten nicht vollstaendig geladen werden.");
     }
 
-    const snapshot = await repository.loadSnapshot();
+    const snapshot = stripNonPersistentUiState(await repository.loadSnapshot());
     schoolService = new SchoolServiceClass(snapshot);
+    persistenceHasStoredState = true;
+    persistenceHasPendingChanges = false;
+    persistenceLastError = null;
   } catch (error) {
     console.warn("IndexedDB nicht verfuegbar, nutze Demo-Daten im Speicher.", error);
     schoolService = createFallbackService();
+    persistenceHasStoredState = false;
+    persistenceHasPendingChanges = false;
+    persistenceLastError = error;
     if (!schoolService) {
       renderStartupError("Startfehler: UI-Module geladen, aber Datenmodule fehlen.");
     }
@@ -4549,6 +4742,15 @@ async function startApp() {
   setActiveView(activeViewId);
   renderActiveClassContext();
 }
+
+window.UnterrichtsassistentApp.flushPersistence = function () {
+  if (!schoolService || !serializeSnapshot) {
+    return false;
+  }
+
+  queueSnapshotPersist(serializeSnapshot(schoolService.snapshot), { immediate: true });
+  return false;
+};
 
 document.addEventListener("click", function (event) {
   if (!appShell || !sidebar || !appShell.classList.contains("is-collapsed")) {
@@ -4560,9 +4762,26 @@ document.addEventListener("click", function (event) {
   }
 });
 
+window.addEventListener("pagehide", function () {
+  if (!schoolService || !serializeSnapshot || !persistenceHasPendingChanges) {
+    return;
+  }
+
+  flushPendingPersist({
+    snapshot: serializeSnapshot(schoolService.snapshot),
+    immediate: true
+  });
+});
+
+renderPersistenceIndicator();
+
 startApp().catch((error) => {
   console.error("Fehler beim Starten der App:", error);
   schoolService = createFallbackService();
+  persistenceHasStoredState = false;
+  persistenceHasPendingChanges = false;
+  persistenceLastError = error;
+  renderPersistenceIndicator();
   if (!schoolService) {
     renderStartupError("Startfehler: Navigation aktiv, aber Inhalte konnten nicht geladen werden.");
   }
