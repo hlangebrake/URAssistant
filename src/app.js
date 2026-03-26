@@ -1511,6 +1511,19 @@ function getUnterrichtAssessmentModal() {
   return document.getElementById("unterrichtAssessmentModal");
 }
 
+function syncUnterrichtAssessmentCategoryUi() {
+  const hiddenInput = document.getElementById("unterrichtAssessmentCategory");
+  const buttons = Array.from(document.querySelectorAll(".assessment-category-button"));
+  const selectedCategory = hiddenInput ? String(hiddenInput.value || "").trim() : "";
+
+  buttons.forEach(function (button) {
+    const buttonCategory = String(button.getAttribute("data-category") || "").trim();
+    const isActive = Boolean(selectedCategory) && buttonCategory === selectedCategory;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+}
+
 function getMinutesBetweenDateTimeValues(leftValue, rightValue) {
   const left = String(leftValue || "").trim();
   const right = String(rightValue || "").trim();
@@ -4196,13 +4209,14 @@ window.UnterrichtsassistentApp.openUnterrichtAssessmentModal = function () {
     : null;
   const dateLabel = document.getElementById("unterrichtAssessmentDate");
   const categoryInput = document.getElementById("unterrichtAssessmentCategory");
+  const categoryButton = document.querySelector(".assessment-category-button");
   const afb1Input = document.getElementById("unterrichtAssessmentAfb1");
   const afb2Input = document.getElementById("unterrichtAssessmentAfb2");
   const afb3Input = document.getElementById("unterrichtAssessmentAfb3");
   const workInput = document.getElementById("unterrichtAssessmentWorkBehavior");
   const socialInput = document.getElementById("unterrichtAssessmentSocialBehavior");
   const gapInput = document.getElementById("unterrichtAssessmentKnowledgeGap");
-  const firstFocusable = categoryInput || afb1Input;
+  const firstFocusable = categoryButton || afb1Input;
 
   if (!modal || !activeUnterrichtAssessmentDraft) {
     return false;
@@ -4223,8 +4237,9 @@ window.UnterrichtsassistentApp.openUnterrichtAssessmentModal = function () {
   }
 
   if (categoryInput) {
-    categoryInput.value = "beitrag";
+    categoryInput.value = "";
   }
+  syncUnterrichtAssessmentCategoryUi();
 
   [afb1Input, afb2Input, afb3Input].forEach(function (input) {
     if (input) {
@@ -4250,6 +4265,18 @@ window.UnterrichtsassistentApp.openUnterrichtAssessmentModal = function () {
     }, 0);
   }
 
+  return false;
+};
+window.UnterrichtsassistentApp.toggleUnterrichtAssessmentCategory = function (category) {
+  const hiddenInput = document.getElementById("unterrichtAssessmentCategory");
+  const nextCategory = String(category || "").trim();
+
+  if (!hiddenInput) {
+    return false;
+  }
+
+  hiddenInput.value = hiddenInput.value === nextCategory ? "" : nextCategory;
+  syncUnterrichtAssessmentCategoryUi();
   return false;
 };
 window.UnterrichtsassistentApp.closeUnterrichtAssessmentModal = function () {
@@ -4295,7 +4322,7 @@ window.UnterrichtsassistentApp.submitUnterrichtAssessmentModal = function (event
     lessonId: draft.lessonId,
     lessonDate: draft.lessonDate,
     room: draft.lessonRoom,
-    category: String(categoryInput && categoryInput.value || "beitrag").trim(),
+    category: String(categoryInput && categoryInput.value || "").trim(),
     afb1: String(afb1Input && afb1Input.value || "--").trim(),
     afb2: String(afb2Input && afb2Input.value || "--").trim(),
     afb3: String(afb3Input && afb3Input.value || "--").trim(),

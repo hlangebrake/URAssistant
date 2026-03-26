@@ -73,7 +73,7 @@ class Assessment {
     lessonId = "",
     lessonDate = "",
     room = "",
-    category = "beitrag",
+    category = "",
     afb1 = "--",
     afb2 = "--",
     afb3 = "--",
