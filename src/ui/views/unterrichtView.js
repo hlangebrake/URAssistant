@@ -73,6 +73,14 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       return service.getAttendanceStateForStudent(studentId, activeClass.id, service.getReferenceDate());
     }
 
+    function getHomeworkStateForStudent(studentId) {
+      if (!studentId || !activeClass || typeof service.getHomeworkStateForStudent !== "function") {
+        return "done";
+      }
+
+      return service.getHomeworkStateForStudent(studentId, activeClass.id, service.getReferenceDate());
+    }
+
     function getToolButtonClass(toolKey) {
       return toolMode === toolKey
         ? "unterricht-seatplan-action is-active"
@@ -82,9 +90,13 @@ window.Unterrichtsassistent.ui.views.unterricht = {
     function renderReadonlySeatSlot(student, extraClasses) {
       const classes = ["seat-order-slot", "unterricht-seatplan-slot"];
       const attendanceState = student ? getAttendanceStateForStudent(student.id) : "present";
-      const isInteractive = Boolean(student && currentClassLesson && toolMode === "attendance");
+      const homeworkState = student ? getHomeworkStateForStudent(student.id) : "done";
+      const isInteractive = Boolean(student && currentClassLesson && ["attendance", "homework"].indexOf(toolMode) >= 0);
       const onclick = isInteractive
-        ? ' onclick="return window.UnterrichtsassistentApp.handleUnterrichtSeatClick(\'' + escapeValue(student.id) + '\')"'
+        ? ' onclick="return window.UnterrichtsassistentApp.handleUnterrichtSeatClick(\'' + escapeValue(student.id) + '\', \'' + escapeValue(currentClassLesson.id) + '\', \'' + escapeValue(currentClassLesson.startTime || "") + '\', \'' + escapeValue(currentClassLesson.room || "") + '\')"'
+        : "";
+      const homeworkBadge = student && currentClassLesson
+        ? '<span class="unterricht-seatplan-homework-badge ' + (homeworkState === "missing" ? 'is-missing' : 'is-done') + '">H</span>'
         : "";
 
       if (extraClasses) {
@@ -96,15 +108,16 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         if (isInteractive) {
           classes.push("is-interactive");
         }
+        classes.push(homeworkState === "missing" ? "is-homework-missing" : "is-homework-done");
       } else {
         classes.push("seat-order-slot--readonly");
       }
 
       if (student && attendanceState === "absent") {
-        classes.push("is-absent");
+        classes.push(toolMode === "attendance" ? "is-absent" : "is-muted");
       }
 
-      return '<div class="' + classes.join(" ") + '"' + onclick + '>' + (student ? '<span class="seat-order-desk__label seat-order-desk__label--readonly">' + escapeValue(getStudentShortLabel(student)) + "</span>" : "") + "</div>";
+      return '<div class="' + classes.join(" ") + '"' + onclick + '>' + homeworkBadge + (student ? '<span class="seat-order-desk__label seat-order-desk__label--readonly">' + escapeValue(getStudentShortLabel(student)) + "</span>" : "") + "</div>";
     }
 
     function getDeskItemMetrics(item) {

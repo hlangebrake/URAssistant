@@ -120,6 +120,20 @@ function normalizeAttendanceRecord(attendanceRecord) {
   };
 }
 
+function normalizeHomeworkRecord(homeworkRecord) {
+  const source = homeworkRecord || {};
+
+  return {
+    id: source.id || "",
+    studentId: source.studentId || "",
+    classId: source.classId || "",
+    lessonId: source.lessonId || "",
+    lessonDate: source.lessonDate || "",
+    room: source.room || "",
+    recordedAt: source.recordedAt || ""
+  };
+}
+
 function normalizeDateValue(value) {
   return String(value || "").slice(0, 10);
 }
@@ -690,6 +704,10 @@ class SchoolService {
     return (this.snapshot.attendanceRecords || []).map(normalizeAttendanceRecord);
   }
 
+  getAllHomeworkRecords() {
+    return (this.snapshot.homeworkRecords || []).map(normalizeHomeworkRecord);
+  }
+
   getAttendanceRecordsForLessonOccurrence(classId, lessonId, lessonDate, studentId) {
     return this.getAllAttendanceRecords().filter(function (record) {
       const matchesClass = record.classId === classId;
@@ -741,6 +759,32 @@ class SchoolService {
 
     records = this.getAttendanceRecordsForLessonOccurrence(classId, context.id, context.lessonDate, studentId);
     return records.length && records[records.length - 1].status === "absent" ? "absent" : "present";
+  }
+
+  getHomeworkRecordsForLessonOccurrence(classId, lessonId, lessonDate, studentId) {
+    return this.getAllHomeworkRecords().filter(function (record) {
+      const matchesClass = record.classId === classId;
+      const matchesLesson = record.lessonId === lessonId;
+      const matchesDate = normalizeDateValue(record.lessonDate) === normalizeDateValue(lessonDate);
+      const matchesStudent = !studentId || record.studentId === studentId;
+
+      return matchesClass && matchesLesson && matchesDate && matchesStudent;
+    }).sort(function (left, right) {
+      return String(left.recordedAt || "").localeCompare(String(right.recordedAt || ""));
+    });
+  }
+
+  getHomeworkStateForStudent(studentId, classId, date) {
+    const effectiveDate = date || this.getReferenceDate();
+    const context = this.getAttendanceContextForClass(classId, effectiveDate);
+
+    if (!context) {
+      return "done";
+    }
+
+    return this.getHomeworkRecordsForLessonOccurrence(classId, context.id, context.lessonDate, studentId).length
+      ? "missing"
+      : "done";
   }
 
   getNextLesson(date) {

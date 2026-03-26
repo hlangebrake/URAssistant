@@ -920,6 +920,15 @@ function setActiveView(viewId) {
 
   if (viewId === "unterricht" && previousViewId !== "unterricht") {
     unterrichtViewMode = "live";
+    if (schoolService && serializeSnapshot) {
+      unterrichtToolMode = shouldDefaultToAssessmentTool(
+        serializeSnapshot(schoolService.snapshot),
+        schoolService.getActiveClass(),
+        schoolService.getReferenceDate()
+      ) ? "assessment" : "attendance";
+    } else {
+      unterrichtToolMode = "attendance";
+    }
   }
 
   if (viewId === "stundenplan" && previousViewId !== "stundenplan") {
@@ -1036,6 +1045,10 @@ function createAttendanceRecordId() {
   return "attendance-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
 }
 
+function createHomeworkRecordId() {
+  return "homework-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+}
+
 function timeStringToMinutes(timeValue) {
   const parts = String(timeValue || "").split(":");
   const hours = Number(parts[0]);
@@ -1119,6 +1132,30 @@ function ensureAttendanceRecords(rawSnapshot) {
   return rawSnapshot.attendanceRecords;
 }
 
+function ensureHomeworkRecords(rawSnapshot) {
+  rawSnapshot.homeworkRecords = Array.isArray(rawSnapshot.homeworkRecords) ? rawSnapshot.homeworkRecords : [];
+  rawSnapshot.homeworkRecords = rawSnapshot.homeworkRecords.map(function (record, index) {
+    const nextRecord = record || {};
+
+    if (!nextRecord.id) {
+      nextRecord.id = createHomeworkRecordId() + "-" + String(index);
+    }
+
+    nextRecord.studentId = String(nextRecord.studentId || "").trim();
+    nextRecord.classId = String(nextRecord.classId || "").trim();
+    nextRecord.lessonId = String(nextRecord.lessonId || "").trim();
+    nextRecord.lessonDate = normalizeDateValue(nextRecord.lessonDate);
+    nextRecord.room = String(nextRecord.room || "").trim();
+    nextRecord.recordedAt = String(nextRecord.recordedAt || "").trim();
+
+    return nextRecord;
+  }).filter(function (record) {
+    return Boolean(record.studentId) && Boolean(record.classId) && Boolean(record.lessonId) && Boolean(record.lessonDate);
+  });
+
+  return rawSnapshot.homeworkRecords;
+}
+
 function getRelevantUnterrichtLesson(activeClass, referenceDate) {
   if (!schoolService || !activeClass) {
     return null;
@@ -1137,7 +1174,7 @@ function getRelevantUnterrichtLesson(activeClass, referenceDate) {
 
 function getAttendanceRecordsForLessonOccurrenceFromSnapshot(rawSnapshot, studentId, classId, lessonId, lessonDate) {
   return ensureAttendanceRecords(rawSnapshot).filter(function (record) {
-    return record.studentId === studentId
+    return (!studentId || record.studentId === studentId)
       && record.classId === classId
       && record.lessonId === lessonId
       && normalizeDateValue(record.lessonDate) === normalizeDateValue(lessonDate);
@@ -1157,6 +1194,46 @@ function getAttendanceStateForLessonOccurrenceFromSnapshot(rawSnapshot, studentI
   const records = getAttendanceRecordsForLessonOccurrenceFromSnapshot(rawSnapshot, studentId, classId, lessonId, lessonDate);
 
   return records.length && records[records.length - 1].status === "absent" ? "absent" : "present";
+}
+
+function hasAttendanceRecordForCurrentUnterrichtContext(rawSnapshot, activeClass, referenceDate) {
+  const lesson = getRelevantUnterrichtLesson(activeClass, referenceDate);
+  const lessonDate = normalizeDateValue(getReferenceDateValue());
+
+  if (!rawSnapshot || !activeClass || !lesson) {
+    return false;
+  }
+
+  return getAttendanceRecordsForLessonOccurrenceFromSnapshot(rawSnapshot, "", activeClass.id, lesson.id, lessonDate).length > 0;
+}
+
+function shouldDefaultToAssessmentTool(rawSnapshot, activeClass, referenceDate) {
+  const lesson = getRelevantUnterrichtLesson(activeClass, referenceDate);
+  let lessonStartMinutes;
+  let referenceMinutes;
+
+  if (!rawSnapshot || !activeClass || !lesson || lesson.isFallback) {
+    return false;
+  }
+
+  if (hasAttendanceRecordForCurrentUnterrichtContext(rawSnapshot, activeClass, referenceDate)) {
+    return true;
+  }
+
+  lessonStartMinutes = timeStringToMinutes(lesson.startTime);
+  referenceMinutes = (referenceDate.getHours() * 60) + referenceDate.getMinutes();
+  return referenceMinutes >= (lessonStartMinutes + 10);
+}
+
+function getHomeworkRecordsForLessonOccurrenceFromSnapshot(rawSnapshot, studentId, classId, lessonId, lessonDate) {
+  return ensureHomeworkRecords(rawSnapshot).filter(function (record) {
+    return (!studentId || record.studentId === studentId)
+      && record.classId === classId
+      && record.lessonId === lessonId
+      && normalizeDateValue(record.lessonDate) === normalizeDateValue(lessonDate);
+  }).sort(function (left, right) {
+    return String(left.recordedAt || "").localeCompare(String(right.recordedAt || ""));
+  });
 }
 
 function getMinutesBetweenDateTimeValues(leftValue, rightValue) {
@@ -3391,13 +3468,20 @@ window.UnterrichtsassistentApp.setUnterrichtToolMode = function (nextMode) {
 
   return false;
 };
-window.UnterrichtsassistentApp.handleUnterrichtSeatClick = function (studentId) {
+window.UnterrichtsassistentApp.handleUnterrichtSeatClick = function (studentId, lessonId, lessonStartTime, lessonRoom) {
   const activeClass = schoolService ? schoolService.getActiveClass() : null;
   const currentRawSnapshot = schoolService && serializeSnapshot ? serializeSnapshot(schoolService.snapshot) : null;
   const referenceDate = schoolService ? schoolService.getReferenceDate() : new Date();
-  const lesson = getRelevantUnterrichtLesson(activeClass, referenceDate);
   const lessonDate = normalizeDateValue(getReferenceDateValue());
   const recordedAt = getReferenceDateTimeValue();
+  const lesson = lessonId
+    ? {
+        id: String(lessonId),
+        startTime: String(lessonStartTime || ""),
+        room: String(lessonRoom || "").trim(),
+        isFallback: false
+      }
+    : getRelevantUnterrichtLesson(activeClass, referenceDate);
   const existingRecords = currentRawSnapshot && activeClass && lesson
     ? getAttendanceRecordsForLessonOccurrenceFromSnapshot(currentRawSnapshot, String(studentId), activeClass.id, lesson.id, lessonDate)
     : [];
@@ -3409,12 +3493,51 @@ window.UnterrichtsassistentApp.handleUnterrichtSeatClick = function (studentId) 
   let referenceMinutes;
   let withinFirstTenMinutes = false;
   let shouldUpdateLastRecord = false;
+  let homeworkRecords;
+  let existingHomeworkRecord;
+  let nextHomeworkRecords;
 
   if (!schoolService || !activeClass || !currentRawSnapshot || !studentId) {
     return false;
   }
 
-  if (unterrichtToolMode !== "attendance" || !lesson) {
+  if (!lesson) {
+    return false;
+  }
+
+  if (unterrichtToolMode === "homework") {
+    homeworkRecords = ensureHomeworkRecords(currentRawSnapshot);
+    existingHomeworkRecord = getHomeworkRecordsForLessonOccurrenceFromSnapshot(
+      currentRawSnapshot,
+      String(studentId),
+      activeClass.id,
+      lesson.id,
+      lessonDate
+    )[0] || null;
+    nextHomeworkRecords = homeworkRecords.slice();
+
+    if (existingHomeworkRecord) {
+      nextHomeworkRecords = nextHomeworkRecords.filter(function (record) {
+        return record.id !== existingHomeworkRecord.id;
+      });
+    } else {
+      nextHomeworkRecords.push({
+        id: createHomeworkRecordId(),
+        studentId: String(studentId),
+        classId: activeClass.id,
+        lessonId: lesson.id,
+        lessonDate: lessonDate,
+        room: String(lesson.room || "").trim(),
+        recordedAt: recordedAt
+      });
+    }
+
+    currentRawSnapshot.homeworkRecords = nextHomeworkRecords;
+    saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
+    return false;
+  }
+
+  if (unterrichtToolMode !== "attendance") {
     return false;
   }
 
@@ -4764,6 +4887,9 @@ window.UnterrichtsassistentApp.deleteStudent = function (studentId) {
   currentRawSnapshot.attendanceRecords = ensureAttendanceRecords(currentRawSnapshot).filter(function (record) {
     return record.studentId !== studentId;
   });
+  currentRawSnapshot.homeworkRecords = ensureHomeworkRecords(currentRawSnapshot).filter(function (record) {
+    return record.studentId !== studentId;
+  });
   currentRawSnapshot.seatPlans = currentRawSnapshot.seatPlans.map(function (seatPlan) {
     seatPlan.seats = (seatPlan.seats || []).filter(function (seat) {
       return seat.studentId !== studentId;
@@ -4977,6 +5103,9 @@ window.UnterrichtsassistentApp.deleteActiveClass = function () {
   currentRawSnapshot.attendanceRecords = ensureAttendanceRecords(currentRawSnapshot).filter(function (record) {
     return record.classId !== activeClass.id && !studentIdsToDelete[record.studentId];
   });
+  currentRawSnapshot.homeworkRecords = ensureHomeworkRecords(currentRawSnapshot).filter(function (record) {
+    return record.classId !== activeClass.id && !studentIdsToDelete[record.studentId];
+  });
   currentRawSnapshot.todos = currentRawSnapshot.todos.filter(function (todo) {
     return todo.relatedClassId !== activeClass.id;
   });
@@ -5030,6 +5159,16 @@ async function startApp() {
     if (!schoolService) {
       renderStartupError("Startfehler: UI-Module geladen, aber Datenmodule fehlen.");
     }
+  }
+
+  if (schoolService && serializeSnapshot) {
+    unterrichtToolMode = shouldDefaultToAssessmentTool(
+      serializeSnapshot(schoolService.snapshot),
+      schoolService.getActiveClass(),
+      schoolService.getReferenceDate()
+    ) ? "assessment" : "attendance";
+  } else {
+    unterrichtToolMode = "attendance";
   }
 
   ensureLiveDateTimeRefresh();

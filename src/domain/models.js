@@ -94,6 +94,18 @@ class AttendanceRecord {
   }
 }
 
+class HomeworkRecord {
+  constructor({ id, studentId, classId, lessonId = "", lessonDate = "", room = "", recordedAt = "" }) {
+    this.id = id;
+    this.studentId = studentId;
+    this.classId = classId;
+    this.lessonId = lessonId;
+    this.lessonDate = lessonDate;
+    this.room = room;
+    this.recordedAt = recordedAt;
+  }
+}
+
 class TodoItem {
   constructor({ id, title, dueDate, relatedClassId, done = false }) {
     this.id = id;
@@ -140,6 +152,7 @@ window.Unterrichtsassistent.domain.Timetable = Timetable;
 window.Unterrichtsassistent.domain.TimetableRow = TimetableRow;
 window.Unterrichtsassistent.domain.Assessment = Assessment;
 window.Unterrichtsassistent.domain.AttendanceRecord = AttendanceRecord;
+window.Unterrichtsassistent.domain.HomeworkRecord = HomeworkRecord;
 window.Unterrichtsassistent.domain.TodoItem = TodoItem;
 window.Unterrichtsassistent.domain.SeatPlan = SeatPlan;
 window.Unterrichtsassistent.domain.SeatOrder = SeatOrder;
