@@ -35,7 +35,6 @@ function createPastelColor(seed) {
 }
 
 function createEmptyClass(rawSnapshot, className, subjectName) {
-  const nextSnapshot = JSON.parse(JSON.stringify(rawSnapshot));
   const normalizedClassName = normalizeClassName(className) || "Neue Lerngruppe";
   const trimmedSubject = sanitizeValue(subjectName);
   const newClass = {
@@ -47,10 +46,11 @@ function createEmptyClass(rawSnapshot, className, subjectName) {
     displayColor: createPastelColor(normalizedClassName + "::" + trimmedSubject)
   };
 
-  nextSnapshot.classes.push(newClass);
-  nextSnapshot.activeClassId = newClass.id;
+  rawSnapshot.classes = Array.isArray(rawSnapshot.classes) ? rawSnapshot.classes : [];
+  rawSnapshot.classes.push(newClass);
+  rawSnapshot.activeClassId = newClass.id;
 
-  return nextSnapshot;
+  return rawSnapshot;
 }
 
 function sanitizeValue(value) {
@@ -114,17 +114,19 @@ function parseStudentCsv(text) {
 }
 
 function mergeImportedStudents(rawSnapshot, importedStudents, className, subjectName) {
-  const nextSnapshot = JSON.parse(JSON.stringify(rawSnapshot));
   const classMap = {};
   const targetClasses = {};
   const replacedStudentIds = {};
   const preservedStudents = [];
   const normalizedClassName = normalizeClassName(className);
-  let lastActiveClassId = nextSnapshot.activeClassId || null;
+  let lastActiveClassId = rawSnapshot.activeClassId || null;
   var index;
 
-  for (index = 0; index < nextSnapshot.classes.length; index += 1) {
-    classMap[createClassKey(nextSnapshot.classes[index].name, nextSnapshot.classes[index].subject)] = nextSnapshot.classes[index];
+  rawSnapshot.classes = Array.isArray(rawSnapshot.classes) ? rawSnapshot.classes : [];
+  rawSnapshot.students = Array.isArray(rawSnapshot.students) ? rawSnapshot.students : [];
+
+  for (index = 0; index < rawSnapshot.classes.length; index += 1) {
+    classMap[createClassKey(rawSnapshot.classes[index].name, rawSnapshot.classes[index].subject)] = rawSnapshot.classes[index];
   }
 
   for (index = 0; index < importedStudents.length; index += 1) {
@@ -142,7 +144,7 @@ function mergeImportedStudents(rawSnapshot, importedStudents, className, subject
         studentIds: [],
         displayColor: createPastelColor(importedClassName + "::" + (subjectName || ""))
       };
-      nextSnapshot.classes.push(schoolClass);
+      rawSnapshot.classes.push(schoolClass);
       classMap[classKey] = schoolClass;
     }
 
@@ -152,22 +154,22 @@ function mergeImportedStudents(rawSnapshot, importedStudents, className, subject
     lastActiveClassId = schoolClass.id;
   }
 
-  for (index = 0; index < nextSnapshot.classes.length; index += 1) {
-    if (targetClasses[nextSnapshot.classes[index].id]) {
-      (nextSnapshot.classes[index].studentIds || []).forEach(function (studentId) {
+  for (index = 0; index < rawSnapshot.classes.length; index += 1) {
+    if (targetClasses[rawSnapshot.classes[index].id]) {
+      (rawSnapshot.classes[index].studentIds || []).forEach(function (studentId) {
         replacedStudentIds[studentId] = true;
       });
-      nextSnapshot.classes[index].studentIds = [];
+      rawSnapshot.classes[index].studentIds = [];
     }
   }
 
-  for (index = 0; index < nextSnapshot.students.length; index += 1) {
-    if (!replacedStudentIds[nextSnapshot.students[index].id]) {
-      preservedStudents.push(nextSnapshot.students[index]);
+  for (index = 0; index < rawSnapshot.students.length; index += 1) {
+    if (!replacedStudentIds[rawSnapshot.students[index].id]) {
+      preservedStudents.push(rawSnapshot.students[index]);
     }
   }
 
-  nextSnapshot.students = preservedStudents.concat(importedStudents);
+  rawSnapshot.students = preservedStudents.concat(importedStudents);
 
   for (index = 0; index < importedStudents.length; index += 1) {
     const student = importedStudents[index];
@@ -175,9 +177,9 @@ function mergeImportedStudents(rawSnapshot, importedStudents, className, subject
     targetClass.studentIds.push(student.id);
   }
 
-  nextSnapshot.activeClassId = lastActiveClassId;
+  rawSnapshot.activeClassId = lastActiveClassId;
 
-  return nextSnapshot;
+  return rawSnapshot;
 }
 
 window.Unterrichtsassistent.data.parseStudentCsv = parseStudentCsv;

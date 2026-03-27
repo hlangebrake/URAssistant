@@ -29,7 +29,7 @@ const renderPanelsFn = uiLayer.renderPanels;
 const renderCustomMarkupFn = uiLayer.renderCustomMarkup;
 const demoSnapshot = dataLayer.demoData;
 const createSnapshot = domainLayer.createDomainSnapshot;
-const serializeDomainSnapshot = domainLayer.serializeDomainSnapshot;
+const serializeDomainSnapshotFn = domainLayer.serializeDomainSnapshot;
 const parseStudentCsvFn = dataLayer.parseStudentCsv;
 const createEmptyClassFn = dataLayer.createEmptyClass;
 const mergeImportedStudentsFn = dataLayer.mergeImportedStudents;
@@ -119,11 +119,26 @@ function serializeSnapshot(snapshot) {
     return rawState;
   }
 
-  if (serializeDomainSnapshot) {
-    return serializeDomainSnapshot(snapshot);
+  if (serializeDomainSnapshotFn) {
+    return serializeDomainSnapshotFn(snapshot);
   }
 
   return JSON.parse(JSON.stringify(snapshot || {}));
+}
+
+function syncSchoolServiceWithRawState() {
+  if (!SchoolServiceClass || !rawState) {
+    schoolService = null;
+    return null;
+  }
+
+  if (!schoolService) {
+    schoolService = new SchoolServiceClass(rawState);
+  } else {
+    schoolService.snapshot = rawState;
+  }
+
+  return schoolService;
 }
 
 function getClassImportModal() {
@@ -265,55 +280,25 @@ function ensureLiveDateTimeRefresh() {
   }, 5000);
 }
 
-function ensureTimetables(snapshot) {
-  if (!Array.isArray(snapshot.timetables)) {
-    snapshot.timetables = snapshot.timetable ? [snapshot.timetable] : [];
+function getTimetablesCollection(snapshot) {
+  if (!snapshot) {
+    return [];
   }
 
-  snapshot.timetables = snapshot.timetables.map(function (timetable, index) {
-    const nextTimetable = timetable || {};
+  if (Array.isArray(snapshot.timetables)) {
+    return snapshot.timetables;
+  }
 
-    if (!nextTimetable.id) {
-      nextTimetable.id = "timetable-" + Date.now() + "-" + index;
-    }
+  return snapshot.timetable ? [snapshot.timetable] : [];
+}
 
-    if (!Array.isArray(nextTimetable.rows)) {
-      nextTimetable.rows = [];
-    }
+function getMutableTimetablesCollection(snapshot) {
+  if (!snapshot) {
+    return [];
+  }
 
-    if (!nextTimetable.startTime) {
-      nextTimetable.startTime = "07:50";
-    }
-
-    nextTimetable.validFrom = nextTimetable.validFrom || "";
-    nextTimetable.validTo = nextTimetable.validTo || "";
-    nextTimetable.rows = nextTimetable.rows.map(function (row) {
-      const nextRow = row || {};
-
-      if (!nextRow.days) {
-        nextRow.days = {};
-      }
-
-      timetableWeekdayKeys.forEach(function (weekdayKey) {
-        if (!nextRow.days[weekdayKey]) {
-          nextRow.days[weekdayKey] = createDefaultTimetableDay();
-        } else {
-          nextRow.days[weekdayKey].classId = nextRow.days[weekdayKey].classId || "";
-          nextRow.days[weekdayKey].room = nextRow.days[weekdayKey].room || "";
-          nextRow.days[weekdayKey].isDouble = Boolean(nextRow.days[weekdayKey].isDouble);
-        }
-      });
-
-      nextRow.type = nextRow.type === "pause" ? "pause" : "lesson";
-      nextRow.durationMinutes = Number(nextRow.durationMinutes) || (nextRow.type === "pause" ? 5 : 45);
-      return nextRow;
-    });
-
-    return nextTimetable;
-  });
-
-  if (!snapshot.activeTimetableId && snapshot.timetables[0]) {
-    snapshot.activeTimetableId = snapshot.timetables[0].id;
+  if (!Array.isArray(snapshot.timetables)) {
+    snapshot.timetables = snapshot.timetable ? [snapshot.timetable] : [];
   }
 
   delete snapshot.timetable;
@@ -321,7 +306,7 @@ function ensureTimetables(snapshot) {
 }
 
 function getManagedTimetableFromSnapshot(snapshot) {
-  const timetables = ensureTimetables(snapshot);
+  const timetables = getTimetablesCollection(snapshot);
   const activeTimetable = timetables.find(function (timetable) {
     return timetable.id === snapshot.activeTimetableId;
   });
@@ -330,7 +315,6 @@ function getManagedTimetableFromSnapshot(snapshot) {
     return activeTimetable;
   }
 
-  snapshot.activeTimetableId = timetables[0] ? timetables[0].id : null;
   return timetables[0] || null;
 }
 
@@ -380,7 +364,7 @@ function createFallbackService() {
   }
 
   rawState = normalizeRawSnapshot(demoSnapshot);
-  return new SchoolServiceClass(rawState);
+  return syncSchoolServiceWithRawState();
 }
 
 function cloneRawSnapshot(rawSnapshot) {
@@ -419,7 +403,7 @@ function stripNonPersistentUiState(rawSnapshot) {
 
 function refreshSnapshotInMemory(nextRawSnapshot, nextViewId) {
   rawState = nextRawSnapshot;
-  schoolService = new SchoolServiceClass(rawState);
+  syncSchoolServiceWithRawState();
   setActiveView(nextViewId || activeViewId);
   return Promise.resolve(true);
 }
@@ -1339,79 +1323,50 @@ function getCurrentTimestamp() {
   return new Date().toISOString();
 }
 
-function ensureAttendanceRecords(rawSnapshot) {
-  rawSnapshot.attendanceRecords = Array.isArray(rawSnapshot.attendanceRecords) ? rawSnapshot.attendanceRecords : [];
-  rawSnapshot.attendanceRecords = rawSnapshot.attendanceRecords.map(function (record, index) {
-    const nextRecord = record || {};
+function getAttendanceRecordsCollection(rawSnapshot) {
+  return Array.isArray(rawSnapshot && rawSnapshot.attendanceRecords) ? rawSnapshot.attendanceRecords : [];
+}
 
-    if (!nextRecord.id) {
-      nextRecord.id = createAttendanceRecordId() + "-" + String(index);
-    }
+function getMutableAttendanceRecordsCollection(rawSnapshot) {
+  if (!rawSnapshot) {
+    return [];
+  }
 
-    nextRecord.studentId = String(nextRecord.studentId || "").trim();
-    nextRecord.classId = String(nextRecord.classId || "").trim();
-    nextRecord.lessonId = String(nextRecord.lessonId || "").trim();
-    nextRecord.lessonDate = normalizeDateValue(nextRecord.lessonDate);
-    nextRecord.room = String(nextRecord.room || "").trim();
-    nextRecord.status = nextRecord.status === "present" ? "present" : "absent";
-    nextRecord.recordedAt = String(nextRecord.recordedAt || "").trim();
-    nextRecord.effectiveAt = String(nextRecord.effectiveAt || "").trim();
-
-    return nextRecord;
-  }).filter(function (record) {
-    return Boolean(record.studentId) && Boolean(record.classId) && Boolean(record.lessonId) && Boolean(record.lessonDate) && Boolean(record.status);
-  });
+  if (!Array.isArray(rawSnapshot.attendanceRecords)) {
+    rawSnapshot.attendanceRecords = [];
+  }
 
   return rawSnapshot.attendanceRecords;
 }
 
-function ensureHomeworkRecords(rawSnapshot) {
-  rawSnapshot.homeworkRecords = Array.isArray(rawSnapshot.homeworkRecords) ? rawSnapshot.homeworkRecords : [];
-  rawSnapshot.homeworkRecords = rawSnapshot.homeworkRecords.map(function (record, index) {
-    const nextRecord = record || {};
+function getHomeworkRecordsCollection(rawSnapshot) {
+  return Array.isArray(rawSnapshot && rawSnapshot.homeworkRecords) ? rawSnapshot.homeworkRecords : [];
+}
 
-    if (!nextRecord.id) {
-      nextRecord.id = createHomeworkRecordId() + "-" + String(index);
-    }
+function getMutableHomeworkRecordsCollection(rawSnapshot) {
+  if (!rawSnapshot) {
+    return [];
+  }
 
-    nextRecord.studentId = String(nextRecord.studentId || "").trim();
-    nextRecord.classId = String(nextRecord.classId || "").trim();
-    nextRecord.lessonId = String(nextRecord.lessonId || "").trim();
-    nextRecord.lessonDate = normalizeDateValue(nextRecord.lessonDate);
-    nextRecord.room = String(nextRecord.room || "").trim();
-    nextRecord.recordedAt = String(nextRecord.recordedAt || "").trim();
-    nextRecord.quality = normalizeHomeworkQualityValue(nextRecord.quality);
-
-    return nextRecord;
-  }).filter(function (record) {
-    return Boolean(record.studentId) && Boolean(record.classId) && Boolean(record.lessonId) && Boolean(record.lessonDate);
-  });
+  if (!Array.isArray(rawSnapshot.homeworkRecords)) {
+    rawSnapshot.homeworkRecords = [];
+  }
 
   return rawSnapshot.homeworkRecords;
 }
 
-function ensureWarningRecords(rawSnapshot) {
-  rawSnapshot.warningRecords = Array.isArray(rawSnapshot.warningRecords) ? rawSnapshot.warningRecords : [];
-  rawSnapshot.warningRecords = rawSnapshot.warningRecords.map(function (record, index) {
-    const nextRecord = record || {};
+function getWarningRecordsCollection(rawSnapshot) {
+  return Array.isArray(rawSnapshot && rawSnapshot.warningRecords) ? rawSnapshot.warningRecords : [];
+}
 
-    if (!nextRecord.id) {
-      nextRecord.id = createWarningRecordId() + "-" + String(index);
-    }
+function getMutableWarningRecordsCollection(rawSnapshot) {
+  if (!rawSnapshot) {
+    return [];
+  }
 
-    nextRecord.studentId = String(nextRecord.studentId || "").trim();
-    nextRecord.classId = String(nextRecord.classId || "").trim();
-    nextRecord.lessonId = String(nextRecord.lessonId || "").trim();
-    nextRecord.lessonDate = normalizeDateValue(nextRecord.lessonDate);
-    nextRecord.room = String(nextRecord.room || "").trim();
-    nextRecord.recordedAt = String(nextRecord.recordedAt || "").trim();
-    nextRecord.category = normalizeWarningCategoryValue(nextRecord.category);
-    nextRecord.note = String(nextRecord.note || "").trim();
-
-    return nextRecord;
-  }).filter(function (record) {
-    return Boolean(record.studentId) && Boolean(record.classId) && Boolean(record.lessonId) && Boolean(record.lessonDate);
-  });
+  if (!Array.isArray(rawSnapshot.warningRecords)) {
+    rawSnapshot.warningRecords = [];
+  }
 
   return rawSnapshot.warningRecords;
 }
@@ -1433,7 +1388,7 @@ function getRelevantUnterrichtLesson(activeClass, referenceDate) {
 }
 
 function getAttendanceRecordsForLessonOccurrenceFromSnapshot(rawSnapshot, studentId, classId, lessonId, lessonDate) {
-  return ensureAttendanceRecords(rawSnapshot).filter(function (record) {
+  return getAttendanceRecordsCollection(rawSnapshot).filter(function (record) {
     return (!studentId || record.studentId === studentId)
       && record.classId === classId
       && record.lessonId === lessonId
@@ -1486,7 +1441,7 @@ function shouldDefaultToAssessmentTool(rawSnapshot, activeClass, referenceDate) 
 }
 
 function getHomeworkRecordsForLessonOccurrenceFromSnapshot(rawSnapshot, studentId, classId, lessonId, lessonDate) {
-  return ensureHomeworkRecords(rawSnapshot).filter(function (record) {
+  return getHomeworkRecordsCollection(rawSnapshot).filter(function (record) {
     return (!studentId || record.studentId === studentId)
       && record.classId === classId
       && record.lessonId === lessonId
@@ -1497,7 +1452,7 @@ function getHomeworkRecordsForLessonOccurrenceFromSnapshot(rawSnapshot, studentI
 }
 
 function getWarningRecordsForLessonOccurrenceFromSnapshot(rawSnapshot, studentId, classId, lessonId, lessonDate) {
-  return ensureWarningRecords(rawSnapshot).filter(function (record) {
+  return getWarningRecordsCollection(rawSnapshot).filter(function (record) {
     return (!studentId || record.studentId === studentId)
       && record.classId === classId
       && record.lessonId === lessonId
@@ -2203,10 +2158,10 @@ function getClassAnalysisRecordByDraft(rawSnapshot, draft) {
   const collection = type === "assessment"
     ? (rawSnapshot.assessments || [])
     : (type === "attendance"
-      ? ensureAttendanceRecords(rawSnapshot)
+      ? getAttendanceRecordsCollection(rawSnapshot)
       : (type === "homework"
-        ? ensureHomeworkRecords(rawSnapshot)
-        : (type === "warning" ? ensureWarningRecords(rawSnapshot) : [])));
+        ? getHomeworkRecordsCollection(rawSnapshot)
+        : (type === "warning" ? getWarningRecordsCollection(rawSnapshot) : [])));
 
   return collection.find(function (record) {
     return String(record.id || "") === recordId;
@@ -3431,7 +3386,7 @@ function applyDeskLayoutItemLookup(items) {
 
 function applyDeskLayoutGroupOperation(itemId, operation) {
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
-  const seatPlan = currentRawSnapshot ? ensureSeatPlanForActiveClass(currentRawSnapshot) : null;
+  const seatPlan = currentRawSnapshot ? getEditableSeatPlanForActiveContextFromSnapshot(currentRawSnapshot) : null;
   const currentItems = seatPlan && Array.isArray(seatPlan.deskLayoutItems) ? seatPlan.deskLayoutItems : [];
   const currentLinks = seatPlan && Array.isArray(seatPlan.deskLayoutLinks) ? seatPlan.deskLayoutLinks : [];
   const groupIds = getLinkedDeskGroupItemIds(currentItems, currentLinks, itemId);
@@ -3572,18 +3527,24 @@ function separateDeskLayoutGroupsAfterUnlink(seatPlan, removedLink, canvasWidth,
 
 function insertDeskLayoutItemFromPoint(deskType, clientX, clientY, canvas) {
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
-  const seatPlan = currentRawSnapshot ? ensureSeatPlanForActiveClass(currentRawSnapshot) : null;
   const rect = canvas ? canvas.getBoundingClientRect() : null;
   const metrics = getDeskTemplateMetrics(deskType);
   const snapSize = 12;
   const nextItemId = createDeskLayoutItemId();
+  let seatPlan;
   let nextItem;
   let linkCandidate;
   let nextX;
   let nextY;
   let nearestFreePosition;
 
-  if (!repository || !schoolService || !seatPlan || !canvas || !rect) {
+  if (!repository || !schoolService || !currentRawSnapshot || !canvas || !rect) {
+    return false;
+  }
+
+  seatPlan = getEditableSeatPlanForActiveContextFromSnapshot(currentRawSnapshot, { createIfMissing: true });
+
+  if (!seatPlan) {
     return false;
   }
 
@@ -3641,7 +3602,7 @@ function insertDeskLayoutItemFromPoint(deskType, clientX, clientY, canvas) {
 
 function moveDeskLayoutItemToPoint(itemId, clientX, clientY, canvas, pointerOffsetX, pointerOffsetY) {
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
-  const seatPlan = currentRawSnapshot ? ensureSeatPlanForActiveClass(currentRawSnapshot) : null;
+  const seatPlan = currentRawSnapshot ? getEditableSeatPlanForActiveContextFromSnapshot(currentRawSnapshot) : null;
   const rect = canvas ? canvas.getBoundingClientRect() : null;
   const currentItems = seatPlan && Array.isArray(seatPlan.deskLayoutItems) ? seatPlan.deskLayoutItems : [];
   const currentLinks = seatPlan && Array.isArray(seatPlan.deskLayoutLinks) ? seatPlan.deskLayoutLinks : [];
@@ -3757,7 +3718,7 @@ function moveDeskLayoutItemToPoint(itemId, clientX, clientY, canvas, pointerOffs
 
 function applyDeskLayoutMovePlacement(itemId, placement) {
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
-  const seatPlan = currentRawSnapshot ? ensureSeatPlanForActiveClass(currentRawSnapshot) : null;
+  const seatPlan = currentRawSnapshot ? getEditableSeatPlanForActiveContextFromSnapshot(currentRawSnapshot) : null;
   const currentItems = seatPlan && Array.isArray(seatPlan.deskLayoutItems) ? seatPlan.deskLayoutItems : [];
   const currentLinks = seatPlan && Array.isArray(seatPlan.deskLayoutLinks) ? seatPlan.deskLayoutLinks : [];
   const groupIds = getLinkedDeskGroupItemIds(currentItems, currentLinks, itemId);
@@ -3766,15 +3727,16 @@ function applyDeskLayoutMovePlacement(itemId, placement) {
   });
   const movingItem = getDeskLayoutItemById(currentItems, itemId);
   const canvas = getDeskLayoutCanvasElement();
-  const canvasRect = canvas ? canvas.getBoundingClientRect() : placement.canvasRect;
-  const resolvedDelta = canvasRect
+  const canvasRect = canvas ? canvas.getBoundingClientRect() : (placement ? placement.canvasRect : null);
+  const resolvedDelta = placement && canvasRect
     ? findNearestFreeDeskLayoutGroupDelta(currentItems, groupItems, groupIds, placement.deltaX, placement.deltaY, canvasRect)
     : {
-        deltaX: Number(placement.deltaX) || 0,
-        deltaY: Number(placement.deltaY) || 0
+        deltaX: Number(placement && placement.deltaX) || 0,
+        deltaY: Number(placement && placement.deltaY) || 0
       };
   const shouldKeepLink = Boolean(
     seatPlanMoveLinkMode
+    && placement
     && placement.linkCandidate
     && movingItem
     && ((Number(movingItem.x) || 0) + resolvedDelta.deltaX === placement.linkCandidate.x)
@@ -3807,14 +3769,17 @@ function applyDeskLayoutMovePlacement(itemId, placement) {
 
 function applyDeskLayoutCreatePlacement(deskType, placement) {
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
-  const seatPlan = currentRawSnapshot ? ensureSeatPlanForActiveClass(currentRawSnapshot) : null;
   const metrics = getDeskTemplateMetrics(deskType);
   const createdItemId = createDeskLayoutItemId();
   const canvas = getDeskLayoutCanvasElement();
-  const canvasRect = canvas ? canvas.getBoundingClientRect() : placement.canvasRect;
-  const resolvedPosition = canvasRect
+  const canvasRect = canvas ? canvas.getBoundingClientRect() : (placement ? placement.canvasRect : null);
+  const existingSeatPlan = currentRawSnapshot ? getSeatPlanForActiveContextFromSnapshot(currentRawSnapshot) : null;
+  let seatPlan;
+  const resolvedPosition = placement && canvasRect
     ? findNearestFreeDeskLayoutItemPosition(
-        seatPlan && Array.isArray(seatPlan.deskLayoutItems) ? seatPlan.deskLayoutItems : [],
+        existingSeatPlan && Array.isArray(existingSeatPlan.deskLayoutItems)
+          ? existingSeatPlan.deskLayoutItems
+          : [],
         {
           type: normalizeDeskLayoutType(deskType),
           width: metrics.width,
@@ -3826,17 +3791,24 @@ function applyDeskLayoutCreatePlacement(deskType, placement) {
         canvasRect
       )
     : {
-        x: Number(placement.itemX) || 0,
-        y: Number(placement.itemY) || 0
+        x: Number(placement && placement.itemX) || 0,
+        y: Number(placement && placement.itemY) || 0
       };
   const shouldKeepLink = Boolean(
     seatPlanMoveLinkMode
+    && placement
     && placement.linkCandidate
     && resolvedPosition.x === (Number(placement.itemX) || 0)
     && resolvedPosition.y === (Number(placement.itemY) || 0)
   );
 
-  if (!repository || !schoolService || !seatPlan || !placement) {
+  if (!repository || !schoolService || !currentRawSnapshot || !placement) {
+    return false;
+  }
+
+  seatPlan = getEditableSeatPlanForActiveContextFromSnapshot(currentRawSnapshot, { createIfMissing: true });
+
+  if (!seatPlan) {
     return false;
   }
 
@@ -3866,7 +3838,7 @@ function applyDeskLayoutCreatePlacement(deskType, placement) {
 
 function removeDeskLayoutItem(itemId) {
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
-  const seatPlan = currentRawSnapshot ? ensureSeatPlanForActiveClass(currentRawSnapshot) : null;
+  const seatPlan = currentRawSnapshot ? getEditableSeatPlanForActiveContextFromSnapshot(currentRawSnapshot) : null;
   const currentItems = seatPlan && Array.isArray(seatPlan.deskLayoutItems) ? seatPlan.deskLayoutItems : [];
   const currentLinks = seatPlan && Array.isArray(seatPlan.deskLayoutLinks) ? seatPlan.deskLayoutLinks : [];
   const groupIds = getLinkedDeskGroupItemIds(currentItems, currentLinks, itemId);
@@ -3875,7 +3847,6 @@ function removeDeskLayoutItem(itemId) {
     return false;
   }
 
-  ensureSeatOrders(currentRawSnapshot);
   seatPlan.deskLayoutItems = currentItems.filter(function (item) {
     return groupIds.indexOf(item.id) === -1;
   });
@@ -3908,10 +3879,16 @@ function removeDeskLayoutItem(itemId) {
 
 function setDeskLayoutWindowSide(side) {
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
-  const seatPlan = currentRawSnapshot ? ensureSeatPlanForActiveClass(currentRawSnapshot) : null;
   const normalizedSide = ["top", "right", "bottom", "left"].indexOf(side) >= 0 ? side : "";
+  let seatPlan;
 
-  if (!repository || !schoolService || !seatPlan) {
+  if (!repository || !schoolService || !currentRawSnapshot) {
+    return false;
+  }
+
+  seatPlan = getEditableSeatPlanForActiveContextFromSnapshot(currentRawSnapshot, { createIfMissing: true });
+
+  if (!seatPlan) {
     return false;
   }
 
@@ -3946,17 +3923,17 @@ function assignStudentToDesk(studentId, deskItemId, slotName) {
     return false;
   }
 
-  if (!seatPlan) {
-    seatPlan = createSeatOrderRecord(activeClass.id, getActiveSeatPlanRoomFromSnapshot(currentRawSnapshot, activeClass));
-    currentRawSnapshot.seatOrders.unshift(seatPlan);
-  }
-
   if (!deskItem) {
     return false;
   }
 
   if (["single", "double"].indexOf(String(deskItem.type || "")) === -1 || !normalizedSlot) {
     return false;
+  }
+
+  if (!seatPlan) {
+    seatPlan = createSeatOrderRecord(activeClass.id, getActiveSeatPlanRoomFromSnapshot(currentRawSnapshot, activeClass));
+    getMutableSeatOrdersCollection(currentRawSnapshot).unshift(seatPlan);
   }
 
   previousSeat = getSeatAssignmentByStudentId(seatPlan, studentId);
@@ -4147,16 +4124,28 @@ function shuffleSeatAssignments() {
 
 function saveDeskLayoutRoomSize(width, height) {
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
-  const seatPlan = currentRawSnapshot ? ensureSeatPlanForActiveClass(currentRawSnapshot) : null;
-  const itemBounds = seatPlan ? getDeskLayoutItemsBounds(seatPlan.deskLayoutItems) : null;
-  const minWidth = Math.max(360, itemBounds ? Math.ceil(itemBounds.maxRight + 24) : 360);
-  const minHeight = Math.max(360, itemBounds ? Math.ceil(itemBounds.maxBottom + 24) : 360);
-  const nextWidth = clampValue(Math.round(Number(width) || 720), minWidth, 1800);
-  const nextHeight = clampValue(Math.round(Number(height) || 720), minHeight, 1800);
+  let seatPlan;
+  let itemBounds;
+  let minWidth;
+  let minHeight;
+  let nextWidth;
+  let nextHeight;
 
-  if (!repository || !schoolService || !seatPlan) {
+  if (!repository || !schoolService || !currentRawSnapshot) {
     return false;
   }
+
+  seatPlan = getEditableSeatPlanForActiveContextFromSnapshot(currentRawSnapshot, { createIfMissing: true });
+
+  if (!seatPlan) {
+    return false;
+  }
+
+  itemBounds = getDeskLayoutItemsBounds(seatPlan.deskLayoutItems);
+  minWidth = Math.max(360, itemBounds ? Math.ceil(itemBounds.maxRight + 24) : 360);
+  minHeight = Math.max(360, itemBounds ? Math.ceil(itemBounds.maxBottom + 24) : 360);
+  nextWidth = clampValue(Math.round(Number(width) || 720), minWidth, 1800);
+  nextHeight = clampValue(Math.round(Number(height) || 720), minHeight, 1800);
 
   seatPlan.roomWidth = nextWidth;
   seatPlan.roomHeight = nextHeight;
@@ -4230,89 +4219,48 @@ function finishSeatAssignmentDrag(options) {
   }
 }
 
-function ensureSeatPlans(rawSnapshot) {
-  rawSnapshot.seatPlans = Array.isArray(rawSnapshot.seatPlans) ? rawSnapshot.seatPlans : [];
+function initializeSeatPlanSelectionState(rawSnapshot) {
+  if (!rawSnapshot) {
+    return;
+  }
+
   rawSnapshot.activeSeatPlanId = rawSnapshot.activeSeatPlanId || null;
   rawSnapshot.activeSeatOrderId = rawSnapshot.activeSeatOrderId || null;
   rawSnapshot.activeSeatPlanRoom = String(rawSnapshot.activeSeatPlanRoom || "").trim();
+}
 
-  rawSnapshot.seatPlans = rawSnapshot.seatPlans.map(function (seatPlan, index) {
-    const nextSeatPlan = seatPlan || {};
+function getSeatPlansCollection(rawSnapshot) {
+  return Array.isArray(rawSnapshot && rawSnapshot.seatPlans) ? rawSnapshot.seatPlans : [];
+}
 
-    if (!nextSeatPlan.id) {
-      nextSeatPlan.id = createSeatPlanId() + "-" + index;
-    }
+function getMutableSeatPlansCollection(rawSnapshot) {
+  if (!rawSnapshot) {
+    return [];
+  }
 
-    nextSeatPlan.classId = nextSeatPlan.classId || "";
-    nextSeatPlan.room = String(nextSeatPlan.room || "").trim();
-    nextSeatPlan.validFrom = normalizeDateValue(nextSeatPlan.validFrom);
-    nextSeatPlan.validTo = normalizeDateValue(nextSeatPlan.validTo);
-    nextSeatPlan.updatedAt = nextSeatPlan.updatedAt || getCurrentTimestamp();
-    nextSeatPlan.seats = Array.isArray(nextSeatPlan.seats) ? nextSeatPlan.seats : [];
-    nextSeatPlan.deskLayoutItems = Array.isArray(nextSeatPlan.deskLayoutItems) ? nextSeatPlan.deskLayoutItems : [];
-    nextSeatPlan.deskLayoutLinks = Array.isArray(nextSeatPlan.deskLayoutLinks) ? nextSeatPlan.deskLayoutLinks : [];
-    nextSeatPlan.roomWindowSide = typeof nextSeatPlan.roomWindowSide === "string" ? nextSeatPlan.roomWindowSide : "";
-    nextSeatPlan.roomWidth = clampValue(Number(nextSeatPlan.roomWidth) || 720, 360, 1800);
-    nextSeatPlan.roomHeight = clampValue(Number(nextSeatPlan.roomHeight) || 720, 360, 1800);
-    nextSeatPlan.deskLayoutLinks = nextSeatPlan.deskLayoutLinks.filter(function (link) {
-      return getDeskLayoutItemById(nextSeatPlan.deskLayoutItems, link.itemAId) && getDeskLayoutItemById(nextSeatPlan.deskLayoutItems, link.itemBId);
-    });
-    nextSeatPlan.seats = nextSeatPlan.seats.filter(function (seat) {
-      return seat && getDeskLayoutItemById(nextSeatPlan.deskLayoutItems, seat.deskItemId);
-    }).map(function (seat) {
-      const deskItem = getDeskLayoutItemById(nextSeatPlan.deskLayoutItems, seat.deskItemId);
-      const slots = getDeskSeatSlots(String(deskItem && deskItem.type || ""));
-      const defaultSlot = slots[0] || "";
-      const normalizedStudentId = String(seat.studentId || "").trim();
+  initializeSeatPlanSelectionState(rawSnapshot);
 
-      return {
-        id: seat.id || createSeatAssignmentId(),
-        studentId: normalizedStudentId,
-        deskItemId: seat.deskItemId,
-        slot: slots.indexOf(seat.slot) >= 0 ? seat.slot : defaultSlot,
-        isLocked: Boolean(seat.isLocked)
-      };
-    }).filter(function (seat) {
-      return Boolean(seat.slot) && (Boolean(seat.studentId) || seat.isLocked);
-    });
-
-    return nextSeatPlan;
-  });
+  if (!Array.isArray(rawSnapshot.seatPlans)) {
+    rawSnapshot.seatPlans = [];
+  }
 
   return rawSnapshot.seatPlans;
 }
 
-function ensureSeatOrders(rawSnapshot) {
-  rawSnapshot.seatOrders = Array.isArray(rawSnapshot.seatOrders) ? rawSnapshot.seatOrders : [];
-  rawSnapshot.activeSeatOrderId = rawSnapshot.activeSeatOrderId || null;
+function getSeatOrdersCollection(rawSnapshot) {
+  return Array.isArray(rawSnapshot && rawSnapshot.seatOrders) ? rawSnapshot.seatOrders : [];
+}
 
-  rawSnapshot.seatOrders = rawSnapshot.seatOrders.map(function (seatOrder, index) {
-    const nextSeatOrder = seatOrder || {};
+function getMutableSeatOrdersCollection(rawSnapshot) {
+  if (!rawSnapshot) {
+    return [];
+  }
 
-    if (!nextSeatOrder.id) {
-      nextSeatOrder.id = createSeatAssignmentId() + "-order-" + index;
-    }
+  initializeSeatPlanSelectionState(rawSnapshot);
 
-    nextSeatOrder.classId = nextSeatOrder.classId || "";
-    nextSeatOrder.room = String(nextSeatOrder.room || "").trim();
-    nextSeatOrder.validFrom = normalizeDateValue(nextSeatOrder.validFrom);
-    nextSeatOrder.validTo = normalizeDateValue(nextSeatOrder.validTo);
-    nextSeatOrder.updatedAt = nextSeatOrder.updatedAt || getCurrentTimestamp();
-    nextSeatOrder.seats = Array.isArray(nextSeatOrder.seats) ? nextSeatOrder.seats : [];
-    nextSeatOrder.seats = nextSeatOrder.seats.map(function (seat) {
-      return {
-        id: seat && seat.id ? seat.id : createSeatAssignmentId(),
-        studentId: String(seat && seat.studentId || "").trim(),
-        deskItemId: seat ? seat.deskItemId : "",
-        slot: String(seat && seat.slot || ""),
-        isLocked: Boolean(seat && seat.isLocked)
-      };
-    }).filter(function (seat) {
-      return Boolean(seat.deskItemId) && Boolean(seat.slot) && (Boolean(seat.studentId) || seat.isLocked);
-    });
-
-    return nextSeatOrder;
-  });
+  if (!Array.isArray(rawSnapshot.seatOrders)) {
+    rawSnapshot.seatOrders = [];
+  }
 
   return rawSnapshot.seatOrders;
 }
@@ -4368,7 +4316,7 @@ function getActiveSeatPlanRoomFromSnapshot(rawSnapshot, activeClass) {
 
 function getSeatPlanFromSnapshotForDateValue(rawSnapshot, classId, roomValue, dateValue) {
   const todayValue = String(dateValue || getReferenceDateValue()).slice(0, 10);
-  const seatPlans = ensureSeatPlans(rawSnapshot).filter(function (seatPlan) {
+  const seatPlans = getSeatPlansCollection(rawSnapshot).filter(function (seatPlan) {
     return seatPlan.classId === classId && String(seatPlan.room || "") === String(roomValue || "");
   });
   const matchingSeatPlans = seatPlans
@@ -4403,7 +4351,7 @@ function getCurrentSeatPlanFromSnapshot(rawSnapshot, classId, roomValue) {
 
 function getCurrentSeatOrderFromSnapshot(rawSnapshot, classId, roomValue) {
   const todayValue = getReferenceDateValue();
-  const seatOrders = ensureSeatOrders(rawSnapshot).filter(function (seatOrder) {
+  const seatOrders = getSeatOrdersCollection(rawSnapshot).filter(function (seatOrder) {
     return seatOrder.classId === classId && String(seatOrder.room || "") === String(roomValue || "");
   });
   const matchingSeatOrders = seatOrders.filter(function (seatOrder) {
@@ -4428,7 +4376,7 @@ function getCurrentSeatOrderFromSnapshot(rawSnapshot, classId, roomValue) {
   return matchingSeatOrders[0] || futureSeatOrders[0] || pastSeatOrders[0] || seatOrders[0] || null;
 }
 
-function ensureSeatPlanForActiveClass(rawSnapshot) {
+function getOrCreateSeatPlanForActiveClass(rawSnapshot) {
   const activeClass = schoolService ? schoolService.getActiveClass() : null;
   let activeRoom;
   let availableSeatPlans;
@@ -4439,7 +4387,7 @@ function ensureSeatPlanForActiveClass(rawSnapshot) {
   }
 
   activeRoom = getActiveSeatPlanRoomFromSnapshot(rawSnapshot, activeClass);
-  availableSeatPlans = ensureSeatPlans(rawSnapshot).filter(function (currentSeatPlan) {
+  availableSeatPlans = getMutableSeatPlansCollection(rawSnapshot).filter(function (currentSeatPlan) {
     return currentSeatPlan.classId === activeClass.id && String(currentSeatPlan.room || "") === String(activeRoom || "");
   });
   seatPlan = availableSeatPlans.find(function (item) {
@@ -4464,7 +4412,7 @@ function ensureSeatPlanForActiveClass(rawSnapshot) {
   return seatPlan;
 }
 
-function ensureSeatOrderForActiveClass(rawSnapshot) {
+function getOrCreateSeatOrderForActiveClass(rawSnapshot) {
   const activeClass = schoolService ? schoolService.getActiveClass() : null;
   let activeRoom;
   let availableSeatOrders;
@@ -4475,7 +4423,7 @@ function ensureSeatOrderForActiveClass(rawSnapshot) {
   }
 
   activeRoom = getActiveSeatPlanRoomFromSnapshot(rawSnapshot, activeClass);
-  availableSeatOrders = ensureSeatOrders(rawSnapshot).filter(function (currentSeatOrder) {
+  availableSeatOrders = getMutableSeatOrdersCollection(rawSnapshot).filter(function (currentSeatOrder) {
     return currentSeatOrder.classId === activeClass.id && String(currentSeatOrder.room || "") === String(activeRoom || "");
   });
   seatOrder = availableSeatOrders.find(function (item) {
@@ -4511,20 +4459,74 @@ function getCurrentSeatPlanForActiveContextFromSnapshot(rawSnapshot) {
   return getCurrentSeatPlanFromSnapshot(rawSnapshot, activeClass.id, activeRoom);
 }
 
-function getEditableSeatPlanForActiveContextFromSnapshot(rawSnapshot) {
+function getSeatPlanForActiveContextFromSnapshot(rawSnapshot) {
   if (!rawSnapshot) {
     return null;
   }
 
-  return ensureSeatPlanForActiveClass(rawSnapshot);
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const activeRoom = activeClass ? getActiveSeatPlanRoomFromSnapshot(rawSnapshot, activeClass) : "";
+  const availableSeatPlans = activeClass
+    ? getSeatPlansCollection(rawSnapshot).filter(function (seatPlan) {
+        return seatPlan.classId === activeClass.id && String(seatPlan.room || "") === String(activeRoom || "");
+      })
+    : [];
+  const activeSeatPlan = availableSeatPlans.find(function (seatPlan) {
+    return seatPlan.id === rawSnapshot.activeSeatPlanId;
+  });
+
+  if (!activeClass) {
+    return null;
+  }
+
+  return activeSeatPlan || getCurrentSeatPlanFromSnapshot(rawSnapshot, activeClass.id, activeRoom) || availableSeatPlans[0] || null;
 }
 
-function getEditableSeatOrderForActiveContextFromSnapshot(rawSnapshot) {
+function getEditableSeatPlanForActiveContextFromSnapshot(rawSnapshot, options) {
   if (!rawSnapshot) {
     return null;
   }
 
-  return ensureSeatOrderForActiveClass(rawSnapshot);
+  if (options && options.createIfMissing) {
+    return getOrCreateSeatPlanForActiveClass(rawSnapshot);
+  }
+
+  return getSeatPlanForActiveContextFromSnapshot(rawSnapshot);
+}
+
+function getSeatOrderForActiveContextFromSnapshot(rawSnapshot) {
+  if (!rawSnapshot) {
+    return null;
+  }
+
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const activeRoom = activeClass ? getActiveSeatPlanRoomFromSnapshot(rawSnapshot, activeClass) : "";
+  const availableSeatOrders = activeClass
+    ? getSeatOrdersCollection(rawSnapshot).filter(function (seatOrder) {
+        return seatOrder.classId === activeClass.id && String(seatOrder.room || "") === String(activeRoom || "");
+      })
+    : [];
+  const activeSeatOrder = availableSeatOrders.find(function (seatOrder) {
+    return seatOrder.id === rawSnapshot.activeSeatOrderId;
+  });
+
+  if (!activeClass) {
+    return null;
+  }
+
+  return activeSeatOrder || getCurrentSeatOrderFromSnapshot(rawSnapshot, activeClass.id, activeRoom) || availableSeatOrders[0] || null;
+}
+
+function getEditableSeatOrderForActiveContextFromSnapshot(rawSnapshot, options) {
+  if (!rawSnapshot) {
+    return null;
+  }
+
+  if (options && options.createIfMissing) {
+    return getOrCreateSeatOrderForActiveClass(rawSnapshot);
+  }
+
+  return getSeatOrderForActiveContextFromSnapshot(rawSnapshot);
 }
 
 function syncManagedTimetableToCurrent(targetViewId) {
@@ -4538,7 +4540,6 @@ function syncManagedTimetableToCurrent(targetViewId) {
     return false;
   }
 
-  ensureTimetables(currentRawSnapshot);
   currentRawSnapshot.activeTimetableId = currentTimetable.id || null;
   refreshSnapshotInMemory(currentRawSnapshot, targetViewId || "stundenplan");
   return false;
@@ -4562,8 +4563,6 @@ function syncManagedSeatPlanToCurrent(targetViewId) {
     return false;
   }
 
-  ensureSeatPlans(currentRawSnapshot);
-  ensureSeatOrders(currentRawSnapshot);
   currentRawSnapshot.activeSeatPlanRoom = activeRoom;
   currentRawSnapshot.activeSeatPlanId = currentSeatPlan ? currentSeatPlan.id : null;
   currentRawSnapshot.activeSeatOrderId = currentSeatOrder ? currentSeatOrder.id : null;
@@ -4643,7 +4642,7 @@ window.UnterrichtsassistentApp.handleUnterrichtSeatClick = function (studentId, 
   }
 
   if (unterrichtToolMode === "homework") {
-    homeworkRecords = ensureHomeworkRecords(currentRawSnapshot);
+    homeworkRecords = getMutableHomeworkRecordsCollection(currentRawSnapshot);
     existingHomeworkRecord = getHomeworkRecordsForLessonOccurrenceFromSnapshot(
       currentRawSnapshot,
       String(studentId),
@@ -4696,7 +4695,7 @@ window.UnterrichtsassistentApp.handleUnterrichtSeatClick = function (studentId, 
   }
 
   if (unterrichtToolMode === "warning") {
-    warningRecords = ensureWarningRecords(currentRawSnapshot).slice();
+    warningRecords = getMutableWarningRecordsCollection(currentRawSnapshot).slice();
     warningCategory = normalizeWarningCategoryValue(homeworkQuality);
     existingWarningRecords = getWarningRecordsForLessonOccurrenceFromSnapshot(
       currentRawSnapshot,
@@ -4782,7 +4781,7 @@ window.UnterrichtsassistentApp.handleUnterrichtSeatClick = function (studentId, 
   }
 
   if (lastRecord && shouldUpdateLastRecord) {
-    currentRawSnapshot.attendanceRecords = ensureAttendanceRecords(currentRawSnapshot).map(function (record) {
+    currentRawSnapshot.attendanceRecords = getMutableAttendanceRecordsCollection(currentRawSnapshot).map(function (record) {
       if (record.id !== lastRecord.id) {
         return record;
       }
@@ -4794,7 +4793,7 @@ window.UnterrichtsassistentApp.handleUnterrichtSeatClick = function (studentId, 
       return record;
     });
   } else {
-    ensureAttendanceRecords(currentRawSnapshot).push({
+    getMutableAttendanceRecordsCollection(currentRawSnapshot).push({
       id: createAttendanceRecordId(),
       studentId: String(studentId),
       classId: activeClass.id,
@@ -5672,15 +5671,15 @@ window.UnterrichtsassistentApp.deleteClassAnalysisRecord = function (recordType,
       return String(record.id || "") !== normalizedId;
     });
   } else if (normalizedType === "attendance") {
-    currentRawSnapshot.attendanceRecords = ensureAttendanceRecords(currentRawSnapshot).filter(function (record) {
+    currentRawSnapshot.attendanceRecords = getAttendanceRecordsCollection(currentRawSnapshot).filter(function (record) {
       return String(record.id || "") !== normalizedId;
     });
   } else if (normalizedType === "homework") {
-    currentRawSnapshot.homeworkRecords = ensureHomeworkRecords(currentRawSnapshot).filter(function (record) {
+    currentRawSnapshot.homeworkRecords = getHomeworkRecordsCollection(currentRawSnapshot).filter(function (record) {
       return String(record.id || "") !== normalizedId;
     });
   } else if (normalizedType === "warning") {
-    currentRawSnapshot.warningRecords = ensureWarningRecords(currentRawSnapshot).filter(function (record) {
+    currentRawSnapshot.warningRecords = getWarningRecordsCollection(currentRawSnapshot).filter(function (record) {
       return String(record.id || "") !== normalizedId;
     });
   } else {
@@ -5930,8 +5929,6 @@ window.UnterrichtsassistentApp.changeActiveSeatPlanRoom = function (roomValue) {
   const wasLiveMode = isLiveDateTimeMode();
   const currentParts = getNowDateParts();
 
-  ensureSeatPlans(currentRawSnapshot);
-  ensureSeatOrders(currentRawSnapshot);
   currentRawSnapshot.activeSeatPlanRoom = String(roomValue || "").trim();
   currentRawSnapshot.activeSeatPlanId = null;
   currentRawSnapshot.activeSeatOrderId = null;
@@ -5957,14 +5954,12 @@ window.UnterrichtsassistentApp.changeActiveSeatPlan = function (seatPlanId) {
   let selectedItem = null;
 
   if (seatPlanViewMode === "sitzordnung") {
-    ensureSeatOrders(currentRawSnapshot);
-    selectedItem = currentRawSnapshot.seatOrders.find(function (seatOrder) {
+    selectedItem = getSeatOrdersCollection(currentRawSnapshot).find(function (seatOrder) {
       return seatOrder.id === seatPlanId;
     }) || null;
     currentRawSnapshot.activeSeatOrderId = seatPlanId || null;
   } else {
-    ensureSeatPlans(currentRawSnapshot);
-    selectedItem = currentRawSnapshot.seatPlans.find(function (seatPlan) {
+    selectedItem = getSeatPlansCollection(currentRawSnapshot).find(function (seatPlan) {
       return seatPlan.id === seatPlanId;
     }) || null;
     currentRawSnapshot.activeSeatPlanId = seatPlanId || null;
@@ -5997,8 +5992,8 @@ window.UnterrichtsassistentApp.createSeatPlan = function () {
     return false;
   }
 
-  ensureSeatPlans(currentRawSnapshot);
-  ensureSeatOrders(currentRawSnapshot);
+  getMutableSeatPlansCollection(currentRawSnapshot);
+  getMutableSeatOrdersCollection(currentRawSnapshot);
 
   if (isSeatOrderMode) {
     if (!nextSeatOrder) {
@@ -6006,7 +6001,7 @@ window.UnterrichtsassistentApp.createSeatPlan = function () {
     }
 
     if (currentSeatOrder) {
-      currentRawSnapshot.seatOrders = currentRawSnapshot.seatOrders.map(function (seatOrder) {
+      currentRawSnapshot.seatOrders = getMutableSeatOrdersCollection(currentRawSnapshot).map(function (seatOrder) {
         if (seatOrder.id === currentSeatOrder.id) {
           seatOrder.validTo = yesterdayValue;
         }
@@ -6021,7 +6016,7 @@ window.UnterrichtsassistentApp.createSeatPlan = function () {
       });
     }
 
-    currentRawSnapshot.seatOrders.unshift(nextSeatOrder);
+    getMutableSeatOrdersCollection(currentRawSnapshot).unshift(nextSeatOrder);
     currentRawSnapshot.activeSeatOrderId = nextSeatOrder.id;
   } else {
     if (!nextSeatPlan) {
@@ -6029,7 +6024,7 @@ window.UnterrichtsassistentApp.createSeatPlan = function () {
     }
 
     if (currentSeatPlan) {
-      currentRawSnapshot.seatPlans = currentRawSnapshot.seatPlans.map(function (seatPlan) {
+      currentRawSnapshot.seatPlans = getMutableSeatPlansCollection(currentRawSnapshot).map(function (seatPlan) {
         if (seatPlan.id === currentSeatPlan.id) {
           seatPlan.validTo = yesterdayValue;
         }
@@ -6050,7 +6045,7 @@ window.UnterrichtsassistentApp.createSeatPlan = function () {
       nextSeatPlan.roomHeight = Number(currentSeatPlan.roomHeight) || nextSeatPlan.roomHeight;
     }
 
-    currentRawSnapshot.seatPlans.unshift(nextSeatPlan);
+    getMutableSeatPlansCollection(currentRawSnapshot).unshift(nextSeatPlan);
     currentRawSnapshot.activeSeatPlanId = nextSeatPlan.id;
   }
 
@@ -6081,17 +6076,15 @@ window.UnterrichtsassistentApp.deleteActiveSeatPlan = function () {
     return false;
   }
 
-  ensureSeatPlans(currentRawSnapshot);
-  ensureSeatOrders(currentRawSnapshot);
   if (isSeatOrderMode) {
-    currentRawSnapshot.seatOrders = currentRawSnapshot.seatOrders.filter(function (seatOrder) {
+    currentRawSnapshot.seatOrders = getSeatOrdersCollection(currentRawSnapshot).filter(function (seatOrder) {
       return seatOrder.id !== currentItem.id;
     });
     remainingItems = currentRawSnapshot.seatOrders.filter(function (seatOrder) {
       return seatOrder.classId === activeClass.id && String(seatOrder.room || "") === String(activeRoom || "");
     });
   } else {
-    currentRawSnapshot.seatPlans = currentRawSnapshot.seatPlans.filter(function (seatPlan) {
+    currentRawSnapshot.seatPlans = getSeatPlansCollection(currentRawSnapshot).filter(function (seatPlan) {
       return seatPlan.id !== currentItem.id;
     });
     remainingItems = currentRawSnapshot.seatPlans.filter(function (seatPlan) {
@@ -6120,8 +6113,8 @@ window.UnterrichtsassistentApp.updateSeatPlanDateField = function (fieldName, ne
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
   const seatPlan = currentRawSnapshot
     ? (seatPlanViewMode === "sitzordnung"
-      ? ensureSeatOrderForActiveClass(currentRawSnapshot)
-      : ensureSeatPlanForActiveClass(currentRawSnapshot))
+      ? getEditableSeatOrderForActiveContextFromSnapshot(currentRawSnapshot)
+      : getEditableSeatPlanForActiveContextFromSnapshot(currentRawSnapshot))
     : null;
 
   if (!repository || !schoolService || !seatPlan || ["validFrom", "validTo"].indexOf(fieldName) === -1) {
@@ -6212,14 +6205,24 @@ window.UnterrichtsassistentApp.shuffleSeatAssignments = function () {
 window.UnterrichtsassistentApp.toggleSeatLock = function (deskItemId, slotName) {
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
   const activeClass = schoolService ? schoolService.getActiveClass() : null;
-  const seatPlan = currentRawSnapshot && activeClass
+  let seatPlan = currentRawSnapshot && activeClass
     ? getEditableSeatOrderForActiveContextFromSnapshot(currentRawSnapshot)
     : null;
-  const seat = getSeatAssignmentByDeskSlot(seatPlan, deskItemId, slotName);
+  let seat;
 
-  if (!repository || !schoolService || !seatPlan || !deskItemId || !slotName) {
+  if (!repository || !schoolService || !currentRawSnapshot || !activeClass || !deskItemId || !slotName) {
     return false;
   }
+
+  if (!seatPlan) {
+    seatPlan = getEditableSeatOrderForActiveContextFromSnapshot(currentRawSnapshot, { createIfMissing: true });
+  }
+
+  if (!seatPlan) {
+    return false;
+  }
+
+  seat = getSeatAssignmentByDeskSlot(seatPlan, deskItemId, slotName);
 
   if (!seat) {
     seatPlan.seats.push({
@@ -6428,7 +6431,7 @@ window.UnterrichtsassistentApp.startDeskLayoutResize = function (event, side) {
   const canvas = getDeskLayoutCanvasElement();
   const normalizedSide = ["right", "bottom"].indexOf(side) >= 0 ? side : "";
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
-  const seatPlan = currentRawSnapshot ? ensureSeatPlanForActiveClass(currentRawSnapshot) : null;
+  const seatPlan = currentRawSnapshot ? getEditableSeatPlanForActiveContextFromSnapshot(currentRawSnapshot) : null;
   const itemBounds = seatPlan ? getDeskLayoutItemsBounds(seatPlan.deskLayoutItems) : null;
 
   if (!event || !canvas || !normalizedSide) {
@@ -6470,7 +6473,7 @@ window.UnterrichtsassistentApp.startDeskLayoutResize = function (event, side) {
 };
 window.UnterrichtsassistentApp.removeDeskLayoutLink = function (linkId) {
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
-  const seatPlan = currentRawSnapshot ? ensureSeatPlanForActiveClass(currentRawSnapshot) : null;
+  const seatPlan = currentRawSnapshot ? getEditableSeatPlanForActiveContextFromSnapshot(currentRawSnapshot) : null;
   const currentLinks = seatPlan && Array.isArray(seatPlan.deskLayoutLinks) ? seatPlan.deskLayoutLinks : [];
   const removedLink = currentLinks.find(function (link) {
     return link.id === linkId;
@@ -6804,7 +6807,6 @@ window.UnterrichtsassistentApp.changeActiveTimetable = function (timetableId) {
 
   const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
 
-  ensureTimetables(currentRawSnapshot);
   currentRawSnapshot.activeTimetableId = timetableId || null;
   refreshSnapshotInMemory(currentRawSnapshot, "stundenplan");
   return false;
@@ -6815,7 +6817,7 @@ window.UnterrichtsassistentApp.createTimetable = function () {
   }
 
   const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
-  const timetables = ensureTimetables(currentRawSnapshot);
+  const timetables = getMutableTimetablesCollection(currentRawSnapshot);
   const currentTimetable = schoolService.getCurrentTimetable();
   const nextTimetable = createTimetableRecord();
   const yesterdayValue = getYesterdayDateValue();
@@ -6837,7 +6839,7 @@ window.UnterrichtsassistentApp.createTimetable = function () {
 window.UnterrichtsassistentApp.deleteActiveTimetable = function () {
   const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
   const currentTimetable = schoolService ? schoolService.getManagedTimetable() : null;
-  const timetables = ensureTimetables(currentRawSnapshot);
+  const timetables = getMutableTimetablesCollection(currentRawSnapshot);
   let nextActiveTimetable = null;
 
   if (!isTimetableManageMode() || !repository || !schoolService || !currentTimetable) {
@@ -7038,11 +7040,13 @@ window.UnterrichtsassistentApp.submitClassImport = function (event) {
   }
 
   if (!file) {
+    const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
+
     if (!className) {
       return false;
     }
 
-    saveAndRefreshSnapshot(createEmptyClassFn(serializeSnapshot(schoolService.snapshot), className, subjectName), "klasse").then(function () {
+    saveAndRefreshSnapshot(createEmptyClassFn(currentRawSnapshot, className, subjectName), "klasse").then(function () {
       window.UnterrichtsassistentApp.closeClassImportModal();
     });
     return false;
@@ -7180,22 +7184,22 @@ window.UnterrichtsassistentApp.deleteStudent = function (studentId) {
   currentRawSnapshot.assessments = currentRawSnapshot.assessments.filter(function (assessment) {
     return assessment.studentId !== studentId;
   });
-  currentRawSnapshot.attendanceRecords = ensureAttendanceRecords(currentRawSnapshot).filter(function (record) {
+  currentRawSnapshot.attendanceRecords = getAttendanceRecordsCollection(currentRawSnapshot).filter(function (record) {
     return record.studentId !== studentId;
   });
-  currentRawSnapshot.homeworkRecords = ensureHomeworkRecords(currentRawSnapshot).filter(function (record) {
+  currentRawSnapshot.homeworkRecords = getHomeworkRecordsCollection(currentRawSnapshot).filter(function (record) {
     return record.studentId !== studentId;
   });
-  currentRawSnapshot.warningRecords = ensureWarningRecords(currentRawSnapshot).filter(function (record) {
+  currentRawSnapshot.warningRecords = getWarningRecordsCollection(currentRawSnapshot).filter(function (record) {
     return record.studentId !== studentId;
   });
-  currentRawSnapshot.seatPlans = currentRawSnapshot.seatPlans.map(function (seatPlan) {
+  currentRawSnapshot.seatPlans = getSeatPlansCollection(currentRawSnapshot).map(function (seatPlan) {
     seatPlan.seats = (seatPlan.seats || []).filter(function (seat) {
       return seat.studentId !== studentId;
     });
     return seatPlan;
   });
-  currentRawSnapshot.seatOrders = (currentRawSnapshot.seatOrders || []).map(function (seatOrder) {
+  currentRawSnapshot.seatOrders = getSeatOrdersCollection(currentRawSnapshot).map(function (seatOrder) {
     seatOrder.seats = (seatOrder.seats || []).filter(function (seat) {
       return seat.studentId !== studentId;
     });
@@ -7399,25 +7403,25 @@ window.UnterrichtsassistentApp.deleteActiveClass = function () {
   currentRawSnapshot.assessments = currentRawSnapshot.assessments.filter(function (assessment) {
     return assessment.classId !== activeClass.id && !studentIdsToDelete[assessment.studentId];
   });
-  currentRawSnapshot.attendanceRecords = ensureAttendanceRecords(currentRawSnapshot).filter(function (record) {
+  currentRawSnapshot.attendanceRecords = getAttendanceRecordsCollection(currentRawSnapshot).filter(function (record) {
     return record.classId !== activeClass.id && !studentIdsToDelete[record.studentId];
   });
-  currentRawSnapshot.homeworkRecords = ensureHomeworkRecords(currentRawSnapshot).filter(function (record) {
+  currentRawSnapshot.homeworkRecords = getHomeworkRecordsCollection(currentRawSnapshot).filter(function (record) {
     return record.classId !== activeClass.id && !studentIdsToDelete[record.studentId];
   });
-  currentRawSnapshot.warningRecords = ensureWarningRecords(currentRawSnapshot).filter(function (record) {
+  currentRawSnapshot.warningRecords = getWarningRecordsCollection(currentRawSnapshot).filter(function (record) {
     return record.classId !== activeClass.id && !studentIdsToDelete[record.studentId];
   });
   currentRawSnapshot.todos = currentRawSnapshot.todos.filter(function (todo) {
     return todo.relatedClassId !== activeClass.id;
   });
-  currentRawSnapshot.seatPlans = currentRawSnapshot.seatPlans.filter(function (seatPlan) {
+  currentRawSnapshot.seatPlans = getSeatPlansCollection(currentRawSnapshot).filter(function (seatPlan) {
     return seatPlan.classId !== activeClass.id;
   });
-  currentRawSnapshot.seatOrders = (currentRawSnapshot.seatOrders || []).filter(function (seatOrder) {
+  currentRawSnapshot.seatOrders = getSeatOrdersCollection(currentRawSnapshot).filter(function (seatOrder) {
     return seatOrder.classId !== activeClass.id;
   });
-  ensureTimetables(currentRawSnapshot).forEach(function (timetable) {
+  getMutableTimetablesCollection(currentRawSnapshot).forEach(function (timetable) {
     timetable.rows = timetable.rows.map(function (row) {
       timetableWeekdayKeys.forEach(function (weekdayKey) {
         if (row.days[weekdayKey] && row.days[weekdayKey].classId === activeClass.id) {
@@ -7448,7 +7452,7 @@ async function startApp() {
     }
 
     rawState = stripNonPersistentUiState(normalizeRawSnapshot(await repository.loadSnapshot()));
-    schoolService = new SchoolServiceClass(rawState);
+    syncSchoolServiceWithRawState();
     persistenceHasStoredState = true;
     persistenceHasPendingChanges = false;
     persistenceLastError = null;
