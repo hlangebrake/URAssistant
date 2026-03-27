@@ -44,7 +44,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
       : null;
 
     function escapeValue(value) {
-      return String(value || "")
+      return String(value === undefined || value === null ? "" : value)
         .replace(/&/g, "&amp;")
         .replace(/"/g, "&quot;")
         .replace(/</g, "&lt;")
@@ -282,7 +282,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
     }
 
     function buildAnalysisDetailSummary(record) {
-      const orderedKeys = ["status", "quality", "category", "note", "afb1", "afb2", "afb3", "workBehavior", "socialBehavior", "knowledgeGap"];
+        const orderedKeys = ["status", "quality", "category", "note", "afb1", "afb2", "afb3", "workBehavior", "socialBehavior", "knowledgeGap"];
 
       return orderedKeys.filter(function (key) {
         const value = record[key];
@@ -290,6 +290,10 @@ window.Unterrichtsassistent.ui.views.klasse = {
       }).map(function (key) {
         return normalizeLabel(key) + ": " + formatDetailValue(key, record[key]);
       }).join(" | ");
+    }
+
+    function getAnalysisRecordCreatedAt(record) {
+      return String(record && (record.recordedAt || record.effectiveAt || record.lessonDate || record.date) || "");
     }
 
     const allAnalysisRecords = schoolClass ? []
@@ -301,7 +305,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
           date: normalizeDateValue(record.lessonDate || record.date),
           type: "assessment",
           symbol: "🔍",
-          sortKey: normalizeDateValue(record.lessonDate || record.date) + "|" + String(index).padStart(6, "0"),
+          sortKey: getAnalysisRecordCreatedAt(record) + "|" + String(record.id || index).padStart(6, "0"),
           raw: record
         };
       }))
@@ -313,7 +317,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
           date: normalizeDateValue(record.lessonDate),
           type: "attendance",
           symbol: "✓",
-          sortKey: String(record.effectiveAt || record.recordedAt || record.lessonDate || "") + "|" + String(index).padStart(6, "0"),
+          sortKey: getAnalysisRecordCreatedAt(record) + "|" + String(record.id || index).padStart(6, "0"),
           raw: record
         };
       }))
@@ -325,7 +329,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
           date: normalizeDateValue(record.lessonDate),
           type: "homework",
           symbol: "H",
-          sortKey: String(record.recordedAt || record.lessonDate || "") + "|" + String(index).padStart(6, "0"),
+          sortKey: getAnalysisRecordCreatedAt(record) + "|" + String(record.id || index).padStart(6, "0"),
           raw: record
         };
       }))
@@ -337,7 +341,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
           date: normalizeDateValue(record.lessonDate),
           type: "warning",
           symbol: "⚠",
-          sortKey: String(record.recordedAt || record.lessonDate || "") + "|" + String(index).padStart(6, "0"),
+          sortKey: getAnalysisRecordCreatedAt(record) + "|" + String(record.id || index).padStart(6, "0"),
           raw: record
         };
       }))
@@ -842,7 +846,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
           '<button class="assessment-grade-button class-analysis-assessment-grade-button', analysisEditRecord.raw && analysisEditRecord.raw.socialBehavior === "d" ? " is-active" : "", '" type="button" data-target="social" data-value="d" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisAssessmentGrade(\'social\', \'d\')">d</button>',
           '</div><input id="classAnalysisAssessmentSocialBehavior" type="hidden" value="', escapeValue(analysisEditRecord.raw && analysisEditRecord.raw.socialBehavior || ""), '"></div>',
           '</div></section>',
-          '<section class="assessment-column"><h4 class="assessment-column__title">Fachwissen</h4><label class="import-modal__field"><span>Wissensluecke</span><input id="classAnalysisAssessmentKnowledgeGap" type="text" value="', escapeValue(analysisEditRecord.raw && analysisEditRecord.raw.knowledgeGap || ""), '" placeholder="Diagnostizierte Wissensluecke"></label></section>',
+          '<section class="assessment-column"><h4 class="assessment-column__title">Fachwissen</h4><label class="import-modal__field import-modal__field--knowledge-gap"><span>Wissensluecke</span><input id="classAnalysisAssessmentKnowledgeGap" type="text" value="', escapeValue(analysisEditRecord.raw && analysisEditRecord.raw.knowledgeGap || ""), '" placeholder="Diagnostizierte Wissensluecke" autocomplete="off" onfocus="return window.UnterrichtsassistentApp.handleKnowledgeGapInputFocus(\'classAnalysisAssessmentKnowledgeGap\', \'classAnalysisAssessmentKnowledgeGapSuggestions\')" oninput="return window.UnterrichtsassistentApp.handleKnowledgeGapInput(event, \'classAnalysisAssessmentKnowledgeGapSuggestions\')" onblur="return window.UnterrichtsassistentApp.handleKnowledgeGapInputBlur(\'classAnalysisAssessmentKnowledgeGapSuggestions\')"><div class="knowledge-gap-suggestions" id="classAnalysisAssessmentKnowledgeGapSuggestions" hidden onpointerdown="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerDown(event, \'classAnalysisAssessmentKnowledgeGapSuggestions\')" onpointermove="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerMove(event, \'classAnalysisAssessmentKnowledgeGapSuggestions\')" onpointerup="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerUp(event, \'classAnalysisAssessmentKnowledgeGapSuggestions\')" onpointercancel="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerUp(event, \'classAnalysisAssessmentKnowledgeGapSuggestions\')"></div></label><label class="import-modal__field"><span>Notiz</span><input id="classAnalysisAssessmentNote" type="text" maxlength="240" value="', escapeValue(analysisEditRecord.raw && analysisEditRecord.raw.note || ""), '" placeholder="Freie Notiz zur Bewertung"></label></section>',
           '</div>'
         ].join("") : "",
         '</form>',

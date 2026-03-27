@@ -1151,6 +1151,8 @@ button {
   font: inherit;
   font-weight: 700;
   font-size: 0.88rem;
+  line-height: 1.2;
+  white-space: normal;
   cursor: pointer;
   transition: background-color 0.16s ease, color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
 }
@@ -1439,6 +1441,10 @@ button {
   font-weight: 600;
 }
 
+.import-modal__field--knowledge-gap {
+  position: relative;
+}
+
 .import-modal__field input {
   min-height: 48px;
   padding: 0.85rem 1rem;
@@ -1457,6 +1463,59 @@ button {
   background: #fff;
   font: inherit;
   color: var(--text);
+}
+
+.knowledge-gap-suggestions {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  right: 0;
+  z-index: 12;
+  display: grid;
+  gap: 0.2rem;
+  max-height: 220px;
+  padding: 0.35rem;
+  border: 1px solid rgba(23, 49, 62, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 252, 247, 0.98);
+  box-shadow: 0 16px 36px rgba(23, 49, 62, 0.16);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  cursor: grab;
+}
+
+.knowledge-gap-suggestions[hidden] {
+  display: none;
+}
+
+.knowledge-gap-suggestions.is-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.knowledge-gap-suggestion {
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease;
+}
+
+.knowledge-gap-suggestion:hover,
+.knowledge-gap-suggestion:focus-visible {
+  background: rgba(23, 49, 62, 0.08);
+  outline: none;
+}
+
+.knowledge-gap-suggestion__count {
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  font-weight: 700;
 }
 
 .import-modal__actions {
@@ -1758,8 +1817,8 @@ button {
 }
 
 .import-modal__dialog--analysis-detail {
-  width: min(760px, calc(100% - 2rem));
-  max-width: 760px;
+  width: min(920px, calc(100% - 2rem));
+  max-width: 920px;
   max-height: min(86vh, 920px);
   display: flex;
   flex-direction: column;

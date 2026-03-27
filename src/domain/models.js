@@ -73,13 +73,15 @@ class Assessment {
     lessonId = "",
     lessonDate = "",
     room = "",
+    recordedAt = "",
     category = "",
     afb1 = "--",
     afb2 = "--",
     afb3 = "--",
     workBehavior = "",
     socialBehavior = "",
-    knowledgeGap = ""
+    knowledgeGap = "",
+    note = ""
   }) {
     this.id = id;
     this.studentId = studentId;
@@ -91,6 +93,7 @@ class Assessment {
     this.lessonId = lessonId;
     this.lessonDate = lessonDate;
     this.room = room;
+    this.recordedAt = recordedAt;
     this.category = category;
     this.afb1 = afb1;
     this.afb2 = afb2;
@@ -98,6 +101,7 @@ class Assessment {
     this.workBehavior = workBehavior;
     this.socialBehavior = socialBehavior;
     this.knowledgeGap = knowledgeGap;
+    this.note = note;
   }
 
   get percentage() {

@@ -87,6 +87,11 @@ let unterrichtAssessmentQuickOverlay = null;
 let activeClassAnalysisDragScroll = null;
 let hasBoundClassAnalysisResize = false;
 let classAnalysisScrollLeftByClassId = {};
+let activeKnowledgeGapSuggestionListId = "";
+let activeKnowledgeGapSuggestionInputId = "";
+let activeKnowledgeGapSuggestionBlurTimerId = 0;
+let activeKnowledgeGapSuggestionDrag = null;
+let suppressKnowledgeGapSuggestionClickUntil = 0;
 const AUTOSAVE_DELAY_MS = 30000;
 const HOMEWORK_LONG_PRESS_DELAY_MS = 380;
 const HOMEWORK_RADIAL_OPTIONS = [
@@ -415,6 +420,243 @@ function clearPendingPersistTimer() {
 
   window.clearTimeout(pendingPersistTimerId);
   pendingPersistTimerId = 0;
+}
+
+function trySetPointerCapture(target, pointerId) {
+  if (!target || typeof target.setPointerCapture !== "function" || typeof pointerId !== "number") {
+    return;
+  }
+
+  try {
+    target.setPointerCapture(pointerId);
+  } catch (error) {
+    void error;
+  }
+}
+
+function clearKnowledgeGapSuggestionBlurTimer() {
+  if (!activeKnowledgeGapSuggestionBlurTimerId) {
+    return;
+  }
+
+  window.clearTimeout(activeKnowledgeGapSuggestionBlurTimerId);
+  activeKnowledgeGapSuggestionBlurTimerId = 0;
+}
+
+function escapeKnowledgeGapSuggestionHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function getKnowledgeGapSuggestionList(listId) {
+  return listId ? document.getElementById(listId) : null;
+}
+
+function getClassSubjectById(rawSnapshot, classId) {
+  const classes = rawSnapshot && Array.isArray(rawSnapshot.classes)
+    ? rawSnapshot.classes
+    : [];
+  const schoolClass = classes.find(function (entry) {
+    return String(entry && entry.id || "") === String(classId || "");
+  }) || null;
+
+  return schoolClass ? String(schoolClass.subject || "").trim() : "";
+}
+
+function getKnowledgeGapSuggestionSubject(inputId) {
+  const sourceSnapshot = getMutableRawSnapshot();
+  let classId = "";
+  let record = null;
+
+  if (!sourceSnapshot) {
+    return "";
+  }
+
+  if (inputId === "unterrichtAssessmentKnowledgeGap" && activeUnterrichtAssessmentDraft) {
+    classId = String(activeUnterrichtAssessmentDraft.classId || "").trim();
+  } else if (inputId === "classAnalysisAssessmentKnowledgeGap" && activeClassAnalysisRecordEditDraft) {
+    record = getClassAnalysisRecordByDraft(sourceSnapshot, activeClassAnalysisRecordEditDraft);
+    classId = String(record && record.classId || "").trim();
+  }
+
+  if (!classId && schoolService && typeof schoolService.getActiveClass === "function") {
+    const activeClass = schoolService.getActiveClass();
+    return activeClass ? String(activeClass.subject || "").trim() : "";
+  }
+
+  return getClassSubjectById(sourceSnapshot, classId);
+}
+
+function getKnowledgeGapSuggestions(prefix, inputId) {
+  const sourceSnapshot = getMutableRawSnapshot();
+  const lowerPrefix = String(prefix || "").trim().toLowerCase();
+  const currentSubject = String(getKnowledgeGapSuggestionSubject(inputId) || "").trim().toLowerCase();
+  const countsByKey = {};
+  const subjectByClassId = {};
+
+  if (!sourceSnapshot || !Array.isArray(sourceSnapshot.assessments)) {
+    return [];
+  }
+
+  sourceSnapshot.assessments.forEach(function (record) {
+    const rawValue = String(record && record.knowledgeGap || "").trim();
+    const normalizedKey = rawValue.toLowerCase();
+    const recordClassId = String(record && record.classId || "").trim();
+    let recordSubject = "";
+
+    if (!rawValue) {
+      return;
+    }
+
+    if (currentSubject) {
+      if (!Object.prototype.hasOwnProperty.call(subjectByClassId, recordClassId)) {
+        subjectByClassId[recordClassId] = getClassSubjectById(sourceSnapshot, recordClassId).toLowerCase();
+      }
+
+      recordSubject = subjectByClassId[recordClassId];
+
+      if (recordSubject !== currentSubject) {
+        return;
+      }
+    }
+
+    if (lowerPrefix && normalizedKey.indexOf(lowerPrefix) !== 0) {
+      return;
+    }
+
+    if (!countsByKey[normalizedKey]) {
+      countsByKey[normalizedKey] = {
+        value: rawValue,
+        count: 0
+      };
+    }
+
+    countsByKey[normalizedKey].count += 1;
+  });
+
+  return Object.keys(countsByKey).map(function (key) {
+    return countsByKey[key];
+  }).sort(function (leftItem, rightItem) {
+    if (rightItem.count !== leftItem.count) {
+      return rightItem.count - leftItem.count;
+    }
+
+    return String(leftItem.value || "").localeCompare(String(rightItem.value || ""), "de", { sensitivity: "base" });
+  });
+}
+
+function closeKnowledgeGapSuggestions() {
+  const list = getKnowledgeGapSuggestionList(activeKnowledgeGapSuggestionListId);
+
+  clearKnowledgeGapSuggestionBlurTimer();
+  activeKnowledgeGapSuggestionDrag = null;
+
+  if (list) {
+    list.hidden = true;
+    list.classList.remove("is-dragging");
+    list.innerHTML = "";
+  }
+
+  activeKnowledgeGapSuggestionListId = "";
+  activeKnowledgeGapSuggestionInputId = "";
+}
+
+function renderKnowledgeGapSuggestions(inputId, listId) {
+  const input = inputId ? document.getElementById(inputId) : null;
+  const list = getKnowledgeGapSuggestionList(listId);
+  const suggestions = getKnowledgeGapSuggestions(input && input.value, inputId);
+
+  if (!input || !list || !document.body.contains(input)) {
+    closeKnowledgeGapSuggestions();
+    return false;
+  }
+
+  activeKnowledgeGapSuggestionInputId = inputId;
+  activeKnowledgeGapSuggestionListId = listId;
+
+  if (!suggestions.length) {
+    list.hidden = true;
+    list.innerHTML = "";
+    return false;
+  }
+
+  list.innerHTML = suggestions.map(function (entry) {
+    return '<button class="knowledge-gap-suggestion" type="button" data-value="' + escapeKnowledgeGapSuggestionHtml(entry.value) + '" onclick="return window.UnterrichtsassistentApp.selectKnowledgeGapSuggestion(this.dataset.value, \'' + escapeKnowledgeGapSuggestionHtml(inputId) + '\', \'' + escapeKnowledgeGapSuggestionHtml(listId) + '\')">' + escapeKnowledgeGapSuggestionHtml(entry.value) + ' <span class="knowledge-gap-suggestion__count">(' + escapeKnowledgeGapSuggestionHtml(String(entry.count)) + ')</span></button>';
+  }).join("");
+  list.hidden = false;
+  return false;
+}
+
+function scheduleKnowledgeGapSuggestionsClose() {
+  clearKnowledgeGapSuggestionBlurTimer();
+  activeKnowledgeGapSuggestionBlurTimerId = window.setTimeout(function () {
+    closeKnowledgeGapSuggestions();
+  }, 120);
+}
+
+function beginKnowledgeGapSuggestionsDrag(event, listId) {
+  const list = getKnowledgeGapSuggestionList(listId);
+
+  if (!event || !list || (event.target && event.target.closest(".knowledge-gap-suggestion"))) {
+    return false;
+  }
+
+  clearKnowledgeGapSuggestionBlurTimer();
+  activeKnowledgeGapSuggestionDrag = {
+    listId: listId,
+    pointerId: event.pointerId,
+    startY: Number(event.clientY) || 0,
+    startScrollTop: list.scrollTop,
+    moved: false
+  };
+  list.classList.remove("is-dragging");
+  trySetPointerCapture(list, event.pointerId);
+  return false;
+}
+
+function moveKnowledgeGapSuggestionsDrag(event, listId) {
+  const list = getKnowledgeGapSuggestionList(listId);
+  let currentY;
+  let offsetY;
+
+  if (!activeKnowledgeGapSuggestionDrag || activeKnowledgeGapSuggestionDrag.listId !== listId || event.pointerId !== activeKnowledgeGapSuggestionDrag.pointerId || !list) {
+    return false;
+  }
+
+  currentY = Number(event && event.clientY) || 0;
+  offsetY = currentY - activeKnowledgeGapSuggestionDrag.startY;
+
+  if (Math.abs(offsetY) >= 4) {
+    activeKnowledgeGapSuggestionDrag.moved = true;
+    suppressKnowledgeGapSuggestionClickUntil = Date.now() + 180;
+    list.classList.add("is-dragging");
+  }
+
+  list.scrollTop = activeKnowledgeGapSuggestionDrag.startScrollTop - offsetY;
+  event.preventDefault();
+  return false;
+}
+
+function endKnowledgeGapSuggestionsDrag(event, listId) {
+  const list = getKnowledgeGapSuggestionList(listId);
+
+  if (!activeKnowledgeGapSuggestionDrag || activeKnowledgeGapSuggestionDrag.listId !== listId || event.pointerId !== activeKnowledgeGapSuggestionDrag.pointerId) {
+    return false;
+  }
+
+  if (list) {
+    list.classList.remove("is-dragging");
+  }
+
+  if (activeKnowledgeGapSuggestionDrag.moved) {
+    event.preventDefault();
+  }
+
+  activeKnowledgeGapSuggestionDrag = null;
+  return false;
 }
 
 function renderPersistenceIndicator() {
@@ -1849,6 +2091,8 @@ function getAssessmentGridInnerSize(config) {
 }
 
 function appendUnterrichtAssessmentRecord(rawSnapshot, draft, values) {
+  const recordedAt = String(values && values.recordedAt || getReferenceDateTimeValue()).trim();
+
   if (!rawSnapshot || !draft) {
     return;
   }
@@ -1865,13 +2109,15 @@ function appendUnterrichtAssessmentRecord(rawSnapshot, draft, values) {
     lessonId: draft.lessonId,
     lessonDate: draft.lessonDate,
     room: draft.lessonRoom,
+    recordedAt: recordedAt,
     category: String(values && values.category || "").trim(),
     afb1: values && values.afb1 !== undefined ? values.afb1 : "",
     afb2: values && values.afb2 !== undefined ? values.afb2 : "",
     afb3: values && values.afb3 !== undefined ? values.afb3 : "",
     workBehavior: String(values && values.workBehavior || "").trim(),
     socialBehavior: String(values && values.socialBehavior || "").trim(),
-    knowledgeGap: String(values && values.knowledgeGap || "").trim()
+    knowledgeGap: String(values && values.knowledgeGap || "").trim(),
+    note: String(values && values.note || "").trim()
   });
 }
 
@@ -5199,6 +5445,66 @@ window.UnterrichtsassistentApp.submitUnterrichtWarningOtherModal = function (eve
 
   return window.UnterrichtsassistentApp.closeUnterrichtWarningOtherModal();
 };
+window.UnterrichtsassistentApp.handleKnowledgeGapInputFocus = function (inputId, listId) {
+  clearKnowledgeGapSuggestionBlurTimer();
+  return renderKnowledgeGapSuggestions(inputId, listId);
+};
+window.UnterrichtsassistentApp.handleKnowledgeGapInput = function (event, listId) {
+  const input = event && event.target ? event.target : document.getElementById(activeKnowledgeGapSuggestionInputId);
+
+  clearKnowledgeGapSuggestionBlurTimer();
+
+  if (!input || !input.id) {
+    closeKnowledgeGapSuggestions();
+    return false;
+  }
+
+  return renderKnowledgeGapSuggestions(input.id, listId);
+};
+window.UnterrichtsassistentApp.handleKnowledgeGapInputBlur = function (listId) {
+  if (listId && listId !== activeKnowledgeGapSuggestionListId) {
+    closeKnowledgeGapSuggestions();
+    return false;
+  }
+
+  scheduleKnowledgeGapSuggestionsClose();
+  return false;
+};
+window.UnterrichtsassistentApp.selectKnowledgeGapSuggestion = function (value, inputId, listId) {
+  const input = inputId ? document.getElementById(inputId) : null;
+
+  if (Date.now() < suppressKnowledgeGapSuggestionClickUntil) {
+    return false;
+  }
+
+  clearKnowledgeGapSuggestionBlurTimer();
+
+  if (!input) {
+    closeKnowledgeGapSuggestions();
+    return false;
+  }
+
+  input.value = String(value || "");
+  closeKnowledgeGapSuggestions();
+  window.setTimeout(function () {
+    if (typeof input.focus === "function") {
+      input.focus();
+      if (typeof input.setSelectionRange === "function") {
+        input.setSelectionRange(input.value.length, input.value.length);
+      }
+    }
+  }, 0);
+  return false;
+};
+window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerDown = function (event, listId) {
+  return beginKnowledgeGapSuggestionsDrag(event, listId);
+};
+window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerMove = function (event, listId) {
+  return moveKnowledgeGapSuggestionsDrag(event, listId);
+};
+window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerUp = function (event, listId) {
+  return endKnowledgeGapSuggestionsDrag(event, listId);
+};
 window.UnterrichtsassistentApp.openUnterrichtAssessmentModal = function () {
   const modal = getUnterrichtAssessmentModal();
   const header = document.getElementById("unterrichtAssessmentStudent");
@@ -5217,6 +5523,7 @@ window.UnterrichtsassistentApp.openUnterrichtAssessmentModal = function () {
   const workInput = document.getElementById("unterrichtAssessmentWorkBehavior");
   const socialInput = document.getElementById("unterrichtAssessmentSocialBehavior");
   const gapInput = document.getElementById("unterrichtAssessmentKnowledgeGap");
+  const noteInput = document.getElementById("unterrichtAssessmentNote");
   const firstFocusable = categoryButton || afb1Input;
 
   if (!modal || !activeUnterrichtAssessmentDraft) {
@@ -5262,6 +5569,11 @@ window.UnterrichtsassistentApp.openUnterrichtAssessmentModal = function () {
     gapInput.value = "";
   }
 
+  if (noteInput) {
+    noteInput.value = "";
+  }
+  closeKnowledgeGapSuggestions();
+
   if (firstFocusable) {
     window.setTimeout(function () {
       firstFocusable.focus();
@@ -5300,6 +5612,8 @@ window.UnterrichtsassistentApp.toggleUnterrichtAssessmentGrade = function (targe
 window.UnterrichtsassistentApp.closeUnterrichtAssessmentModal = function () {
   const modal = getUnterrichtAssessmentModal();
 
+  closeKnowledgeGapSuggestions();
+
   if (modal) {
     modal.hidden = true;
     modal.classList.remove("is-open");
@@ -5312,6 +5626,7 @@ window.UnterrichtsassistentApp.closeUnterrichtAssessmentModal = function () {
 };
 window.UnterrichtsassistentApp.startUnterrichtAssessmentGridPointer = function (event) {
   const point = getUnterrichtAssessmentGridPoint(event);
+  const captureTarget = event && event.currentTarget ? event.currentTarget : getUnterrichtAssessmentGridSvg();
 
   if (!point) {
     return false;
@@ -5327,11 +5642,8 @@ window.UnterrichtsassistentApp.startUnterrichtAssessmentGridPointer = function (
   };
   activeUnterrichtAssessmentGridDrag.afbs[point.afb] = true;
   setUnterrichtAssessmentGridValue(point.afb, point.qualityValue);
+  trySetPointerCapture(captureTarget, event.pointerId);
   renderUnterrichtAssessmentGrid();
-
-  if (event.target && typeof event.target.setPointerCapture === "function") {
-    event.target.setPointerCapture(event.pointerId);
-  }
 
   return false;
 };
@@ -5369,6 +5681,7 @@ window.UnterrichtsassistentApp.submitUnterrichtAssessmentModal = function (event
   const workInput = document.getElementById("unterrichtAssessmentWorkBehavior");
   const socialInput = document.getElementById("unterrichtAssessmentSocialBehavior");
   const gapInput = document.getElementById("unterrichtAssessmentKnowledgeGap");
+  const noteInput = document.getElementById("unterrichtAssessmentNote");
 
   if (event && typeof event.preventDefault === "function") {
     event.preventDefault();
@@ -5385,7 +5698,8 @@ window.UnterrichtsassistentApp.submitUnterrichtAssessmentModal = function (event
     afb3: String(afb3Input && afb3Input.value || "").trim() === "" ? "" : Number(afb3Input.value),
     workBehavior: String(workInput && workInput.value || "").trim(),
     socialBehavior: String(socialInput && socialInput.value || "").trim(),
-    knowledgeGap: String(gapInput && gapInput.value || "").trim()
+    knowledgeGap: String(gapInput && gapInput.value || "").trim(),
+    note: String(noteInput && noteInput.value || "").trim()
   });
 
   saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
@@ -5625,10 +5939,13 @@ window.UnterrichtsassistentApp.openClassAnalysisRecordEditModal = function () {
   syncClassAnalysisHomeworkUi();
   syncClassAnalysisWarningUi();
   renderClassAnalysisAssessmentGrid();
+  closeKnowledgeGapSuggestions();
   return false;
 };
 window.UnterrichtsassistentApp.closeClassAnalysisRecordEditModal = function () {
   const modal = getClassAnalysisRecordEditModal();
+
+  closeKnowledgeGapSuggestions();
 
   if (modal) {
     modal.hidden = true;
@@ -5723,6 +6040,7 @@ window.UnterrichtsassistentApp.toggleClassAnalysisAssessmentGrade = function (ta
 };
 window.UnterrichtsassistentApp.startClassAnalysisAssessmentGridPointer = function (event) {
   const point = getClassAnalysisAssessmentGridPoint(event);
+  const captureTarget = event && event.currentTarget ? event.currentTarget : getClassAnalysisAssessmentGridSvg();
 
   if (!point) {
     return false;
@@ -5731,10 +6049,8 @@ window.UnterrichtsassistentApp.startClassAnalysisAssessmentGridPointer = functio
   event.preventDefault();
   activeClassAnalysisAssessmentGridDrag = { pointerId: event.pointerId };
   setClassAnalysisAssessmentGridValue(point.afb, point.qualityValue);
+  trySetPointerCapture(captureTarget, event.pointerId);
   renderClassAnalysisAssessmentGrid();
-  if (event.target && typeof event.target.setPointerCapture === "function") {
-    event.target.setPointerCapture(event.pointerId);
-  }
   return false;
 };
 window.UnterrichtsassistentApp.handleClassAnalysisAssessmentGridPointerMove = function (event) {
@@ -5828,6 +6144,7 @@ window.UnterrichtsassistentApp.submitClassAnalysisRecordEditModal = function (ev
     record.workBehavior = String(document.getElementById("classAnalysisAssessmentWorkBehavior") && document.getElementById("classAnalysisAssessmentWorkBehavior").value || "").trim();
     record.socialBehavior = String(document.getElementById("classAnalysisAssessmentSocialBehavior") && document.getElementById("classAnalysisAssessmentSocialBehavior").value || "").trim();
     record.knowledgeGap = String(document.getElementById("classAnalysisAssessmentKnowledgeGap") && document.getElementById("classAnalysisAssessmentKnowledgeGap").value || "").trim();
+    record.note = String(document.getElementById("classAnalysisAssessmentNote") && document.getElementById("classAnalysisAssessmentNote").value || "").trim();
   }
 
   saveAndRefreshSnapshot(currentRawSnapshot, "klasse");

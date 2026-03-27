@@ -122,7 +122,7 @@ function serializeDomainSnapshot(snapshot) {
     students: cloneItems(snapshot.students, ["id", "firstName", "lastName", "className", "gender", "strengths", "gaps", "attendanceRate"]),
     classes: cloneItems(snapshot.classes, ["id", "name", "room", "subject", "studentIds", "displayColor"]),
     lessons: cloneItems(snapshot.lessons, ["id", "classId", "subject", "room", "weekday", "startTime", "endTime", "topic"]),
-    assessments: cloneItems(snapshot.assessments, ["id", "studentId", "classId", "type", "score", "maxScore", "date", "lessonId", "lessonDate", "room", "category", "afb1", "afb2", "afb3", "workBehavior", "socialBehavior", "knowledgeGap"]),
+    assessments: cloneItems(snapshot.assessments, ["id", "studentId", "classId", "type", "score", "maxScore", "date", "lessonId", "lessonDate", "room", "recordedAt", "category", "afb1", "afb2", "afb3", "workBehavior", "socialBehavior", "knowledgeGap", "note"]),
     attendanceRecords: cloneItems(snapshot.attendanceRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "status", "recordedAt", "effectiveAt"]),
     homeworkRecords: cloneItems(snapshot.homeworkRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "quality"]),
     warningRecords: cloneItems(snapshot.warningRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "category", "note"]),
