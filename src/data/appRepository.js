@@ -18,20 +18,19 @@ function isLegacySeedSnapshot(snapshot) {
 class AppRepository {
   async loadSnapshot() {
     const { demoData, readState } = window.Unterrichtsassistent.data;
-    const { createDomainSnapshot } = window.Unterrichtsassistent.domain;
     const storedSnapshot = await readState(SNAPSHOT_KEY);
 
     if (!storedSnapshot) {
       await this.saveSnapshot(demoData);
-      return createDomainSnapshot(demoData);
+      return demoData;
     }
 
     if (isLegacySeedSnapshot(storedSnapshot)) {
       await this.saveSnapshot(demoData);
-      return createDomainSnapshot(demoData);
+      return demoData;
     }
 
-    return createDomainSnapshot(storedSnapshot);
+    return storedSnapshot;
   }
 
   async saveSnapshot(snapshot) {

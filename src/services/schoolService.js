@@ -1041,7 +1041,9 @@ class SchoolService {
     }
 
     const sum = assessments.reduce(function (total, assessment) {
-      return total + assessment.percentage;
+      const maxScore = Number(assessment && assessment.maxScore) || 0;
+      const score = Number(assessment && assessment.score) || 0;
+      return total + (maxScore ? Math.round((score / maxScore) * 100) : 0);
     }, 0);
     return Math.round(sum / assessments.length);
   }

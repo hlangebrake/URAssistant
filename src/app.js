@@ -29,7 +29,7 @@ const renderPanelsFn = uiLayer.renderPanels;
 const renderCustomMarkupFn = uiLayer.renderCustomMarkup;
 const demoSnapshot = dataLayer.demoData;
 const createSnapshot = domainLayer.createDomainSnapshot;
-const serializeSnapshot = domainLayer.serializeDomainSnapshot;
+const serializeDomainSnapshot = domainLayer.serializeDomainSnapshot;
 const parseStudentCsvFn = dataLayer.parseStudentCsv;
 const createEmptyClassFn = dataLayer.createEmptyClass;
 const mergeImportedStudentsFn = dataLayer.mergeImportedStudents;
@@ -38,6 +38,7 @@ const createPastelColorFn = dataLayer.createPastelColor;
 const repository = RepositoryClass ? new RepositoryClass() : null;
 
 let schoolService = null;
+let rawState = null;
 let activeViewId = "unterricht";
 let unterrichtViewMode = "live";
 let unterrichtToolMode = "attendance";
@@ -112,6 +113,18 @@ let persistenceIsSaving = false;
 let persistenceLastError = null;
 let persistInFlightPromise = null;
 let forcePersistAfterCurrentSave = false;
+
+function serializeSnapshot(snapshot) {
+  if (rawState && schoolService && snapshot === schoolService.snapshot) {
+    return rawState;
+  }
+
+  if (serializeDomainSnapshot) {
+    return serializeDomainSnapshot(snapshot);
+  }
+
+  return JSON.parse(JSON.stringify(snapshot || {}));
+}
 
 function getClassImportModal() {
   return document.getElementById("classImportModal");
@@ -366,15 +379,28 @@ function createFallbackService() {
     return null;
   }
 
-  return new SchoolServiceClass(createSnapshot(demoSnapshot));
+  rawState = normalizeRawSnapshot(demoSnapshot);
+  return new SchoolServiceClass(rawState);
 }
 
 function cloneRawSnapshot(rawSnapshot) {
+  return JSON.parse(JSON.stringify(rawSnapshot || {}));
+}
+
+function normalizeRawSnapshot(rawSnapshot) {
   if (createSnapshot && serializeSnapshot) {
     return serializeSnapshot(createSnapshot(rawSnapshot || {}));
   }
 
-  return JSON.parse(JSON.stringify(rawSnapshot || {}));
+  return cloneRawSnapshot(rawSnapshot);
+}
+
+function getMutableRawSnapshot() {
+  if (!rawState && schoolService && serializeSnapshot) {
+    rawState = serializeSnapshot(schoolService.snapshot);
+  }
+
+  return rawState;
 }
 
 function stripNonPersistentUiState(rawSnapshot) {
@@ -392,7 +418,8 @@ function stripNonPersistentUiState(rawSnapshot) {
 }
 
 function refreshSnapshotInMemory(nextRawSnapshot, nextViewId) {
-  schoolService = new SchoolServiceClass(createSnapshot(nextRawSnapshot));
+  rawState = nextRawSnapshot;
+  schoolService = new SchoolServiceClass(rawState);
   setActiveView(nextViewId || activeViewId);
   return Promise.resolve(true);
 }
@@ -494,7 +521,7 @@ function flushPendingPersist(options) {
   const config = options || {};
   const snapshotToPersist = config.snapshot
     || pendingPersistSnapshot
-    || (schoolService && serializeSnapshot ? serializeSnapshot(schoolService.snapshot) : null);
+    || getMutableRawSnapshot();
 
   clearPendingPersistTimer();
 
@@ -1084,9 +1111,9 @@ function setActiveView(viewId) {
 
   if (viewId === "unterricht" && previousViewId !== "unterricht") {
     unterrichtViewMode = "live";
-    if (schoolService && serializeSnapshot) {
+    if (schoolService && rawState) {
       unterrichtToolMode = shouldDefaultToAssessmentTool(
-        serializeSnapshot(schoolService.snapshot),
+        rawState,
         schoolService.getActiveClass(),
         schoolService.getReferenceDate()
       ) ? "assessment" : "attendance";
@@ -7420,8 +7447,8 @@ async function startApp() {
       throw new Error("App-Module konnten nicht vollstaendig geladen werden.");
     }
 
-    const snapshot = stripNonPersistentUiState(await repository.loadSnapshot());
-    schoolService = new SchoolServiceClass(snapshot);
+    rawState = stripNonPersistentUiState(normalizeRawSnapshot(await repository.loadSnapshot()));
+    schoolService = new SchoolServiceClass(rawState);
     persistenceHasStoredState = true;
     persistenceHasPendingChanges = false;
     persistenceLastError = null;
@@ -7436,9 +7463,9 @@ async function startApp() {
     }
   }
 
-  if (schoolService && serializeSnapshot) {
+  if (schoolService && rawState) {
     unterrichtToolMode = shouldDefaultToAssessmentTool(
-      serializeSnapshot(schoolService.snapshot),
+      rawState,
       schoolService.getActiveClass(),
       schoolService.getReferenceDate()
     ) ? "assessment" : "attendance";
@@ -7452,11 +7479,11 @@ async function startApp() {
 }
 
 window.UnterrichtsassistentApp.flushPersistence = function () {
-  if (!schoolService || !serializeSnapshot) {
+  if (!schoolService || !getMutableRawSnapshot()) {
     return false;
   }
 
-  queueSnapshotPersist(serializeSnapshot(schoolService.snapshot), { immediate: true });
+  queueSnapshotPersist(getMutableRawSnapshot(), { immediate: true });
   return false;
 };
 
@@ -7471,12 +7498,12 @@ document.addEventListener("click", function (event) {
 });
 
 window.addEventListener("pagehide", function () {
-  if (!schoolService || !serializeSnapshot || !persistenceHasPendingChanges) {
+  if (!schoolService || !getMutableRawSnapshot() || !persistenceHasPendingChanges) {
     return;
   }
 
   flushPendingPersist({
-    snapshot: serializeSnapshot(schoolService.snapshot),
+    snapshot: getMutableRawSnapshot(),
     immediate: true
   });
 });
