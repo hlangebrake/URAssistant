@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'none'; img-src 'none'; font-src 'self'; media-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; manifest-src 'none'">
   <title>Unterrichtsassistent Entsperren</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -12,7 +14,7 @@
       <p class="auth-card__eyebrow">Unterrichtsassistent</p>
       <h1 class="auth-card__title" id="authTitle">App entsperren</h1>
       <p class="auth-card__text" id="authDescription">Die App ist geschuetzt. Bitte Passwort eingeben.</p>
-      <form class="auth-form" id="authForm" autocomplete="on" method="post" action="index.html">
+      <form class="auth-form" id="authForm" autocomplete="on" method="post" action="about:blank" data-local-only-form>
         <input id="authUsername" name="username" type="text" value="" autocomplete="username" autocapitalize="none" spellcheck="false" class="auth-form__username" tabindex="-1" aria-hidden="true">
         <label class="auth-form__field" id="authPasswordField" for="authPassword">
           <span id="authPasswordLabel">Passwort</span>

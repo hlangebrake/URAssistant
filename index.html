@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'none'; img-src 'none'; font-src 'self'; media-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; manifest-src 'none'">
   <title>Unterrichtsassistent</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -113,7 +115,7 @@
         </div>
         <button class="import-modal__close" type="button" aria-label="Pop-up schliessen" onclick="return window.UnterrichtsassistentApp.closeAppDataImportPasswordModal()">x</button>
       </div>
-      <form class="import-modal__form" id="appDataImportPasswordForm" onsubmit="return window.UnterrichtsassistentApp.submitImportedAppDataPassword(event)">
+      <form class="import-modal__form" id="appDataImportPasswordForm" autocomplete="on" method="post" action="about:blank" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitImportedAppDataPassword(event)">
         <label class="import-modal__field">
           <span>Passwort der Importdatei</span>
           <input id="appDataImportPasswordInput" type="password" autocomplete="current-password" autocapitalize="none" spellcheck="false" required>

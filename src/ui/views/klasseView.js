@@ -46,9 +46,14 @@ window.Unterrichtsassistent.ui.views.klasse = {
     function escapeValue(value) {
       return String(value === undefined || value === null ? "" : value)
         .replace(/&/g, "&amp;")
+        .replace(/\\/g, "&#92;")
         .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;")
+        .replace(/`/g, "&#96;")
         .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
+        .replace(/>/g, "&gt;")
+        .replace(/\r/g, "&#13;")
+        .replace(/\n/g, "&#10;");
     }
 
     function normalizeDateValue(value) {
@@ -694,8 +699,8 @@ window.Unterrichtsassistent.ui.views.klasse = {
 
       return [
         '<tr data-student-id="', student.id, '">',
-        '<td><input class="student-table__input" type="text" value="', escapeValue(student.firstName), '" onchange="window.UnterrichtsassistentApp.updateStudentField(\'', student.id, '\', \'firstName\', this.value)"></td>',
-        '<td><input class="student-table__input" type="text" value="', escapeValue(student.lastName), '" onchange="window.UnterrichtsassistentApp.updateStudentField(\'', student.id, '\', \'lastName\', this.value)"></td>',
+        '<td><input class="student-table__input" type="text" value="', escapeValue(student.firstName), '" autocomplete="off" autocapitalize="none" spellcheck="false" onchange="window.UnterrichtsassistentApp.updateStudentField(\'', student.id, '\', \'firstName\', this.value)"></td>',
+        '<td><input class="student-table__input" type="text" value="', escapeValue(student.lastName), '" autocomplete="off" autocapitalize="none" spellcheck="false" onchange="window.UnterrichtsassistentApp.updateStudentField(\'', student.id, '\', \'lastName\', this.value)"></td>',
         '<td><select class="student-table__input student-table__select" onchange="window.UnterrichtsassistentApp.updateStudentField(\'', student.id, '\', \'gender\', this.value)">',
         '<option value=""', genderValue ? "" : ' selected', '>-</option>',
         '<option value="m"', genderValue === "m" ? ' selected' : "", '>m</option>',
@@ -715,11 +720,11 @@ window.Unterrichtsassistent.ui.views.klasse = {
         '<div class="class-meta-editor">',
         '<label class="class-meta-editor__field">',
         '<span>Klassenbezeichner</span>',
-        '<input class="student-table__input" type="text" value="', escapeValue(schoolClass.name), '" onchange="window.UnterrichtsassistentApp.updateActiveClassField(\'name\', this.value)">',
+        '<input class="student-table__input" type="text" value="', escapeValue(schoolClass.name), '" autocomplete="off" autocapitalize="none" spellcheck="false" onchange="window.UnterrichtsassistentApp.updateActiveClassField(\'name\', this.value)">',
         '</label>',
         '<label class="class-meta-editor__field">',
         '<span>Fach</span>',
-        '<input class="student-table__input" type="text" value="', escapeValue(schoolClass.subject), '" onchange="window.UnterrichtsassistentApp.updateActiveClassField(\'subject\', this.value)">',
+        '<input class="student-table__input" type="text" value="', escapeValue(schoolClass.subject), '" autocomplete="off" autocapitalize="none" spellcheck="false" onchange="window.UnterrichtsassistentApp.updateActiveClassField(\'subject\', this.value)">',
         '</label>',
         '<label class="class-meta-editor__field">',
         '<span>Anzeigefarbe</span>',
@@ -797,7 +802,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
         '<button class="import-modal__icon-button import-modal__icon-button--cancel" type="button" aria-label="Bearbeitung abbrechen" onclick="return window.UnterrichtsassistentApp.closeClassAnalysisRecordEditModal()">&#10005;</button>',
         '</div>',
         '</div>',
-        '<form class="import-modal__form" id="classAnalysisRecordEditForm" onsubmit="return window.UnterrichtsassistentApp.submitClassAnalysisRecordEditModal(event)">',
+        '<form class="import-modal__form" id="classAnalysisRecordEditForm" autocomplete="off" method="post" action="about:blank" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitClassAnalysisRecordEditModal(event)">',
         analysisEditRecord && analysisEditRecord.type === "attendance" ? [
           '<label class="import-modal__field"><span>Uhrzeit</span><input id="classAnalysisAttendanceTime" type="time" value="', escapeValue(formatTimeLabel((analysisEditRecord.raw && (analysisEditRecord.raw.effectiveAt || analysisEditRecord.raw.recordedAt)) || "")), '"></label>',
           '<label class="import-modal__field"><span>Anwesend</span><select id="classAnalysisAttendanceStatus" class="student-table__input student-table__select"><option value="present"', analysisEditRecord.raw && analysisEditRecord.raw.status === "present" ? " selected" : "", '>ja</option><option value="absent"', !analysisEditRecord.raw || analysisEditRecord.raw.status !== "present" ? " selected" : "", '>nein</option></select></label>'
@@ -818,7 +823,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
           '<button class="assessment-category-button class-analysis-warning-button', analysisEditRecord.raw && analysisEditRecord.raw.category === "material" ? " is-active" : "", '" type="button" data-category="material" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisWarningCategory(\'material\')">Material</button>',
           '<button class="assessment-category-button class-analysis-warning-button', analysisEditRecord.raw && analysisEditRecord.raw.category === "andere" ? " is-active" : "", '" type="button" data-category="andere" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisWarningCategory(\'andere\')">andere</button>',
           '</div><input id="classAnalysisWarningCategory" type="hidden" value="', escapeValue(analysisEditRecord.raw && analysisEditRecord.raw.category || ""), '"></div>',
-          '<label class="import-modal__field"><span>Notiz</span><input id="classAnalysisWarningNote" type="text" maxlength="120" value="', escapeValue(analysisEditRecord.raw && analysisEditRecord.raw.note || ""), '" placeholder="Kurzer Hinweis"></label>'
+          '<label class="import-modal__field"><span>Notiz</span><input id="classAnalysisWarningNote" type="text" maxlength="120" value="', escapeValue(analysisEditRecord.raw && analysisEditRecord.raw.note || ""), '" placeholder="Kurzer Hinweis" autocomplete="off" autocapitalize="none" spellcheck="false"></label>'
         ].join("") : "",
         analysisEditRecord && analysisEditRecord.type === "assessment" ? [
           '<div class="assessment-columns">',
@@ -846,7 +851,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
           '<button class="assessment-grade-button class-analysis-assessment-grade-button', analysisEditRecord.raw && analysisEditRecord.raw.socialBehavior === "d" ? " is-active" : "", '" type="button" data-target="social" data-value="d" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisAssessmentGrade(\'social\', \'d\')">d</button>',
           '</div><input id="classAnalysisAssessmentSocialBehavior" type="hidden" value="', escapeValue(analysisEditRecord.raw && analysisEditRecord.raw.socialBehavior || ""), '"></div>',
           '</div></section>',
-          '<section class="assessment-column"><h4 class="assessment-column__title">Fachwissen</h4><label class="import-modal__field import-modal__field--knowledge-gap"><span>Wissensluecke</span><input id="classAnalysisAssessmentKnowledgeGap" type="text" value="', escapeValue(analysisEditRecord.raw && analysisEditRecord.raw.knowledgeGap || ""), '" placeholder="Diagnostizierte Wissensluecke" autocomplete="off" onfocus="return window.UnterrichtsassistentApp.handleKnowledgeGapInputFocus(\'classAnalysisAssessmentKnowledgeGap\', \'classAnalysisAssessmentKnowledgeGapSuggestions\')" oninput="return window.UnterrichtsassistentApp.handleKnowledgeGapInput(event, \'classAnalysisAssessmentKnowledgeGapSuggestions\')" onblur="return window.UnterrichtsassistentApp.handleKnowledgeGapInputBlur(\'classAnalysisAssessmentKnowledgeGapSuggestions\')"><div class="knowledge-gap-suggestions" id="classAnalysisAssessmentKnowledgeGapSuggestions" hidden onpointerdown="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerDown(event, \'classAnalysisAssessmentKnowledgeGapSuggestions\')" onpointermove="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerMove(event, \'classAnalysisAssessmentKnowledgeGapSuggestions\')" onpointerup="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerUp(event, \'classAnalysisAssessmentKnowledgeGapSuggestions\')" onpointercancel="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerUp(event, \'classAnalysisAssessmentKnowledgeGapSuggestions\')"></div></label><label class="import-modal__field"><span>Notiz</span><input id="classAnalysisAssessmentNote" type="text" maxlength="240" value="', escapeValue(analysisEditRecord.raw && analysisEditRecord.raw.note || ""), '" placeholder="Freie Notiz zur Bewertung"></label></section>',
+          '<section class="assessment-column"><h4 class="assessment-column__title">Fachwissen</h4><label class="import-modal__field import-modal__field--knowledge-gap"><span>Wissensluecke</span><input id="classAnalysisAssessmentKnowledgeGap" type="text" value="', escapeValue(analysisEditRecord.raw && analysisEditRecord.raw.knowledgeGap || ""), '" placeholder="Diagnostizierte Wissensluecke" autocomplete="off" autocapitalize="none" spellcheck="false" onfocus="return window.UnterrichtsassistentApp.handleKnowledgeGapInputFocus(\'classAnalysisAssessmentKnowledgeGap\', \'classAnalysisAssessmentKnowledgeGapSuggestions\')" oninput="return window.UnterrichtsassistentApp.handleKnowledgeGapInput(event, \'classAnalysisAssessmentKnowledgeGapSuggestions\')" onblur="return window.UnterrichtsassistentApp.handleKnowledgeGapInputBlur(\'classAnalysisAssessmentKnowledgeGapSuggestions\')"><div class="knowledge-gap-suggestions" id="classAnalysisAssessmentKnowledgeGapSuggestions" hidden onpointerdown="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerDown(event, \'classAnalysisAssessmentKnowledgeGapSuggestions\')" onpointermove="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerMove(event, \'classAnalysisAssessmentKnowledgeGapSuggestions\')" onpointerup="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerUp(event, \'classAnalysisAssessmentKnowledgeGapSuggestions\')" onpointercancel="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerUp(event, \'classAnalysisAssessmentKnowledgeGapSuggestions\')"></div></label><label class="import-modal__field"><span>Notiz</span><input id="classAnalysisAssessmentNote" type="text" maxlength="240" value="', escapeValue(analysisEditRecord.raw && analysisEditRecord.raw.note || ""), '" placeholder="Freie Notiz zur Bewertung" autocomplete="off" autocapitalize="none" spellcheck="false"></label></section>',
           '</div>'
         ].join("") : "",
         '</form>',
@@ -859,18 +864,18 @@ window.Unterrichtsassistent.ui.views.klasse = {
       '<h3 id="classImportTitle">Neue Lerngruppe anlegen</h3>',
       '<button class="import-modal__close" type="button" aria-label="Pop-up schliessen" onclick="return window.UnterrichtsassistentApp.closeClassImportModal()">x</button>',
       "</div>",
-      '<form class="import-modal__form" onsubmit="return window.UnterrichtsassistentApp.submitClassImport(event)">',
+      '<form class="import-modal__form" autocomplete="off" method="post" action="about:blank" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitClassImport(event)">',
       '<label class="import-modal__field">',
       "<span>Klassenbezeichner</span>",
-      '<input id="classNameInput" name="className" type="text" placeholder="z. B. 8a">',
+      '<input id="classNameInput" type="text" placeholder="z. B. 8a" autocomplete="off" autocapitalize="none" spellcheck="false">',
       "</label>",
       '<label class="import-modal__field">',
       "<span>Fach</span>",
-      '<input id="classSubjectInput" name="subject" type="text" placeholder="z. B. Mathematik" required>',
+      '<input id="classSubjectInput" type="text" placeholder="z. B. Mathematik" autocomplete="off" autocapitalize="none" spellcheck="false" required>',
       "</label>",
       '<label class="import-modal__field">',
       "<span>CSV-Datei (optional)</span>",
-      '<input id="studentCsvFile" name="csvFile" type="file" accept=".csv,.txt">',
+      '<input id="studentCsvFile" type="file" accept=".csv,.txt">',
       "</label>",
       '<p class="import-box__hint">Ohne CSV ist ein Klassenbezeichner noetig. Mit CSV wird bei leerem Klassenbezeichner der Wert aus der Datei uebernommen.</p>',
       '<div class="import-modal__actions">',

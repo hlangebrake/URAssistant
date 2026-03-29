@@ -19,9 +19,14 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
     function escapeValue(value) {
       return String(value || "")
         .replace(/&/g, "&amp;")
+        .replace(/\\/g, "&#92;")
         .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;")
+        .replace(/`/g, "&#96;")
         .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
+        .replace(/>/g, "&gt;")
+        .replace(/\r/g, "&#13;")
+        .replace(/\n/g, "&#10;");
     }
 
     function timeToMinutes(timeValue) {
@@ -161,7 +166,7 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
         '<select class="student-table__input student-table__select" onchange="return window.UnterrichtsassistentApp.updateTimetableClass(\'', row.id, '\', \'', weekday.key, '\', this.value)">',
         renderClassOptions(cell.classId),
         "</select>",
-        '<input class="student-table__input" type="text" placeholder="Raum" value="', escapeValue(cell.room), '" onchange="return window.UnterrichtsassistentApp.updateTimetableRoom(\'', row.id, '\', \'', weekday.key, '\', this.value)">',
+        '<input class="student-table__input" type="text" placeholder="Raum" value="', escapeValue(cell.room), '" autocomplete="off" autocapitalize="none" spellcheck="false" onchange="return window.UnterrichtsassistentApp.updateTimetableRoom(\'', row.id, '\', \'', weekday.key, '\', this.value)">',
         '<label class="schedule-double-toggle">',
         '<input type="checkbox" ', cell.isDouble ? "checked " : "", cell.classId ? "" : "disabled ", 'onchange="return window.UnterrichtsassistentApp.toggleTimetableDouble(\'', row.id, '\', \'', weekday.key, '\', this.checked)">',
         "<span>Doppelstunde</span>",

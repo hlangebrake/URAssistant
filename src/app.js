@@ -134,6 +134,18 @@ let idleLockTimerId = 0;
 let isLockingForAuth = false;
 let pendingEncryptedImportPayload = null;
 
+function preventLocalOnlyFormSubmit(event) {
+  const form = event && event.target && typeof event.target.matches === "function" && event.target.matches("form[data-local-only-form]")
+    ? event.target
+    : null;
+
+  if (!form || !event || typeof event.preventDefault !== "function") {
+    return;
+  }
+
+  event.preventDefault();
+}
+
 function serializeSnapshot(snapshot) {
   if (rawState && schoolService && snapshot === schoolService.snapshot) {
     return rawState;
@@ -772,9 +784,14 @@ function findScrollableYAncestor(startNode) {
 function escapeKnowledgeGapSuggestionHtml(value) {
   return String(value || "")
     .replace(/&/g, "&amp;")
+    .replace(/\\/g, "&#92;")
     .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+    .replace(/`/g, "&#96;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    .replace(/\r/g, "&#13;")
+    .replace(/\n/g, "&#10;");
 }
 
 function getKnowledgeGapSuggestionList(listId) {
@@ -1211,9 +1228,14 @@ function renderStartupError(message) {
 function escapeHtml(value) {
   return String(value || "")
     .replace(/&/g, "&amp;")
+    .replace(/\\/g, "&#92;")
     .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+    .replace(/`/g, "&#96;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    .replace(/\r/g, "&#13;")
+    .replace(/\n/g, "&#10;");
 }
 
 function getClassDisplayName(schoolClass) {
@@ -7755,9 +7777,9 @@ window.UnterrichtsassistentApp.closeClassImportModal = function () {
 };
 window.UnterrichtsassistentApp.submitClassImport = function (event) {
   const form = event.target;
-  const classNameInput = form ? form.querySelector('input[name="className"]') : null;
-  const fileInput = form ? form.querySelector('input[name="csvFile"]') : null;
-  const subjectInput = form ? form.querySelector('input[name="subject"]') : null;
+  const classNameInput = form ? form.querySelector("#classNameInput") : null;
+  const fileInput = form ? form.querySelector("#studentCsvFile") : null;
+  const subjectInput = form ? form.querySelector("#classSubjectInput") : null;
   const file = fileInput && fileInput.files ? fileInput.files[0] : null;
   const className = classNameInput ? String(classNameInput.value || "").trim() : "";
   const subjectName = subjectInput ? String(subjectInput.value || "").trim() : "";
@@ -8439,6 +8461,8 @@ document.addEventListener("touchstart", function (event) {
 
   lastTouchClientY = Number(touch.clientY) || 0;
 }, { passive: true });
+
+document.addEventListener("submit", preventLocalOnlyFormSubmit, true);
 
 document.addEventListener("touchmove", function (event) {
   const touch = event && event.touches && event.touches[0];

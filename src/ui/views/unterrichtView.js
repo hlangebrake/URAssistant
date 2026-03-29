@@ -40,9 +40,14 @@ window.Unterrichtsassistent.ui.views.unterricht = {
     function escapeValue(value) {
       return String(value || "")
         .replace(/&/g, "&amp;")
+        .replace(/\\/g, "&#92;")
         .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;")
+        .replace(/`/g, "&#96;")
         .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
+        .replace(/>/g, "&gt;")
+        .replace(/\r/g, "&#13;")
+        .replace(/\n/g, "&#10;");
     }
 
     function getStudentById(studentId) {
@@ -401,10 +406,10 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         '<h3 id="unterrichtWarningOtherTitle">Andere Verwarnung</h3>',
         '<button class="import-modal__close" type="button" aria-label="Pop-up schliessen" onclick="return window.UnterrichtsassistentApp.closeUnterrichtWarningOtherModal()">x</button>',
         '</div>',
-        '<form class="import-modal__form" onsubmit="return window.UnterrichtsassistentApp.submitUnterrichtWarningOtherModal(event)">',
+        '<form class="import-modal__form" autocomplete="off" method="post" action="about:blank" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitUnterrichtWarningOtherModal(event)">',
         '<label class="import-modal__field">',
         '<span>Kurztext</span>',
-        '<input id="unterrichtWarningOtherInput" type="text" maxlength="120" placeholder="Kurzer Hinweis">',
+        '<input id="unterrichtWarningOtherInput" type="text" maxlength="120" placeholder="Kurzer Hinweis" autocomplete="off" autocapitalize="none" spellcheck="false">',
         '</label>',
         '<div class="import-modal__actions">',
         '<button class="circle-action circle-action--danger" type="button" onclick="return window.UnterrichtsassistentApp.closeUnterrichtWarningOtherModal()">Abbrechen</button>',
@@ -426,7 +431,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         '<button class="import-modal__icon-button import-modal__icon-button--cancel" type="button" aria-label="Bewertung verwerfen" onclick="return window.UnterrichtsassistentApp.closeUnterrichtAssessmentModal()">&#10005;</button>',
         '</div>',
         '</div>',
-        '<form class="import-modal__form" id="unterrichtAssessmentForm" onsubmit="return window.UnterrichtsassistentApp.submitUnterrichtAssessmentModal(event)">',
+        '<form class="import-modal__form" id="unterrichtAssessmentForm" autocomplete="off" method="post" action="about:blank" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitUnterrichtAssessmentModal(event)">',
         '<div class="assessment-columns">',
         '<section class="assessment-column">',
         '<h4 class="assessment-column__title">Leistung</h4>',
@@ -480,12 +485,12 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         '<h4 class="assessment-column__title">Fachwissen</h4>',
         '<label class="import-modal__field import-modal__field--knowledge-gap">',
         '<span>Wissensluecke</span>',
-        '<input id="unterrichtAssessmentKnowledgeGap" type="text" maxlength="180" placeholder="Diagnostizierte Wissensluecke" autocomplete="off" onfocus="return window.UnterrichtsassistentApp.handleKnowledgeGapInputFocus(\'unterrichtAssessmentKnowledgeGap\', \'unterrichtAssessmentKnowledgeGapSuggestions\')" oninput="return window.UnterrichtsassistentApp.handleKnowledgeGapInput(event, \'unterrichtAssessmentKnowledgeGapSuggestions\')" onblur="return window.UnterrichtsassistentApp.handleKnowledgeGapInputBlur(\'unterrichtAssessmentKnowledgeGapSuggestions\')">',
+        '<input id="unterrichtAssessmentKnowledgeGap" type="text" maxlength="180" placeholder="Diagnostizierte Wissensluecke" autocomplete="off" autocapitalize="none" spellcheck="false" onfocus="return window.UnterrichtsassistentApp.handleKnowledgeGapInputFocus(\'unterrichtAssessmentKnowledgeGap\', \'unterrichtAssessmentKnowledgeGapSuggestions\')" oninput="return window.UnterrichtsassistentApp.handleKnowledgeGapInput(event, \'unterrichtAssessmentKnowledgeGapSuggestions\')" onblur="return window.UnterrichtsassistentApp.handleKnowledgeGapInputBlur(\'unterrichtAssessmentKnowledgeGapSuggestions\')">',
         '<div class="knowledge-gap-suggestions" id="unterrichtAssessmentKnowledgeGapSuggestions" hidden onpointerdown="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerDown(event, \'unterrichtAssessmentKnowledgeGapSuggestions\')" onpointermove="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerMove(event, \'unterrichtAssessmentKnowledgeGapSuggestions\')" onpointerup="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerUp(event, \'unterrichtAssessmentKnowledgeGapSuggestions\')" onpointercancel="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerUp(event, \'unterrichtAssessmentKnowledgeGapSuggestions\')"></div>',
         '</label>',
         '<label class="import-modal__field">',
         '<span>Notiz</span>',
-        '<input id="unterrichtAssessmentNote" type="text" maxlength="240" placeholder="Freie Notiz zur Bewertung">',
+        '<input id="unterrichtAssessmentNote" type="text" maxlength="240" placeholder="Freie Notiz zur Bewertung" autocomplete="off" autocapitalize="none" spellcheck="false">',
         '</label>',
         '</section>',
         '</div>',

@@ -64,20 +64,16 @@ function getSubmitLabel() {
   return authMode === "setup" ? "Passwort speichern" : "Entsperren";
 }
 
-async function storePasswordForAutofill(password) {
-  if (!window.PasswordCredential || !navigator.credentials || typeof navigator.credentials.store !== "function") {
+function preventLocalOnlyFormSubmit(event) {
+  const form = event && event.target && typeof event.target.matches === "function" && event.target.matches("form[data-local-only-form]")
+    ? event.target
+    : null;
+
+  if (!form || !event || typeof event.preventDefault !== "function") {
     return;
   }
 
-  try {
-    await navigator.credentials.store(new window.PasswordCredential({
-      id: authUsernameValue,
-      password: String(password || ""),
-      name: "Unterrichtsassistent"
-    }));
-  } catch (error) {
-    void error;
-  }
+  event.preventDefault();
 }
 
 function showError(message) {
@@ -293,7 +289,6 @@ async function handleImportUnlock(password) {
 
   await appDataCryptoApi.decryptSnapshot(importPayload.appState, masterKeyBytes);
   await repository.saveProtectedState(importPayload.appState, importPayload.passwordAuth);
-  await storePasswordForAutofill(password);
 
   passwordAuthApi.createUnlockSession(masterKeyBytes);
 }
@@ -314,7 +309,6 @@ async function handleSetupSubmit(password, passwordConfirm) {
 
   authRecord = await passwordAuthApi.createPasswordAuthRecord(password);
   await repository.savePasswordAuthRecord(authRecord);
-  await storePasswordForAutofill(password);
 
   masterKeyBytes = await passwordAuthApi.unlockPasswordAuthRecord(password, authRecord);
   passwordAuthApi.createUnlockSession(masterKeyBytes);
@@ -441,6 +435,8 @@ function handleImportCancel() {
   syncModeUi();
   return false;
 }
+
+document.addEventListener("submit", preventLocalOnlyFormSubmit, true);
 
 if (authForm) {
   authForm.addEventListener("submit", handleAuthSubmit);
