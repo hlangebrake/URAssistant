@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Unterrichtsassistent Entsperren</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="auth-page">
+  <main class="auth-shell">
+    <section class="auth-card" aria-labelledby="authTitle">
+      <p class="auth-card__eyebrow">Unterrichtsassistent</p>
+      <h1 class="auth-card__title" id="authTitle">App entsperren</h1>
+      <p class="auth-card__text" id="authDescription">Die App ist geschuetzt. Bitte Passwort eingeben.</p>
+      <form class="auth-form" id="authForm" autocomplete="on" method="post" action="index.html">
+        <input id="authUsername" name="username" type="text" value="" autocomplete="username" autocapitalize="none" spellcheck="false" class="auth-form__username" tabindex="-1" aria-hidden="true">
+        <label class="auth-form__field" id="authPasswordField" for="authPassword">
+          <span id="authPasswordLabel">Passwort</span>
+          <input id="authPassword" name="password" type="password" autocomplete="current-password" autocapitalize="none" spellcheck="false" required>
+        </label>
+        <label class="auth-form__field" id="authConfirmField" for="authPasswordConfirm" hidden>
+          <span>Passwort wiederholen</span>
+          <input id="authPasswordConfirm" name="passwordConfirm" type="password" autocomplete="new-password" autocapitalize="none" spellcheck="false">
+        </label>
+        <p class="auth-form__error" id="authError" hidden></p>
+        <button class="import-box__label auth-form__submit" id="authSubmitButton" type="submit">Entsperren</button>
+      </form>
+    </section>
+  </main>
+
+  <script src="src/data/indexedDb.js"></script>
+  <script src="src/data/appRepository.js"></script>
+  <script src="src/security/passwordAuth.js"></script>
+  <script src="src/authPage.js"></script>
+</body>
+</html>

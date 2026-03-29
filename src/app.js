@@ -19,6 +19,7 @@ const appDataImportInput = document.getElementById("appDataImportInput");
 
 const namespace = window.Unterrichtsassistent || {};
 const dataLayer = namespace.data || {};
+const securityLayer = namespace.security || {};
 const servicesLayer = namespace.services || {};
 const uiLayer = namespace.ui || {};
 const domainLayer = namespace.domain || {};
@@ -35,8 +36,10 @@ const parseStudentCsvFn = dataLayer.parseStudentCsv;
 const createEmptyClassFn = dataLayer.createEmptyClass;
 const mergeImportedStudentsFn = dataLayer.mergeImportedStudents;
 const createPastelColorFn = dataLayer.createPastelColor;
+const passwordAuthApi = securityLayer.passwordAuth || null;
 
 const repository = RepositoryClass ? new RepositoryClass() : null;
+const AUTH_RETURN_STATE_STORAGE_KEY = "unterrichtsassistent-auth-return-state";
 
 let schoolService = null;
 let rawState = null;
@@ -120,6 +123,7 @@ let persistenceIsSaving = false;
 let persistenceLastError = null;
 let persistInFlightPromise = null;
 let forcePersistAfterCurrentSave = false;
+let idleLockTimerId = 0;
 
 function serializeSnapshot(snapshot) {
   if (rawState && schoolService && snapshot === schoolService.snapshot) {
@@ -146,6 +150,98 @@ function syncSchoolServiceWithRawState() {
   }
 
   return schoolService;
+}
+
+function getAuthPageUrl(mode, reason) {
+  const authUrl = new URL("auth.html", window.location.href);
+
+  if (mode) {
+    authUrl.searchParams.set("mode", mode);
+  }
+
+  if (reason) {
+    authUrl.searchParams.set("reason", reason);
+  }
+
+  return authUrl.toString();
+}
+
+function storeAuthReturnState() {
+  window.sessionStorage.setItem(AUTH_RETURN_STATE_STORAGE_KEY, JSON.stringify({
+    returnUrl: new URL("index.html", window.location.href).toString(),
+    viewId: activeViewId
+  }));
+}
+
+function restoreAuthReturnState() {
+  let storedState = null;
+
+  try {
+    storedState = JSON.parse(window.sessionStorage.getItem(AUTH_RETURN_STATE_STORAGE_KEY) || "null");
+  } catch (error) {
+    storedState = null;
+  }
+
+  if (storedState && storedState.viewId) {
+    activeViewId = String(storedState.viewId);
+  }
+
+  window.sessionStorage.removeItem(AUTH_RETURN_STATE_STORAGE_KEY);
+}
+
+function redirectToAuthPage(mode, reason) {
+  if (passwordAuthApi && typeof passwordAuthApi.clearUnlockSession === "function") {
+    passwordAuthApi.clearUnlockSession();
+  }
+
+  storeAuthReturnState();
+  window.location.replace(getAuthPageUrl(mode, reason));
+}
+
+function clearIdleLockTimer() {
+  if (!idleLockTimerId) {
+    return;
+  }
+
+  window.clearTimeout(idleLockTimerId);
+  idleLockTimerId = 0;
+}
+
+function triggerIdleLock() {
+  clearIdleLockTimer();
+  redirectToAuthPage("unlock", "idle");
+}
+
+function noteUnlockActivity() {
+  if (!passwordAuthApi || typeof passwordAuthApi.touchUnlockSession !== "function") {
+    return;
+  }
+
+  if (!passwordAuthApi.hasValidUnlockSession()) {
+    triggerIdleLock();
+    return;
+  }
+
+  passwordAuthApi.touchUnlockSession();
+  clearIdleLockTimer();
+  idleLockTimerId = window.setTimeout(triggerIdleLock, passwordAuthApi.idleTimeoutMs);
+}
+
+function bindIdleLockTracking() {
+  ["pointerdown", "keydown", "input", "scroll", "touchstart"].forEach(function (eventName) {
+    document.addEventListener(eventName, noteUnlockActivity, { passive: eventName === "scroll" || eventName === "touchstart" });
+  });
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") {
+      if (!passwordAuthApi || !passwordAuthApi.hasValidUnlockSession()) {
+        triggerIdleLock();
+        return;
+      }
+
+      noteUnlockActivity();
+    }
+  });
 }
 
 function getClassImportModal() {
@@ -463,6 +559,34 @@ function closeOpenTransientUi() {
   if (typeof window.UnterrichtsassistentApp.closeClassImportModal === "function") {
     window.UnterrichtsassistentApp.closeClassImportModal();
   }
+}
+
+async function ensureAuthAccess() {
+  let authRecord = null;
+
+  if (!repository) {
+    return true;
+  }
+
+  if (!passwordAuthApi || !passwordAuthApi.ensureCryptoSupport()) {
+    throw new Error("Passwortschutz konnte nicht initialisiert werden.");
+  }
+
+  authRecord = await repository.loadPasswordAuthRecord();
+
+  if (!authRecord) {
+    redirectToAuthPage("setup", "missing-auth");
+    return false;
+  }
+
+  if (!passwordAuthApi.hasValidUnlockSession()) {
+    redirectToAuthPage("unlock", "startup");
+    return false;
+  }
+
+  restoreAuthReturnState();
+  noteUnlockActivity();
+  return true;
 }
 
 function refreshSnapshotInMemory(nextRawSnapshot, nextViewId) {
@@ -7846,6 +7970,10 @@ window.UnterrichtsassistentApp.deleteActiveClass = function () {
 };
 
 async function startApp() {
+  if (!(await ensureAuthAccess())) {
+    return;
+  }
+
   try {
     if (!repository || !SchoolServiceClass || !createSnapshot || !renderPanelsFn) {
       throw new Error("App-Module konnten nicht vollstaendig geladen werden.");
@@ -8027,6 +8155,10 @@ window.addEventListener("pagehide", function () {
     immediate: true
   });
 });
+
+if (passwordAuthApi) {
+  bindIdleLockTracking();
+}
 
 renderPersistenceIndicator();
 

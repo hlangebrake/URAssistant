@@ -2,6 +2,7 @@ window.Unterrichtsassistent = window.Unterrichtsassistent || {};
 window.Unterrichtsassistent.data = window.Unterrichtsassistent.data || {};
 
 const SNAPSHOT_KEY = "domainSnapshot";
+const PASSWORD_AUTH_KEY = "passwordAuth";
 
 function isLegacySeedSnapshot(snapshot) {
   if (!snapshot || !snapshot.students || !snapshot.classes) {
@@ -36,6 +37,16 @@ class AppRepository {
   async saveSnapshot(snapshot) {
     const { writeState } = window.Unterrichtsassistent.data;
     await writeState(SNAPSHOT_KEY, snapshot);
+  }
+
+  async loadPasswordAuthRecord() {
+    const { readState } = window.Unterrichtsassistent.data;
+    return readState(PASSWORD_AUTH_KEY);
+  }
+
+  async savePasswordAuthRecord(record) {
+    const { writeState } = window.Unterrichtsassistent.data;
+    await writeState(PASSWORD_AUTH_KEY, record);
   }
 }
 
