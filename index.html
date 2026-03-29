@@ -59,11 +59,23 @@
       <div class="sidebar__footer">
         <div class="sidebar__footer-actions">
           <button class="sidebar__storage-button sidebar__storage-button--secondary" id="exportButton" type="button" aria-label="App-Daten als JSON exportieren" title="App-Daten als JSON exportieren" onclick="return window.UnterrichtsassistentApp.exportAppData()">
-            <span class="sidebar__storage-icon" aria-hidden="true">&#11123;</span>
+            <span class="sidebar__storage-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                <path d="M12 4v10"></path>
+                <path d="M8 8l4-4 4 4"></path>
+                <path d="M5 14v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"></path>
+              </svg>
+            </span>
             <span class="sidebar__storage-label">Export</span>
           </button>
           <button class="sidebar__storage-button sidebar__storage-button--secondary" id="importButton" type="button" aria-label="App-Daten aus JSON importieren" title="App-Daten aus JSON importieren" onclick="return window.UnterrichtsassistentApp.openImportAppData()">
-            <span class="sidebar__storage-icon" aria-hidden="true">&#11121;</span>
+            <span class="sidebar__storage-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                <path d="M12 20V10"></path>
+                <path d="M8 16l4 4 4-4"></path>
+                <path d="M5 10V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v3"></path>
+              </svg>
+            </span>
             <span class="sidebar__storage-label">Import</span>
           </button>
           <button class="sidebar__storage-button" id="persistenceButton" type="button" aria-label="Daten manuell in IndexedDB speichern" title="Daten manuell in IndexedDB speichern" onclick="return window.UnterrichtsassistentApp.flushPersistence()">
@@ -89,6 +101,30 @@
       <section class="view" id="stundenplan" data-view hidden></section>
       <section class="view" id="sitzplan" data-view hidden></section>
     </main>
+  </div>
+
+  <div class="import-modal" id="appDataImportPasswordModal" hidden>
+    <div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeAppDataImportPasswordModal()"></div>
+    <div class="import-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="appDataImportPasswordTitle">
+      <div class="import-modal__header">
+        <div>
+          <h3 id="appDataImportPasswordTitle">Verschluesselten Import entsperren</h3>
+          <div class="import-modal__meta" id="appDataImportPasswordMeta"></div>
+        </div>
+        <button class="import-modal__close" type="button" aria-label="Pop-up schliessen" onclick="return window.UnterrichtsassistentApp.closeAppDataImportPasswordModal()">x</button>
+      </div>
+      <form class="import-modal__form" id="appDataImportPasswordForm" onsubmit="return window.UnterrichtsassistentApp.submitImportedAppDataPassword(event)">
+        <label class="import-modal__field">
+          <span>Passwort der Importdatei</span>
+          <input id="appDataImportPasswordInput" type="password" autocomplete="current-password" autocapitalize="none" spellcheck="false" required>
+        </label>
+        <p class="import-modal__error" id="appDataImportPasswordError" hidden></p>
+        <div class="import-modal__actions">
+          <button class="circle-action circle-action--danger" type="button" onclick="return window.UnterrichtsassistentApp.closeAppDataImportPasswordModal()">Abbrechen</button>
+          <button class="circle-action" type="submit">Importieren</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <script>
@@ -163,6 +199,7 @@
   <script src="src/data/appRepository.js"></script>
   <script src="src/data/studentCsvImport.js"></script>
   <script src="src/security/passwordAuth.js"></script>
+  <script src="src/security/appDataCrypto.js"></script>
   <script src="src/services/schoolService.js"></script>
   <script src="src/ui/views/unterrichtView.js"></script>
   <script src="src/ui/views/klasseView.js"></script>

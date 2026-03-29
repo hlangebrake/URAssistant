@@ -12,6 +12,7 @@ window.Unterrichtsassistent.security = window.Unterrichtsassistent.security || {
   const WRAP_IV_BYTES = 12;
   const MASTER_KEY_BYTES = 32;
   const SESSION_STORAGE_KEY = "unterrichtsassistent-auth-session";
+  const SESSION_MASTER_KEY_STORAGE_KEY = "unterrichtsassistent-auth-master-key";
   const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 
   function ensureCryptoSupport() {
@@ -120,7 +121,7 @@ window.Unterrichtsassistent.security = window.Unterrichtsassistent.security || {
     return new Uint8Array(decryptedBytes);
   }
 
-  function createUnlockSession() {
+  function createUnlockSession(masterKeyBytes) {
     const now = Date.now();
     const session = {
       unlockedAt: now,
@@ -128,6 +129,9 @@ window.Unterrichtsassistent.security = window.Unterrichtsassistent.security || {
     };
 
     window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+    if (masterKeyBytes && masterKeyBytes.length) {
+      window.sessionStorage.setItem(SESSION_MASTER_KEY_STORAGE_KEY, encodeBase64(masterKeyBytes));
+    }
     return session;
   }
 
@@ -158,8 +162,19 @@ window.Unterrichtsassistent.security = window.Unterrichtsassistent.security || {
     return Boolean(session && Number(session.expiresAt) > Date.now());
   }
 
+  function getSessionMasterKeyBytes() {
+    const encodedValue = window.sessionStorage.getItem(SESSION_MASTER_KEY_STORAGE_KEY);
+
+    return encodedValue ? decodeBase64(encodedValue) : null;
+  }
+
+  function clearSessionMasterKey() {
+    window.sessionStorage.removeItem(SESSION_MASTER_KEY_STORAGE_KEY);
+  }
+
   function clearUnlockSession() {
     window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+    clearSessionMasterKey();
   }
 
   window.Unterrichtsassistent.security.passwordAuth = {
@@ -171,6 +186,8 @@ window.Unterrichtsassistent.security = window.Unterrichtsassistent.security || {
     getUnlockSession: getUnlockSession,
     touchUnlockSession: touchUnlockSession,
     hasValidUnlockSession: hasValidUnlockSession,
+    getSessionMasterKeyBytes: getSessionMasterKeyBytes,
+    clearSessionMasterKey: clearSessionMasterKey,
     clearUnlockSession: clearUnlockSession
   };
 }());

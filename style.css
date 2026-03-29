@@ -315,30 +315,29 @@ button {
 
 .sidebar__footer-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(3, 56px);
+  justify-content: center;
   gap: 0.55rem;
 }
 
 .sidebar__storage-button {
-  display: flex;
-  align-items: center;
-  gap: 0.9rem;
+  display: inline-grid;
+  place-items: center;
   width: 100%;
-  min-height: 52px;
-  padding: 0.95rem 1rem;
+  min-height: 56px;
+  padding: 0.75rem;
   border: 0;
-  border-radius: 18px;
+  border-radius: 16px;
   background: transparent;
   color: #f7f3eb;
-  text-align: left;
   cursor: pointer;
   transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
   opacity: 1;
 }
 
 .sidebar__storage-button--secondary {
-  min-height: 48px;
-  padding: 0.8rem 0.9rem;
+  min-height: 56px;
+  padding: 0.75rem;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(255, 255, 255, 0.04);
 }
@@ -366,11 +365,22 @@ button {
   display: inline-grid;
   place-items: center;
   min-width: 1.25rem;
-  font-size: 1.05rem;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.sidebar__storage-icon svg {
+  width: 22px;
+  height: 22px;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
 }
 
 .sidebar__storage-label {
-  display: inline-block;
+  display: none;
 }
 
 .nav-link {
@@ -1612,6 +1622,79 @@ button {
   justify-content: center;
 }
 
+.auth-import {
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 1.15rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid rgba(23, 49, 62, 0.12);
+}
+
+.auth-import[hidden] {
+  display: none !important;
+}
+
+.auth-import__divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  color: rgba(31, 36, 48, 0.48);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.auth-import__divider::before,
+.auth-import__divider::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: rgba(23, 49, 62, 0.1);
+}
+
+.auth-import__text {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.5;
+}
+
+.auth-import__meta {
+  padding: 0.8rem 0.95rem;
+  border: 1px solid rgba(23, 49, 62, 0.12);
+  border-radius: 16px;
+  background: rgba(23, 49, 62, 0.05);
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.auth-import__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+}
+
+.auth-import__button {
+  width: 100%;
+}
+
+.auth-import__cancel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 48px;
+  padding: 0.8rem 1.1rem;
+  border: 1px solid rgba(23, 49, 62, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .knowledge-gap-suggestion {
   width: 100%;
   padding: 0.75rem 0.85rem;
@@ -1649,6 +1732,12 @@ button {
   min-width: 120px;
   padding: 0 1.15rem;
   font-size: 1rem;
+}
+
+.import-modal__error {
+  margin: 0;
+  color: #9b4c26;
+  font-weight: 700;
 }
 
 .import-modal__dialog--assessment {
@@ -3042,6 +3131,11 @@ body.is-desk-dragging {
 
 .app-shell.is-collapsed .sidebar__footer-actions {
   grid-template-columns: 1fr;
+}
+
+.app-shell.is-collapsed #exportButton,
+.app-shell.is-collapsed #importButton {
+  display: none;
 }
 
 @media (max-width: 960px) {

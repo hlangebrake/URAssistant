@@ -22,12 +22,10 @@ class AppRepository {
     const storedSnapshot = await readState(SNAPSHOT_KEY);
 
     if (!storedSnapshot) {
-      await this.saveSnapshot(demoData);
-      return demoData;
+      return null;
     }
 
     if (isLegacySeedSnapshot(storedSnapshot)) {
-      await this.saveSnapshot(demoData);
       return demoData;
     }
 
@@ -47,6 +45,21 @@ class AppRepository {
   async savePasswordAuthRecord(record) {
     const { writeState } = window.Unterrichtsassistent.data;
     await writeState(PASSWORD_AUTH_KEY, record);
+  }
+
+  async saveProtectedState(snapshotRecord, passwordAuthRecord) {
+    const { writeState, writeStates } = window.Unterrichtsassistent.data;
+
+    if (typeof writeStates === "function") {
+      await writeStates({
+        [SNAPSHOT_KEY]: snapshotRecord,
+        [PASSWORD_AUTH_KEY]: passwordAuthRecord
+      });
+      return;
+    }
+
+    await writeState(SNAPSHOT_KEY, snapshotRecord);
+    await writeState(PASSWORD_AUTH_KEY, passwordAuthRecord);
   }
 }
 

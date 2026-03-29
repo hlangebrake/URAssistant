@@ -25,12 +25,23 @@
         <p class="auth-form__error" id="authError" hidden></p>
         <button class="import-box__label auth-form__submit" id="authSubmitButton" type="submit">Entsperren</button>
       </form>
+      <section class="auth-import" id="authImportSection" hidden>
+        <div class="auth-import__divider"><span>oder</span></div>
+        <p class="auth-import__text" id="authImportDescription">Ein vorhandener verschluesselter Export kann direkt uebernommen werden.</p>
+        <div class="auth-import__meta" id="authImportMeta" hidden></div>
+        <div class="auth-import__actions">
+          <button class="import-box__label auth-import__button" id="authImportButton" type="button">Verschluesseltes Backup importieren</button>
+          <button class="auth-import__cancel" id="authImportCancelButton" type="button" hidden>Import abbrechen</button>
+        </div>
+        <input id="authImportInput" type="file" accept=".json,application/json" hidden>
+      </section>
     </section>
   </main>
 
   <script src="src/data/indexedDb.js"></script>
   <script src="src/data/appRepository.js"></script>
   <script src="src/security/passwordAuth.js"></script>
+  <script src="src/security/appDataCrypto.js"></script>
   <script src="src/authPage.js"></script>
 </body>
 </html>

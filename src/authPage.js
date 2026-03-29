@@ -3,23 +3,31 @@ const dataLayer = namespace.data || {};
 const securityLayer = namespace.security || {};
 const RepositoryClass = dataLayer.AppRepository;
 const passwordAuthApi = securityLayer.passwordAuth || null;
+const appDataCryptoApi = securityLayer.appDataCrypto || null;
 const repository = RepositoryClass ? new RepositoryClass() : null;
 const returnStateStorageKey = "unterrichtsassistent-auth-return-state";
 const authUsernameValue = "lokal@unterrichtsassistent";
+const encryptedExportFormat = "unterrichtsassistent-encrypted-export";
 
 const authForm = document.getElementById("authForm");
 const authTitle = document.getElementById("authTitle");
 const authDescription = document.getElementById("authDescription");
 const authUsernameInput = document.getElementById("authUsername");
-const authPasswordField = document.getElementById("authPasswordField");
 const authPasswordLabel = document.getElementById("authPasswordLabel");
 const authPasswordInput = document.getElementById("authPassword");
 const authConfirmField = document.getElementById("authConfirmField");
 const authConfirmInput = document.getElementById("authPasswordConfirm");
 const authError = document.getElementById("authError");
 const authSubmitButton = document.getElementById("authSubmitButton");
+const authImportSection = document.getElementById("authImportSection");
+const authImportDescription = document.getElementById("authImportDescription");
+const authImportMeta = document.getElementById("authImportMeta");
+const authImportButton = document.getElementById("authImportButton");
+const authImportCancelButton = document.getElementById("authImportCancelButton");
+const authImportInput = document.getElementById("authImportInput");
 
 let authMode = "unlock";
+let pendingImportPayload = null;
 
 function getReturnUrl() {
   const storedReturnState = window.sessionStorage.getItem(returnStateStorageKey);
@@ -42,6 +50,18 @@ function getReturnUrl() {
 
 function redirectBackToApp() {
   window.location.replace(getReturnUrl());
+}
+
+function hasPendingImport() {
+  return authMode === "setup" && Boolean(pendingImportPayload && pendingImportPayload.payload);
+}
+
+function getSubmitLabel() {
+  if (hasPendingImport()) {
+    return "Import entsperren";
+  }
+
+  return authMode === "setup" ? "Passwort speichern" : "Entsperren";
 }
 
 async function storePasswordForAutofill(password) {
@@ -70,11 +90,9 @@ function showError(message) {
 }
 
 function setFormBusy(isBusy) {
-  const submitLabel = authMode === "setup" ? "Passwort speichern" : "Entsperren";
-
   if (authSubmitButton) {
     authSubmitButton.disabled = Boolean(isBusy);
-    authSubmitButton.textContent = isBusy ? "Bitte warten ..." : submitLabel;
+    authSubmitButton.textContent = isBusy ? "Bitte warten ..." : getSubmitLabel();
   }
 
   if (authPasswordInput) {
@@ -82,12 +100,55 @@ function setFormBusy(isBusy) {
   }
 
   if (authConfirmInput) {
-    authConfirmInput.disabled = Boolean(isBusy);
+    authConfirmInput.disabled = Boolean(isBusy || !authConfirmInput.required);
+  }
+
+  if (authImportButton) {
+    authImportButton.disabled = Boolean(isBusy);
+  }
+
+  if (authImportCancelButton) {
+    authImportCancelButton.disabled = Boolean(isBusy);
+  }
+
+  if (authImportInput) {
+    authImportInput.disabled = Boolean(isBusy);
+  }
+}
+
+function formatImportedPayloadMeta() {
+  const parts = [];
+  const payload = pendingImportPayload && pendingImportPayload.payload;
+  const fileName = pendingImportPayload && pendingImportPayload.fileName
+    ? String(pendingImportPayload.fileName).trim()
+    : "";
+
+  if (fileName) {
+    parts.push(fileName);
+  }
+
+  if (payload && payload.exportedAt) {
+    try {
+      parts.push(new Date(payload.exportedAt).toLocaleString("de-DE"));
+    } catch (error) {
+      void error;
+    }
+  }
+
+  return parts.join(" | ");
+}
+
+function clearPendingImport() {
+  pendingImportPayload = null;
+
+  if (authImportInput) {
+    authImportInput.value = "";
   }
 }
 
 function syncModeUi() {
   const isSetupMode = authMode === "setup";
+  const isImportMode = hasPendingImport();
   const reason = String(new URLSearchParams(window.location.search).get("reason") || "").trim();
   let description = "Die App ist geschuetzt. Bitte Passwort eingeben, um weiterzuarbeiten.";
 
@@ -98,17 +159,23 @@ function syncModeUi() {
   }
 
   if (authTitle) {
-    authTitle.textContent = isSetupMode ? "Passwort festlegen" : "App entsperren";
+    authTitle.textContent = isImportMode
+      ? "Backup importieren"
+      : (isSetupMode ? "Passwort festlegen" : "App entsperren");
   }
 
   if (authDescription) {
-    authDescription.textContent = isSetupMode
-      ? "Beim ersten Start wird ein Passwort eingerichtet. Dieses Passwort wird spaeter auch fuer geschuetzte Exporte verwendet."
-      : description;
+    authDescription.textContent = isImportMode
+      ? "Das verschluesselte Backup wird mit seinem bestehenden Passwort uebernommen."
+      : (isSetupMode
+        ? "Beim ersten Start wird ein Passwort eingerichtet. Dieses Passwort wird spaeter auch fuer geschuetzte Exporte verwendet."
+        : description);
   }
 
   if (authPasswordLabel) {
-    authPasswordLabel.textContent = isSetupMode ? "Neues Passwort" : "Passwort";
+    authPasswordLabel.textContent = isImportMode
+      ? "Passwort des Backups"
+      : (isSetupMode ? "Neues Passwort" : "Passwort");
   }
 
   if (authUsernameInput) {
@@ -117,18 +184,43 @@ function syncModeUi() {
 
   if (authPasswordInput) {
     authPasswordInput.value = "";
-    authPasswordInput.setAttribute("autocomplete", isSetupMode ? "new-password" : "current-password");
+    authPasswordInput.setAttribute("autocomplete", isSetupMode && !isImportMode ? "new-password" : "current-password");
   }
 
   if (authConfirmField) {
-    authConfirmField.hidden = !isSetupMode;
-    authConfirmField.style.display = isSetupMode ? "" : "none";
+    authConfirmField.hidden = !isSetupMode || isImportMode;
+    authConfirmField.style.display = isSetupMode && !isImportMode ? "" : "none";
   }
 
   if (authConfirmInput) {
     authConfirmInput.value = "";
-    authConfirmInput.required = isSetupMode;
-    authConfirmInput.disabled = !isSetupMode;
+    authConfirmInput.required = isSetupMode && !isImportMode;
+    authConfirmInput.disabled = !isSetupMode || isImportMode;
+  }
+
+  if (authImportSection) {
+    authImportSection.hidden = !isSetupMode;
+  }
+
+  if (authImportDescription) {
+    authImportDescription.textContent = isImportMode
+      ? "Das ausgewaehlte Backup kann jetzt mit seinem bisherigen Passwort entsperrt und uebernommen werden."
+      : "Falls schon ein verschluesselter Export existiert, kann er hier direkt importiert werden.";
+  }
+
+  if (authImportMeta) {
+    authImportMeta.textContent = isImportMode ? formatImportedPayloadMeta() : "";
+    authImportMeta.hidden = !isImportMode;
+  }
+
+  if (authImportButton) {
+    authImportButton.textContent = isImportMode
+      ? "Andere Datei waehlen"
+      : "Verschluesseltes Backup importieren";
+  }
+
+  if (authImportCancelButton) {
+    authImportCancelButton.hidden = !isImportMode;
   }
 
   showError("");
@@ -139,6 +231,39 @@ function syncModeUi() {
       authPasswordInput.focus();
     }
   }, 0);
+}
+
+function isEncryptedExportPayload(payload) {
+  return Boolean(
+    payload
+    && typeof payload === "object"
+    && payload.format === encryptedExportFormat
+    && payload.passwordAuth
+    && typeof payload.passwordAuth === "object"
+    && typeof payload.passwordAuth.encryptedMasterKey === "string"
+    && typeof payload.passwordAuth.salt === "string"
+    && typeof payload.passwordAuth.wrapIv === "string"
+    && payload.appState
+    && appDataCryptoApi
+    && typeof appDataCryptoApi.isEncryptedSnapshotRecord === "function"
+    && appDataCryptoApi.isEncryptedSnapshotRecord(payload.appState)
+  );
+}
+
+function readFileAsText(file) {
+  return new Promise(function (resolve, reject) {
+    const reader = new FileReader();
+
+    reader.onload = function () {
+      resolve(String(reader.result || ""));
+    };
+
+    reader.onerror = function () {
+      reject(reader.error || new Error("Datei konnte nicht gelesen werden."));
+    };
+
+    reader.readAsText(file);
+  });
 }
 
 async function resolveAuthMode() {
@@ -157,14 +282,64 @@ async function resolveAuthMode() {
     authMode = requestedMode === "setup" ? "unlock" : "unlock";
   }
 
+  clearPendingImport();
   syncModeUi();
+  return true;
+}
+
+async function handleImportUnlock(password) {
+  const importPayload = pendingImportPayload && pendingImportPayload.payload;
+  const masterKeyBytes = await passwordAuthApi.unlockPasswordAuthRecord(password, importPayload.passwordAuth);
+
+  await appDataCryptoApi.decryptSnapshot(importPayload.appState, masterKeyBytes);
+  await repository.saveProtectedState(importPayload.appState, importPayload.passwordAuth);
+  await storePasswordForAutofill(password);
+
+  passwordAuthApi.createUnlockSession(masterKeyBytes);
+}
+
+async function handleSetupSubmit(password, passwordConfirm) {
+  let authRecord = null;
+  let masterKeyBytes = null;
+
+  if (password.length < 6) {
+    showError("Bitte ein Passwort mit mindestens 6 Zeichen festlegen.");
+    return false;
+  }
+
+  if (password !== passwordConfirm) {
+    showError("Die Passwortwiederholung stimmt nicht ueberein.");
+    return false;
+  }
+
+  authRecord = await passwordAuthApi.createPasswordAuthRecord(password);
+  await repository.savePasswordAuthRecord(authRecord);
+  await storePasswordForAutofill(password);
+
+  masterKeyBytes = await passwordAuthApi.unlockPasswordAuthRecord(password, authRecord);
+  passwordAuthApi.createUnlockSession(masterKeyBytes);
+  return true;
+}
+
+async function handleUnlockSubmit(password) {
+  const authRecord = await repository.loadPasswordAuthRecord();
+
+  if (!authRecord) {
+    authMode = "setup";
+    clearPendingImport();
+    syncModeUi();
+    showError("Es wurde noch kein Passwort eingerichtet.");
+    return false;
+  }
+
+  passwordAuthApi.createUnlockSession(await passwordAuthApi.unlockPasswordAuthRecord(password, authRecord));
   return true;
 }
 
 async function handleAuthSubmit(event) {
   const password = String(authPasswordInput && authPasswordInput.value || "");
   const passwordConfirm = String(authConfirmInput && authConfirmInput.value || "");
-  let authRecord = null;
+  const isImportMode = hasPendingImport();
 
   if (event && typeof event.preventDefault === "function") {
     event.preventDefault();
@@ -177,58 +352,110 @@ async function handleAuthSubmit(event) {
     return false;
   }
 
+  if (isImportMode && (!appDataCryptoApi || typeof appDataCryptoApi.decryptSnapshot !== "function")) {
+    showError("Der verschluesselte Import wird in diesem Browser nicht unterstuetzt.");
+    return false;
+  }
+
   if (!password.trim()) {
     showError("Bitte ein Passwort eingeben.");
     return false;
   }
 
-  if (authMode === "setup") {
-    if (password.length < 6) {
-      showError("Bitte ein Passwort mit mindestens 6 Zeichen festlegen.");
-      return false;
-    }
-
-    if (password !== passwordConfirm) {
-      showError("Die Passwortwiederholung stimmt nicht ueberein.");
-      return false;
-    }
-  }
-
   setFormBusy(true);
 
   try {
-    if (authMode === "setup") {
-      authRecord = await passwordAuthApi.createPasswordAuthRecord(password);
-      await repository.savePasswordAuthRecord(authRecord);
-      await storePasswordForAutofill(password);
-    } else {
-      authRecord = await repository.loadPasswordAuthRecord();
-
-      if (!authRecord) {
-        authMode = "setup";
-        syncModeUi();
-        showError("Es wurde noch kein Passwort eingerichtet.");
+    if (isImportMode) {
+      await handleImportUnlock(password);
+    } else if (authMode === "setup") {
+      if (!await handleSetupSubmit(password, passwordConfirm)) {
+        setFormBusy(false);
         return false;
       }
-
-      await passwordAuthApi.unlockPasswordAuthRecord(password, authRecord);
+    } else if (!await handleUnlockSubmit(password)) {
+      setFormBusy(false);
+      return false;
     }
 
-    passwordAuthApi.createUnlockSession();
     redirectBackToApp();
   } catch (error) {
     console.error("Authentifizierung fehlgeschlagen.", error);
-    showError(authMode === "setup"
-      ? "Das Passwort konnte nicht gespeichert werden."
-      : "Das Passwort ist nicht korrekt.");
+    showError(isImportMode
+      ? "Passwort oder Importdatei sind nicht korrekt."
+      : (authMode === "setup"
+        ? "Das Passwort konnte nicht gespeichert werden."
+        : "Das Passwort ist nicht korrekt."));
     setFormBusy(false);
   }
 
   return false;
 }
 
+async function handleImportFileSelection(event) {
+  const target = event && event.target;
+  const file = target && target.files && target.files[0];
+  let fileContents = "";
+  let parsedPayload = null;
+
+  if (!file) {
+    return false;
+  }
+
+  showError("");
+  setFormBusy(true);
+
+  try {
+    fileContents = await readFileAsText(file);
+    parsedPayload = JSON.parse(fileContents || "{}");
+
+    if (!isEncryptedExportPayload(parsedPayload)) {
+      throw new Error("Dateiformat wird nicht unterstuetzt.");
+    }
+
+    pendingImportPayload = {
+      fileName: file.name || "",
+      payload: parsedPayload
+    };
+    syncModeUi();
+  } catch (error) {
+    console.error("Importdatei konnte nicht vorbereitet werden.", error);
+    clearPendingImport();
+    showError("Die Datei ist kein gueltiger verschluesselter Export.");
+    setFormBusy(false);
+  }
+
+  return false;
+}
+
+function handleImportButtonClick() {
+  if (!authImportInput || authMode !== "setup") {
+    return false;
+  }
+
+  authImportInput.click();
+  return false;
+}
+
+function handleImportCancel() {
+  clearPendingImport();
+  syncModeUi();
+  return false;
+}
+
 if (authForm) {
   authForm.addEventListener("submit", handleAuthSubmit);
+}
+
+if (authImportButton) {
+  authImportButton.addEventListener("click", handleImportButtonClick);
+}
+
+if (authImportCancelButton) {
+  authImportCancelButton.addEventListener("click", handleImportCancel);
+}
+
+if (authImportInput) {
+  authImportInput.addEventListener("change", handleImportFileSelection);
 }
 
 resolveAuthMode().catch(function (error) {

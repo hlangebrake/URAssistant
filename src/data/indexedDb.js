@@ -63,5 +63,14 @@ async function writeState(key, value) {
   });
 }
 
+async function writeStates(entries) {
+  return withStore("readwrite", (store) => {
+    Object.keys(entries || {}).forEach((key) => {
+      store.put(entries[key], key);
+    });
+  });
+}
+
 window.Unterrichtsassistent.data.readState = readState;
 window.Unterrichtsassistent.data.writeState = writeState;
+window.Unterrichtsassistent.data.writeStates = writeStates;

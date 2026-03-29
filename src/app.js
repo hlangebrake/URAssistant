@@ -16,6 +16,10 @@ const liveDateTimeButton = document.getElementById("liveDateTimeButton");
 const collapsedLiveDateTimeButton = document.getElementById("collapsedLiveDateTimeButton");
 const persistenceButton = document.getElementById("persistenceButton");
 const appDataImportInput = document.getElementById("appDataImportInput");
+const appDataImportPasswordModal = document.getElementById("appDataImportPasswordModal");
+const appDataImportPasswordMeta = document.getElementById("appDataImportPasswordMeta");
+const appDataImportPasswordInput = document.getElementById("appDataImportPasswordInput");
+const appDataImportPasswordError = document.getElementById("appDataImportPasswordError");
 
 const namespace = window.Unterrichtsassistent || {};
 const dataLayer = namespace.data || {};
@@ -37,12 +41,15 @@ const createEmptyClassFn = dataLayer.createEmptyClass;
 const mergeImportedStudentsFn = dataLayer.mergeImportedStudents;
 const createPastelColorFn = dataLayer.createPastelColor;
 const passwordAuthApi = securityLayer.passwordAuth || null;
+const appDataCryptoApi = securityLayer.appDataCrypto || null;
 
 const repository = RepositoryClass ? new RepositoryClass() : null;
 const AUTH_RETURN_STATE_STORAGE_KEY = "unterrichtsassistent-auth-return-state";
 
 let schoolService = null;
 let rawState = null;
+let unlockedMasterKeyBytes = null;
+let pendingAuthReturnState = null;
 let activeViewId = "unterricht";
 let unterrichtViewMode = "live";
 let unterrichtToolMode = "attendance";
@@ -124,6 +131,8 @@ let persistenceLastError = null;
 let persistInFlightPromise = null;
 let forcePersistAfterCurrentSave = false;
 let idleLockTimerId = 0;
+let isLockingForAuth = false;
+let pendingEncryptedImportPayload = null;
 
 function serializeSnapshot(snapshot) {
   if (rawState && schoolService && snapshot === schoolService.snapshot) {
@@ -152,6 +161,39 @@ function syncSchoolServiceWithRawState() {
   return schoolService;
 }
 
+function clearSensitiveRuntimeState() {
+  rawState = null;
+  schoolService = null;
+  unlockedMasterKeyBytes = null;
+  pendingAuthReturnState = null;
+  pendingPersistSnapshot = null;
+  clearPendingPersistTimer();
+}
+
+function getUnlockedMasterKey() {
+  return unlockedMasterKeyBytes && unlockedMasterKeyBytes.length
+    ? unlockedMasterKeyBytes
+    : null;
+}
+
+async function loadSnapshotFromStorageRecord(storedSnapshotRecord) {
+  const masterKeyBytes = getUnlockedMasterKey();
+
+  if (!storedSnapshotRecord) {
+    return cloneRawSnapshot(demoSnapshot);
+  }
+
+  if (appDataCryptoApi && typeof appDataCryptoApi.isEncryptedSnapshotRecord === "function" && appDataCryptoApi.isEncryptedSnapshotRecord(storedSnapshotRecord)) {
+    if (!masterKeyBytes || !appDataCryptoApi || typeof appDataCryptoApi.decryptSnapshot !== "function") {
+      throw new Error("Verschluesselter Snapshot kann ohne geladenen Master-Key nicht entschluesselt werden.");
+    }
+
+    return appDataCryptoApi.decryptSnapshot(storedSnapshotRecord, masterKeyBytes);
+  }
+
+  return cloneRawSnapshot(storedSnapshotRecord);
+}
+
 function getAuthPageUrl(mode, reason) {
   const authUrl = new URL("auth.html", window.location.href);
 
@@ -169,7 +211,19 @@ function getAuthPageUrl(mode, reason) {
 function storeAuthReturnState() {
   window.sessionStorage.setItem(AUTH_RETURN_STATE_STORAGE_KEY, JSON.stringify({
     returnUrl: new URL("index.html", window.location.href).toString(),
-    viewId: activeViewId
+    viewId: activeViewId,
+    unterrichtViewMode: unterrichtViewMode,
+    unterrichtToolMode: unterrichtToolMode,
+    classViewMode: classViewMode,
+    timetableViewMode: timetableViewMode,
+    seatPlanViewMode: seatPlanViewMode,
+    activeClassId: rawState && rawState.activeClassId ? rawState.activeClassId : null,
+    activeTimetableId: rawState && rawState.activeTimetableId ? rawState.activeTimetableId : null,
+    activeSeatPlanId: rawState && rawState.activeSeatPlanId ? rawState.activeSeatPlanId : null,
+    activeSeatOrderId: rawState && rawState.activeSeatOrderId ? rawState.activeSeatOrderId : null,
+    activeSeatPlanRoom: rawState ? String(rawState.activeSeatPlanRoom || "") : "",
+    activeDateTime: rawState ? String(rawState.activeDateTime || "") : "",
+    activeDateTimeMode: rawState ? String(rawState.activeDateTimeMode || "live") : "live"
   }));
 }
 
@@ -182,19 +236,55 @@ function restoreAuthReturnState() {
     storedState = null;
   }
 
-  if (storedState && storedState.viewId) {
-    activeViewId = String(storedState.viewId);
+  if (storedState) {
+    pendingAuthReturnState = storedState;
+    if (storedState.viewId) {
+      activeViewId = String(storedState.viewId);
+    }
   }
 
   window.sessionStorage.removeItem(AUTH_RETURN_STATE_STORAGE_KEY);
 }
 
+function applyAuthReturnStateToRawState(snapshot) {
+  const nextSnapshot = snapshot || {};
+  const returnState = pendingAuthReturnState;
+
+  if (!returnState) {
+    return nextSnapshot;
+  }
+
+  activeViewId = String(returnState.viewId || activeViewId || "unterricht");
+  unterrichtViewMode = String(returnState.unterrichtViewMode || unterrichtViewMode || "live");
+  unterrichtToolMode = String(returnState.unterrichtToolMode || unterrichtToolMode || "attendance");
+  classViewMode = String(returnState.classViewMode || classViewMode || "analyse");
+  timetableViewMode = String(returnState.timetableViewMode || timetableViewMode || "ansicht");
+  seatPlanViewMode = String(returnState.seatPlanViewMode || seatPlanViewMode || "ansicht");
+  nextSnapshot.activeClassId = returnState.activeClassId || null;
+  nextSnapshot.activeTimetableId = returnState.activeTimetableId || null;
+  nextSnapshot.activeSeatPlanId = returnState.activeSeatPlanId || null;
+  nextSnapshot.activeSeatOrderId = returnState.activeSeatOrderId || null;
+  nextSnapshot.activeSeatPlanRoom = String(returnState.activeSeatPlanRoom || "");
+  nextSnapshot.activeDateTime = String(returnState.activeDateTime || "");
+  nextSnapshot.activeDateTimeMode = String(returnState.activeDateTimeMode || "live");
+  pendingAuthReturnState = null;
+
+  return nextSnapshot;
+}
+
 function redirectToAuthPage(mode, reason) {
+  if (isLockingForAuth) {
+    return;
+  }
+
+  isLockingForAuth = true;
+
   if (passwordAuthApi && typeof passwordAuthApi.clearUnlockSession === "function") {
     passwordAuthApi.clearUnlockSession();
   }
 
   storeAuthReturnState();
+  clearSensitiveRuntimeState();
   window.location.replace(getAuthPageUrl(mode, reason));
 }
 
@@ -208,11 +298,30 @@ function clearIdleLockTimer() {
 }
 
 function triggerIdleLock() {
+  const snapshotToPersist = schoolService && getMutableRawSnapshot()
+    ? getMutableRawSnapshot()
+    : null;
+
   clearIdleLockTimer();
-  redirectToAuthPage("unlock", "idle");
+
+  if (!snapshotToPersist) {
+    redirectToAuthPage("unlock", "idle");
+    return;
+  }
+
+  flushPendingPersist({
+    snapshot: snapshotToPersist,
+    immediate: true
+  }).finally(function () {
+    redirectToAuthPage("unlock", "idle");
+  });
 }
 
 function noteUnlockActivity() {
+  if (isLockingForAuth) {
+    return;
+  }
+
   if (!passwordAuthApi || typeof passwordAuthApi.touchUnlockSession !== "function") {
     return;
   }
@@ -563,6 +672,7 @@ function closeOpenTransientUi() {
 
 async function ensureAuthAccess() {
   let authRecord = null;
+  let sessionMasterKeyBytes = null;
 
   if (!repository) {
     return true;
@@ -584,6 +694,15 @@ async function ensureAuthAccess() {
     return false;
   }
 
+  sessionMasterKeyBytes = passwordAuthApi.getSessionMasterKeyBytes();
+
+  if (!sessionMasterKeyBytes || !sessionMasterKeyBytes.length) {
+    redirectToAuthPage("unlock", "startup");
+    return false;
+  }
+
+  unlockedMasterKeyBytes = sessionMasterKeyBytes;
+  passwordAuthApi.clearSessionMasterKey();
   restoreAuthReturnState();
   noteUnlockActivity();
   return true;
@@ -890,6 +1009,90 @@ function renderPersistenceIndicator() {
   persistenceButton.setAttribute("title", title);
 }
 
+function isEncryptedExportPayload(payload) {
+  return Boolean(
+    payload
+    && typeof payload === "object"
+    && payload.format === "unterrichtsassistent-encrypted-export"
+    && payload.passwordAuth
+    && payload.passwordAuth.encryptedMasterKey
+    && payload.passwordAuth.salt
+    && payload.passwordAuth.wrapIv
+    && payload.appState
+    && appDataCryptoApi
+    && typeof appDataCryptoApi.isEncryptedSnapshotRecord === "function"
+    && appDataCryptoApi.isEncryptedSnapshotRecord(payload.appState)
+  );
+}
+
+function getAppDataImportPasswordModal() {
+  return appDataImportPasswordModal;
+}
+
+function clearAppDataImportPasswordError() {
+  if (!appDataImportPasswordError) {
+    return;
+  }
+
+  appDataImportPasswordError.textContent = "";
+  appDataImportPasswordError.hidden = true;
+}
+
+function showAppDataImportPasswordError(message) {
+  if (!appDataImportPasswordError) {
+    return;
+  }
+
+  appDataImportPasswordError.textContent = String(message || "");
+  appDataImportPasswordError.hidden = !message;
+}
+
+function openAppDataImportPasswordModal(fileName) {
+  const modal = getAppDataImportPasswordModal();
+
+  if (!modal || !pendingEncryptedImportPayload) {
+    return false;
+  }
+
+  clearAppDataImportPasswordError();
+  if (appDataImportPasswordMeta) {
+    appDataImportPasswordMeta.textContent = fileName
+      ? "Datei: " + String(fileName)
+      : "Bitte Passwort eingeben, um den verschluesselten Datenbestand zu importieren.";
+  }
+
+  if (appDataImportPasswordInput) {
+    appDataImportPasswordInput.value = "";
+  }
+
+  modal.hidden = false;
+  modal.classList.add("is-open");
+
+  window.setTimeout(function () {
+    if (appDataImportPasswordInput && typeof appDataImportPasswordInput.focus === "function") {
+      appDataImportPasswordInput.focus();
+    }
+  }, 0);
+
+  return false;
+}
+
+function closeAppDataImportPasswordModalInternal() {
+  const modal = getAppDataImportPasswordModal();
+
+  pendingEncryptedImportPayload = null;
+  clearAppDataImportPasswordError();
+
+  if (appDataImportPasswordInput) {
+    appDataImportPasswordInput.value = "";
+  }
+
+  if (modal) {
+    modal.hidden = true;
+    modal.classList.remove("is-open");
+  }
+}
+
 function schedulePendingPersist(delayMs) {
   if (!persistenceHasPendingChanges || persistenceIsSaving) {
     return;
@@ -911,7 +1114,16 @@ function persistSnapshotNow(snapshotToPersist) {
 
   persistInFlightPromise = Promise.resolve()
     .then(function () {
-      return repository.saveSnapshot(persistedSnapshot);
+      const masterKeyBytes = getUnlockedMasterKey();
+
+      if (!appDataCryptoApi || typeof appDataCryptoApi.encryptSnapshot !== "function" || !masterKeyBytes) {
+        throw new Error("Snapshot konnte nicht verschluesselt werden, weil kein Master-Key im Speicher vorliegt.");
+      }
+
+      return appDataCryptoApi.encryptSnapshot(persistedSnapshot, masterKeyBytes);
+    })
+    .then(function (encryptedSnapshotRecord) {
+      return repository.saveSnapshot(encryptedSnapshotRecord);
     })
     .then(function () {
       didPersistSucceed = true;
@@ -7970,29 +8182,42 @@ window.UnterrichtsassistentApp.deleteActiveClass = function () {
 };
 
 async function startApp() {
+  let storedSnapshotRecord = null;
+  let shouldPersistEncryptedSnapshot = false;
+
   if (!(await ensureAuthAccess())) {
     return;
   }
 
   try {
-    if (!repository || !SchoolServiceClass || !createSnapshot || !renderPanelsFn) {
+    if (!repository || !SchoolServiceClass || !createSnapshot || !renderPanelsFn || !appDataCryptoApi) {
       throw new Error("App-Module konnten nicht vollstaendig geladen werden.");
     }
 
-    rawState = stripNonPersistentUiState(normalizeRawSnapshot(await repository.loadSnapshot()));
+    storedSnapshotRecord = await repository.loadSnapshot();
+    shouldPersistEncryptedSnapshot = !storedSnapshotRecord
+      || !appDataCryptoApi
+      || !appDataCryptoApi.isEncryptedSnapshotRecord
+      || !appDataCryptoApi.isEncryptedSnapshotRecord(storedSnapshotRecord);
+
+    rawState = applyAuthReturnStateToRawState(
+      stripNonPersistentUiState(normalizeRawSnapshot(await loadSnapshotFromStorageRecord(storedSnapshotRecord)))
+    );
     syncSchoolServiceWithRawState();
     persistenceHasStoredState = true;
     persistenceHasPendingChanges = false;
     persistenceLastError = null;
+
+    if (rawState && shouldPersistEncryptedSnapshot) {
+      await queueSnapshotPersist(rawState, { immediate: true });
+    }
   } catch (error) {
-    console.warn("IndexedDB nicht verfuegbar, nutze Demo-Daten im Speicher.", error);
-    schoolService = createFallbackService();
+    console.error("Geschuetzte App-Daten konnten nicht geladen oder entschluesselt werden.", error);
+    clearSensitiveRuntimeState();
     persistenceHasStoredState = false;
     persistenceHasPendingChanges = false;
     persistenceLastError = error;
-    if (!schoolService) {
-      renderStartupError("Startfehler: UI-Module geladen, aber Datenmodule fehlen.");
-    }
+    renderStartupError("Startfehler: Gespeicherte Daten konnten nicht geladen oder entschluesselt werden.");
   }
 
   if (schoolService && rawState) {
@@ -8020,26 +8245,61 @@ window.UnterrichtsassistentApp.flushPersistence = function () {
 };
 window.UnterrichtsassistentApp.exportAppData = function () {
   const currentRawSnapshot = getMutableRawSnapshot();
+  const currentMasterKeyBytes = getUnlockedMasterKey();
+  let passwordAuthRecord = null;
+  let encryptedSnapshotRecord = null;
+  let exportPayload = null;
   let downloadUrl = "";
   let link = null;
   let exportJson = "";
   let fileName = "";
 
-  if (!currentRawSnapshot) {
+  if (!currentRawSnapshot || !currentMasterKeyBytes || !repository || !appDataCryptoApi) {
     return false;
   }
 
   try {
-    exportJson = JSON.stringify(buildImportableSnapshot(currentRawSnapshot), null, 2);
-    fileName = "unterrichtsassistent-export-" + getCurrentTimestampFilePart() + ".json";
-    downloadUrl = URL.createObjectURL(new Blob([exportJson], { type: "application/json" }));
-    link = document.createElement("a");
-    link.href = downloadUrl;
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(downloadUrl);
+    passwordAuthRecord = repository ? repository.loadPasswordAuthRecord() : null;
+    encryptedSnapshotRecord = appDataCryptoApi.encryptSnapshot(
+      buildImportableSnapshot(currentRawSnapshot),
+      currentMasterKeyBytes
+    );
+    return Promise.all([passwordAuthRecord, encryptedSnapshotRecord]).then(function (results) {
+      const resolvedPasswordAuthRecord = results[0];
+      const resolvedEncryptedSnapshotRecord = results[1];
+
+      if (!resolvedPasswordAuthRecord || !resolvedEncryptedSnapshotRecord) {
+        throw new Error("Verschluesselter Export konnte nicht erzeugt werden.");
+      }
+
+      exportPayload = {
+        format: "unterrichtsassistent-encrypted-export",
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        passwordAuth: resolvedPasswordAuthRecord,
+        appState: resolvedEncryptedSnapshotRecord
+      };
+
+      exportJson = JSON.stringify(exportPayload, null, 2);
+      fileName = "unterrichtsassistent-export-" + getCurrentTimestampFilePart() + ".json";
+      downloadUrl = URL.createObjectURL(new Blob([exportJson], { type: "application/json" }));
+      link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(downloadUrl);
+      return false;
+    }).catch(function (error) {
+      if (downloadUrl) {
+        URL.revokeObjectURL(downloadUrl);
+      }
+
+      console.error("Export der App-Daten fehlgeschlagen.", error);
+      window.alert("Der Export der App-Daten ist fehlgeschlagen.");
+      return false;
+    });
   } catch (error) {
     if (downloadUrl) {
       URL.revokeObjectURL(downloadUrl);
@@ -8077,17 +8337,18 @@ window.UnterrichtsassistentApp.importAppDataFromFile = function (event) {
   }
 
   reader.onload = function () {
-    let importedData = null;
-    let nextRawSnapshot = null;
-
     try {
-      importedData = JSON.parse(String(reader.result || "{}"));
-      nextRawSnapshot = normalizeImportedAppSnapshot(importedData);
-      closeOpenTransientUi();
-      saveAndRefreshSnapshot(nextRawSnapshot, activeViewId, { forcePersist: true, immediate: true });
+      pendingEncryptedImportPayload = JSON.parse(String(reader.result || "{}"));
+
+      if (!isEncryptedExportPayload(pendingEncryptedImportPayload)) {
+        throw new Error("Dateiformat wird nicht unterstuetzt.");
+      }
+
+      openAppDataImportPasswordModal(file && file.name ? file.name : "");
     } catch (error) {
+      pendingEncryptedImportPayload = null;
       console.error("Import der App-Daten fehlgeschlagen.", error);
-      window.alert("Die ausgewaehlte Datei konnte nicht importiert werden. Bitte eine gueltige JSON-Exportdatei verwenden.");
+      window.alert("Die ausgewaehlte Datei konnte nicht importiert werden. Bitte eine gueltige verschluesselte JSON-Exportdatei verwenden.");
     } finally {
       if (input) {
         input.value = "";
@@ -8103,6 +8364,69 @@ window.UnterrichtsassistentApp.importAppDataFromFile = function (event) {
   };
 
   reader.readAsText(file, "utf-8");
+  return false;
+};
+window.UnterrichtsassistentApp.closeAppDataImportPasswordModal = function () {
+  closeAppDataImportPasswordModalInternal();
+  return false;
+};
+window.UnterrichtsassistentApp.submitImportedAppDataPassword = function (event) {
+  const password = String(appDataImportPasswordInput && appDataImportPasswordInput.value || "");
+  const payload = pendingEncryptedImportPayload;
+  let importedMasterKeyBytes = null;
+  let decryptedSnapshot = null;
+  let normalizedImportedSnapshot = null;
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  clearAppDataImportPasswordError();
+
+  if (!payload || !repository || !passwordAuthApi || !appDataCryptoApi) {
+    return window.UnterrichtsassistentApp.closeAppDataImportPasswordModal();
+  }
+
+  if (!password.trim()) {
+    showAppDataImportPasswordError("Bitte das Passwort der Importdatei eingeben.");
+    return false;
+  }
+
+  Promise.resolve()
+    .then(function () {
+      return passwordAuthApi.unlockPasswordAuthRecord(password, payload.passwordAuth);
+    })
+    .then(function (masterKeyBytes) {
+      importedMasterKeyBytes = masterKeyBytes;
+      return appDataCryptoApi.decryptSnapshot(payload.appState, importedMasterKeyBytes);
+    })
+    .then(function (snapshot) {
+      decryptedSnapshot = snapshot;
+      normalizedImportedSnapshot = normalizeImportedAppSnapshot(decryptedSnapshot);
+      return appDataCryptoApi.encryptSnapshot(buildImportableSnapshot(normalizedImportedSnapshot), importedMasterKeyBytes);
+    })
+    .then(function (encryptedSnapshotRecord) {
+      unlockedMasterKeyBytes = importedMasterKeyBytes;
+      closeOpenTransientUi();
+      return repository.saveProtectedState(encryptedSnapshotRecord, payload.passwordAuth).then(function () {
+        passwordAuthApi.createUnlockSession();
+        refreshSnapshotInMemory(normalizedImportedSnapshot, activeViewId);
+        persistenceHasStoredState = true;
+        persistenceHasPendingChanges = false;
+        persistenceLastError = null;
+        pendingPersistSnapshot = null;
+        clearPendingPersistTimer();
+        renderPersistenceIndicator();
+        noteUnlockActivity();
+        closeAppDataImportPasswordModalInternal();
+        return false;
+      });
+    })
+    .catch(function (error) {
+      console.error("Verschluesselter Import konnte nicht uebernommen werden.", error);
+      showAppDataImportPasswordError("Passwort oder Importdatei sind nicht korrekt.");
+    });
+
   return false;
 };
 
@@ -8156,6 +8480,14 @@ window.addEventListener("pagehide", function () {
   });
 });
 
+window.addEventListener("unload", function () {
+  if (passwordAuthApi && typeof passwordAuthApi.clearUnlockSession === "function") {
+    passwordAuthApi.clearUnlockSession();
+  }
+
+  clearSensitiveRuntimeState();
+});
+
 if (passwordAuthApi) {
   bindIdleLockTracking();
 }
@@ -8164,13 +8496,11 @@ renderPersistenceIndicator();
 
 startApp().catch((error) => {
   console.error("Fehler beim Starten der App:", error);
-  schoolService = createFallbackService();
+  clearSensitiveRuntimeState();
   persistenceHasStoredState = false;
   persistenceHasPendingChanges = false;
   persistenceLastError = error;
   renderPersistenceIndicator();
-  if (!schoolService) {
-    renderStartupError("Startfehler: Navigation aktiv, aber Inhalte konnten nicht geladen werden.");
-  }
+  renderStartupError("Startfehler: Navigation aktiv, aber geschuetzte Inhalte konnten nicht geladen werden.");
   setActiveView(activeViewId);
 });
