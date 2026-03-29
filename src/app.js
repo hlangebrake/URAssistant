@@ -748,6 +748,18 @@ function trySetPointerCapture(target, pointerId) {
   }
 }
 
+function tryReleasePointerCapture(target, pointerId) {
+  if (!target || typeof target.releasePointerCapture !== "function" || typeof pointerId !== "number") {
+    return;
+  }
+
+  try {
+    target.releasePointerCapture(pointerId);
+  } catch (error) {
+    void error;
+  }
+}
+
 function clearKnowledgeGapSuggestionBlurTimer() {
   if (!activeKnowledgeGapSuggestionBlurTimerId) {
     return;
@@ -1732,28 +1744,19 @@ function initializeClassAnalysisInteractions() {
 
       clearClassAnalysisDragScroll();
       activeClassAnalysisDragScroll = {
-        wrap: wrap,
-        classId: String(wrap.dataset.classId || ""),
-        pointerId: event.pointerId,
-        startX: Number(event.clientX) || 0,
-        startScrollLeft: wrap.scrollLeft
-      };
-      wrap.classList.add("is-dragging");
+          wrap: wrap,
+          classId: String(wrap.dataset.classId || ""),
+          pointerId: event.pointerId,
+          startX: Number(event.clientX) || 0,
+          startScrollLeft: wrap.scrollLeft,
+          didDrag: false
+        };
 
-      if (typeof wrap.setPointerCapture === "function") {
-        try {
-          wrap.setPointerCapture(event.pointerId);
-        } catch (error) {
-          void error;
-        }
-      }
-
-      window.addEventListener("pointermove", window.UnterrichtsassistentApp.handleClassAnalysisDragScrollMove);
-      window.addEventListener("pointerup", window.UnterrichtsassistentApp.handleClassAnalysisDragScrollEnd);
-      window.addEventListener("pointercancel", window.UnterrichtsassistentApp.handleClassAnalysisDragScrollEnd);
-      event.preventDefault();
+        window.addEventListener("pointermove", window.UnterrichtsassistentApp.handleClassAnalysisDragScrollMove);
+        window.addEventListener("pointerup", window.UnterrichtsassistentApp.handleClassAnalysisDragScrollEnd);
+        window.addEventListener("pointercancel", window.UnterrichtsassistentApp.handleClassAnalysisDragScrollEnd);
+      });
     });
-  });
 
   window.requestAnimationFrame(syncClassAnalysisTableLayout);
 }
@@ -6601,11 +6604,25 @@ window.UnterrichtsassistentApp.setClassViewMode = function (nextMode) {
   return false;
 };
 window.UnterrichtsassistentApp.handleClassAnalysisDragScrollMove = function (event) {
+  const deltaX = activeClassAnalysisDragScroll
+    ? (Number(event.clientX) || 0) - activeClassAnalysisDragScroll.startX
+    : 0;
+
   if (!activeClassAnalysisDragScroll || event.pointerId !== activeClassAnalysisDragScroll.pointerId) {
     return false;
   }
 
-  activeClassAnalysisDragScroll.wrap.scrollLeft = activeClassAnalysisDragScroll.startScrollLeft - ((Number(event.clientX) || 0) - activeClassAnalysisDragScroll.startX);
+  if (!activeClassAnalysisDragScroll.didDrag) {
+    if (Math.abs(deltaX) < 6) {
+      return false;
+    }
+
+    activeClassAnalysisDragScroll.didDrag = true;
+    activeClassAnalysisDragScroll.wrap.classList.add("is-dragging");
+    trySetPointerCapture(activeClassAnalysisDragScroll.wrap, activeClassAnalysisDragScroll.pointerId);
+  }
+
+  activeClassAnalysisDragScroll.wrap.scrollLeft = activeClassAnalysisDragScroll.startScrollLeft - deltaX;
   if (activeClassAnalysisDragScroll.classId) {
     classAnalysisScrollLeftByClassId[activeClassAnalysisDragScroll.classId] = activeClassAnalysisDragScroll.wrap.scrollLeft;
   }
@@ -6613,12 +6630,21 @@ window.UnterrichtsassistentApp.handleClassAnalysisDragScrollMove = function (eve
   return false;
 };
 window.UnterrichtsassistentApp.handleClassAnalysisDragScrollEnd = function (event) {
+  const didDrag = activeClassAnalysisDragScroll ? activeClassAnalysisDragScroll.didDrag === true : false;
+  const wrap = activeClassAnalysisDragScroll ? activeClassAnalysisDragScroll.wrap : null;
+  const pointerId = activeClassAnalysisDragScroll ? activeClassAnalysisDragScroll.pointerId : null;
+
   if (!activeClassAnalysisDragScroll || event.pointerId !== activeClassAnalysisDragScroll.pointerId) {
     return false;
   }
 
   clearClassAnalysisDragScroll();
-  event.preventDefault();
+
+  if (didDrag) {
+    tryReleasePointerCapture(wrap, pointerId);
+    event.preventDefault();
+  }
+
   return false;
 };
 window.UnterrichtsassistentApp.getTimetableViewMode = function () {
