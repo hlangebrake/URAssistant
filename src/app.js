@@ -93,6 +93,7 @@ let activeKnowledgeGapSuggestionInputId = "";
 let activeKnowledgeGapSuggestionBlurTimerId = 0;
 let activeKnowledgeGapSuggestionDrag = null;
 let suppressKnowledgeGapSuggestionClickUntil = 0;
+let lastTouchClientY = 0;
 const AUTOSAVE_DELAY_MS = 30000;
 const HOMEWORK_LONG_PRESS_DELAY_MS = 380;
 const HOMEWORK_RADIAL_OPTIONS = [
@@ -499,6 +500,30 @@ function clearKnowledgeGapSuggestionBlurTimer() {
 
   window.clearTimeout(activeKnowledgeGapSuggestionBlurTimerId);
   activeKnowledgeGapSuggestionBlurTimerId = 0;
+}
+
+function isScrollableY(element) {
+  if (!element || element === document.body || element === document.documentElement) {
+    return false;
+  }
+
+  return element.scrollHeight > element.clientHeight;
+}
+
+function findScrollableYAncestor(startNode) {
+  let currentNode = startNode && startNode.nodeType === 1
+    ? startNode
+    : (startNode ? startNode.parentElement : null);
+
+  while (currentNode && currentNode !== document.body) {
+    if (isScrollableY(currentNode)) {
+      return currentNode;
+    }
+
+    currentNode = currentNode.parentElement;
+  }
+
+  return null;
 }
 
 function escapeKnowledgeGapSuggestionHtml(value) {
@@ -7952,6 +7977,35 @@ window.UnterrichtsassistentApp.importAppDataFromFile = function (event) {
   reader.readAsText(file, "utf-8");
   return false;
 };
+
+document.addEventListener("touchstart", function (event) {
+  const touch = event && event.touches && event.touches[0];
+
+  if (!touch) {
+    return;
+  }
+
+  lastTouchClientY = Number(touch.clientY) || 0;
+}, { passive: true });
+
+document.addEventListener("touchmove", function (event) {
+  const touch = event && event.touches && event.touches[0];
+  const scrollableAncestor = findScrollableYAncestor(event.target);
+  const currentClientY = touch ? Number(touch.clientY) || 0 : 0;
+  const deltaY = currentClientY - lastTouchClientY;
+  const atTop = !scrollableAncestor || scrollableAncestor.scrollTop <= 0;
+  const atBottom = !scrollableAncestor || Math.ceil(scrollableAncestor.scrollTop + scrollableAncestor.clientHeight) >= scrollableAncestor.scrollHeight;
+
+  lastTouchClientY = currentClientY;
+
+  if (!touch) {
+    return;
+  }
+
+  if (!scrollableAncestor || (deltaY > 0 && atTop) || (deltaY < 0 && atBottom)) {
+    event.preventDefault();
+  }
+}, { passive: false });
 
 document.addEventListener("click", function (event) {
   if (!appShell || !sidebar || !appShell.classList.contains("is-collapsed")) {
