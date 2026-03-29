@@ -292,6 +292,12 @@ button {
   border-top: 1px solid rgba(255, 255, 255, 0.14);
 }
 
+.sidebar__footer-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
 .sidebar__storage-button {
   display: flex;
   align-items: center;
@@ -307,6 +313,13 @@ button {
   cursor: pointer;
   transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
   opacity: 1;
+}
+
+.sidebar__storage-button--secondary {
+  min-height: 48px;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .sidebar__storage-button.is-persisted {
@@ -2919,6 +2932,10 @@ body.is-desk-dragging {
 .app-shell.is-collapsed .nav-link,
 .app-shell.is-collapsed .sidebar__storage-button {
   justify-content: center;
+}
+
+.app-shell.is-collapsed .sidebar__footer-actions {
+  grid-template-columns: 1fr;
 }
 
 @media (max-width: 960px) {

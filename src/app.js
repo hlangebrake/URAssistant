@@ -15,6 +15,7 @@ const activeTimeInput = document.getElementById("activeTimeInput");
 const liveDateTimeButton = document.getElementById("liveDateTimeButton");
 const collapsedLiveDateTimeButton = document.getElementById("collapsedLiveDateTimeButton");
 const persistenceButton = document.getElementById("persistenceButton");
+const appDataImportInput = document.getElementById("appDataImportInput");
 
 const namespace = window.Unterrichtsassistent || {};
 const dataLayer = namespace.data || {};
@@ -376,6 +377,20 @@ function cloneRawSnapshot(rawSnapshot) {
   return JSON.parse(JSON.stringify(rawSnapshot || {}));
 }
 
+function getCurrentTimestampFilePart() {
+  const now = new Date();
+
+  return [
+    String(now.getFullYear()).padStart(4, "0"),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+    "-",
+    String(now.getHours()).padStart(2, "0"),
+    String(now.getMinutes()).padStart(2, "0"),
+    String(now.getSeconds()).padStart(2, "0")
+  ].join("");
+}
+
 function normalizeRawSnapshot(rawSnapshot) {
   if (createSnapshot && serializeSnapshot) {
     return serializeSnapshot(createSnapshot(rawSnapshot || {}));
@@ -404,6 +419,49 @@ function stripNonPersistentUiState(rawSnapshot) {
   snapshot.activeDateTimeMode = "live";
 
   return snapshot;
+}
+
+function buildImportableSnapshot(rawSnapshot) {
+  return cloneRawSnapshot(rawSnapshot);
+}
+
+function normalizeImportedAppSnapshot(rawSnapshot) {
+  const normalizedSnapshot = normalizeRawSnapshot(rawSnapshot || {});
+  const importedSnapshot = rawSnapshot || {};
+
+  normalizedSnapshot.activeClassId = importedSnapshot.activeClassId || normalizedSnapshot.activeClassId || null;
+  normalizedSnapshot.activeTimetableId = importedSnapshot.activeTimetableId || normalizedSnapshot.activeTimetableId || null;
+  normalizedSnapshot.activeSeatPlanId = importedSnapshot.activeSeatPlanId || normalizedSnapshot.activeSeatPlanId || null;
+  normalizedSnapshot.activeSeatOrderId = importedSnapshot.activeSeatOrderId || normalizedSnapshot.activeSeatOrderId || null;
+  normalizedSnapshot.activeSeatPlanRoom = String(importedSnapshot.activeSeatPlanRoom || normalizedSnapshot.activeSeatPlanRoom || "");
+  normalizedSnapshot.activeDateTime = String(importedSnapshot.activeDateTime || normalizedSnapshot.activeDateTime || "");
+  normalizedSnapshot.activeDateTimeMode = String(importedSnapshot.activeDateTimeMode || normalizedSnapshot.activeDateTimeMode || "live");
+
+  return normalizedSnapshot;
+}
+
+function closeOpenTransientUi() {
+  closeKnowledgeGapSuggestions();
+
+  if (typeof window.UnterrichtsassistentApp.closeUnterrichtAssessmentModal === "function") {
+    window.UnterrichtsassistentApp.closeUnterrichtAssessmentModal();
+  }
+
+  if (typeof window.UnterrichtsassistentApp.closeUnterrichtWarningOtherModal === "function") {
+    window.UnterrichtsassistentApp.closeUnterrichtWarningOtherModal();
+  }
+
+  if (typeof window.UnterrichtsassistentApp.closeClassAnalysisDetailModal === "function") {
+    window.UnterrichtsassistentApp.closeClassAnalysisDetailModal();
+  }
+
+  if (typeof window.UnterrichtsassistentApp.closeClassAnalysisRecordEditModal === "function") {
+    window.UnterrichtsassistentApp.closeClassAnalysisRecordEditModal();
+  }
+
+  if (typeof window.UnterrichtsassistentApp.closeClassImportModal === "function") {
+    window.UnterrichtsassistentApp.closeClassImportModal();
+  }
 }
 
 function refreshSnapshotInMemory(nextRawSnapshot, nextViewId) {
@@ -523,7 +581,7 @@ function getKnowledgeGapSuggestions(prefix, inputId) {
       }
     }
 
-    if (lowerPrefix && normalizedKey.indexOf(lowerPrefix) !== 0) {
+    if (lowerPrefix && normalizedKey.indexOf(lowerPrefix) === -1) {
       return;
     }
 
@@ -7805,6 +7863,93 @@ window.UnterrichtsassistentApp.flushPersistence = function () {
   }
 
   queueSnapshotPersist(getMutableRawSnapshot(), { immediate: true });
+  return false;
+};
+window.UnterrichtsassistentApp.exportAppData = function () {
+  const currentRawSnapshot = getMutableRawSnapshot();
+  let downloadUrl = "";
+  let link = null;
+  let exportJson = "";
+  let fileName = "";
+
+  if (!currentRawSnapshot) {
+    return false;
+  }
+
+  try {
+    exportJson = JSON.stringify(buildImportableSnapshot(currentRawSnapshot), null, 2);
+    fileName = "unterrichtsassistent-export-" + getCurrentTimestampFilePart() + ".json";
+    downloadUrl = URL.createObjectURL(new Blob([exportJson], { type: "application/json" }));
+    link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(downloadUrl);
+  } catch (error) {
+    if (downloadUrl) {
+      URL.revokeObjectURL(downloadUrl);
+    }
+
+    console.error("Export der App-Daten fehlgeschlagen.", error);
+    window.alert("Der Export der App-Daten ist fehlgeschlagen.");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.openImportAppData = function () {
+  if (!appDataImportInput) {
+    return false;
+  }
+
+  appDataImportInput.value = "";
+  appDataImportInput.click();
+  return false;
+};
+window.UnterrichtsassistentApp.importAppDataFromFile = function (event) {
+  const input = event && event.target ? event.target : appDataImportInput;
+  const file = input && input.files ? input.files[0] : null;
+  const reader = new FileReader();
+
+  if (!file) {
+    return false;
+  }
+
+  if (!window.confirm("Soll der aktuelle App-Zustand durch die importierten Daten ersetzt werden?")) {
+    if (input) {
+      input.value = "";
+    }
+    return false;
+  }
+
+  reader.onload = function () {
+    let importedData = null;
+    let nextRawSnapshot = null;
+
+    try {
+      importedData = JSON.parse(String(reader.result || "{}"));
+      nextRawSnapshot = normalizeImportedAppSnapshot(importedData);
+      closeOpenTransientUi();
+      saveAndRefreshSnapshot(nextRawSnapshot, activeViewId, { forcePersist: true, immediate: true });
+    } catch (error) {
+      console.error("Import der App-Daten fehlgeschlagen.", error);
+      window.alert("Die ausgewaehlte Datei konnte nicht importiert werden. Bitte eine gueltige JSON-Exportdatei verwenden.");
+    } finally {
+      if (input) {
+        input.value = "";
+      }
+    }
+  };
+
+  reader.onerror = function () {
+    if (input) {
+      input.value = "";
+    }
+    window.alert("Die Datei konnte nicht gelesen werden.");
+  };
+
+  reader.readAsText(file, "utf-8");
   return false;
 };
 

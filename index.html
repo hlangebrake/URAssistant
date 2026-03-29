@@ -57,10 +57,21 @@
         </button>
       </nav>
       <div class="sidebar__footer">
-        <button class="sidebar__storage-button" id="persistenceButton" type="button" aria-label="Daten manuell in IndexedDB speichern" title="Daten manuell in IndexedDB speichern" onclick="return window.UnterrichtsassistentApp.flushPersistence()">
-          <span class="sidebar__storage-icon" aria-hidden="true">&#128190;</span>
-          <span class="sidebar__storage-label">Speicher</span>
-        </button>
+        <div class="sidebar__footer-actions">
+          <button class="sidebar__storage-button sidebar__storage-button--secondary" id="exportButton" type="button" aria-label="App-Daten als JSON exportieren" title="App-Daten als JSON exportieren" onclick="return window.UnterrichtsassistentApp.exportAppData()">
+            <span class="sidebar__storage-icon" aria-hidden="true">&#11123;</span>
+            <span class="sidebar__storage-label">Export</span>
+          </button>
+          <button class="sidebar__storage-button sidebar__storage-button--secondary" id="importButton" type="button" aria-label="App-Daten aus JSON importieren" title="App-Daten aus JSON importieren" onclick="return window.UnterrichtsassistentApp.openImportAppData()">
+            <span class="sidebar__storage-icon" aria-hidden="true">&#11121;</span>
+            <span class="sidebar__storage-label">Import</span>
+          </button>
+          <button class="sidebar__storage-button" id="persistenceButton" type="button" aria-label="Daten manuell in IndexedDB speichern" title="Daten manuell in IndexedDB speichern" onclick="return window.UnterrichtsassistentApp.flushPersistence()">
+            <span class="sidebar__storage-icon" aria-hidden="true">&#128190;</span>
+            <span class="sidebar__storage-label">Speicher</span>
+          </button>
+        </div>
+        <input id="appDataImportInput" type="file" accept=".json,application/json" hidden onchange="return window.UnterrichtsassistentApp.importAppDataFromFile(event)">
       </div>
     </aside>
 
