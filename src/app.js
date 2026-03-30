@@ -1841,10 +1841,8 @@ function setActiveView(viewId) {
   updateHeaderActions(viewId);
   renderActiveClassContext();
 
-  if (viewId !== previousViewId && isSmartphoneLayout() && appShell && menuToggle) {
-    appShell.classList.add("is-collapsed");
-    menuToggle.setAttribute("aria-expanded", "false");
-    closeCollapsedClassPicker();
+  if (viewId !== previousViewId) {
+    collapseMenu();
   }
 
   if (viewId === "klasse" && isClassImportModalOpen && window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.openClassImportModal === "function") {
