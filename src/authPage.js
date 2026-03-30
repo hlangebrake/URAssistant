@@ -25,9 +25,21 @@ const authImportMeta = document.getElementById("authImportMeta");
 const authImportButton = document.getElementById("authImportButton");
 const authImportCancelButton = document.getElementById("authImportCancelButton");
 const authImportInput = document.getElementById("authImportInput");
+const AUTH_AUTOFILL_POLL_INTERVAL_MS = 50;
+const AUTH_AUTOFILL_STABLE_DELAY_MS = 20;
+const AUTH_AUTOFILL_JUMP_MIN_CHARS = 6;
+const AUTH_AUTOFILL_MIN_PASSWORD_LENGTH = 6;
+const AUTH_AUTOFILL_JUMP_MAX_ELAPSED_MS = 180;
 
 let authMode = "unlock";
 let pendingImportPayload = null;
+let isAuthFormBusy = false;
+let authAutofillPollTimerId = 0;
+let authAutofillSubmitTimerId = 0;
+let authAutofillLastValue = "";
+let authAutofillLastValueAt = 0;
+let authAutofillPendingValue = "";
+let authLastUserKeyboardAt = 0;
 
 function getReturnUrl() {
   const storedReturnState = window.sessionStorage.getItem(returnStateStorageKey);
@@ -86,6 +98,8 @@ function showError(message) {
 }
 
 function setFormBusy(isBusy) {
+  isAuthFormBusy = Boolean(isBusy);
+
   if (authSubmitButton) {
     authSubmitButton.disabled = Boolean(isBusy);
     authSubmitButton.textContent = isBusy ? "Bitte warten ..." : getSubmitLabel();
@@ -110,6 +124,160 @@ function setFormBusy(isBusy) {
   if (authImportInput) {
     authImportInput.disabled = Boolean(isBusy);
   }
+}
+
+function clearAuthAutofillSubmitTimer() {
+  if (!authAutofillSubmitTimerId) {
+    return;
+  }
+
+  window.clearTimeout(authAutofillSubmitTimerId);
+  authAutofillSubmitTimerId = 0;
+}
+
+function noteAuthKeyboardInteraction() {
+  authLastUserKeyboardAt = Date.now();
+}
+
+function stopAuthAutofillWatcher() {
+  clearAuthAutofillSubmitTimer();
+
+  if (!authAutofillPollTimerId) {
+    return;
+  }
+
+  window.clearInterval(authAutofillPollTimerId);
+  authAutofillPollTimerId = 0;
+}
+
+function isUnlockAutofillMode() {
+  return authMode === "unlock" && !hasPendingImport();
+}
+
+function isLikelyAutofilledPassword(previousValue, nextValue, elapsedMs) {
+  const addedChars = nextValue.length - previousValue.length;
+
+  if (!nextValue || nextValue === previousValue || nextValue.length < AUTH_AUTOFILL_MIN_PASSWORD_LENGTH) {
+    return false;
+  }
+
+  try {
+    if (authPasswordInput && typeof authPasswordInput.matches === "function" && authPasswordInput.matches(":-webkit-autofill")) {
+      return true;
+    }
+  } catch (error) {
+    void error;
+  }
+
+  return addedChars >= AUTH_AUTOFILL_JUMP_MIN_CHARS
+    && elapsedMs <= AUTH_AUTOFILL_JUMP_MAX_ELAPSED_MS;
+}
+
+function submitAuthFormFromAutofill() {
+  if (!authForm || !authPasswordInput || !isUnlockAutofillMode() || isAuthFormBusy) {
+    return;
+  }
+
+  if (String(authPasswordInput.value || "") !== authAutofillPendingValue || !String(authPasswordInput.value || "").trim()) {
+    return;
+  }
+
+  if (typeof authForm.requestSubmit === "function") {
+    authForm.requestSubmit();
+    return;
+  }
+
+  if (authSubmitButton && typeof authSubmitButton.click === "function") {
+    authSubmitButton.click();
+    return;
+  }
+
+  handleAuthSubmit();
+}
+
+function scheduleAuthAutofillSubmit(nextValue) {
+  authAutofillPendingValue = String(nextValue || "");
+  clearAuthAutofillSubmitTimer();
+  authAutofillSubmitTimerId = window.setTimeout(function () {
+    authAutofillSubmitTimerId = 0;
+    submitAuthFormFromAutofill();
+  }, AUTH_AUTOFILL_STABLE_DELAY_MS);
+}
+
+function maybeSubmitExistingAutofilledPassword() {
+  const currentValue = authPasswordInput ? String(authPasswordInput.value || "") : "";
+
+  if (!authPasswordInput || !isUnlockAutofillMode() || isAuthFormBusy) {
+    return;
+  }
+
+  if (currentValue.length < AUTH_AUTOFILL_MIN_PASSWORD_LENGTH) {
+    return;
+  }
+
+  try {
+    if (typeof authPasswordInput.matches === "function" && authPasswordInput.matches(":-webkit-autofill")) {
+      scheduleAuthAutofillSubmit(currentValue);
+    }
+  } catch (error) {
+    void error;
+  }
+}
+
+function sampleAuthAutofillState() {
+  const now = Date.now();
+  const currentValue = authPasswordInput ? String(authPasswordInput.value || "") : "";
+  const elapsedMs = authAutofillLastValueAt ? now - authAutofillLastValueAt : 0;
+
+  if (!authPasswordInput || !isUnlockAutofillMode() || isAuthFormBusy) {
+    return;
+  }
+
+  if (!currentValue.trim()) {
+    authAutofillPendingValue = "";
+    clearAuthAutofillSubmitTimer();
+    authAutofillLastValue = currentValue;
+    authAutofillLastValueAt = now;
+    return;
+  }
+
+  if (currentValue !== authAutofillLastValue) {
+    if (isLikelyAutofilledPassword(authAutofillLastValue, currentValue, elapsedMs)) {
+      scheduleAuthAutofillSubmit(currentValue);
+    } else {
+      authAutofillPendingValue = "";
+      clearAuthAutofillSubmitTimer();
+    }
+
+    authAutofillLastValue = currentValue;
+    authAutofillLastValueAt = now;
+    return;
+  }
+
+  if (!authAutofillSubmitTimerId && authAutofillPendingValue && currentValue === authAutofillPendingValue) {
+    scheduleAuthAutofillSubmit(currentValue);
+    return;
+  }
+
+  if (!authAutofillSubmitTimerId && !authAutofillPendingValue) {
+    maybeSubmitExistingAutofilledPassword();
+  }
+}
+
+function startAuthAutofillWatcher() {
+  stopAuthAutofillWatcher();
+
+  if (!authPasswordInput || !isUnlockAutofillMode()) {
+    return;
+  }
+
+  authAutofillLastValue = String(authPasswordInput.value || "");
+  authAutofillLastValueAt = Date.now();
+  authAutofillPendingValue = "";
+  authAutofillPollTimerId = window.setInterval(sampleAuthAutofillState, AUTH_AUTOFILL_POLL_INTERVAL_MS);
+  window.setTimeout(maybeSubmitExistingAutofilledPassword, 0);
+  window.setTimeout(maybeSubmitExistingAutofilledPassword, 50);
+  window.setTimeout(maybeSubmitExistingAutofilledPassword, 140);
 }
 
 function formatImportedPayloadMeta() {
@@ -179,7 +347,9 @@ function syncModeUi() {
   }
 
   if (authPasswordInput) {
-    authPasswordInput.value = "";
+    if (!isUnlockAutofillMode()) {
+      authPasswordInput.value = "";
+    }
     authPasswordInput.setAttribute("autocomplete", isSetupMode && !isImportMode ? "new-password" : "current-password");
   }
 
@@ -227,6 +397,8 @@ function syncModeUi() {
       authPasswordInput.focus();
     }
   }, 0);
+
+  startAuthAutofillWatcher();
 }
 
 function isEncryptedExportPayload(payload) {
@@ -357,6 +529,7 @@ async function handleAuthSubmit(event) {
   }
 
   setFormBusy(true);
+  clearAuthAutofillSubmitTimer();
 
   try {
     if (isImportMode) {
@@ -442,6 +615,15 @@ if (authForm) {
   authForm.addEventListener("submit", handleAuthSubmit);
 }
 
+if (authPasswordInput) {
+  authPasswordInput.addEventListener("keydown", noteAuthKeyboardInteraction);
+  authPasswordInput.addEventListener("input", sampleAuthAutofillState);
+  authPasswordInput.addEventListener("change", sampleAuthAutofillState);
+  authPasswordInput.addEventListener("focus", function () {
+    window.setTimeout(maybeSubmitExistingAutofilledPassword, 40);
+  });
+}
+
 if (authImportButton) {
   authImportButton.addEventListener("click", handleImportButtonClick);
 }
@@ -457,4 +639,15 @@ if (authImportInput) {
 resolveAuthMode().catch(function (error) {
   console.error("Auth-Seite konnte nicht initialisiert werden.", error);
   showError("Die Passwortseite konnte nicht geladen werden.");
+});
+
+window.addEventListener("pagehide", stopAuthAutofillWatcher);
+window.addEventListener("pageshow", function () {
+  window.setTimeout(maybeSubmitExistingAutofilledPassword, 40);
+  window.setTimeout(maybeSubmitExistingAutofilledPassword, 160);
+});
+document.addEventListener("visibilitychange", function () {
+  if (document.visibilityState === "visible") {
+    window.setTimeout(maybeSubmitExistingAutofilledPassword, 40);
+  }
 });
