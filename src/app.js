@@ -20,6 +20,9 @@ const appDataImportPasswordModal = document.getElementById("appDataImportPasswor
 const appDataImportPasswordMeta = document.getElementById("appDataImportPasswordMeta");
 const appDataImportPasswordInput = document.getElementById("appDataImportPasswordInput");
 const appDataImportPasswordError = document.getElementById("appDataImportPasswordError");
+const smartphoneLayoutMedia = typeof window.matchMedia === "function"
+  ? window.matchMedia("(max-width: 640px)")
+  : null;
 
 const namespace = window.Unterrichtsassistent || {};
 const dataLayer = namespace.data || {};
@@ -122,6 +125,10 @@ const WARNING_RADIAL_OPTIONS = [
   { category: "arbeitsorganisation", label: "Arbeitsorganisation", side: "right", row: "middle" },
   { category: "material", label: "Material", side: "bottom", row: "center" }
 ];
+
+function isSmartphoneLayout() {
+  return !!(smartphoneLayoutMedia && smartphoneLayoutMedia.matches);
+}
 let pendingPersistTimerId = 0;
 let pendingPersistSnapshot = null;
 let persistenceHasStoredState = false;
@@ -1834,6 +1841,12 @@ function setActiveView(viewId) {
   updateHeaderActions(viewId);
   renderActiveClassContext();
 
+  if (viewId !== previousViewId && isSmartphoneLayout() && appShell && menuToggle) {
+    appShell.classList.add("is-collapsed");
+    menuToggle.setAttribute("aria-expanded", "false");
+    closeCollapsedClassPicker();
+  }
+
   if (viewId === "klasse" && isClassImportModalOpen && window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.openClassImportModal === "function") {
     window.UnterrichtsassistentApp.openClassImportModal();
   }
@@ -1854,9 +1867,25 @@ function setActiveView(viewId) {
 }
 
 function toggleMenu() {
+  if (!appShell || !menuToggle) {
+    return false;
+  }
+
   closeCollapsedClassPicker();
-  const isCollapsed = appShell.classList.toggle("is-collapsed");
-  menuToggle.setAttribute("aria-expanded", String(!isCollapsed));
+  appShell.classList.toggle("is-collapsed");
+  menuToggle.setAttribute("aria-expanded", String(!appShell.classList.contains("is-collapsed")));
+  return false;
+}
+
+function collapseMenu() {
+  if (!appShell || !menuToggle) {
+    return false;
+  }
+
+  closeCollapsedClassPicker();
+  appShell.classList.add("is-collapsed");
+  menuToggle.setAttribute("aria-expanded", "false");
+  return false;
 }
 
 function closeCollapsedClassPicker() {
@@ -5307,6 +5336,7 @@ function syncManagedSeatPlanToCurrent(targetViewId) {
 window.UnterrichtsassistentApp = window.UnterrichtsassistentApp || {};
 window.UnterrichtsassistentApp.activateView = setActiveView;
 window.UnterrichtsassistentApp.toggleMenu = toggleMenu;
+window.UnterrichtsassistentApp.collapseMenu = collapseMenu;
 window.UnterrichtsassistentApp.toggleCollapsedClassPicker = toggleCollapsedClassPicker;
 window.UnterrichtsassistentApp.getClassDisplayColor = getClassDisplayColor;
 window.UnterrichtsassistentApp.getUnterrichtViewMode = function () {

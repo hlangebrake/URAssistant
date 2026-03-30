@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./apple-touch-icon-167x167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./apple-touch-icon-152x152.png">
-  <link rel="stylesheet" href="style.css?v=20260330a">
+  <link rel="stylesheet" href="style.css?v=20260330d">
 </head>
 <body>
   <div class="app-shell is-collapsed">
@@ -95,6 +95,7 @@
         <input id="appDataImportInput" type="file" accept=".json,application/json" hidden onchange="return window.UnterrichtsassistentApp.importAppDataFromFile(event)">
       </div>
     </aside>
+    <button class="sidebar-backdrop" type="button" aria-label="Menueleiste schliessen" onclick="return window.UnterrichtsassistentApp.collapseMenu()"></button>
 
     <main class="content" id="mainContent">
       <header class="content__header">
@@ -247,6 +248,6 @@
   <script src="src/ui/views/sitzplanView.js?v=20260330a"></script>
   <script src="src/ui/viewRegistry.js?v=20260330a"></script>
   <script src="src/ui/renderers.js?v=20260330a"></script>
-  <script src="src/app.js?v=20260330a"></script>
+  <script src="src/app.js?v=20260330c"></script>
 </body>
 </html>
