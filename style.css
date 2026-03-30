@@ -135,6 +135,8 @@ button {
 }
 
 .sidebar__brand-mark {
+  position: relative;
+  z-index: 2;
   display: grid;
   place-items: center;
   width: 56px;
@@ -225,6 +227,8 @@ button {
   display: none;
   grid-column: 1;
   grid-row: 2;
+  position: relative;
+  z-index: 2;
 }
 
 .sidebar__datetime-input {
@@ -235,6 +239,10 @@ button {
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.08);
   color: var(--text-on-dark);
+}
+
+.sidebar.is-class-picker-open {
+  overflow: visible;
 }
 
 .sidebar__datetime-input::-webkit-calendar-picker-indicator {
@@ -262,10 +270,10 @@ button {
 }
 
 .collapsed-class-picker {
-  position: absolute;
+  position: fixed;
   top: 0;
-  left: calc(100% + 0.5rem);
-  z-index: 80;
+  left: 0;
+  z-index: 120;
   display: grid;
   gap: 0.35rem;
   min-width: 220px;
@@ -3120,6 +3128,7 @@ body.is-desk-dragging {
 }
 
 .app-shell.is-collapsed .sidebar__brand-mark {
+  grid-column: 1;
   grid-row: 1;
 }
 
@@ -3127,6 +3136,11 @@ body.is-desk-dragging {
 .app-shell.is-collapsed .nav-link,
 .app-shell.is-collapsed .sidebar__storage-button {
   justify-content: center;
+}
+
+.app-shell.is-collapsed .sidebar__brand {
+  grid-template-columns: 1fr;
+  justify-items: center;
 }
 
 .app-shell.is-collapsed .sidebar__footer-actions {

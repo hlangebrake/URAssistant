@@ -1866,7 +1866,49 @@ function closeCollapsedClassPicker() {
 
   sidebar.classList.remove("is-class-picker-open");
   collapsedClassPicker.hidden = true;
+  collapsedClassPicker.style.top = "";
+  collapsedClassPicker.style.left = "";
+  collapsedClassPicker.style.maxHeight = "";
   activeClassBadge.setAttribute("aria-expanded", "false");
+}
+
+function ensureCollapsedClassPickerPortal() {
+  if (!collapsedClassPicker || collapsedClassPicker.parentNode === document.body) {
+    return;
+  }
+
+  document.body.appendChild(collapsedClassPicker);
+}
+
+function positionCollapsedClassPicker() {
+  const badgeRect = activeClassBadge ? activeClassBadge.getBoundingClientRect() : null;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  const pickerWidth = collapsedClassPicker ? Math.max(collapsedClassPicker.offsetWidth || 0, 220) : 220;
+  const pickerHeight = collapsedClassPicker ? collapsedClassPicker.offsetHeight || 0 : 0;
+  let top = 0;
+  let left = 0;
+  let maxHeight = 0;
+
+  if (!badgeRect || !collapsedClassPicker) {
+    return;
+  }
+
+  top = Math.max(12, Math.round(badgeRect.top));
+  left = Math.round(badgeRect.right + 12);
+
+  if (left + pickerWidth > window.innerWidth - 12) {
+    left = Math.max(12, Math.round(badgeRect.left - pickerWidth - 12));
+  }
+
+  if (pickerHeight && top + pickerHeight > viewportHeight - 12) {
+    top = Math.max(12, viewportHeight - pickerHeight - 12);
+  }
+
+  maxHeight = Math.max(160, viewportHeight - top - 12);
+
+  collapsedClassPicker.style.top = String(top) + "px";
+  collapsedClassPicker.style.left = String(left) + "px";
+  collapsedClassPicker.style.maxHeight = String(maxHeight) + "px";
 }
 
 function toggleCollapsedClassPicker() {
@@ -1874,15 +1916,17 @@ function toggleCollapsedClassPicker() {
     return false;
   }
 
-  if (!appShell.classList.contains("is-collapsed")) {
+  if (activeClassBadge.offsetParent === null) {
     return false;
   }
 
   if (sidebar.classList.contains("is-class-picker-open")) {
     closeCollapsedClassPicker();
   } else {
+    ensureCollapsedClassPickerPortal();
     sidebar.classList.add("is-class-picker-open");
     collapsedClassPicker.hidden = false;
+    positionCollapsedClassPicker();
     activeClassBadge.setAttribute("aria-expanded", "true");
   }
 
@@ -8514,10 +8558,34 @@ document.addEventListener("click", function (event) {
     return;
   }
 
+  if ((sidebar && sidebar.contains(event.target)) || (collapsedClassPicker && collapsedClassPicker.contains(event.target))) {
+    return;
+  }
+
   if (!sidebar.contains(event.target)) {
     closeCollapsedClassPicker();
   }
 });
+
+if (activeClassBadge) {
+  activeClassBadge.addEventListener("click", function (event) {
+    event.preventDefault();
+    event.stopPropagation();
+    toggleCollapsedClassPicker();
+  });
+}
+
+window.addEventListener("resize", function () {
+  if (sidebar && sidebar.classList.contains("is-class-picker-open")) {
+    positionCollapsedClassPicker();
+  }
+});
+
+window.addEventListener("scroll", function () {
+  if (sidebar && sidebar.classList.contains("is-class-picker-open")) {
+    positionCollapsedClassPicker();
+  }
+}, { passive: true });
 
 window.addEventListener("pagehide", function () {
   if (!schoolService || !getMutableRawSnapshot() || !persistenceHasPendingChanges) {

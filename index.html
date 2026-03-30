@@ -4,9 +4,16 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="referrer" content="no-referrer">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'none'; img-src 'none'; font-src 'self'; media-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; manifest-src 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'none'; img-src 'self' data:; font-src 'self'; media-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; child-src 'none'; worker-src 'self'; manifest-src 'self'">
+  <meta name="theme-color" content="#f4efe4">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>Unterrichtsassistent</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
+  <link rel="apple-touch-icon" sizes="167x167" href="./apple-touch-icon-167x167.png">
+  <link rel="apple-touch-icon" sizes="152x152" href="./apple-touch-icon-152x152.png">
+  <link rel="stylesheet" href="style.css?v=20260330a">
 </head>
 <body>
   <div class="app-shell is-collapsed">
@@ -16,7 +23,7 @@
           <span class="sidebar__toggle-icon" aria-hidden="true">&#9776;</span>
         </button>
         <div class="sidebar__brand">
-          <button class="sidebar__brand-mark" id="activeClassBadge" type="button" aria-label="Aktive Lerngruppe auswaehlen" aria-haspopup="listbox" aria-expanded="false" onclick="return window.UnterrichtsassistentApp.toggleCollapsedClassPicker()">--</button>
+          <button class="sidebar__brand-mark" id="activeClassBadge" type="button" aria-label="Aktive Lerngruppe auswaehlen" aria-haspopup="listbox" aria-expanded="false">--</button>
           <button id="collapsedLiveDateTimeButton" class="sidebar__live-button sidebar__live-button--collapsed" type="button" aria-label="Live-Modus aktivieren" aria-pressed="true" onclick="return window.UnterrichtsassistentApp.setLiveDateTimeMode()"></button>
           <div class="sidebar__brand-text">
             <div class="sidebar__brand-row">
@@ -201,27 +208,45 @@
       }
 
       window.addEventListener("load", function () {
-        navigator.serviceWorker.register("./service-worker.js").catch(function (error) {
-          console.error("Service Worker konnte nicht registriert werden.", error);
+        navigator.serviceWorker.getRegistrations().then(function (registrations) {
+          return Promise.all(
+            registrations.map(function (registration) {
+              return registration.unregister();
+            })
+          );
+        }).then(function () {
+          if (!("caches" in window)) {
+            return Promise.resolve();
+          }
+
+          return caches.keys().then(function (cacheNames) {
+            return Promise.all(
+              cacheNames.map(function (cacheName) {
+                return caches.delete(cacheName);
+              })
+            );
+          });
+        }).catch(function (error) {
+          console.warn("Service Worker oder Cache konnten nicht entfernt werden.", error);
         });
       });
     }());
   </script>
-  <script src="src/domain/models.js"></script>
-  <script src="src/domain/factories.js"></script>
-  <script src="src/data/demoData.js"></script>
-  <script src="src/data/indexedDb.js"></script>
-  <script src="src/data/appRepository.js"></script>
-  <script src="src/data/studentCsvImport.js"></script>
-  <script src="src/security/passwordAuth.js"></script>
-  <script src="src/security/appDataCrypto.js"></script>
-  <script src="src/services/schoolService.js"></script>
-  <script src="src/ui/views/unterrichtView.js"></script>
-  <script src="src/ui/views/klasseView.js"></script>
-  <script src="src/ui/views/stundenplanView.js"></script>
-  <script src="src/ui/views/sitzplanView.js"></script>
-  <script src="src/ui/viewRegistry.js"></script>
-  <script src="src/ui/renderers.js"></script>
-  <script src="src/app.js"></script>
+  <script src="src/domain/models.js?v=20260330a"></script>
+  <script src="src/domain/factories.js?v=20260330a"></script>
+  <script src="src/data/demoData.js?v=20260330a"></script>
+  <script src="src/data/indexedDb.js?v=20260330a"></script>
+  <script src="src/data/appRepository.js?v=20260330a"></script>
+  <script src="src/data/studentCsvImport.js?v=20260330a"></script>
+  <script src="src/security/passwordAuth.js?v=20260330a"></script>
+  <script src="src/security/appDataCrypto.js?v=20260330a"></script>
+  <script src="src/services/schoolService.js?v=20260330a"></script>
+  <script src="src/ui/views/unterrichtView.js?v=20260330a"></script>
+  <script src="src/ui/views/klasseView.js?v=20260330a"></script>
+  <script src="src/ui/views/stundenplanView.js?v=20260330a"></script>
+  <script src="src/ui/views/sitzplanView.js?v=20260330a"></script>
+  <script src="src/ui/viewRegistry.js?v=20260330a"></script>
+  <script src="src/ui/renderers.js?v=20260330a"></script>
+  <script src="src/app.js?v=20260330a"></script>
 </body>
 </html>

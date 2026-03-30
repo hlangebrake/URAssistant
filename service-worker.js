@@ -1,8 +1,13 @@
-const CACHE_NAME = "unterrichtsassistent-allinone-v2";
-const APP_SHELL_URL = "./AllInOne.html";
+const CACHE_NAME = "unterrichtsassistent-allinone-v3";
+const APP_SHELL_URL = "./index.html";
 const PRECACHE_URLS = [
   APP_SHELL_URL,
-  "./service-worker.js"
+  "./service-worker.js",
+  "./manifest.webmanifest",
+  "./icon.png",
+  "./apple-touch-icon.png",
+  "./apple-touch-icon-167x167.png",
+  "./apple-touch-icon-152x152.png"
 ];
 
 function isNetworkFirstRequest(request) {
