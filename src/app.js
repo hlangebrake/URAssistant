@@ -173,6 +173,10 @@ let idleLockTimerId = 0;
 let isLockingForAuth = false;
 let pendingEncryptedImportPayload = null;
 
+function isCurriculumPlanningMode() {
+  return planningViewMode === "unterrichtsplanung" || planningViewMode === "stoffplanung";
+}
+
 function preventLocalOnlyFormSubmit(event) {
   const form = event && event.target && typeof event.target.matches === "function" && event.target.matches("form[data-local-only-form]")
     ? event.target
@@ -316,6 +320,9 @@ function applyAuthReturnStateToRawState(snapshot) {
   planningViewMode = ["jahresplanung", "unterrichtsplanung", "stoffplanung"].indexOf(String(returnState.planningViewMode || "")) >= 0
     ? String(returnState.planningViewMode)
     : planningViewMode;
+  if (planningViewMode === "stoffplanung") {
+    planningViewMode = "unterrichtsplanung";
+  }
   planningAdminMode = Boolean(returnState.planningAdminMode);
   nextSnapshot.activeClassId = returnState.activeClassId || null;
   nextSnapshot.activeTimetableId = returnState.activeTimetableId || null;
@@ -2905,18 +2912,13 @@ function updateHeaderActions(viewId) {
             label: "Jahresplanung",
             action: "window.UnterrichtsassistentApp.setPlanningViewMode('jahresplanung')"
           },
-          {
-            value: "unterrichtsplanung",
-            label: "Unterrichtsplanung",
-            action: "window.UnterrichtsassistentApp.setPlanningViewMode('unterrichtsplanung')"
-          },
-          {
-            value: "stoffplanung",
-            label: "Stoffplanung",
-            action: "window.UnterrichtsassistentApp.setPlanningViewMode('stoffplanung')"
-          }
-        ]
-      });
+        {
+          value: "unterrichtsplanung",
+          label: "Unterrichtsplanung",
+          action: "window.UnterrichtsassistentApp.setPlanningViewMode('unterrichtsplanung')"
+        }
+      ]
+    });
       return;
     }
 
@@ -2981,14 +2983,16 @@ window.UnterrichtsassistentApp.updatePlanningSchoolYearField = function (fieldNa
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
   const normalizedValue = normalizePlanningDateValue(nextValue);
   let startValue;
+  let halfYearValue;
   let endValue;
 
-  if (!currentRawSnapshot || ["schoolYearStart", "schoolYearEnd"].indexOf(fieldName) === -1) {
+  if (!currentRawSnapshot || ["schoolYearStart", "schoolHalfYearStart", "schoolYearEnd"].indexOf(fieldName) === -1) {
     return false;
   }
 
   currentRawSnapshot[fieldName] = normalizedValue;
   startValue = normalizePlanningDateValue(currentRawSnapshot.schoolYearStart);
+  halfYearValue = normalizePlanningDateValue(currentRawSnapshot.schoolHalfYearStart);
   endValue = normalizePlanningDateValue(currentRawSnapshot.schoolYearEnd);
 
   if (startValue && endValue && startValue > endValue) {
@@ -2999,6 +3003,31 @@ window.UnterrichtsassistentApp.updatePlanningSchoolYearField = function (fieldNa
     }
   }
 
+  startValue = normalizePlanningDateValue(currentRawSnapshot.schoolYearStart);
+  endValue = normalizePlanningDateValue(currentRawSnapshot.schoolYearEnd);
+  halfYearValue = normalizePlanningDateValue(currentRawSnapshot.schoolHalfYearStart);
+
+  if (halfYearValue && startValue && halfYearValue < startValue) {
+    currentRawSnapshot.schoolHalfYearStart = startValue;
+    halfYearValue = startValue;
+  }
+
+  if (halfYearValue && endValue && halfYearValue > endValue) {
+    currentRawSnapshot.schoolHalfYearStart = endValue;
+  }
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return false;
+};
+
+window.UnterrichtsassistentApp.updatePlanningHidePastMonths = function (isChecked) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+
+  if (!currentRawSnapshot) {
+    return false;
+  }
+
+  currentRawSnapshot.hidePastPlanningMonths = Boolean(isChecked);
   saveAndRefreshSnapshot(currentRawSnapshot, "planung");
   return false;
 };
@@ -3267,8 +3296,8 @@ function setActiveView(viewId) {
     }
 
     if (viewId === "planung" && previousViewId !== "planung") {
-      planningViewMode = ["jahresplanung", "unterrichtsplanung", "stoffplanung"].indexOf(planningViewMode) >= 0
-        ? planningViewMode
+      planningViewMode = planningViewMode === "unterrichtsplanung" || planningViewMode === "stoffplanung"
+        ? "unterrichtsplanung"
         : "jahresplanung";
     }
 
@@ -3325,7 +3354,7 @@ function setActiveView(viewId) {
     clearClassAnalysisDragScroll();
   }
 
-  if (viewId === "planung" && planningViewMode === "stoffplanung") {
+  if (viewId === "planung" && isCurriculumPlanningMode()) {
     initializePlanningCurriculumInteractions();
   } else {
     clearPlanningCurriculumDragScroll();
@@ -7757,7 +7786,7 @@ window.UnterrichtsassistentApp.openCurriculumSeriesModal = function (seriesId) {
   const normalizedSeriesId = String(seriesId || "").trim();
   let existingSeries = null;
 
-  if (planningViewMode !== "stoffplanung" || planningAdminMode || !activeClass) {
+  if (!isCurriculumPlanningMode() || planningAdminMode || !activeClass) {
     return false;
   }
 
@@ -7795,7 +7824,7 @@ window.UnterrichtsassistentApp.toggleCurriculumSeriesExpansion = function (serie
   const normalizedSeriesId = String(seriesId || "").trim();
   const currentIndex = expandedCurriculumSeriesIds.indexOf(normalizedSeriesId);
 
-  if (planningViewMode !== "stoffplanung" || !normalizedSeriesId) {
+  if (!isCurriculumPlanningMode() || !normalizedSeriesId) {
     return false;
   }
 
@@ -7825,7 +7854,7 @@ window.UnterrichtsassistentApp.startCurriculumSeriesDrag = function (event, seri
   const normalizedColor = normalizePlanningColorValue(event && event.currentTarget ? event.currentTarget.getAttribute("data-series-color") : "") || "#d9d4cb";
   const sourceElement = event && event.currentTarget ? event.currentTarget : null;
 
-  if (planningViewMode !== "stoffplanung" || !normalizedSeriesId || !event) {
+  if (!isCurriculumPlanningMode() || !normalizedSeriesId || !event) {
     return false;
   }
 
@@ -8028,7 +8057,7 @@ window.UnterrichtsassistentApp.openCurriculumSequenceModal = function (seriesId,
     : null;
   let existingSequence = null;
 
-  if (planningViewMode !== "stoffplanung" || planningAdminMode || !activeClass || !parentSeries) {
+  if (!isCurriculumPlanningMode() || planningAdminMode || !activeClass || !parentSeries) {
     return false;
   }
 
@@ -8076,7 +8105,7 @@ window.UnterrichtsassistentApp.toggleCurriculumSequenceExpansion = function (ser
   const expansionKey = [normalizedSeriesId, normalizedSequenceId].join("::");
   const currentIndex = expandedCurriculumSequenceIds.indexOf(expansionKey);
 
-  if (planningViewMode !== "stoffplanung" || !normalizedSeriesId || !normalizedSequenceId) {
+  if (!isCurriculumPlanningMode() || !normalizedSeriesId || !normalizedSequenceId) {
     return false;
   }
 
@@ -8102,7 +8131,7 @@ window.UnterrichtsassistentApp.startCurriculumSequenceDrag = function (event, se
   const normalizedColor = normalizePlanningColorValue(event && event.currentTarget ? event.currentTarget.getAttribute("data-series-color") : "") || "#d9d4cb";
   const sourceElement = event && event.currentTarget ? event.currentTarget : null;
 
-  if (planningViewMode !== "stoffplanung" || !normalizedSeriesId || !normalizedSequenceId || !event) {
+  if (!isCurriculumPlanningMode() || !normalizedSeriesId || !normalizedSequenceId || !event) {
     return false;
   }
 
@@ -8215,7 +8244,7 @@ window.UnterrichtsassistentApp.openCurriculumLessonModal = function (seriesId, s
   let existingLesson = null;
   const expansionKey = [normalizedSeriesId, normalizedSequenceId].join("::");
 
-  if (planningViewMode !== "stoffplanung" || planningAdminMode || !parentSequence) {
+  if (!isCurriculumPlanningMode() || planningAdminMode || !parentSequence) {
     return false;
   }
 
@@ -8268,7 +8297,7 @@ window.UnterrichtsassistentApp.startCurriculumLessonDrag = function (event, sequ
   const normalizedColor = normalizePlanningColorValue(color) || "#d9d4cb";
   const sourceElement = event && event.currentTarget ? event.currentTarget : null;
 
-  if (planningViewMode !== "stoffplanung" || !normalizedSequenceId || !normalizedLessonId || !event) {
+  if (!isCurriculumPlanningMode() || !normalizedSequenceId || !normalizedLessonId || !event) {
     return false;
   }
 
@@ -9935,8 +9964,10 @@ window.UnterrichtsassistentApp.setSeatPlanViewMode = function (nextMode) {
   return false;
 };
 window.UnterrichtsassistentApp.setPlanningViewMode = function (nextMode) {
-  planningViewMode = ["jahresplanung", "unterrichtsplanung", "stoffplanung"].indexOf(String(nextMode || "")) >= 0
-    ? String(nextMode)
+  const normalizedMode = String(nextMode || "");
+
+  planningViewMode = normalizedMode === "unterrichtsplanung" || normalizedMode === "stoffplanung"
+    ? "unterrichtsplanung"
     : "jahresplanung";
 
   if (activeViewId === "planung") {

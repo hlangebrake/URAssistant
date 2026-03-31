@@ -733,8 +733,19 @@ button {
   min-width: 0;
 }
 
+.planning-instruction__section--planned {
+  min-width: 0;
+  overflow: hidden;
+}
+
 .panel--planung-curriculum {
   min-width: 0;
+}
+
+.planning-curriculum--embedded {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .planning-curriculum__header {
@@ -757,11 +768,17 @@ button {
   overflow-y: hidden;
   display: block;
   width: 100%;
+  max-width: 100%;
   overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-x;
   scrollbar-width: thin;
   padding-bottom: 0.35rem;
+}
+
+.planning-curriculum--embedded .planning-curriculum__table-wrap {
+  overscroll-behavior: contain;
+  touch-action: pan-x;
 }
 
 .planning-curriculum__table-wrap.is-dragging {
@@ -905,6 +922,13 @@ button {
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
+}
+
+.planning-curriculum--embedded .planning-curriculum__sequence-wrap,
+.planning-curriculum--embedded .planning-curriculum__lesson-series-wrap,
+.planning-curriculum--embedded .planning-curriculum__lesson-wrap {
+  overflow: visible;
+  -webkit-overflow-scrolling: auto;
 }
 
 .planning-curriculum__lesson-column {
@@ -1288,6 +1312,20 @@ button {
   flex-wrap: wrap;
   gap: 0.9rem 1rem;
   margin-bottom: 1.2rem;
+}
+
+.planning-year__settings-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-height: 42px;
+  padding: 0.15rem 0;
+}
+
+.planning-year__settings-checkbox input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
 }
 
 .planning-category-admin__panel {

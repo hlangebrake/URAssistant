@@ -51,7 +51,9 @@ window.Unterrichtsassistent.ui.views.planung = {
       ? service.getReferenceDate()
       : null;
     const schoolYearStart = String(snapshot.schoolYearStart || "").slice(0, 10);
+    const schoolHalfYearStart = String(snapshot.schoolHalfYearStart || "").slice(0, 10);
     const schoolYearEnd = String(snapshot.schoolYearEnd || "").slice(0, 10);
+    const hidePastPlanningMonths = snapshot.hidePastPlanningMonths !== false;
     const planningEvents = Array.isArray(snapshot.planningEvents) ? snapshot.planningEvents : [];
     const selectedSidebarFilters = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningSidebarCategoryFilters === "function"
       ? window.UnterrichtsassistentApp.getPlanningSidebarCategoryFilters()
@@ -419,7 +421,7 @@ window.Unterrichtsassistent.ui.views.planung = {
 
     function buildMonthCards(startDate, endDate, activeDate) {
       const cards = [];
-      const firstVisibleMonth = activeDate && activeDate > startDate
+      const firstVisibleMonth = hidePastPlanningMonths && activeDate && activeDate > startDate
         ? new Date(activeDate.getFullYear(), activeDate.getMonth(), 1)
         : new Date(startDate.getFullYear(), startDate.getMonth(), 1);
       const cursor = new Date(firstVisibleMonth.getFullYear(), firstVisibleMonth.getMonth(), 1);
@@ -526,8 +528,16 @@ window.Unterrichtsassistent.ui.views.planung = {
         '<input class="student-table__input schedule-toolbar__time" type="date" value="', escapeValue(schoolYearStart), '" onchange="return window.UnterrichtsassistentApp.updatePlanningSchoolYearField(\'schoolYearStart\', this.value)">',
         '</label>',
         '<label class="schedule-toolbar__field">',
+        '<span>Beginn neues Halbjahr</span>',
+        '<input class="student-table__input schedule-toolbar__time" type="date" value="', escapeValue(schoolHalfYearStart), '" onchange="return window.UnterrichtsassistentApp.updatePlanningSchoolYearField(\'schoolHalfYearStart\', this.value)">',
+        '</label>',
+        '<label class="schedule-toolbar__field">',
         '<span>Letzter Schultag</span>',
         '<input class="student-table__input schedule-toolbar__time" type="date" value="', escapeValue(schoolYearEnd), '" onchange="return window.UnterrichtsassistentApp.updatePlanningSchoolYearField(\'schoolYearEnd\', this.value)">',
+        '</label>',
+        '<label class="schedule-toolbar__field planning-year__settings-checkbox">',
+        '<span>Vergangene Monate ausblenden</span>',
+        '<input type="checkbox" ', hidePastPlanningMonths ? 'checked ' : '', 'onchange="return window.UnterrichtsassistentApp.updatePlanningHidePastMonths(this.checked)">',
         '</label>',
         '</div>',
         messageHtml || "",
@@ -538,7 +548,7 @@ window.Unterrichtsassistent.ui.views.planung = {
       ].join("");
     }
 
-    if ((!schoolYearStart || !schoolYearEnd) && planningViewMode !== "stoffplanung") {
+    if ((!schoolYearStart || !schoolYearEnd) && planningViewMode === "jahresplanung") {
       return [
         '<div class="panel-grid panel-grid--planung">',
         '<article class="panel panel--full">',
@@ -701,7 +711,7 @@ window.Unterrichtsassistent.ui.views.planung = {
         '<div class="planning-instruction__section-header">',
         '<h2 class="planning-instruction__title">Geplante Unterrichtsstunden</h2>',
         '</div>',
-        '<p class="empty-message">Noch keine geplanten Unterrichtsstunden vorhanden.</p>',
+        buildStoffPlanningContent(false),
         '</section>',
         '<section class="planning-instruction__section planning-instruction__section--available">',
         '<button class="planning-instruction__section-toggle" type="button" aria-expanded="', isPlanningAvailableLessonsExpanded ? 'true' : 'false', '" onclick="return window.UnterrichtsassistentApp.togglePlanningAvailableLessons()">',
@@ -1023,9 +1033,9 @@ window.Unterrichtsassistent.ui.views.planung = {
       ].join("");
     }
 
-    function buildStoffPlanningContent() {
+    function buildStoffPlanningContent(includePanelWrapper) {
+      const shouldWrapInPanel = includePanelWrapper !== false;
       const orderedSeries = getOrderedCurriculumSeriesForActiveClass();
-      const columnCount = orderedSeries.length + 1;
       const hasSeries = orderedSeries.length > 0;
       const expandedSeriesIdsLookup = expandedCurriculumSeriesIds.reduce(function (lookup, entry) {
         lookup[String(entry || "").trim()] = true;
@@ -1046,21 +1056,29 @@ window.Unterrichtsassistent.ui.views.planung = {
       }, {});
 
       if (!activeClass) {
-        return [
-          '<div class="panel-grid panel-grid--planung-curriculum">',
-          '<article class="panel panel--full">',
-          '<p class="empty-message">Waehle zuerst eine Lerngruppe, damit du Unterrichtsreihen fuer die Stoffplanung anlegen kannst.</p>',
-          '</article>',
-          '</div>'
-        ].join("");
+        return shouldWrapInPanel
+          ? [
+              '<div class="panel-grid panel-grid--planung-curriculum">',
+              '<article class="panel panel--full">',
+              '<p class="empty-message">Waehle zuerst eine Lerngruppe, damit du Unterrichtsreihen fuer die Unterrichtsplanung anlegen kannst.</p>',
+              '</article>',
+              '</div>'
+            ].join("")
+          : '<p class="empty-message">Waehle zuerst eine Lerngruppe, damit du Unterrichtsreihen fuer die Unterrichtsplanung anlegen kannst.</p>';
       }
 
-      return [
-        '<div class="panel-grid panel-grid--planung-curriculum">',
-        '<article class="panel panel--full panel--planung-curriculum">',
-        '<div class="planning-curriculum__header">',
-        '<h2 class="planning-curriculum__title">Unterrichtsreihen</h2>',
-        '</div>',
+      return (shouldWrapInPanel
+        ? [
+            '<div class="panel-grid panel-grid--planung-curriculum">',
+            '<article class="panel panel--full panel--planung-curriculum">',
+            '<div class="planning-curriculum__header">',
+            '<h2 class="planning-curriculum__title">Unterrichtsreihen</h2>',
+            '</div>'
+          ]
+        : [
+            '<div class="planning-curriculum planning-curriculum--embedded">'
+          ]
+      ).concat([
         hasSeries ? '' : '<p class="empty-message">Lege die erste Unterrichtsreihe ueber das Plus-Feld an.</p>',
         '<div class="planning-curriculum__table-wrap" data-drag-scroll="true" data-class-id="', escapeValue(String(activeClass && activeClass.id || "")), '">',
         '<table class="planning-curriculum__table">',
@@ -1231,15 +1249,15 @@ window.Unterrichtsassistent.ui.views.planung = {
         '</tbody>',
         '</table>',
         '</div>',
-        '</article>',
+        shouldWrapInPanel ? '</article>' : '</div>',
         buildCurriculumSeriesModal(),
         buildCurriculumSequenceModal(),
         buildCurriculumLessonModal(),
-        '</div>'
-      ].join("");
+        shouldWrapInPanel ? '</div>' : ''
+      ]).join("");
     }
 
-    if (planningViewMode !== "stoffplanung" && (!startDate || !endDate || startDate > endDate)) {
+    if (planningViewMode === "jahresplanung" && (!startDate || !endDate || startDate > endDate)) {
       return [
         '<div class="panel-grid panel-grid--planung">',
         '<article class="panel panel--full">',
@@ -1266,7 +1284,7 @@ window.Unterrichtsassistent.ui.views.planung = {
     }
 
     if (planningViewMode === "stoffplanung") {
-      return buildStoffPlanningContent();
+      return buildInstructionPlanningContent();
     }
 
     if (activePlanningDate && activePlanningDate > endDate) {
