@@ -83,6 +83,16 @@ window.Unterrichtsassistent.ui.views.planung = {
         : "";
     }
 
+    function formatShortDateLabel(dateValue) {
+      const parsed = parseLocalDate(dateValue);
+      return parsed
+        ? parsed.toLocaleDateString("de-DE", {
+            day: "2-digit",
+            month: "2-digit"
+          })
+        : "";
+    }
+
     function formatTimeRange(eventItem) {
       const startTime = String(eventItem && eventItem.startTime || "").trim();
       const endTime = String(eventItem && eventItem.endTime || "").trim();
@@ -500,10 +510,6 @@ window.Unterrichtsassistent.ui.views.planung = {
       ].join("");
     }
 
-    if (planningViewMode !== "jahresplanung") {
-      return "";
-    }
-
     if (!schoolYearStart || !schoolYearEnd) {
       return [
         '<div class="panel-grid panel-grid--planung">',
@@ -521,6 +527,178 @@ window.Unterrichtsassistent.ui.views.planung = {
     const activePlanningDate = referenceDate && !Number.isNaN(referenceDate.getTime())
       ? new Date(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate(), referenceDate.getHours(), referenceDate.getMinutes(), referenceDate.getSeconds(), referenceDate.getMilliseconds())
       : null;
+    const activeClass = service && typeof service.getActiveClass === "function"
+      ? service.getActiveClass()
+      : null;
+    const isPlanningAvailableLessonsExpanded = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.isPlanningAvailableLessonsExpanded === "function"
+      ? window.UnterrichtsassistentApp.isPlanningAvailableLessonsExpanded()
+      : true;
+
+    function getClassDisplayColor(schoolClass) {
+      return window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getClassDisplayColor === "function"
+        ? window.UnterrichtsassistentApp.getClassDisplayColor(schoolClass)
+        : "#d9d4cb";
+    }
+
+    function getClassDisplayName(schoolClass) {
+      return schoolClass
+        ? [schoolClass.name || "", schoolClass.subject || ""].join(" ").trim()
+        : "";
+    }
+
+    function isInstructionFreeDateValue(isoDate) {
+      return planningEvents.some(function (eventItem) {
+        const category = getEventCategoryName(eventItem).toLowerCase();
+        const startDateValue = String(eventItem && eventItem.startDate || "").slice(0, 10);
+        const endDateValue = String(eventItem && eventItem.endDate || startDateValue).slice(0, 10);
+
+        return category === "unterrichtsfrei" && startDateValue && startDateValue <= isoDate && isoDate <= endDateValue;
+      });
+    }
+
+    function buildInstructionLessonOccurrences() {
+      const occurrencesByDate = {};
+      const cursor = startDate ? new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()) : null;
+      const lastDate = endDate ? new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate()) : null;
+
+      if (!activeClass || !cursor || !lastDate || !service || typeof service.getLessonUnitsForClass !== "function") {
+        return [];
+      }
+
+      function isLessonOccurrencePast(lessonDateValue, lessonEndTime) {
+        const lessonDate = parseLocalDate(lessonDateValue);
+        const endTimeValue = String(lessonEndTime || "").trim();
+        let endMoment;
+
+        if (!activePlanningDate || !lessonDate) {
+          return false;
+        }
+
+        if (!endTimeValue) {
+          return lessonDateValue < toIsoDate(activePlanningDate);
+        }
+
+        endMoment = new Date(
+          lessonDate.getFullYear(),
+          lessonDate.getMonth(),
+          lessonDate.getDate(),
+          Number(endTimeValue.slice(0, 2)) || 0,
+          Number(endTimeValue.slice(3, 5)) || 0,
+          59,
+          999
+        );
+
+        return endMoment < activePlanningDate;
+      }
+
+      while (cursor <= lastDate) {
+        const isoDate = toIsoDate(cursor);
+
+        if (!isInstructionFreeDateValue(isoDate)) {
+          service.getLessonUnitsForClass(activeClass.id, cursor).forEach(function (lessonUnit) {
+            const currentTimetable = typeof service.getCurrentTimetable === "function"
+              ? service.getCurrentTimetable(cursor)
+              : null;
+            const timetableRows = currentTimetable && typeof service.getTimetableRows === "function"
+              ? service.getTimetableRows(currentTimetable)
+              : [];
+            const weekdayKey = String(Number(lessonUnit && lessonUnit.weekday));
+            const sourceRowId = String(lessonUnit && lessonUnit.sourceRowId || "");
+            const lessonCount = timetableRows.filter(function (row) {
+              const cell = row && row.cells ? row.cells[weekdayKey] : null;
+              const effectiveClassId = row && row.type === "lesson" && cell
+                ? (cell.isBlocked ? cell.inheritedClassId : cell.classId)
+                : "";
+              const effectiveSourceRowId = row && row.type === "lesson" && cell
+                ? String(cell.isBlocked ? (cell.sourceRowId || row.id) : row.id)
+                : "";
+
+              return effectiveClassId === activeClass.id && effectiveSourceRowId === sourceRowId;
+            }).length || 1;
+
+            if (!occurrencesByDate[isoDate]) {
+              occurrencesByDate[isoDate] = {
+                id: "unterrichtstag::" + isoDate,
+                lessonDate: isoDate,
+                lessonCount: 0,
+                remainingLessonCount: 0
+              };
+            }
+
+            occurrencesByDate[isoDate].lessonCount += Math.max(1, lessonCount);
+
+            if (!isLessonOccurrencePast(isoDate, lessonUnit && lessonUnit.endTime)) {
+              occurrencesByDate[isoDate].remainingLessonCount += Math.max(1, lessonCount);
+            }
+          });
+        }
+
+        cursor.setDate(cursor.getDate() + 1);
+      }
+
+      return Object.keys(occurrencesByDate).map(function (dateKey) {
+        return occurrencesByDate[dateKey];
+      }).sort(function (left, right) {
+        const leftKey = [left.lessonDate, left.id].join("|");
+        const rightKey = [right.lessonDate, right.id].join("|");
+        return leftKey.localeCompare(rightKey);
+      });
+    }
+
+    function buildInstructionPlanningContent() {
+      const lessonOccurrences = buildInstructionLessonOccurrences();
+      const classColor = getClassDisplayColor(activeClass);
+      const classLabel = getClassDisplayName(activeClass) || "Aktive Lerngruppe";
+      const totalLessonCount = lessonOccurrences.reduce(function (sum, occurrence) {
+        return sum + Math.max(1, Number(occurrence && occurrence.lessonCount || 1));
+      }, 0);
+      const remainingLessonCount = lessonOccurrences.reduce(function (sum, occurrence) {
+        return sum + Math.max(0, Number(occurrence && occurrence.remainingLessonCount || 0));
+      }, 0);
+
+      if (!activeClass) {
+        return [
+          '<div class="panel-grid panel-grid--planung-instruction">',
+          '<article class="panel panel--full">',
+          '<p class="empty-message">Waehle zuerst eine Lerngruppe bzw. setze eine aktive Lerngruppe, damit die Unterrichtsplanung echte Unterrichtsstunden anzeigen kann.</p>',
+          '</article>',
+          '</div>'
+        ].join("");
+      }
+
+      return [
+        '<div class="panel-grid panel-grid--planung-instruction">',
+        '<article class="panel panel--full panel--planung-instruction">',
+        '<section class="planning-instruction__section planning-instruction__section--planned">',
+        '<div class="planning-instruction__section-header">',
+        '<h2 class="planning-instruction__title">Geplante Unterrichtsstunden</h2>',
+        '</div>',
+        '<p class="empty-message">Noch keine geplanten Unterrichtsstunden vorhanden.</p>',
+        '</section>',
+        '<section class="planning-instruction__section planning-instruction__section--available">',
+        '<button class="planning-instruction__section-toggle" type="button" aria-expanded="', isPlanningAvailableLessonsExpanded ? 'true' : 'false', '" onclick="return window.UnterrichtsassistentApp.togglePlanningAvailableLessons()">',
+        '<span class="planning-instruction__section-toggle-main"><span class="planning-instruction__section-toggle-arrow" aria-hidden="true">', isPlanningAvailableLessonsExpanded ? '&#9650;' : '&#9660;', '</span><span class="planning-instruction__title">Verfuegbare Unterrichtsstunden</span></span>',
+        '<span class="planning-instruction__count planning-instruction__count--combined"><strong>', escapeValue(String(remainingLessonCount)), '</strong>&nbsp;von&nbsp;<strong>', escapeValue(String(totalLessonCount)), '</strong>&nbsp;Stunden&nbsp;verfuegbar</span>',
+        '</button>',
+        isPlanningAvailableLessonsExpanded
+          ? (
+              lessonOccurrences.length
+                ? '<div class="planning-instruction__grid">' + lessonOccurrences.map(function (occurrence) {
+                    return [
+                      '<article class="planning-instruction__lesson', Number(occurrence.remainingLessonCount || 0) <= 0 ? ' planning-instruction__lesson--past' : '', '" style="--planning-instruction-color:', escapeValue(classColor), ';">',
+                      '<div class="planning-instruction__lesson-date">', escapeValue(formatShortDateLabel(occurrence.lessonDate)), '</div>',
+                      '<div class="planning-instruction__lesson-count">', escapeValue(String(Math.max(1, Number(occurrence.lessonCount || 1)))), '</div>',
+                      '</article>'
+                    ].join("");
+                  }).join("") + '</div>'
+                : '<p class="empty-message">Fuer die aktive Lerngruppe wurden im aktuellen Schuljahr keine tatsaechlichen Unterrichtsstunden gefunden.</p>'
+            )
+          : '',
+        '</section>',
+        '</article>',
+        '</div>'
+      ].join("");
+    }
 
     if (!startDate || !endDate || startDate > endDate) {
       return [
@@ -534,7 +712,7 @@ window.Unterrichtsassistent.ui.views.planung = {
       ].join("");
     }
 
-    if (isPlanningAdminMode) {
+    if (isPlanningAdminMode && planningViewMode === "jahresplanung") {
       return [
         '<div class="panel-grid panel-grid--planung">',
         '<article class="panel panel--full">',
@@ -542,6 +720,10 @@ window.Unterrichtsassistent.ui.views.planung = {
         '</article>',
         '</div>'
       ].join("");
+    }
+
+    if (planningViewMode === "unterrichtsplanung") {
+      return buildInstructionPlanningContent();
     }
 
     if (activePlanningDate && activePlanningDate > endDate) {

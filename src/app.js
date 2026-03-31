@@ -71,6 +71,7 @@ let classAnalysisEnabledTypes = {
 let timetableViewMode = "ansicht";
 let seatPlanViewMode = "ansicht";
 let planningViewMode = "jahresplanung";
+let planningAvailableLessonsExpanded = true;
 let planningAdminMode = false;
 let activePlanningEventDraft = null;
 let activePlanningRangeDraft = null;
@@ -2011,6 +2012,23 @@ function updateHeaderSubtitle(viewId, config) {
   }
 
   if (viewId === "sitzplan" && schoolService) {
+    const activeClass = schoolService.getActiveClass();
+    const subtitle = activeClass
+      ? [activeClass.name || "", activeClass.subject || ""].join(" ").trim()
+      : "";
+
+    if (!subtitle) {
+      viewSubtitle.textContent = "";
+      viewSubtitle.hidden = true;
+      return;
+    }
+
+    viewSubtitle.innerHTML = '<span class="content__subtitle-main">' + escapeHtml(subtitle) + "</span>";
+    viewSubtitle.hidden = false;
+    return;
+  }
+
+  if (viewId === "planung" && schoolService && planningViewMode === "unterrichtsplanung") {
     const activeClass = schoolService.getActiveClass();
     const subtitle = activeClass
       ? [activeClass.name || "", activeClass.subject || ""].join(" ").trim()
@@ -7890,6 +7908,9 @@ window.UnterrichtsassistentApp.getSeatPlanViewMode = function () {
 window.UnterrichtsassistentApp.getPlanningViewMode = function () {
   return planningViewMode;
 };
+window.UnterrichtsassistentApp.isPlanningAvailableLessonsExpanded = function () {
+  return planningAvailableLessonsExpanded !== false;
+};
 window.UnterrichtsassistentApp.isPlanningAdminMode = function () {
   return planningAdminMode;
 };
@@ -7937,6 +7958,15 @@ window.UnterrichtsassistentApp.setPlanningViewMode = function (nextMode) {
   planningViewMode = ["jahresplanung", "unterrichtsplanung", "stoffplanung"].indexOf(String(nextMode || "")) >= 0
     ? String(nextMode)
     : "jahresplanung";
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.togglePlanningAvailableLessons = function () {
+  planningAvailableLessonsExpanded = !planningAvailableLessonsExpanded;
 
   if (activeViewId === "planung") {
     setActiveView("planung");
