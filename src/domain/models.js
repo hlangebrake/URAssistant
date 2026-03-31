@@ -214,6 +214,37 @@ class PlanningCategory {
     }
   }
 
+class CurriculumSeries {
+  constructor({ id, classId = "", topic = "", hourDemand = 0, color = "", nextSeriesId = "" }) {
+    this.id = id;
+    this.classId = classId;
+    this.topic = topic;
+    this.hourDemand = Math.max(0, Number(hourDemand) || 0);
+    this.color = color;
+    this.nextSeriesId = nextSeriesId;
+  }
+}
+
+class CurriculumSequence {
+  constructor({ id, seriesId = "", topic = "", hourDemand = 0, nextSequenceId = "" }) {
+    this.id = id;
+    this.seriesId = seriesId;
+    this.topic = topic;
+    this.hourDemand = Math.max(0, Number(hourDemand) || 0);
+    this.nextSequenceId = nextSequenceId;
+  }
+}
+
+class CurriculumLessonPlan {
+  constructor({ id, sequenceId = "", topic = "", hourType = "single", nextLessonId = "" }) {
+    this.id = id;
+    this.sequenceId = sequenceId;
+    this.topic = topic;
+    this.hourType = hourType === "double" ? "double" : "single";
+    this.nextLessonId = nextLessonId;
+  }
+}
+
 window.Unterrichtsassistent.domain.Student = Student;
 window.Unterrichtsassistent.domain.SchoolClass = SchoolClass;
 window.Unterrichtsassistent.domain.Lesson = Lesson;
@@ -228,3 +259,6 @@ window.Unterrichtsassistent.domain.SeatPlan = SeatPlan;
 window.Unterrichtsassistent.domain.SeatOrder = SeatOrder;
 window.Unterrichtsassistent.domain.PlanningEvent = PlanningEvent;
 window.Unterrichtsassistent.domain.PlanningCategory = PlanningCategory;
+window.Unterrichtsassistent.domain.CurriculumSeries = CurriculumSeries;
+window.Unterrichtsassistent.domain.CurriculumSequence = CurriculumSequence;
+window.Unterrichtsassistent.domain.CurriculumLessonPlan = CurriculumLessonPlan;

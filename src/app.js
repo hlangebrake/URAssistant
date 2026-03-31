@@ -74,6 +74,18 @@ let planningViewMode = "jahresplanung";
 let planningAvailableLessonsExpanded = true;
 let planningAdminMode = false;
 let activePlanningEventDraft = null;
+let activeCurriculumSeriesDraft = null;
+let activeCurriculumSequenceDraft = null;
+let activeCurriculumLessonDraft = null;
+let expandedCurriculumSeriesIds = [];
+let expandedCurriculumSequenceIds = [];
+let activeCurriculumSeriesDrag = null;
+let activeCurriculumSeriesDropIndicator = null;
+let activeCurriculumSeriesDragPreview = null;
+let activeCurriculumSequenceDrag = null;
+let activeCurriculumSequenceDropIndicator = null;
+let activeCurriculumLessonDrag = null;
+let activeCurriculumLessonDropIndicator = null;
 let activePlanningRangeDraft = null;
 let suppressPlanningDayClickUntil = 0;
 let planningSidebarFilterOpen = false;
@@ -111,8 +123,12 @@ let activeUnterrichtAssessmentPress = null;
 let unterrichtAssessmentQuickMenu = null;
 let unterrichtAssessmentQuickOverlay = null;
 let activeClassAnalysisDragScroll = null;
+let activePlanningCurriculumDragScroll = null;
+let activePlanningCurriculumAutoScroll = null;
+let planningCurriculumAutoScrollFrameId = 0;
 let hasBoundClassAnalysisResize = false;
 let classAnalysisScrollLeftByClassId = {};
+let planningCurriculumScrollLeftByClassId = {};
 let activeKnowledgeGapSuggestionListId = "";
 let activeKnowledgeGapSuggestionInputId = "";
 let activeKnowledgeGapSuggestionBlurTimerId = 0;
@@ -875,6 +891,746 @@ function getPlanningCollections(snapshot) {
     events: source.planningEvents,
     categories: source.planningCategories
   };
+}
+
+function getCurriculumCollections(snapshot) {
+  const source = snapshot || {};
+
+  if (!Array.isArray(source.curriculumSeries)) {
+    source.curriculumSeries = [];
+  }
+
+  if (!Array.isArray(source.curriculumSequences)) {
+    source.curriculumSequences = [];
+  }
+
+  if (!Array.isArray(source.curriculumLessonPlans)) {
+    source.curriculumLessonPlans = [];
+  }
+
+  return {
+    series: source.curriculumSeries,
+    sequences: source.curriculumSequences,
+    lessons: source.curriculumLessonPlans
+  };
+}
+
+function getOrderedCurriculumSeriesForClass(snapshot, classId) {
+  const collections = getCurriculumCollections(snapshot);
+  const items = collections.series.filter(function (entry) {
+    return String(entry && entry.classId || "").trim() === String(classId || "").trim();
+  });
+  const incomingCounts = {};
+  const itemById = {};
+  const ordered = [];
+  let current = null;
+
+  items.forEach(function (entry) {
+    const entryId = String(entry && entry.id || "").trim();
+
+    if (!entryId) {
+      return;
+    }
+
+    itemById[entryId] = entry;
+    incomingCounts[entryId] = incomingCounts[entryId] || 0;
+  });
+
+  items.forEach(function (entry) {
+    const nextId = String(entry && entry.nextSeriesId || "").trim();
+
+    if (nextId && Object.prototype.hasOwnProperty.call(incomingCounts, nextId)) {
+      incomingCounts[nextId] += 1;
+    }
+  });
+
+  current = items.find(function (entry) {
+    return !incomingCounts[String(entry && entry.id || "").trim()];
+  }) || items[0] || null;
+
+  while (current) {
+    const currentId = String(current && current.id || "").trim();
+    const nextId = String(current && current.nextSeriesId || "").trim();
+
+    if (!currentId || ordered.some(function (entry) {
+      return String(entry && entry.id || "").trim() === currentId;
+    })) {
+      break;
+    }
+
+    ordered.push(current);
+    current = nextId && itemById[nextId] ? itemById[nextId] : null;
+  }
+
+  items.forEach(function (entry) {
+    if (!ordered.some(function (orderedEntry) {
+      return String(orderedEntry && orderedEntry.id || "").trim() === String(entry && entry.id || "").trim();
+    })) {
+      ordered.push(entry);
+    }
+  });
+
+  return ordered;
+}
+
+function reconnectCurriculumSeriesChain(items) {
+  items.forEach(function (entry, index) {
+    entry.nextSeriesId = items[index + 1] ? String(items[index + 1].id || "").trim() : "";
+  });
+}
+
+function applyCurriculumSeriesDropIndicatorToDom() {
+  const cells = document.querySelectorAll(".planning-curriculum__cell--series[data-series-drop-target], .planning-curriculum__cell--add[data-series-drop-target-add='true']");
+
+  eachNode(cells, function (cell) {
+    cell.classList.remove("is-drop-target", "is-drop-target--before", "is-drop-target--after");
+    cell.style.removeProperty("--planning-curriculum-drop-color");
+  });
+
+  if (!activeCurriculumSeriesDropIndicator) {
+    return;
+  }
+
+  const targetSeriesId = String(activeCurriculumSeriesDropIndicator.targetSeriesId || "").trim();
+  const placement = String(activeCurriculumSeriesDropIndicator.placement || "").trim() === "before" ? "before" : "after";
+  const color = normalizePlanningColorValue(activeCurriculumSeriesDropIndicator.color) || "#3975ab";
+  const selector = targetSeriesId
+    ? '.planning-curriculum__cell--series[data-series-drop-target="' + targetSeriesId.replace(/"/g, '\\"') + '"]'
+    : ".planning-curriculum__cell--add[data-series-drop-target-add='true']";
+  const targetCell = document.querySelector(selector);
+
+  if (!targetCell) {
+    return;
+  }
+
+  targetCell.classList.add("is-drop-target", placement === "before" ? "is-drop-target--before" : "is-drop-target--after");
+  targetCell.style.setProperty("--planning-curriculum-drop-color", color);
+}
+
+function clearCurriculumSeriesDropIndicator() {
+  activeCurriculumSeriesDropIndicator = null;
+  applyCurriculumSeriesDropIndicatorToDom();
+}
+
+function setCurriculumSeriesDropIndicator(targetSeriesId, placement, color) {
+  activeCurriculumSeriesDropIndicator = {
+    targetSeriesId: String(targetSeriesId || "").trim(),
+    placement: placement === "before" ? "before" : "after",
+    color: normalizePlanningColorValue(color) || "#3975ab"
+  };
+  applyCurriculumSeriesDropIndicatorToDom();
+}
+
+function ensureCurriculumSeriesDragPreview() {
+  if (activeCurriculumSeriesDragPreview && activeCurriculumSeriesDragPreview.parentNode) {
+    return activeCurriculumSeriesDragPreview;
+  }
+
+  activeCurriculumSeriesDragPreview = document.createElement("div");
+  activeCurriculumSeriesDragPreview.className = "planning-curriculum__drag-preview";
+  document.body.appendChild(activeCurriculumSeriesDragPreview);
+  return activeCurriculumSeriesDragPreview;
+}
+
+function updateCurriculumSeriesDragPreview(clientX, clientY, color) {
+  const preview = ensureCurriculumSeriesDragPreview();
+
+  preview.style.background = normalizePlanningColorValue(color) || "#d9d4cb";
+  preview.style.left = String((Number(clientX) || 0) + 12) + "px";
+  preview.style.top = String((Number(clientY) || 0) - 12) + "px";
+  preview.hidden = false;
+}
+
+function removeCurriculumSeriesDragPreview() {
+  if (!activeCurriculumSeriesDragPreview) {
+    return;
+  }
+
+  if (activeCurriculumSeriesDragPreview.parentNode) {
+    activeCurriculumSeriesDragPreview.parentNode.removeChild(activeCurriculumSeriesDragPreview);
+  }
+
+  activeCurriculumSeriesDragPreview = null;
+}
+
+function getCurriculumSeriesDropTargetFromPoint(clientX, clientY) {
+  const target = document.elementFromPoint(Number(clientX) || 0, Number(clientY) || 0);
+  const dropCell = target && typeof target.closest === "function"
+    ? target.closest(".planning-curriculum__cell--series[data-series-drop-target], .planning-curriculum__cell--add[data-series-drop-target-add='true']")
+    : null;
+  const targetSeriesId = dropCell
+    ? String(dropCell.getAttribute("data-series-drop-target") || "").trim()
+    : "";
+  const placement = dropCell && dropCell.classList.contains("planning-curriculum__cell--series")
+    ? (((Number(clientX) || 0) <= (dropCell.getBoundingClientRect().left + (dropCell.getBoundingClientRect().width / 2))) ? "before" : "after")
+    : "after";
+
+  if (!dropCell) {
+    return null;
+  }
+
+  return {
+    targetSeriesId: targetSeriesId,
+    placement: placement
+  };
+}
+
+function clearCurriculumSeriesPointerDrag() {
+  if (!activeCurriculumSeriesDrag) {
+    return;
+  }
+
+  window.removeEventListener("pointermove", window.UnterrichtsassistentApp.handleCurriculumSeriesPointerMove);
+  window.removeEventListener("pointerup", window.UnterrichtsassistentApp.handleCurriculumSeriesPointerEnd);
+  window.removeEventListener("pointercancel", window.UnterrichtsassistentApp.handleCurriculumSeriesPointerEnd);
+  removeCurriculumSeriesDragPreview();
+  clearCurriculumSeriesDropIndicator();
+  stopPlanningCurriculumAutoScroll();
+  activeCurriculumSeriesDrag = null;
+}
+
+function getCurriculumSeriesDropPlacement(event) {
+  const target = event && event.currentTarget ? event.currentTarget : null;
+  const rect = target && typeof target.getBoundingClientRect === "function"
+    ? target.getBoundingClientRect()
+    : null;
+  const clientX = Number(event && event.clientX) || 0;
+
+  if (!rect) {
+    return "after";
+  }
+
+  return clientX <= rect.left + (rect.width / 2) ? "before" : "after";
+}
+
+function reorderCurriculumSeries(draggedSeriesId, targetSeriesId, placement) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
+  const normalizedDraggedSeriesId = String(draggedSeriesId || "").trim();
+  const normalizedTargetSeriesId = String(targetSeriesId || "").trim();
+  const normalizedPlacement = placement === "before" ? "before" : "after";
+  const orderedSeries = currentRawSnapshot && activeClass
+    ? getOrderedCurriculumSeriesForClass(currentRawSnapshot, activeClass.id).slice()
+    : [];
+  const draggedSeries = orderedSeries.find(function (entry) {
+    return String(entry && entry.id || "").trim() === normalizedDraggedSeriesId;
+  }) || null;
+  const remainingSeries = orderedSeries.filter(function (entry) {
+    return String(entry && entry.id || "").trim() !== normalizedDraggedSeriesId;
+  });
+  let insertIndex = remainingSeries.length;
+
+  if (!currentRawSnapshot || !activeClass || !collections || !draggedSeries) {
+    return false;
+  }
+
+  if (normalizedTargetSeriesId) {
+    const targetIndex = remainingSeries.findIndex(function (entry) {
+      return String(entry && entry.id || "").trim() === normalizedTargetSeriesId;
+    });
+
+    if (targetIndex >= 0) {
+      insertIndex = normalizedPlacement === "before" ? targetIndex : targetIndex + 1;
+    }
+  }
+
+  remainingSeries.splice(insertIndex, 0, draggedSeries);
+  reconnectCurriculumSeriesChain(remainingSeries);
+
+  remainingSeries.forEach(function (seriesItem) {
+    const collectionIndex = collections.series.findIndex(function (entry) {
+      return String(entry && entry.id || "").trim() === String(seriesItem && seriesItem.id || "").trim();
+    });
+
+    if (collectionIndex >= 0) {
+      collections.series[collectionIndex] = seriesItem;
+    }
+  });
+
+  currentRawSnapshot.curriculumSeries = collections.series;
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return true;
+}
+
+function applyCurriculumSequenceDropIndicatorToDom() {
+  const targets = document.querySelectorAll(".planning-curriculum__sequence-block[data-sequence-drop-target], .planning-curriculum__add--sequence[data-sequence-drop-target-add='true']");
+
+  eachNode(targets, function (target) {
+    target.classList.remove("is-drop-target", "is-drop-target--before", "is-drop-target--after");
+    target.style.removeProperty("--planning-curriculum-drop-color");
+  });
+
+  if (!activeCurriculumSequenceDropIndicator) {
+    return;
+  }
+
+  const targetSequenceId = String(activeCurriculumSequenceDropIndicator.targetSequenceId || "").trim();
+  const targetSeriesId = String(activeCurriculumSequenceDropIndicator.seriesId || "").trim();
+  const placement = String(activeCurriculumSequenceDropIndicator.placement || "").trim() === "before" ? "before" : "after";
+  const color = normalizePlanningColorValue(activeCurriculumSequenceDropIndicator.color) || "#3975ab";
+  const selector = targetSequenceId
+    ? '.planning-curriculum__sequence-block[data-sequence-drop-target="' + targetSequenceId.replace(/"/g, '\\"') + '"]'
+    : '.planning-curriculum__add--sequence[data-sequence-drop-target-add="true"][data-series-id="' + targetSeriesId.replace(/"/g, '\\"') + '"]';
+  const target = document.querySelector(selector);
+
+  if (!target) {
+    return;
+  }
+
+  target.classList.add("is-drop-target", placement === "before" ? "is-drop-target--before" : "is-drop-target--after");
+  target.style.setProperty("--planning-curriculum-drop-color", color);
+}
+
+function clearCurriculumSequenceDropIndicator() {
+  activeCurriculumSequenceDropIndicator = null;
+  applyCurriculumSequenceDropIndicatorToDom();
+}
+
+function setCurriculumSequenceDropIndicator(seriesId, targetSequenceId, placement, color) {
+  activeCurriculumSequenceDropIndicator = {
+    seriesId: String(seriesId || "").trim(),
+    targetSequenceId: String(targetSequenceId || "").trim(),
+    placement: placement === "before" ? "before" : "after",
+    color: normalizePlanningColorValue(color) || "#3975ab"
+  };
+  applyCurriculumSequenceDropIndicatorToDom();
+}
+
+function reorderCurriculumSequences(sourceSeriesId, draggedSequenceId, targetSeriesId, targetSequenceId, placement) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
+  const normalizedSourceSeriesId = String(sourceSeriesId || "").trim();
+  const normalizedTargetSeriesId = String(targetSeriesId || sourceSeriesId || "").trim();
+  const normalizedDraggedSequenceId = String(draggedSequenceId || "").trim();
+  const normalizedTargetSequenceId = String(targetSequenceId || "").trim();
+  const normalizedPlacement = placement === "before" ? "before" : "after";
+  const sourceSequences = currentRawSnapshot
+    ? getOrderedCurriculumSequencesForSeries(currentRawSnapshot, normalizedSourceSeriesId).slice()
+    : [];
+  const targetSequences = currentRawSnapshot
+    ? getOrderedCurriculumSequencesForSeries(currentRawSnapshot, normalizedTargetSeriesId).slice()
+    : [];
+  const draggedSequence = sourceSequences.find(function (entry) {
+    return String(entry && entry.id || "").trim() === normalizedDraggedSequenceId;
+  }) || null;
+  const remainingSourceSequences = sourceSequences.filter(function (entry) {
+    return String(entry && entry.id || "").trim() !== normalizedDraggedSequenceId;
+  });
+  const targetSequenceList = normalizedSourceSeriesId === normalizedTargetSeriesId
+    ? remainingSourceSequences.slice()
+    : targetSequences.slice();
+  let insertIndex = targetSequenceList.length;
+
+  if (!currentRawSnapshot || !collections || !normalizedSourceSeriesId || !normalizedTargetSeriesId || !draggedSequence) {
+    return false;
+  }
+
+  draggedSequence.seriesId = normalizedTargetSeriesId;
+
+  if (normalizedTargetSequenceId) {
+    const targetIndex = targetSequenceList.findIndex(function (entry) {
+      return String(entry && entry.id || "").trim() === normalizedTargetSequenceId;
+    });
+
+    if (targetIndex >= 0) {
+      insertIndex = normalizedPlacement === "before" ? targetIndex : targetIndex + 1;
+    }
+  }
+
+  targetSequenceList.splice(insertIndex, 0, draggedSequence);
+  reconnectCurriculumSequenceChain(remainingSourceSequences);
+  reconnectCurriculumSequenceChain(targetSequenceList);
+
+  collections.sequences.forEach(function (sequenceItem) {
+    const collectionIndex = collections.sequences.findIndex(function (entry) {
+      return String(entry && entry.id || "").trim() === String(sequenceItem && sequenceItem.id || "").trim();
+    });
+    const replacement = targetSequenceList.concat(remainingSourceSequences).find(function (entry) {
+      return String(entry && entry.id || "").trim() === String(sequenceItem && sequenceItem.id || "").trim();
+    }) || sequenceItem;
+
+    if (collectionIndex >= 0) {
+      collections.sequences[collectionIndex] = replacement;
+    }
+  });
+
+  currentRawSnapshot.curriculumSequences = collections.sequences;
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return true;
+}
+
+function getCurriculumSequenceDropTargetFromPoint(clientX, clientY) {
+  const target = document.elementFromPoint(Number(clientX) || 0, Number(clientY) || 0);
+  const dropTarget = target && typeof target.closest === "function"
+    ? target.closest(".planning-curriculum__sequence-block[data-sequence-drop-target], .planning-curriculum__add--sequence[data-sequence-drop-target-add='true']")
+    : null;
+  const sequenceId = dropTarget ? String(dropTarget.getAttribute("data-sequence-drop-target") || "").trim() : "";
+  const seriesId = dropTarget ? String(dropTarget.getAttribute("data-series-id") || "").trim() : "";
+  const rect = dropTarget && typeof dropTarget.getBoundingClientRect === "function" ? dropTarget.getBoundingClientRect() : null;
+  const placement = sequenceId && rect && (Number(clientX) || 0) <= (rect.left + (rect.width / 2)) ? "before" : "after";
+
+  if (!dropTarget) {
+    return null;
+  }
+
+  return {
+    seriesId: seriesId,
+    targetSequenceId: sequenceId,
+    placement: placement
+  };
+}
+
+function clearCurriculumSequencePointerDrag() {
+  if (!activeCurriculumSequenceDrag) {
+    return;
+  }
+
+  window.removeEventListener("pointermove", window.UnterrichtsassistentApp.handleCurriculumSequencePointerMove);
+  window.removeEventListener("pointerup", window.UnterrichtsassistentApp.handleCurriculumSequencePointerEnd);
+  window.removeEventListener("pointercancel", window.UnterrichtsassistentApp.handleCurriculumSequencePointerEnd);
+  removeCurriculumSeriesDragPreview();
+  clearCurriculumSequenceDropIndicator();
+  stopPlanningCurriculumAutoScroll();
+  activeCurriculumSequenceDrag = null;
+}
+
+function applyCurriculumLessonDropIndicatorToDom() {
+  const targets = document.querySelectorAll(".planning-curriculum__lesson-block[data-lesson-drop-target], .planning-curriculum__add--lesson[data-lesson-drop-target-add='true']");
+
+  eachNode(targets, function (target) {
+    target.classList.remove("is-drop-target", "is-drop-target--before", "is-drop-target--after");
+    target.style.removeProperty("--planning-curriculum-drop-color");
+  });
+
+  if (!activeCurriculumLessonDropIndicator) {
+    return;
+  }
+
+  const targetLessonId = String(activeCurriculumLessonDropIndicator.targetLessonId || "").trim();
+  const sequenceId = String(activeCurriculumLessonDropIndicator.sequenceId || "").trim();
+  const placement = String(activeCurriculumLessonDropIndicator.placement || "").trim() === "before" ? "before" : "after";
+  const color = normalizePlanningColorValue(activeCurriculumLessonDropIndicator.color) || "#3975ab";
+  const selector = targetLessonId
+    ? '.planning-curriculum__lesson-block[data-lesson-drop-target="' + targetLessonId.replace(/"/g, '\\"') + '"]'
+    : '.planning-curriculum__add--lesson[data-lesson-drop-target-add="true"][data-sequence-id="' + sequenceId.replace(/"/g, '\\"') + '"]';
+  const target = document.querySelector(selector);
+
+  if (!target) {
+    return;
+  }
+
+  target.classList.add("is-drop-target", placement === "before" ? "is-drop-target--before" : "is-drop-target--after");
+  target.style.setProperty("--planning-curriculum-drop-color", color);
+}
+
+function clearCurriculumLessonDropIndicator() {
+  activeCurriculumLessonDropIndicator = null;
+  applyCurriculumLessonDropIndicatorToDom();
+}
+
+function setCurriculumLessonDropIndicator(sequenceId, targetLessonId, placement, color) {
+  activeCurriculumLessonDropIndicator = {
+    sequenceId: String(sequenceId || "").trim(),
+    targetLessonId: String(targetLessonId || "").trim(),
+    placement: placement === "before" ? "before" : "after",
+    color: normalizePlanningColorValue(color) || "#3975ab"
+  };
+  applyCurriculumLessonDropIndicatorToDom();
+}
+
+function reorderCurriculumLessons(sourceSequenceId, draggedLessonId, targetSequenceId, targetLessonId, placement) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
+  const normalizedSourceSequenceId = String(sourceSequenceId || "").trim();
+  const normalizedTargetSequenceId = String(targetSequenceId || sourceSequenceId || "").trim();
+  const normalizedDraggedLessonId = String(draggedLessonId || "").trim();
+  const normalizedTargetLessonId = String(targetLessonId || "").trim();
+  const normalizedPlacement = placement === "before" ? "before" : "after";
+  const sourceLessons = currentRawSnapshot
+    ? getOrderedCurriculumLessonsForSequence(currentRawSnapshot, normalizedSourceSequenceId).slice()
+    : [];
+  const targetLessons = currentRawSnapshot
+    ? getOrderedCurriculumLessonsForSequence(currentRawSnapshot, normalizedTargetSequenceId).slice()
+    : [];
+  const draggedLesson = sourceLessons.find(function (entry) {
+    return String(entry && entry.id || "").trim() === normalizedDraggedLessonId;
+  }) || null;
+  const remainingSourceLessons = sourceLessons.filter(function (entry) {
+    return String(entry && entry.id || "").trim() !== normalizedDraggedLessonId;
+  });
+  const targetLessonList = normalizedSourceSequenceId === normalizedTargetSequenceId
+    ? remainingSourceLessons.slice()
+    : targetLessons.slice();
+  let insertIndex = targetLessonList.length;
+
+  if (!currentRawSnapshot || !collections || !normalizedSourceSequenceId || !normalizedTargetSequenceId || !draggedLesson) {
+    return false;
+  }
+
+  draggedLesson.sequenceId = normalizedTargetSequenceId;
+
+  if (normalizedTargetLessonId) {
+    const targetIndex = targetLessonList.findIndex(function (entry) {
+      return String(entry && entry.id || "").trim() === normalizedTargetLessonId;
+    });
+
+    if (targetIndex >= 0) {
+      insertIndex = normalizedPlacement === "before" ? targetIndex : targetIndex + 1;
+    }
+  }
+
+  targetLessonList.splice(insertIndex, 0, draggedLesson);
+  reconnectCurriculumLessonChain(remainingSourceLessons);
+  reconnectCurriculumLessonChain(targetLessonList);
+
+  collections.lessons.forEach(function (lessonItem) {
+    const collectionIndex = collections.lessons.findIndex(function (entry) {
+      return String(entry && entry.id || "").trim() === String(lessonItem && lessonItem.id || "").trim();
+    });
+    const replacement = targetLessonList.concat(remainingSourceLessons).find(function (entry) {
+      return String(entry && entry.id || "").trim() === String(lessonItem && lessonItem.id || "").trim();
+    }) || lessonItem;
+
+    if (collectionIndex >= 0) {
+      collections.lessons[collectionIndex] = replacement;
+    }
+  });
+
+  currentRawSnapshot.curriculumLessonPlans = collections.lessons;
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return true;
+}
+
+function getCurriculumLessonDropTargetFromPoint(clientX, clientY) {
+  const target = document.elementFromPoint(Number(clientX) || 0, Number(clientY) || 0);
+  const dropTarget = target && typeof target.closest === "function"
+    ? target.closest(".planning-curriculum__lesson-block[data-lesson-drop-target], .planning-curriculum__add--lesson[data-lesson-drop-target-add='true']")
+    : null;
+  const lessonId = dropTarget ? String(dropTarget.getAttribute("data-lesson-drop-target") || "").trim() : "";
+  const sequenceId = dropTarget ? String(dropTarget.getAttribute("data-sequence-id") || "").trim() : "";
+  const rect = dropTarget && typeof dropTarget.getBoundingClientRect === "function" ? dropTarget.getBoundingClientRect() : null;
+  const placement = lessonId && rect && (Number(clientX) || 0) <= (rect.left + (rect.width / 2)) ? "before" : "after";
+
+  if (!dropTarget) {
+    return null;
+  }
+
+  return {
+    sequenceId: sequenceId,
+    targetLessonId: lessonId,
+    placement: placement
+  };
+}
+
+function clearCurriculumLessonPointerDrag() {
+  if (!activeCurriculumLessonDrag) {
+    return;
+  }
+
+  window.removeEventListener("pointermove", window.UnterrichtsassistentApp.handleCurriculumLessonPointerMove);
+  window.removeEventListener("pointerup", window.UnterrichtsassistentApp.handleCurriculumLessonPointerEnd);
+  window.removeEventListener("pointercancel", window.UnterrichtsassistentApp.handleCurriculumLessonPointerEnd);
+  removeCurriculumSeriesDragPreview();
+  clearCurriculumLessonDropIndicator();
+  stopPlanningCurriculumAutoScroll();
+  activeCurriculumLessonDrag = null;
+}
+
+function getOrderedCurriculumSequencesForSeries(snapshot, seriesId) {
+  const collections = getCurriculumCollections(snapshot);
+  const items = collections.sequences.filter(function (entry) {
+    return String(entry && entry.seriesId || "").trim() === String(seriesId || "").trim();
+  });
+  const incomingCounts = {};
+  const itemById = {};
+  const ordered = [];
+  let current = null;
+
+  items.forEach(function (entry) {
+    const entryId = String(entry && entry.id || "").trim();
+
+    if (!entryId) {
+      return;
+    }
+
+    itemById[entryId] = entry;
+    incomingCounts[entryId] = incomingCounts[entryId] || 0;
+  });
+
+  items.forEach(function (entry) {
+    const nextId = String(entry && entry.nextSequenceId || "").trim();
+
+    if (nextId && Object.prototype.hasOwnProperty.call(incomingCounts, nextId)) {
+      incomingCounts[nextId] += 1;
+    }
+  });
+
+  current = items.find(function (entry) {
+    return !incomingCounts[String(entry && entry.id || "").trim()];
+  }) || items[0] || null;
+
+  while (current) {
+    const currentId = String(current && current.id || "").trim();
+    const nextId = String(current && current.nextSequenceId || "").trim();
+
+    if (!currentId || ordered.some(function (entry) {
+      return String(entry && entry.id || "").trim() === currentId;
+    })) {
+      break;
+    }
+
+    ordered.push(current);
+    current = nextId && itemById[nextId] ? itemById[nextId] : null;
+  }
+
+  items.forEach(function (entry) {
+    if (!ordered.some(function (orderedEntry) {
+      return String(orderedEntry && orderedEntry.id || "").trim() === String(entry && entry.id || "").trim();
+    })) {
+      ordered.push(entry);
+    }
+  });
+
+  return ordered;
+}
+
+function reconnectCurriculumSequenceChain(items) {
+  items.forEach(function (entry, index) {
+    entry.nextSequenceId = items[index + 1] ? String(items[index + 1].id || "").trim() : "";
+  });
+}
+
+function getOrderedCurriculumLessonsForSequence(snapshot, sequenceId) {
+  const collections = getCurriculumCollections(snapshot);
+  const items = collections.lessons.filter(function (entry) {
+    return String(entry && entry.sequenceId || "").trim() === String(sequenceId || "").trim();
+  });
+  const incomingCounts = {};
+  const itemById = {};
+  const ordered = [];
+  let current = null;
+
+  items.forEach(function (entry) {
+    const entryId = String(entry && entry.id || "").trim();
+
+    if (!entryId) {
+      return;
+    }
+
+    itemById[entryId] = entry;
+    incomingCounts[entryId] = incomingCounts[entryId] || 0;
+  });
+
+  items.forEach(function (entry) {
+    const nextId = String(entry && entry.nextLessonId || "").trim();
+
+    if (nextId && Object.prototype.hasOwnProperty.call(incomingCounts, nextId)) {
+      incomingCounts[nextId] += 1;
+    }
+  });
+
+  current = items.find(function (entry) {
+    return !incomingCounts[String(entry && entry.id || "").trim()];
+  }) || items[0] || null;
+
+  while (current) {
+    const currentId = String(current && current.id || "").trim();
+    const nextId = String(current && current.nextLessonId || "").trim();
+
+    if (!currentId || ordered.some(function (entry) {
+      return String(entry && entry.id || "").trim() === currentId;
+    })) {
+      break;
+    }
+
+    ordered.push(current);
+    current = nextId && itemById[nextId] ? itemById[nextId] : null;
+  }
+
+  items.forEach(function (entry) {
+    if (!ordered.some(function (orderedEntry) {
+      return String(orderedEntry && orderedEntry.id || "").trim() === String(entry && entry.id || "").trim();
+    })) {
+      ordered.push(entry);
+    }
+  });
+
+  return ordered;
+}
+
+function reconnectCurriculumLessonChain(items) {
+  items.forEach(function (entry, index) {
+    entry.nextLessonId = items[index + 1] ? String(items[index + 1].id || "").trim() : "";
+  });
+}
+
+function createRandomCurriculumSeriesColor() {
+  const hue = Math.floor(Math.random() * 360);
+  const saturation = 42 + Math.floor(Math.random() * 14);
+  const lightness = 82 + Math.floor(Math.random() * 8);
+
+  function toHexChannel(channelValue) {
+    return Math.max(0, Math.min(255, Math.round(channelValue))).toString(16).padStart(2, "0");
+  }
+
+  function hslToHex(h, s, l) {
+    const normalizedS = s / 100;
+    const normalizedL = l / 100;
+    const chroma = (1 - Math.abs((2 * normalizedL) - 1)) * normalizedS;
+    const scaledHue = h / 60;
+    const secondComponent = chroma * (1 - Math.abs((scaledHue % 2) - 1));
+    const match = normalizedL - (chroma / 2);
+    let red = 0;
+    let green = 0;
+    let blue = 0;
+
+    if (scaledHue >= 0 && scaledHue < 1) {
+      red = chroma;
+      green = secondComponent;
+    } else if (scaledHue < 2) {
+      red = secondComponent;
+      green = chroma;
+    } else if (scaledHue < 3) {
+      green = chroma;
+      blue = secondComponent;
+    } else if (scaledHue < 4) {
+      green = secondComponent;
+      blue = chroma;
+    } else if (scaledHue < 5) {
+      red = secondComponent;
+      blue = chroma;
+    } else {
+      red = chroma;
+      blue = secondComponent;
+    }
+
+    return "#" + [
+      toHexChannel((red + match) * 255),
+      toHexChannel((green + match) * 255),
+      toHexChannel((blue + match) * 255)
+    ].join("");
+  }
+
+  return hslToHex(hue, saturation, lightness);
+}
+
+function getCurriculumSeriesColor(seriesItem, fallbackKey) {
+  const normalizedColor = normalizePlanningColorValue(seriesItem && seriesItem.color);
+
+  if (normalizedColor) {
+    return normalizedColor;
+  }
+
+  if (!seriesItem && !fallbackKey) {
+    return createRandomCurriculumSeriesColor();
+  }
+
+  if (typeof createPastelColorFn === "function") {
+    return createPastelColorFn(String(fallbackKey || (seriesItem && seriesItem.topic) || "reihe"));
+  }
+
+  return "#d9d4cb";
 }
 
 function getDefaultPlanningCategoryNames(snapshot) {
@@ -2028,7 +2784,7 @@ function updateHeaderSubtitle(viewId, config) {
     return;
   }
 
-  if (viewId === "planung" && schoolService && planningViewMode === "unterrichtsplanung") {
+  if (viewId === "planung" && schoolService && (planningViewMode === "unterrichtsplanung" || planningViewMode === "stoffplanung")) {
     const activeClass = schoolService.getActiveClass();
     const subtitle = activeClass
       ? [activeClass.name || "", activeClass.subject || ""].join(" ").trim()
@@ -2331,6 +3087,141 @@ function initializeClassAnalysisInteractions() {
   window.requestAnimationFrame(syncClassAnalysisTableLayout);
 }
 
+function clearPlanningCurriculumDragScroll() {
+  if (!activePlanningCurriculumDragScroll) {
+    return;
+  }
+
+  window.removeEventListener("pointermove", window.UnterrichtsassistentApp.handlePlanningCurriculumDragScrollMove);
+  window.removeEventListener("pointerup", window.UnterrichtsassistentApp.handlePlanningCurriculumDragScrollEnd);
+  window.removeEventListener("pointercancel", window.UnterrichtsassistentApp.handlePlanningCurriculumDragScrollEnd);
+  activePlanningCurriculumDragScroll.wrap.classList.remove("is-dragging");
+  activePlanningCurriculumDragScroll = null;
+}
+
+function syncPlanningCurriculumTableLayout() {
+  const wraps = document.querySelectorAll(".planning-curriculum__table-wrap[data-drag-scroll='true']");
+
+  eachNode(wraps, function (wrap) {
+    const classId = String(wrap.dataset.classId || "");
+    const storedScrollLeft = classId && Object.prototype.hasOwnProperty.call(planningCurriculumScrollLeftByClassId, classId)
+      ? Number(planningCurriculumScrollLeftByClassId[classId]) || 0
+      : wrap.scrollLeft;
+
+    wrap.scrollLeft = Math.max(0, Math.min(storedScrollLeft, Math.max(0, wrap.scrollWidth - wrap.clientWidth)));
+  });
+}
+
+function stopPlanningCurriculumAutoScroll() {
+  if (planningCurriculumAutoScrollFrameId) {
+    window.cancelAnimationFrame(planningCurriculumAutoScrollFrameId);
+    planningCurriculumAutoScrollFrameId = 0;
+  }
+
+  if (!activePlanningCurriculumAutoScroll) {
+    return;
+  }
+
+  activePlanningCurriculumAutoScroll = null;
+}
+
+function runPlanningCurriculumAutoScrollFrame() {
+  if (!activePlanningCurriculumAutoScroll || !activePlanningCurriculumAutoScroll.wrap) {
+    planningCurriculumAutoScrollFrameId = 0;
+    return;
+  }
+
+  const wrap = activePlanningCurriculumAutoScroll.wrap;
+
+  wrap.scrollLeft = Math.max(0, Math.min(wrap.scrollLeft + activePlanningCurriculumAutoScroll.step, Math.max(0, wrap.scrollWidth - wrap.clientWidth)));
+  if (wrap.dataset.classId) {
+    planningCurriculumScrollLeftByClassId[String(wrap.dataset.classId || "")] = wrap.scrollLeft;
+  }
+
+  planningCurriculumAutoScrollFrameId = window.requestAnimationFrame(runPlanningCurriculumAutoScrollFrame);
+}
+
+function updatePlanningCurriculumAutoScroll(clientX) {
+  const wrap = document.querySelector(".planning-curriculum__table-wrap[data-drag-scroll='true']");
+  const rect = wrap && typeof wrap.getBoundingClientRect === "function" ? wrap.getBoundingClientRect() : null;
+  const threshold = 56;
+  const maxStep = 18;
+  let direction = 0;
+  let intensity = 0;
+
+  if (!wrap || !rect) {
+    stopPlanningCurriculumAutoScroll();
+    return;
+  }
+
+  if (clientX <= rect.left + threshold) {
+    direction = -1;
+    intensity = Math.min(1, Math.max(0, (rect.left + threshold - clientX) / threshold));
+  } else if (clientX >= rect.right - threshold) {
+    direction = 1;
+    intensity = Math.min(1, Math.max(0, (clientX - (rect.right - threshold)) / threshold));
+  }
+
+  if (!direction) {
+    stopPlanningCurriculumAutoScroll();
+    return;
+  }
+
+  activePlanningCurriculumAutoScroll = {
+    wrap: wrap,
+    step: Math.max(4, Math.round(maxStep * intensity)) * direction
+  };
+  if (!planningCurriculumAutoScrollFrameId) {
+    planningCurriculumAutoScrollFrameId = window.requestAnimationFrame(runPlanningCurriculumAutoScrollFrame);
+  }
+}
+
+function initializePlanningCurriculumInteractions() {
+  const wraps = document.querySelectorAll(".planning-curriculum__table-wrap[data-drag-scroll='true']");
+
+  eachNode(wraps, function (wrap) {
+    if (wrap.dataset.dragScrollBound === "true") {
+      return;
+    }
+
+    wrap.dataset.dragScrollBound = "true";
+    wrap.addEventListener("scroll", function () {
+      const classId = String(wrap.dataset.classId || "");
+
+      if (!classId) {
+        return;
+      }
+
+      planningCurriculumScrollLeftByClassId[classId] = wrap.scrollLeft;
+    }, { passive: true });
+    wrap.addEventListener("pointerdown", function (event) {
+      if ((event.pointerType === "mouse" && event.button !== 0)
+        || event.target.closest("button, input, select, textarea, a, label")) {
+        return;
+      }
+
+      if (wrap.scrollWidth <= wrap.clientWidth + 2) {
+        return;
+      }
+
+      clearPlanningCurriculumDragScroll();
+      activePlanningCurriculumDragScroll = {
+        wrap: wrap,
+        pointerId: event.pointerId,
+        startX: Number(event.clientX) || 0,
+        startScrollLeft: wrap.scrollLeft,
+        didDrag: false
+      };
+
+      window.addEventListener("pointermove", window.UnterrichtsassistentApp.handlePlanningCurriculumDragScrollMove);
+      window.addEventListener("pointerup", window.UnterrichtsassistentApp.handlePlanningCurriculumDragScrollEnd);
+      window.addEventListener("pointercancel", window.UnterrichtsassistentApp.handlePlanningCurriculumDragScrollEnd);
+    });
+  });
+
+  window.requestAnimationFrame(syncPlanningCurriculumTableLayout);
+}
+
 function setActiveView(viewId) {
   const previousViewId = activeViewId;
   activeViewId = viewId;
@@ -2432,6 +3323,12 @@ function setActiveView(viewId) {
     initializeClassAnalysisInteractions();
   } else {
     clearClassAnalysisDragScroll();
+  }
+
+  if (viewId === "planung" && planningViewMode === "stoffplanung") {
+    initializePlanningCurriculumInteractions();
+  } else {
+    clearPlanningCurriculumDragScroll();
   }
 }
 
@@ -2564,6 +3461,18 @@ function createPlanningEventId() {
 
 function createPlanningCategoryId() {
   return "planning-category-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+}
+
+function createCurriculumSeriesId() {
+  return "curriculum-series-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+}
+
+function createCurriculumSequenceId() {
+  return "curriculum-sequence-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+}
+
+function createCurriculumLessonPlanId() {
+  return "curriculum-lesson-plan-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
 }
 
 function createAttendanceRecordId() {
@@ -6841,6 +7750,1014 @@ window.UnterrichtsassistentApp.closePlanningEventModal = function () {
 
   return false;
 };
+window.UnterrichtsassistentApp.openCurriculumSeriesModal = function (seriesId) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
+  const normalizedSeriesId = String(seriesId || "").trim();
+  let existingSeries = null;
+
+  if (planningViewMode !== "stoffplanung" || planningAdminMode || !activeClass) {
+    return false;
+  }
+
+  if (normalizedSeriesId && collections) {
+    existingSeries = collections.series.find(function (entry) {
+      return String(entry && entry.id || "").trim() === normalizedSeriesId
+        && String(entry && entry.classId || "").trim() === String(activeClass.id || "").trim();
+    }) || null;
+  }
+
+  activeCurriculumSequenceDraft = null;
+  activeCurriculumLessonDraft = null;
+  activeCurriculumSeriesDraft = existingSeries
+    ? {
+        id: String(existingSeries.id || "").trim(),
+        classId: String(existingSeries.classId || "").trim(),
+        topic: String(existingSeries.topic || "").trim(),
+        hourDemand: Math.max(0, Number(existingSeries.hourDemand) || 0),
+        color: getCurriculumSeriesColor(existingSeries, String(existingSeries.id || "").trim()),
+        nextSeriesId: String(existingSeries.nextSeriesId || "").trim()
+      }
+    : {
+        id: "",
+        classId: String(activeClass.id || "").trim(),
+        topic: "",
+        hourDemand: 0,
+        color: createRandomCurriculumSeriesColor(),
+        nextSeriesId: ""
+      };
+
+  setActiveView("planung");
+  return false;
+};
+window.UnterrichtsassistentApp.toggleCurriculumSeriesExpansion = function (seriesId) {
+  const normalizedSeriesId = String(seriesId || "").trim();
+  const currentIndex = expandedCurriculumSeriesIds.indexOf(normalizedSeriesId);
+
+  if (planningViewMode !== "stoffplanung" || !normalizedSeriesId) {
+    return false;
+  }
+
+  if (currentIndex >= 0) {
+    expandedCurriculumSeriesIds = expandedCurriculumSeriesIds.filter(function (entry) {
+      return entry !== normalizedSeriesId;
+    });
+    expandedCurriculumSequenceIds = expandedCurriculumSequenceIds.filter(function (entry) {
+      const parts = String(entry || "").split("::");
+      return parts[0] !== normalizedSeriesId;
+    });
+  } else {
+    expandedCurriculumSeriesIds = expandedCurriculumSeriesIds.concat([normalizedSeriesId]);
+  }
+
+  activeCurriculumSequenceDraft = null;
+  activeCurriculumLessonDraft = null;
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.startCurriculumSeriesDrag = function (event, seriesId) {
+  const normalizedSeriesId = String(seriesId || "").trim();
+  const normalizedColor = normalizePlanningColorValue(event && event.currentTarget ? event.currentTarget.getAttribute("data-series-color") : "") || "#d9d4cb";
+  const sourceElement = event && event.currentTarget ? event.currentTarget : null;
+
+  if (planningViewMode !== "stoffplanung" || !normalizedSeriesId || !event) {
+    return false;
+  }
+
+  activeCurriculumSeriesDrag = {
+    seriesId: normalizedSeriesId,
+    color: normalizedColor,
+    pointerId: typeof event.pointerId === "number" ? event.pointerId : null,
+    startX: Number(event.clientX) || 0,
+    startY: Number(event.clientY) || 0,
+    sourceElement: sourceElement,
+    isPointerDrag: typeof event.pointerId === "number",
+    didDrag: false
+  };
+  clearCurriculumSeriesDropIndicator();
+
+  if (typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+  if (typeof event.stopPropagation === "function") {
+    event.stopPropagation();
+  }
+
+  if (sourceElement && typeof event.pointerId === "number") {
+    trySetPointerCapture(sourceElement, event.pointerId);
+    window.addEventListener("pointermove", window.UnterrichtsassistentApp.handleCurriculumSeriesPointerMove);
+    window.addEventListener("pointerup", window.UnterrichtsassistentApp.handleCurriculumSeriesPointerEnd);
+    window.addEventListener("pointercancel", window.UnterrichtsassistentApp.handleCurriculumSeriesPointerEnd);
+    updateCurriculumSeriesDragPreview(event.clientX, event.clientY, normalizedColor);
+    return false;
+  }
+
+  if (event && event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", normalizedSeriesId);
+  }
+
+  return true;
+};
+window.UnterrichtsassistentApp.allowCurriculumSeriesDrop = function (event, targetSeriesId) {
+  const normalizedTargetSeriesId = String(targetSeriesId || "").trim();
+  const draggedSeriesId = activeCurriculumSeriesDrag
+    ? String(activeCurriculumSeriesDrag.seriesId || "").trim()
+    : String(event && event.dataTransfer ? event.dataTransfer.getData("text/plain") || "" : "").trim();
+  const placement = normalizedTargetSeriesId
+    ? getCurriculumSeriesDropPlacement(event)
+    : "after";
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  if (event && event.dataTransfer) {
+    event.dataTransfer.dropEffect = "move";
+  }
+
+  if (!draggedSeriesId || draggedSeriesId === normalizedTargetSeriesId) {
+    clearCurriculumSeriesDropIndicator();
+    return false;
+  }
+
+  setCurriculumSeriesDropIndicator(
+    normalizedTargetSeriesId,
+    placement,
+    activeCurriculumSeriesDrag ? activeCurriculumSeriesDrag.color : ""
+  );
+  return false;
+};
+window.UnterrichtsassistentApp.handleCurriculumSeriesDropLeave = function (event, targetSeriesId) {
+  const relatedTarget = event && event.relatedTarget ? event.relatedTarget : null;
+  const currentTarget = event && event.currentTarget ? event.currentTarget : null;
+  const normalizedTargetSeriesId = String(targetSeriesId || "").trim();
+
+  if (currentTarget && relatedTarget && currentTarget.contains(relatedTarget)) {
+    return false;
+  }
+
+  if (activeCurriculumSeriesDropIndicator
+    && String(activeCurriculumSeriesDropIndicator.targetSeriesId || "").trim() === normalizedTargetSeriesId) {
+    clearCurriculumSeriesDropIndicator();
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.dropCurriculumSeries = function (event, targetSeriesId) {
+  const normalizedTargetSeriesId = String(targetSeriesId || "").trim();
+  const draggedSeriesId = activeCurriculumSeriesDrag
+    ? String(activeCurriculumSeriesDrag.seriesId || "").trim()
+    : String(event && event.dataTransfer ? event.dataTransfer.getData("text/plain") || "" : "").trim();
+  const placement = normalizedTargetSeriesId
+    ? getCurriculumSeriesDropPlacement(event)
+    : "after";
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  clearCurriculumSeriesDropIndicator();
+  activeCurriculumSeriesDrag = null;
+
+  if (!draggedSeriesId || draggedSeriesId === normalizedTargetSeriesId) {
+    return false;
+  }
+
+  return reorderCurriculumSeries(draggedSeriesId, normalizedTargetSeriesId, placement);
+};
+window.UnterrichtsassistentApp.endCurriculumSeriesDrag = function () {
+  activeCurriculumSeriesDrag = null;
+  clearCurriculumSeriesDropIndicator();
+  removeCurriculumSeriesDragPreview();
+  return false;
+};
+window.UnterrichtsassistentApp.handleCurriculumSeriesPointerMove = function (event) {
+  const deltaX = activeCurriculumSeriesDrag ? (Number(event.clientX) || 0) - activeCurriculumSeriesDrag.startX : 0;
+  const deltaY = activeCurriculumSeriesDrag ? (Number(event.clientY) || 0) - activeCurriculumSeriesDrag.startY : 0;
+  const dropTarget = getCurriculumSeriesDropTargetFromPoint(event && event.clientX, event && event.clientY);
+
+  if (!activeCurriculumSeriesDrag || !activeCurriculumSeriesDrag.isPointerDrag || event.pointerId !== activeCurriculumSeriesDrag.pointerId) {
+    return false;
+  }
+
+  if (!activeCurriculumSeriesDrag.didDrag) {
+    if (Math.abs(deltaX) < 6 && Math.abs(deltaY) < 6) {
+      return false;
+    }
+
+    activeCurriculumSeriesDrag.didDrag = true;
+  }
+
+  updateCurriculumSeriesDragPreview(event.clientX, event.clientY, activeCurriculumSeriesDrag.color);
+  updatePlanningCurriculumAutoScroll(Number(event.clientX) || 0);
+
+  if (!dropTarget || String(dropTarget.targetSeriesId || "").trim() === String(activeCurriculumSeriesDrag.seriesId || "").trim()) {
+    clearCurriculumSeriesDropIndicator();
+  } else {
+    setCurriculumSeriesDropIndicator(dropTarget.targetSeriesId, dropTarget.placement, activeCurriculumSeriesDrag.color);
+  }
+
+  event.preventDefault();
+  return false;
+};
+window.UnterrichtsassistentApp.handleCurriculumSeriesPointerEnd = function (event) {
+  const pointerId = activeCurriculumSeriesDrag ? activeCurriculumSeriesDrag.pointerId : null;
+  const sourceElement = activeCurriculumSeriesDrag ? activeCurriculumSeriesDrag.sourceElement : null;
+  const didDrag = activeCurriculumSeriesDrag ? activeCurriculumSeriesDrag.didDrag === true : false;
+  const draggedSeriesId = activeCurriculumSeriesDrag ? String(activeCurriculumSeriesDrag.seriesId || "").trim() : "";
+  const dropIndicator = activeCurriculumSeriesDropIndicator
+    ? {
+        targetSeriesId: String(activeCurriculumSeriesDropIndicator.targetSeriesId || "").trim(),
+        placement: String(activeCurriculumSeriesDropIndicator.placement || "").trim() === "before" ? "before" : "after"
+      }
+    : null;
+
+  if (!activeCurriculumSeriesDrag || !activeCurriculumSeriesDrag.isPointerDrag || event.pointerId !== pointerId) {
+    return false;
+  }
+
+  if (sourceElement && typeof pointerId === "number") {
+    tryReleasePointerCapture(sourceElement, pointerId);
+  }
+
+  clearCurriculumSeriesPointerDrag();
+
+  if (!didDrag || !draggedSeriesId || !dropIndicator || draggedSeriesId === dropIndicator.targetSeriesId) {
+    return false;
+  }
+
+  event.preventDefault();
+  return reorderCurriculumSeries(draggedSeriesId, dropIndicator.targetSeriesId, dropIndicator.placement);
+};
+window.UnterrichtsassistentApp.getActiveCurriculumSeriesDropIndicator = function () {
+  return activeCurriculumSeriesDropIndicator;
+};
+window.UnterrichtsassistentApp.stopEventPropagation = function (event) {
+  if (event && typeof event.stopPropagation === "function") {
+    event.stopPropagation();
+  }
+
+  return true;
+};
+window.UnterrichtsassistentApp.closeCurriculumSeriesModal = function () {
+  activeCurriculumSeriesDraft = null;
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.openCurriculumSequenceModal = function (seriesId, sequenceId) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
+  const normalizedSeriesId = String(seriesId || "").trim();
+  const normalizedSequenceId = String(sequenceId || "").trim();
+  const parentSeries = collections
+    ? collections.series.find(function (entry) {
+        return String(entry && entry.id || "").trim() === normalizedSeriesId
+          && String(entry && entry.classId || "").trim() === String(activeClass && activeClass.id || "").trim();
+      }) || null
+    : null;
+  let existingSequence = null;
+
+  if (planningViewMode !== "stoffplanung" || planningAdminMode || !activeClass || !parentSeries) {
+    return false;
+  }
+
+  if (normalizedSequenceId && collections) {
+    existingSequence = collections.sequences.find(function (entry) {
+      return String(entry && entry.id || "").trim() === normalizedSequenceId
+        && String(entry && entry.seriesId || "").trim() === normalizedSeriesId;
+    }) || null;
+  }
+
+  if (expandedCurriculumSeriesIds.indexOf(normalizedSeriesId) < 0) {
+    expandedCurriculumSeriesIds = expandedCurriculumSeriesIds.concat([normalizedSeriesId]);
+  }
+  activeCurriculumLessonDraft = null;
+  activeCurriculumSequenceDraft = existingSequence
+    ? {
+        id: String(existingSequence.id || "").trim(),
+        seriesId: normalizedSeriesId,
+        topic: String(existingSequence.topic || "").trim(),
+        hourDemand: Math.max(0, Number(existingSequence.hourDemand) || 0)
+      }
+    : {
+        id: "",
+        seriesId: normalizedSeriesId,
+        topic: "",
+        hourDemand: 0
+      };
+
+  setActiveView("planung");
+  return false;
+};
+window.UnterrichtsassistentApp.closeCurriculumSequenceModal = function () {
+  activeCurriculumSequenceDraft = null;
+  activeCurriculumLessonDraft = null;
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.toggleCurriculumSequenceExpansion = function (seriesId, sequenceId) {
+  const normalizedSeriesId = String(seriesId || "").trim();
+  const normalizedSequenceId = String(sequenceId || "").trim();
+  const expansionKey = [normalizedSeriesId, normalizedSequenceId].join("::");
+  const currentIndex = expandedCurriculumSequenceIds.indexOf(expansionKey);
+
+  if (planningViewMode !== "stoffplanung" || !normalizedSeriesId || !normalizedSequenceId) {
+    return false;
+  }
+
+  if (currentIndex >= 0) {
+    expandedCurriculumSequenceIds = expandedCurriculumSequenceIds.filter(function (entry) {
+      return entry !== expansionKey;
+    });
+  } else {
+    expandedCurriculumSequenceIds = expandedCurriculumSequenceIds.concat([expansionKey]);
+  }
+
+  activeCurriculumLessonDraft = null;
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.startCurriculumSequenceDrag = function (event, seriesId, sequenceId) {
+  const normalizedSeriesId = String(seriesId || "").trim();
+  const normalizedSequenceId = String(sequenceId || "").trim();
+  const normalizedColor = normalizePlanningColorValue(event && event.currentTarget ? event.currentTarget.getAttribute("data-series-color") : "") || "#d9d4cb";
+  const sourceElement = event && event.currentTarget ? event.currentTarget : null;
+
+  if (planningViewMode !== "stoffplanung" || !normalizedSeriesId || !normalizedSequenceId || !event) {
+    return false;
+  }
+
+  activeCurriculumSequenceDrag = {
+    seriesId: normalizedSeriesId,
+    sequenceId: normalizedSequenceId,
+    color: normalizedColor,
+    pointerId: typeof event.pointerId === "number" ? event.pointerId : null,
+    startX: Number(event.clientX) || 0,
+    startY: Number(event.clientY) || 0,
+    sourceElement: sourceElement,
+    isPointerDrag: typeof event.pointerId === "number",
+    didDrag: false
+  };
+  clearCurriculumSequenceDropIndicator();
+
+  if (typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+  if (typeof event.stopPropagation === "function") {
+    event.stopPropagation();
+  }
+
+  if (sourceElement && typeof event.pointerId === "number") {
+    trySetPointerCapture(sourceElement, event.pointerId);
+    window.addEventListener("pointermove", window.UnterrichtsassistentApp.handleCurriculumSequencePointerMove);
+    window.addEventListener("pointerup", window.UnterrichtsassistentApp.handleCurriculumSequencePointerEnd);
+    window.addEventListener("pointercancel", window.UnterrichtsassistentApp.handleCurriculumSequencePointerEnd);
+    updateCurriculumSeriesDragPreview(event.clientX, event.clientY, normalizedColor);
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.handleCurriculumSequencePointerMove = function (event) {
+  const deltaX = activeCurriculumSequenceDrag ? (Number(event.clientX) || 0) - activeCurriculumSequenceDrag.startX : 0;
+  const deltaY = activeCurriculumSequenceDrag ? (Number(event.clientY) || 0) - activeCurriculumSequenceDrag.startY : 0;
+  const dropTarget = getCurriculumSequenceDropTargetFromPoint(event && event.clientX, event && event.clientY);
+
+  if (!activeCurriculumSequenceDrag || !activeCurriculumSequenceDrag.isPointerDrag || event.pointerId !== activeCurriculumSequenceDrag.pointerId) {
+    return false;
+  }
+
+  if (!activeCurriculumSequenceDrag.didDrag) {
+    if (Math.abs(deltaX) < 6 && Math.abs(deltaY) < 6) {
+      return false;
+    }
+
+    activeCurriculumSequenceDrag.didDrag = true;
+  }
+
+  updateCurriculumSeriesDragPreview(event.clientX, event.clientY, activeCurriculumSequenceDrag.color);
+  updatePlanningCurriculumAutoScroll(Number(event.clientX) || 0);
+
+  if (!dropTarget
+    || String(dropTarget.targetSequenceId || "").trim() === activeCurriculumSequenceDrag.sequenceId) {
+    clearCurriculumSequenceDropIndicator();
+  } else {
+    setCurriculumSequenceDropIndicator(dropTarget.seriesId, dropTarget.targetSequenceId, dropTarget.placement, activeCurriculumSequenceDrag.color);
+  }
+
+  event.preventDefault();
+  return false;
+};
+window.UnterrichtsassistentApp.handleCurriculumSequencePointerEnd = function (event) {
+  const pointerId = activeCurriculumSequenceDrag ? activeCurriculumSequenceDrag.pointerId : null;
+  const sourceElement = activeCurriculumSequenceDrag ? activeCurriculumSequenceDrag.sourceElement : null;
+  const didDrag = activeCurriculumSequenceDrag ? activeCurriculumSequenceDrag.didDrag === true : false;
+  const draggedSequenceId = activeCurriculumSequenceDrag ? String(activeCurriculumSequenceDrag.sequenceId || "").trim() : "";
+  const draggedSeriesId = activeCurriculumSequenceDrag ? String(activeCurriculumSequenceDrag.seriesId || "").trim() : "";
+  const dropIndicator = activeCurriculumSequenceDropIndicator
+    ? {
+        seriesId: String(activeCurriculumSequenceDropIndicator.seriesId || "").trim(),
+        targetSequenceId: String(activeCurriculumSequenceDropIndicator.targetSequenceId || "").trim(),
+        placement: String(activeCurriculumSequenceDropIndicator.placement || "").trim() === "before" ? "before" : "after"
+      }
+    : null;
+
+  if (!activeCurriculumSequenceDrag || !activeCurriculumSequenceDrag.isPointerDrag || event.pointerId !== pointerId) {
+    return false;
+  }
+
+  if (sourceElement && typeof pointerId === "number") {
+    tryReleasePointerCapture(sourceElement, pointerId);
+  }
+
+  clearCurriculumSequencePointerDrag();
+
+  if (!didDrag || !draggedSeriesId || !draggedSequenceId || !dropIndicator || draggedSequenceId === dropIndicator.targetSequenceId) {
+    return false;
+  }
+
+  event.preventDefault();
+  return reorderCurriculumSequences(draggedSeriesId, draggedSequenceId, dropIndicator.seriesId, dropIndicator.targetSequenceId, dropIndicator.placement);
+};
+window.UnterrichtsassistentApp.getActiveCurriculumSequenceDropIndicator = function () {
+  return activeCurriculumSequenceDropIndicator;
+};
+window.UnterrichtsassistentApp.openCurriculumLessonModal = function (seriesId, sequenceId, lessonId) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
+  const normalizedSeriesId = String(seriesId || "").trim();
+  const normalizedSequenceId = String(sequenceId || "").trim();
+  const normalizedLessonId = String(lessonId || "").trim();
+  const parentSequence = collections
+    ? collections.sequences.find(function (entry) {
+        return String(entry && entry.id || "").trim() === normalizedSequenceId
+          && String(entry && entry.seriesId || "").trim() === normalizedSeriesId;
+      }) || null
+    : null;
+  let existingLesson = null;
+  const expansionKey = [normalizedSeriesId, normalizedSequenceId].join("::");
+
+  if (planningViewMode !== "stoffplanung" || planningAdminMode || !parentSequence) {
+    return false;
+  }
+
+  if (normalizedLessonId && collections) {
+    existingLesson = collections.lessons.find(function (entry) {
+      return String(entry && entry.id || "").trim() === normalizedLessonId
+        && String(entry && entry.sequenceId || "").trim() === normalizedSequenceId;
+    }) || null;
+  }
+
+  if (expandedCurriculumSeriesIds.indexOf(normalizedSeriesId) < 0) {
+    expandedCurriculumSeriesIds = expandedCurriculumSeriesIds.concat([normalizedSeriesId]);
+  }
+
+  if (expandedCurriculumSequenceIds.indexOf(expansionKey) < 0) {
+    expandedCurriculumSequenceIds = expandedCurriculumSequenceIds.concat([expansionKey]);
+  }
+
+  activeCurriculumLessonDraft = existingLesson
+    ? {
+        id: String(existingLesson.id || "").trim(),
+        sequenceId: normalizedSequenceId,
+        seriesId: normalizedSeriesId,
+        topic: String(existingLesson.topic || "").trim(),
+        hourType: String(existingLesson.hourType || "").trim() === "double" ? "double" : "single"
+      }
+    : {
+        id: "",
+        sequenceId: normalizedSequenceId,
+        seriesId: normalizedSeriesId,
+        topic: "",
+        hourType: "single"
+      };
+
+  setActiveView("planung");
+  return false;
+};
+window.UnterrichtsassistentApp.closeCurriculumLessonModal = function () {
+  activeCurriculumLessonDraft = null;
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.startCurriculumLessonDrag = function (event, sequenceId, lessonId, color) {
+  const normalizedSequenceId = String(sequenceId || "").trim();
+  const normalizedLessonId = String(lessonId || "").trim();
+  const normalizedColor = normalizePlanningColorValue(color) || "#d9d4cb";
+  const sourceElement = event && event.currentTarget ? event.currentTarget : null;
+
+  if (planningViewMode !== "stoffplanung" || !normalizedSequenceId || !normalizedLessonId || !event) {
+    return false;
+  }
+
+  activeCurriculumLessonDrag = {
+    sequenceId: normalizedSequenceId,
+    lessonId: normalizedLessonId,
+    color: normalizedColor,
+    pointerId: typeof event.pointerId === "number" ? event.pointerId : null,
+    startX: Number(event.clientX) || 0,
+    startY: Number(event.clientY) || 0,
+    sourceElement: sourceElement,
+    isPointerDrag: typeof event.pointerId === "number",
+    didDrag: false
+  };
+  clearCurriculumLessonDropIndicator();
+
+  if (typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+  if (typeof event.stopPropagation === "function") {
+    event.stopPropagation();
+  }
+
+  if (sourceElement && typeof event.pointerId === "number") {
+    trySetPointerCapture(sourceElement, event.pointerId);
+    window.addEventListener("pointermove", window.UnterrichtsassistentApp.handleCurriculumLessonPointerMove);
+    window.addEventListener("pointerup", window.UnterrichtsassistentApp.handleCurriculumLessonPointerEnd);
+    window.addEventListener("pointercancel", window.UnterrichtsassistentApp.handleCurriculumLessonPointerEnd);
+    updateCurriculumSeriesDragPreview(event.clientX, event.clientY, normalizedColor);
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.handleCurriculumLessonPointerMove = function (event) {
+  const deltaX = activeCurriculumLessonDrag ? (Number(event.clientX) || 0) - activeCurriculumLessonDrag.startX : 0;
+  const deltaY = activeCurriculumLessonDrag ? (Number(event.clientY) || 0) - activeCurriculumLessonDrag.startY : 0;
+  const dropTarget = getCurriculumLessonDropTargetFromPoint(event && event.clientX, event && event.clientY);
+
+  if (!activeCurriculumLessonDrag || !activeCurriculumLessonDrag.isPointerDrag || event.pointerId !== activeCurriculumLessonDrag.pointerId) {
+    return false;
+  }
+
+  if (!activeCurriculumLessonDrag.didDrag) {
+    if (Math.abs(deltaX) < 6 && Math.abs(deltaY) < 6) {
+      return false;
+    }
+
+    activeCurriculumLessonDrag.didDrag = true;
+  }
+
+  updateCurriculumSeriesDragPreview(event.clientX, event.clientY, activeCurriculumLessonDrag.color);
+  updatePlanningCurriculumAutoScroll(Number(event.clientX) || 0);
+
+  if (!dropTarget
+    || String(dropTarget.targetLessonId || "").trim() === activeCurriculumLessonDrag.lessonId) {
+    clearCurriculumLessonDropIndicator();
+  } else {
+    setCurriculumLessonDropIndicator(dropTarget.sequenceId, dropTarget.targetLessonId, dropTarget.placement, activeCurriculumLessonDrag.color);
+  }
+
+  event.preventDefault();
+  return false;
+};
+window.UnterrichtsassistentApp.handleCurriculumLessonPointerEnd = function (event) {
+  const pointerId = activeCurriculumLessonDrag ? activeCurriculumLessonDrag.pointerId : null;
+  const sourceElement = activeCurriculumLessonDrag ? activeCurriculumLessonDrag.sourceElement : null;
+  const didDrag = activeCurriculumLessonDrag ? activeCurriculumLessonDrag.didDrag === true : false;
+  const draggedLessonId = activeCurriculumLessonDrag ? String(activeCurriculumLessonDrag.lessonId || "").trim() : "";
+  const draggedSequenceId = activeCurriculumLessonDrag ? String(activeCurriculumLessonDrag.sequenceId || "").trim() : "";
+  const dropIndicator = activeCurriculumLessonDropIndicator
+    ? {
+        sequenceId: String(activeCurriculumLessonDropIndicator.sequenceId || "").trim(),
+        targetLessonId: String(activeCurriculumLessonDropIndicator.targetLessonId || "").trim(),
+        placement: String(activeCurriculumLessonDropIndicator.placement || "").trim() === "before" ? "before" : "after"
+      }
+    : null;
+
+  if (!activeCurriculumLessonDrag || !activeCurriculumLessonDrag.isPointerDrag || event.pointerId !== pointerId) {
+    return false;
+  }
+
+  if (sourceElement && typeof pointerId === "number") {
+    tryReleasePointerCapture(sourceElement, pointerId);
+  }
+
+  clearCurriculumLessonPointerDrag();
+
+  if (!didDrag || !draggedSequenceId || !draggedLessonId || !dropIndicator || draggedLessonId === dropIndicator.targetLessonId) {
+    return false;
+  }
+
+  event.preventDefault();
+  return reorderCurriculumLessons(draggedSequenceId, draggedLessonId, dropIndicator.sequenceId, dropIndicator.targetLessonId, dropIndicator.placement);
+};
+window.UnterrichtsassistentApp.getActiveCurriculumLessonDropIndicator = function () {
+  return activeCurriculumLessonDropIndicator;
+};
+window.UnterrichtsassistentApp.submitCurriculumLessonModal = function (event) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
+  const topicInput = document.getElementById("curriculumLessonTopicInput");
+  const hourTypeInput = document.getElementById("curriculumLessonHourTypeInput");
+  const normalizedSequenceId = String(activeCurriculumLessonDraft && activeCurriculumLessonDraft.sequenceId || "").trim();
+  const normalizedDraftId = String(activeCurriculumLessonDraft && activeCurriculumLessonDraft.id || "").trim();
+  const topicValue = String(topicInput && topicInput.value || "").trim();
+  const hourTypeValue = String(hourTypeInput && hourTypeInput.value || "").trim() === "double" ? "double" : "single";
+  const orderedLessons = currentRawSnapshot
+    ? getOrderedCurriculumLessonsForSequence(currentRawSnapshot, normalizedSequenceId).slice()
+    : [];
+  const nextLessonItem = {
+    id: normalizedDraftId || createCurriculumLessonPlanId(),
+    sequenceId: normalizedSequenceId,
+    topic: topicValue,
+    hourType: hourTypeValue,
+    nextLessonId: ""
+  };
+  let nextOrderedLessons;
+  let replacedExistingLesson = false;
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  if (!currentRawSnapshot || !collections || !normalizedSequenceId || !activeCurriculumLessonDraft || !topicValue) {
+    return false;
+  }
+
+  if (normalizedDraftId) {
+    nextOrderedLessons = orderedLessons.map(function (entry) {
+      if (String(entry && entry.id || "").trim() !== normalizedDraftId) {
+        return entry;
+      }
+
+      replacedExistingLesson = true;
+      return nextLessonItem;
+    });
+
+    if (!replacedExistingLesson) {
+      nextOrderedLessons.push(nextLessonItem);
+    }
+  } else {
+    nextOrderedLessons = orderedLessons.concat([nextLessonItem]);
+  }
+
+  reconnectCurriculumLessonChain(nextOrderedLessons);
+
+  nextOrderedLessons.forEach(function (lessonItem) {
+    const collectionIndex = collections.lessons.findIndex(function (entry) {
+      return String(entry && entry.id || "").trim() === String(lessonItem && lessonItem.id || "").trim();
+    });
+
+    if (collectionIndex >= 0) {
+      collections.lessons[collectionIndex] = lessonItem;
+      return;
+    }
+
+    collections.lessons.push(lessonItem);
+  });
+
+  currentRawSnapshot.curriculumLessonPlans = collections.lessons;
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return window.UnterrichtsassistentApp.closeCurriculumLessonModal();
+};
+window.UnterrichtsassistentApp.deleteCurriculumLesson = function (lessonId) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
+  const normalizedLessonId = String(lessonId || "").trim();
+  const normalizedSequenceId = String(activeCurriculumLessonDraft && activeCurriculumLessonDraft.sequenceId || "").trim()
+    || String((collections && collections.lessons.find(function (entry) {
+      return String(entry && entry.id || "").trim() === normalizedLessonId;
+    }) || {}).sequenceId || "").trim();
+  const orderedLessons = currentRawSnapshot
+    ? getOrderedCurriculumLessonsForSequence(currentRawSnapshot, normalizedSequenceId).slice()
+    : [];
+  const nextOrderedLessons = orderedLessons.filter(function (entry) {
+    return String(entry && entry.id || "").trim() !== normalizedLessonId;
+  });
+
+  if (!currentRawSnapshot || !collections || !normalizedLessonId || !normalizedSequenceId) {
+    return false;
+  }
+
+  if (!window.confirm("Soll diese Unterrichtsstunde wirklich geloescht werden?")) {
+    return false;
+  }
+
+  reconnectCurriculumLessonChain(nextOrderedLessons);
+  collections.lessons = collections.lessons.filter(function (entry) {
+    return String(entry && entry.sequenceId || "").trim() !== normalizedSequenceId
+      || nextOrderedLessons.some(function (orderedEntry) {
+        return String(orderedEntry && orderedEntry.id || "").trim() === String(entry && entry.id || "").trim();
+      });
+  }).map(function (entry) {
+    const reordered = nextOrderedLessons.find(function (orderedEntry) {
+      return String(orderedEntry && orderedEntry.id || "").trim() === String(entry && entry.id || "").trim();
+    });
+
+    return reordered || entry;
+  });
+  currentRawSnapshot.curriculumLessonPlans = collections.lessons;
+
+  if (activeCurriculumLessonDraft && String(activeCurriculumLessonDraft.id || "").trim() === normalizedLessonId) {
+    activeCurriculumLessonDraft = null;
+  }
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return window.UnterrichtsassistentApp.closeCurriculumLessonModal();
+};
+window.UnterrichtsassistentApp.submitCurriculumSequenceModal = function (event) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
+  const topicInput = document.getElementById("curriculumSequenceTopicInput");
+  const hourDemandInput = document.getElementById("curriculumSequenceHourDemandInput");
+  const normalizedSeriesId = String(activeCurriculumSequenceDraft && activeCurriculumSequenceDraft.seriesId || "").trim();
+  const normalizedDraftId = String(activeCurriculumSequenceDraft && activeCurriculumSequenceDraft.id || "").trim();
+  const topicValue = String(topicInput && topicInput.value || "").trim();
+  const hourDemandValue = Math.max(0, Number(hourDemandInput && hourDemandInput.value) || 0);
+  const orderedSequences = currentRawSnapshot
+    ? getOrderedCurriculumSequencesForSeries(currentRawSnapshot, normalizedSeriesId).slice()
+    : [];
+  const nextSequenceItem = {
+    id: normalizedDraftId || createCurriculumSequenceId(),
+    seriesId: normalizedSeriesId,
+    topic: topicValue,
+    hourDemand: hourDemandValue,
+    nextSequenceId: ""
+  };
+  let nextOrderedSequences;
+  let replacedExistingSequence = false;
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  if (!currentRawSnapshot || !collections || !normalizedSeriesId || !activeCurriculumSequenceDraft || !topicValue) {
+    return false;
+  }
+
+  if (normalizedDraftId) {
+    nextOrderedSequences = orderedSequences.map(function (entry) {
+      if (String(entry && entry.id || "").trim() !== normalizedDraftId) {
+        return entry;
+      }
+
+      replacedExistingSequence = true;
+      return nextSequenceItem;
+    });
+
+    if (!replacedExistingSequence) {
+      nextOrderedSequences.push(nextSequenceItem);
+    }
+  } else {
+    nextOrderedSequences = orderedSequences.concat([nextSequenceItem]);
+  }
+
+  reconnectCurriculumSequenceChain(nextOrderedSequences);
+
+  nextOrderedSequences.forEach(function (sequenceItem) {
+    const collectionIndex = collections.sequences.findIndex(function (entry) {
+      return String(entry && entry.id || "").trim() === String(sequenceItem && sequenceItem.id || "").trim();
+    });
+
+    if (collectionIndex >= 0) {
+      collections.sequences[collectionIndex] = sequenceItem;
+      return;
+    }
+
+    collections.sequences.push(sequenceItem);
+  });
+
+  currentRawSnapshot.curriculumSequences = collections.sequences;
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return window.UnterrichtsassistentApp.closeCurriculumSequenceModal();
+};
+window.UnterrichtsassistentApp.deleteCurriculumSequence = function (sequenceId) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
+  const normalizedSequenceId = String(sequenceId || "").trim();
+  const normalizedSeriesId = String(activeCurriculumSequenceDraft && activeCurriculumSequenceDraft.seriesId || "").trim()
+    || String((collections && collections.sequences.find(function (entry) {
+      return String(entry && entry.id || "").trim() === normalizedSequenceId;
+    }) || {}).seriesId || "").trim();
+  const orderedSequences = currentRawSnapshot
+    ? getOrderedCurriculumSequencesForSeries(currentRawSnapshot, normalizedSeriesId).slice()
+    : [];
+  const nextOrderedSequences = orderedSequences.filter(function (entry) {
+    return String(entry && entry.id || "").trim() !== normalizedSequenceId;
+  });
+
+  if (!currentRawSnapshot || !collections || !normalizedSequenceId || !normalizedSeriesId) {
+    return false;
+  }
+
+  if (!window.confirm("Soll diese Unterrichtssequenz wirklich geloescht werden? Zugehoerige Stunden werden ebenfalls entfernt.")) {
+    return false;
+  }
+
+  reconnectCurriculumSequenceChain(nextOrderedSequences);
+  collections.sequences = collections.sequences.filter(function (entry) {
+    return String(entry && entry.seriesId || "").trim() !== normalizedSeriesId
+      || nextOrderedSequences.some(function (orderedEntry) {
+        return String(orderedEntry && orderedEntry.id || "").trim() === String(entry && entry.id || "").trim();
+      });
+  }).map(function (entry) {
+    const reordered = nextOrderedSequences.find(function (orderedEntry) {
+      return String(orderedEntry && orderedEntry.id || "").trim() === String(entry && entry.id || "").trim();
+    });
+
+    return reordered || entry;
+  });
+  collections.lessons = collections.lessons.filter(function (entry) {
+    return String(entry && entry.sequenceId || "").trim() !== normalizedSequenceId;
+  });
+  currentRawSnapshot.curriculumSequences = collections.sequences;
+  currentRawSnapshot.curriculumLessonPlans = collections.lessons;
+
+  if (activeCurriculumSequenceDraft && String(activeCurriculumSequenceDraft.id || "").trim() === normalizedSequenceId) {
+    activeCurriculumSequenceDraft = null;
+  }
+
+  expandedCurriculumSequenceIds = expandedCurriculumSequenceIds.filter(function (entry) {
+    const parts = String(entry || "").split("::");
+    return parts[1] !== normalizedSequenceId;
+  });
+  activeCurriculumLessonDraft = null;
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return window.UnterrichtsassistentApp.closeCurriculumSequenceModal();
+};
+window.UnterrichtsassistentApp.submitCurriculumSeriesModal = function (event) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
+  const topicInput = document.getElementById("curriculumSeriesTopicInput");
+  const hourDemandInput = document.getElementById("curriculumSeriesHourDemandInput");
+  const colorInput = document.getElementById("curriculumSeriesColorInput");
+  const orderedSeries = currentRawSnapshot && activeClass
+    ? getOrderedCurriculumSeriesForClass(currentRawSnapshot, activeClass.id).slice()
+    : [];
+  const normalizedDraftId = String(activeCurriculumSeriesDraft && activeCurriculumSeriesDraft.id || "").trim();
+  const topicValue = String(topicInput && topicInput.value || "").trim();
+  const hourDemandValue = Math.max(0, Number(hourDemandInput && hourDemandInput.value) || 0);
+  const colorValue = normalizePlanningColorValue(colorInput && colorInput.value)
+    || normalizePlanningColorValue(activeCurriculumSeriesDraft && activeCurriculumSeriesDraft.color)
+    || getCurriculumSeriesColor(activeCurriculumSeriesDraft, [String(activeClass && activeClass.id || "").trim(), topicValue, normalizedDraftId || "new"].join("::"));
+  const nextSeriesItem = {
+    id: normalizedDraftId || createCurriculumSeriesId(),
+    classId: String(activeClass && activeClass.id || "").trim(),
+    topic: topicValue,
+    hourDemand: hourDemandValue,
+    color: colorValue,
+    nextSeriesId: ""
+  };
+  let nextOrderedSeries;
+  let replacedExistingSeries = false;
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  if (!currentRawSnapshot || !collections || !activeClass || !activeCurriculumSeriesDraft || !topicValue) {
+    return false;
+  }
+
+  if (normalizedDraftId) {
+    nextOrderedSeries = orderedSeries.map(function (entry) {
+      if (String(entry && entry.id || "").trim() !== normalizedDraftId) {
+        return entry;
+      }
+
+      replacedExistingSeries = true;
+      return nextSeriesItem;
+    });
+
+    if (!replacedExistingSeries) {
+      nextOrderedSeries.push(nextSeriesItem);
+    }
+  } else {
+    nextOrderedSeries = orderedSeries.concat([nextSeriesItem]);
+  }
+
+  reconnectCurriculumSeriesChain(nextOrderedSeries);
+
+  nextOrderedSeries.forEach(function (seriesItem) {
+    const collectionIndex = collections.series.findIndex(function (entry) {
+      return String(entry && entry.id || "").trim() === String(seriesItem && seriesItem.id || "").trim();
+    });
+
+    if (collectionIndex >= 0) {
+      collections.series[collectionIndex] = seriesItem;
+      return;
+    }
+
+    collections.series.push(seriesItem);
+  });
+
+  currentRawSnapshot.curriculumSeries = collections.series;
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return window.UnterrichtsassistentApp.closeCurriculumSeriesModal();
+};
+window.UnterrichtsassistentApp.handleCurriculumSeriesColorPickerInput = function (nextValue) {
+  const normalizedColor = normalizePlanningColorValue(nextValue) || "#d9d4cb";
+  const colorInput = document.getElementById("curriculumSeriesColorInput");
+  const colorPreview = document.getElementById("curriculumSeriesColorPreview");
+
+  if (colorInput && colorInput.value !== normalizedColor) {
+    colorInput.value = normalizedColor;
+  }
+
+  if (activeCurriculumSeriesDraft) {
+    activeCurriculumSeriesDraft.color = normalizedColor;
+  }
+
+  if (colorPreview) {
+    colorPreview.style.background = normalizedColor;
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.deleteCurriculumSeries = function (seriesId) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
+  const normalizedSeriesId = String(seriesId || "").trim();
+  const orderedSeries = currentRawSnapshot && activeClass
+    ? getOrderedCurriculumSeriesForClass(currentRawSnapshot, activeClass.id).slice()
+    : [];
+  const nextOrderedSeries = orderedSeries.filter(function (entry) {
+    return String(entry && entry.id || "").trim() !== normalizedSeriesId;
+  });
+  const sequenceIdsToDelete = collections
+    ? collections.sequences.filter(function (entry) {
+        return String(entry && entry.seriesId || "").trim() === normalizedSeriesId;
+      }).map(function (entry) {
+        return String(entry && entry.id || "").trim();
+      })
+    : [];
+
+  if (!currentRawSnapshot || !collections || !activeClass || !normalizedSeriesId) {
+    return false;
+  }
+
+  if (!window.confirm("Soll diese Unterrichtsreihe wirklich geloescht werden? Zugehoerige Sequenzen und Stunden werden ebenfalls entfernt.")) {
+    return false;
+  }
+
+  reconnectCurriculumSeriesChain(nextOrderedSeries);
+  collections.series = collections.series.filter(function (entry) {
+    return String(entry && entry.classId || "").trim() !== String(activeClass.id || "").trim()
+      || nextOrderedSeries.some(function (orderedEntry) {
+        return String(orderedEntry && orderedEntry.id || "").trim() === String(entry && entry.id || "").trim();
+      });
+  }).map(function (entry) {
+    const reordered = nextOrderedSeries.find(function (orderedEntry) {
+      return String(orderedEntry && orderedEntry.id || "").trim() === String(entry && entry.id || "").trim();
+    });
+
+    return reordered || entry;
+  });
+  collections.sequences = collections.sequences.filter(function (entry) {
+    return sequenceIdsToDelete.indexOf(String(entry && entry.id || "").trim()) === -1
+      && String(entry && entry.seriesId || "").trim() !== normalizedSeriesId;
+  });
+  collections.lessons = collections.lessons.filter(function (entry) {
+    return sequenceIdsToDelete.indexOf(String(entry && entry.sequenceId || "").trim()) === -1;
+  });
+  currentRawSnapshot.curriculumSeries = collections.series;
+  currentRawSnapshot.curriculumSequences = collections.sequences;
+  currentRawSnapshot.curriculumLessonPlans = collections.lessons;
+
+  if (activeCurriculumSeriesDraft && String(activeCurriculumSeriesDraft.id || "").trim() === normalizedSeriesId) {
+    activeCurriculumSeriesDraft = null;
+  }
+
+  if (expandedCurriculumSeriesIds.indexOf(normalizedSeriesId) >= 0) {
+    expandedCurriculumSeriesIds = expandedCurriculumSeriesIds.filter(function (entry) {
+      return entry !== normalizedSeriesId;
+    });
+    expandedCurriculumSequenceIds = expandedCurriculumSequenceIds.filter(function (entry) {
+      const parts = String(entry || "").split("::");
+      return parts[0] !== normalizedSeriesId;
+    });
+    activeCurriculumSequenceDraft = null;
+    activeCurriculumLessonDraft = null;
+  }
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return window.UnterrichtsassistentApp.closeCurriculumSeriesModal();
+};
 window.UnterrichtsassistentApp.submitPlanningEventModal = function (event) {
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
   const startDateInput = document.getElementById("planningEventStartDate");
@@ -7886,6 +9803,54 @@ window.UnterrichtsassistentApp.handleClassAnalysisDragScrollEnd = function (even
 
   return false;
 };
+window.UnterrichtsassistentApp.handlePlanningCurriculumDragScrollMove = function (event) {
+  const deltaX = activePlanningCurriculumDragScroll
+    ? (Number(event.clientX) || 0) - activePlanningCurriculumDragScroll.startX
+    : 0;
+
+  if (!activePlanningCurriculumDragScroll || event.pointerId !== activePlanningCurriculumDragScroll.pointerId) {
+    return false;
+  }
+
+  if (!activePlanningCurriculumDragScroll.didDrag) {
+    if (Math.abs(deltaX) < 6) {
+      return false;
+    }
+
+    activePlanningCurriculumDragScroll.didDrag = true;
+    activePlanningCurriculumDragScroll.wrap.classList.add("is-dragging");
+    trySetPointerCapture(activePlanningCurriculumDragScroll.wrap, activePlanningCurriculumDragScroll.pointerId);
+  }
+
+  activePlanningCurriculumDragScroll.wrap.scrollLeft = activePlanningCurriculumDragScroll.startScrollLeft - deltaX;
+  if (activePlanningCurriculumDragScroll.wrap) {
+    const classId = String(activePlanningCurriculumDragScroll.wrap.dataset.classId || "");
+
+    if (classId) {
+      planningCurriculumScrollLeftByClassId[classId] = activePlanningCurriculumDragScroll.wrap.scrollLeft;
+    }
+  }
+  event.preventDefault();
+  return false;
+};
+window.UnterrichtsassistentApp.handlePlanningCurriculumDragScrollEnd = function (event) {
+  const didDrag = activePlanningCurriculumDragScroll ? activePlanningCurriculumDragScroll.didDrag === true : false;
+  const wrap = activePlanningCurriculumDragScroll ? activePlanningCurriculumDragScroll.wrap : null;
+  const pointerId = activePlanningCurriculumDragScroll ? activePlanningCurriculumDragScroll.pointerId : null;
+
+  if (!activePlanningCurriculumDragScroll || event.pointerId !== activePlanningCurriculumDragScroll.pointerId) {
+    return false;
+  }
+
+  clearPlanningCurriculumDragScroll();
+
+  if (didDrag) {
+    tryReleasePointerCapture(wrap, pointerId);
+    event.preventDefault();
+  }
+
+  return false;
+};
 window.UnterrichtsassistentApp.getTimetableViewMode = function () {
   return timetableViewMode;
 };
@@ -7916,6 +9881,21 @@ window.UnterrichtsassistentApp.isPlanningAdminMode = function () {
 };
 window.UnterrichtsassistentApp.getActivePlanningEventDraft = function () {
   return activePlanningEventDraft;
+};
+window.UnterrichtsassistentApp.getActiveCurriculumSeriesDraft = function () {
+  return activeCurriculumSeriesDraft;
+};
+window.UnterrichtsassistentApp.getActiveCurriculumSequenceDraft = function () {
+  return activeCurriculumSequenceDraft;
+};
+window.UnterrichtsassistentApp.getActiveCurriculumLessonDraft = function () {
+  return activeCurriculumLessonDraft;
+};
+window.UnterrichtsassistentApp.getExpandedCurriculumSeriesIds = function () {
+  return expandedCurriculumSeriesIds.slice();
+};
+window.UnterrichtsassistentApp.getExpandedCurriculumSequenceIds = function () {
+  return expandedCurriculumSequenceIds.slice();
 };
 window.UnterrichtsassistentApp.getActivePlanningRangeDraft = function () {
   return activePlanningRangeDraft;

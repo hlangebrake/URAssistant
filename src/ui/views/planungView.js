@@ -15,6 +15,34 @@ window.Unterrichtsassistent.ui.views.planung = {
     const planningEventDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActivePlanningEventDraft === "function"
       ? window.UnterrichtsassistentApp.getActivePlanningEventDraft()
       : null;
+    const curriculumSeriesDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveCurriculumSeriesDraft === "function"
+      ? window.UnterrichtsassistentApp.getActiveCurriculumSeriesDraft()
+      : null;
+    const curriculumSequenceDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveCurriculumSequenceDraft === "function"
+      ? window.UnterrichtsassistentApp.getActiveCurriculumSequenceDraft()
+      : null;
+    const curriculumLessonDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveCurriculumLessonDraft === "function"
+      ? window.UnterrichtsassistentApp.getActiveCurriculumLessonDraft()
+      : null;
+    const expandedCurriculumSeriesIds = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getExpandedCurriculumSeriesIds === "function"
+      ? window.UnterrichtsassistentApp.getExpandedCurriculumSeriesIds().map(function (entry) {
+          return String(entry || "").trim();
+        }).filter(Boolean)
+      : [];
+    const expandedCurriculumSequenceIds = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getExpandedCurriculumSequenceIds === "function"
+      ? window.UnterrichtsassistentApp.getExpandedCurriculumSequenceIds().map(function (entry) {
+          return String(entry || "").trim();
+        }).filter(Boolean)
+      : [];
+    const activeCurriculumSeriesDropIndicator = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveCurriculumSeriesDropIndicator === "function"
+      ? window.UnterrichtsassistentApp.getActiveCurriculumSeriesDropIndicator()
+      : null;
+    const activeCurriculumSequenceDropIndicator = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveCurriculumSequenceDropIndicator === "function"
+      ? window.UnterrichtsassistentApp.getActiveCurriculumSequenceDropIndicator()
+      : null;
+    const activeCurriculumLessonDropIndicator = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveCurriculumLessonDropIndicator === "function"
+      ? window.UnterrichtsassistentApp.getActiveCurriculumLessonDropIndicator()
+      : null;
     const planningRangeDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActivePlanningRangeDraft === "function"
       ? window.UnterrichtsassistentApp.getActivePlanningRangeDraft()
       : null;
@@ -510,7 +538,7 @@ window.Unterrichtsassistent.ui.views.planung = {
       ].join("");
     }
 
-    if (!schoolYearStart || !schoolYearEnd) {
+    if ((!schoolYearStart || !schoolYearEnd) && planningViewMode !== "stoffplanung") {
       return [
         '<div class="panel-grid panel-grid--planung">',
         '<article class="panel panel--full">',
@@ -700,7 +728,518 @@ window.Unterrichtsassistent.ui.views.planung = {
       ].join("");
     }
 
-    if (!startDate || !endDate || startDate > endDate) {
+    function getOrderedCurriculumSeriesForActiveClass() {
+      const allSeries = Array.isArray(snapshot.curriculumSeries) ? snapshot.curriculumSeries.filter(function (entry) {
+        return String(entry && entry.classId || "").trim() === String(activeClass && activeClass.id || "").trim();
+      }) : [];
+      const incomingCounts = {};
+      const itemById = {};
+      const ordered = [];
+      let current = null;
+
+      allSeries.forEach(function (entry) {
+        const entryId = String(entry && entry.id || "").trim();
+
+        if (!entryId) {
+          return;
+        }
+
+        itemById[entryId] = entry;
+        incomingCounts[entryId] = incomingCounts[entryId] || 0;
+      });
+
+      allSeries.forEach(function (entry) {
+        const nextId = String(entry && entry.nextSeriesId || "").trim();
+
+        if (nextId && Object.prototype.hasOwnProperty.call(incomingCounts, nextId)) {
+          incomingCounts[nextId] += 1;
+        }
+      });
+
+      current = allSeries.find(function (entry) {
+        return !incomingCounts[String(entry && entry.id || "").trim()];
+      }) || allSeries[0] || null;
+
+      while (current) {
+        const currentId = String(current && current.id || "").trim();
+        const nextId = String(current && current.nextSeriesId || "").trim();
+
+        if (!currentId || ordered.some(function (entry) {
+          return String(entry && entry.id || "").trim() === currentId;
+        })) {
+          break;
+        }
+
+        ordered.push(current);
+        current = nextId && itemById[nextId] ? itemById[nextId] : null;
+      }
+
+      allSeries.forEach(function (entry) {
+        if (!ordered.some(function (orderedEntry) {
+          return String(orderedEntry && orderedEntry.id || "").trim() === String(entry && entry.id || "").trim();
+        })) {
+          ordered.push(entry);
+        }
+      });
+
+      return ordered;
+    }
+
+    function getOrderedCurriculumSequencesForSeries(seriesId) {
+      const allSequences = Array.isArray(snapshot.curriculumSequences) ? snapshot.curriculumSequences.filter(function (entry) {
+        return String(entry && entry.seriesId || "").trim() === String(seriesId || "").trim();
+      }) : [];
+      const incomingCounts = {};
+      const itemById = {};
+      const ordered = [];
+      let current = null;
+
+      allSequences.forEach(function (entry) {
+        const entryId = String(entry && entry.id || "").trim();
+
+        if (!entryId) {
+          return;
+        }
+
+        itemById[entryId] = entry;
+        incomingCounts[entryId] = incomingCounts[entryId] || 0;
+      });
+
+      allSequences.forEach(function (entry) {
+        const nextId = String(entry && entry.nextSequenceId || "").trim();
+
+        if (nextId && Object.prototype.hasOwnProperty.call(incomingCounts, nextId)) {
+          incomingCounts[nextId] += 1;
+        }
+      });
+
+      current = allSequences.find(function (entry) {
+        return !incomingCounts[String(entry && entry.id || "").trim()];
+      }) || allSequences[0] || null;
+
+      while (current) {
+        const currentId = String(current && current.id || "").trim();
+        const nextId = String(current && current.nextSequenceId || "").trim();
+
+        if (!currentId || ordered.some(function (entry) {
+          return String(entry && entry.id || "").trim() === currentId;
+        })) {
+          break;
+        }
+
+        ordered.push(current);
+        current = nextId && itemById[nextId] ? itemById[nextId] : null;
+      }
+
+      allSequences.forEach(function (entry) {
+        if (!ordered.some(function (orderedEntry) {
+          return String(orderedEntry && orderedEntry.id || "").trim() === String(entry && entry.id || "").trim();
+        })) {
+          ordered.push(entry);
+        }
+      });
+
+      return ordered;
+    }
+
+    function getOrderedCurriculumLessonsForSequence(sequenceId) {
+      const allLessons = Array.isArray(snapshot.curriculumLessonPlans) ? snapshot.curriculumLessonPlans.filter(function (entry) {
+        return String(entry && entry.sequenceId || "").trim() === String(sequenceId || "").trim();
+      }) : [];
+      const incomingCounts = {};
+      const itemById = {};
+      const ordered = [];
+      let current = null;
+
+      allLessons.forEach(function (entry) {
+        const entryId = String(entry && entry.id || "").trim();
+
+        if (!entryId) {
+          return;
+        }
+
+        itemById[entryId] = entry;
+        incomingCounts[entryId] = incomingCounts[entryId] || 0;
+      });
+
+      allLessons.forEach(function (entry) {
+        const nextId = String(entry && entry.nextLessonId || "").trim();
+
+        if (nextId && Object.prototype.hasOwnProperty.call(incomingCounts, nextId)) {
+          incomingCounts[nextId] += 1;
+        }
+      });
+
+      current = allLessons.find(function (entry) {
+        return !incomingCounts[String(entry && entry.id || "").trim()];
+      }) || allLessons[0] || null;
+
+      while (current) {
+        const currentId = String(current && current.id || "").trim();
+        const nextId = String(current && current.nextLessonId || "").trim();
+
+        if (!currentId || ordered.some(function (entry) {
+          return String(entry && entry.id || "").trim() === currentId;
+        })) {
+          break;
+        }
+
+        ordered.push(current);
+        current = nextId && itemById[nextId] ? itemById[nextId] : null;
+      }
+
+      allLessons.forEach(function (entry) {
+        if (!ordered.some(function (orderedEntry) {
+          return String(orderedEntry && orderedEntry.id || "").trim() === String(entry && entry.id || "").trim();
+        })) {
+          ordered.push(entry);
+        }
+      });
+
+      return ordered;
+    }
+
+    function getCurriculumLessonVisualWidth(lessonItem) {
+      return String(lessonItem && lessonItem.hourType || "").trim() === "double" ? 56 : 44;
+    }
+
+    function getExpandedLessonColumnWidth(sequenceId, isSequenceExpanded) {
+      const orderedLessons = isSequenceExpanded ? getOrderedCurriculumLessonsForSequence(sequenceId) : [];
+      const lessonsWidth = orderedLessons.reduce(function (sum, lessonItem) {
+        return sum + getCurriculumLessonVisualWidth(lessonItem);
+      }, 0);
+
+      if (!isSequenceExpanded) {
+        return 156;
+      }
+
+      return Math.max(156, lessonsWidth + 44);
+    }
+
+    function getExpandedSequenceBlockWidth(seriesId, sequenceItem, expandedSequenceIdsLookupMap) {
+      const sequenceId = String(sequenceItem && sequenceItem.id || "").trim();
+      const isSequenceExpanded = Boolean(expandedSequenceIdsLookupMap[[seriesId, sequenceId].join("::")]);
+
+      return getExpandedLessonColumnWidth(sequenceId, isSequenceExpanded);
+    }
+
+    function getExpandedSeriesBlockWidth(seriesId, expandedSequenceIdsLookupMap) {
+      const orderedSequences = getOrderedCurriculumSequencesForSeries(seriesId);
+      const sequenceWidths = orderedSequences.reduce(function (sum, sequenceItem) {
+        return sum + getExpandedSequenceBlockWidth(seriesId, sequenceItem, expandedSequenceIdsLookupMap);
+      }, 0);
+
+      return Math.max(168, sequenceWidths + 58);
+    }
+
+    function buildCurriculumSeriesModal() {
+      if (!curriculumSeriesDraft) {
+        return "";
+      }
+
+      return [
+        '<div class="import-modal is-open" id="curriculumSeriesModal">',
+        '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeCurriculumSeriesModal()"></div>',
+        '<div class="import-modal__dialog import-modal__dialog--planning import-modal__dialog--curriculum" role="dialog" aria-modal="true" aria-labelledby="curriculumSeriesTitle">',
+        '<div class="import-modal__header">',
+        '<div><h3 id="curriculumSeriesTitle">', curriculumSeriesDraft.id ? 'Unterrichtsreihe bearbeiten' : 'Unterrichtsreihe anlegen', '</h3></div>',
+        '<div class="import-modal__icon-actions">',
+        '<button class="import-modal__icon-button import-modal__icon-button--confirm" type="submit" form="curriculumSeriesForm" aria-label="Unterrichtsreihe speichern">&#10003;</button>',
+        '<button class="import-modal__icon-button import-modal__icon-button--cancel" type="button" aria-label="Bearbeitung abbrechen" onclick="return window.UnterrichtsassistentApp.closeCurriculumSeriesModal()">&#10005;</button>',
+        '</div>',
+        '</div>',
+        '<form class="import-modal__form curriculum-series-form" id="curriculumSeriesForm" autocomplete="off" method="post" action="about:blank" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitCurriculumSeriesModal(event)">',
+        '<label class="import-modal__field"><span>Thema</span><input id="curriculumSeriesTopicInput" type="text" value="', escapeValue(curriculumSeriesDraft.topic || ""), '" placeholder="Thema der Unterrichtsreihe"></label>',
+        '<label class="import-modal__field"><span>Stundenbedarf</span><input id="curriculumSeriesHourDemandInput" type="number" min="0" step="1" value="', escapeValue(String(curriculumSeriesDraft.hourDemand || 0)), '" placeholder="0"></label>',
+        '<label class="import-modal__field curriculum-series-form__color-field"><span>Farbe</span><span class="curriculum-series-form__color-input-wrap"><span id="curriculumSeriesColorPreview" class="curriculum-series-form__color-preview" style="background:', escapeValue(curriculumSeriesDraft.color || "#d9d4cb"), ';"></span><input id="curriculumSeriesColorInput" class="curriculum-series-form__color-input" type="color" value="', escapeValue(curriculumSeriesDraft.color || "#d9d4cb"), '" oninput="window.UnterrichtsassistentApp.handleCurriculumSeriesColorPickerInput(this.value)" onchange="window.UnterrichtsassistentApp.handleCurriculumSeriesColorPickerInput(this.value)"></span></label>',
+        '<div class="import-modal__actions">',
+        curriculumSeriesDraft.id
+          ? '<button class="circle-action circle-action--danger" type="button" onclick="return window.UnterrichtsassistentApp.deleteCurriculumSeries(\'' + escapeValue(String(curriculumSeriesDraft.id || "")) + '\')">Loeschen</button>'
+          : '',
+        '</div>',
+        '</form>',
+        '</div>',
+        '</div>'
+      ].join("");
+    }
+
+    function buildCurriculumSequenceModal() {
+      if (!curriculumSequenceDraft) {
+        return "";
+      }
+
+      return [
+        '<div class="import-modal is-open" id="curriculumSequenceModal">',
+        '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeCurriculumSequenceModal()"></div>',
+        '<div class="import-modal__dialog import-modal__dialog--planning import-modal__dialog--curriculum" role="dialog" aria-modal="true" aria-labelledby="curriculumSequenceTitle">',
+        '<div class="import-modal__header">',
+        '<div><h3 id="curriculumSequenceTitle">', curriculumSequenceDraft.id ? 'Unterrichtssequenz bearbeiten' : 'Unterrichtssequenz anlegen', '</h3></div>',
+        '<div class="import-modal__icon-actions">',
+        '<button class="import-modal__icon-button import-modal__icon-button--confirm" type="submit" form="curriculumSequenceForm" aria-label="Unterrichtssequenz speichern">&#10003;</button>',
+        '<button class="import-modal__icon-button import-modal__icon-button--cancel" type="button" aria-label="Bearbeitung abbrechen" onclick="return window.UnterrichtsassistentApp.closeCurriculumSequenceModal()">&#10005;</button>',
+        '</div>',
+        '</div>',
+        '<form class="import-modal__form curriculum-series-form" id="curriculumSequenceForm" autocomplete="off" method="post" action="about:blank" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitCurriculumSequenceModal(event)">',
+        '<label class="import-modal__field"><span>Thema</span><input id="curriculumSequenceTopicInput" type="text" value="', escapeValue(curriculumSequenceDraft.topic || ""), '" placeholder="Thema der Unterrichtssequenz"></label>',
+        '<label class="import-modal__field"><span>Stundenbedarf</span><input id="curriculumSequenceHourDemandInput" type="number" min="0" step="1" value="', escapeValue(String(curriculumSequenceDraft.hourDemand || 0)), '" placeholder="0"></label>',
+        '<div class="import-modal__actions">',
+        curriculumSequenceDraft.id
+          ? '<button class="circle-action circle-action--danger" type="button" onclick="return window.UnterrichtsassistentApp.deleteCurriculumSequence(\'' + escapeValue(String(curriculumSequenceDraft.id || "")) + '\')">Loeschen</button>'
+          : '',
+        '</div>',
+        '</form>',
+        '</div>',
+        '</div>'
+      ].join("");
+    }
+
+    function buildCurriculumLessonModal() {
+      if (!curriculumLessonDraft) {
+        return "";
+      }
+
+      return [
+        '<div class="import-modal is-open" id="curriculumLessonModal">',
+        '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeCurriculumLessonModal()"></div>',
+        '<div class="import-modal__dialog import-modal__dialog--planning import-modal__dialog--curriculum" role="dialog" aria-modal="true" aria-labelledby="curriculumLessonTitle">',
+        '<div class="import-modal__header">',
+        '<div><h3 id="curriculumLessonTitle">', curriculumLessonDraft.id ? 'Unterrichtsstunde bearbeiten' : 'Unterrichtsstunde anlegen', '</h3></div>',
+        '<div class="import-modal__icon-actions">',
+        '<button class="import-modal__icon-button import-modal__icon-button--confirm" type="submit" form="curriculumLessonForm" aria-label="Unterrichtsstunde speichern">&#10003;</button>',
+        '<button class="import-modal__icon-button import-modal__icon-button--cancel" type="button" aria-label="Bearbeitung abbrechen" onclick="return window.UnterrichtsassistentApp.closeCurriculumLessonModal()">&#10005;</button>',
+        '</div>',
+        '</div>',
+        '<form class="import-modal__form curriculum-series-form" id="curriculumLessonForm" autocomplete="off" method="post" action="about:blank" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitCurriculumLessonModal(event)">',
+        '<label class="import-modal__field"><span>Thema</span><input id="curriculumLessonTopicInput" type="text" value="', escapeValue(curriculumLessonDraft.topic || ""), '" placeholder="Thema der Unterrichtsstunde"></label>',
+        '<label class="import-modal__field"><span>Stundentyp</span><select id="curriculumLessonHourTypeInput"><option value="single"', String(curriculumLessonDraft.hourType || "single") === "single" ? ' selected' : '', '>Einzelstunde</option><option value="double"', String(curriculumLessonDraft.hourType || "single") === "double" ? ' selected' : '', '>Doppelstunde</option></select></label>',
+        '<div class="import-modal__actions">',
+        curriculumLessonDraft.id
+          ? '<button class="circle-action circle-action--danger" type="button" onclick="return window.UnterrichtsassistentApp.deleteCurriculumLesson(\'' + escapeValue(String(curriculumLessonDraft.id || "")) + '\')">Loeschen</button>'
+          : '',
+        '</div>',
+        '</form>',
+        '</div>',
+        '</div>'
+      ].join("");
+    }
+
+    function buildStoffPlanningContent() {
+      const orderedSeries = getOrderedCurriculumSeriesForActiveClass();
+      const columnCount = orderedSeries.length + 1;
+      const hasSeries = orderedSeries.length > 0;
+      const expandedSeriesIdsLookup = expandedCurriculumSeriesIds.reduce(function (lookup, entry) {
+        lookup[String(entry || "").trim()] = true;
+        return lookup;
+      }, {});
+      const expandedSequenceIdsLookup = expandedCurriculumSequenceIds.reduce(function (lookup, entry) {
+        lookup[String(entry || "").trim()] = true;
+        return lookup;
+      }, {});
+      const seriesWidthLookup = orderedSeries.reduce(function (lookup, seriesItem) {
+        const seriesId = String(seriesItem && seriesItem.id || "").trim();
+        const isExpanded = Boolean(expandedSeriesIdsLookup[seriesId]);
+
+        lookup[seriesId] = isExpanded
+          ? getExpandedSeriesBlockWidth(seriesId, expandedSequenceIdsLookup)
+          : 168;
+        return lookup;
+      }, {});
+
+      if (!activeClass) {
+        return [
+          '<div class="panel-grid panel-grid--planung-curriculum">',
+          '<article class="panel panel--full">',
+          '<p class="empty-message">Waehle zuerst eine Lerngruppe, damit du Unterrichtsreihen fuer die Stoffplanung anlegen kannst.</p>',
+          '</article>',
+          '</div>'
+        ].join("");
+      }
+
+      return [
+        '<div class="panel-grid panel-grid--planung-curriculum">',
+        '<article class="panel panel--full panel--planung-curriculum">',
+        '<div class="planning-curriculum__header">',
+        '<h2 class="planning-curriculum__title">Unterrichtsreihen</h2>',
+        '</div>',
+        hasSeries ? '' : '<p class="empty-message">Lege die erste Unterrichtsreihe ueber das Plus-Feld an.</p>',
+        '<div class="planning-curriculum__table-wrap" data-drag-scroll="true" data-class-id="', escapeValue(String(activeClass && activeClass.id || "")), '">',
+        '<table class="planning-curriculum__table">',
+        '<colgroup>',
+        orderedSeries.map(function (seriesItem) {
+          const seriesId = String(seriesItem && seriesItem.id || "").trim();
+          const seriesWidth = Math.max(168, Number(seriesWidthLookup[seriesId]) || 168);
+
+          return '<col style="width:' + escapeValue(String(seriesWidth)) + 'px;min-width:' + escapeValue(String(seriesWidth)) + 'px;max-width:' + escapeValue(String(seriesWidth)) + 'px;">';
+        }).join(""),
+        '<col style="width:168px;min-width:168px;max-width:168px;">',
+        '</colgroup>',
+        '<tbody>',
+        '<tr class="planning-curriculum__row planning-curriculum__row--series">',
+        orderedSeries.map(function (seriesItem) {
+          const seriesColor = escapeValue(String(seriesItem && seriesItem.color || "#d9d4cb"));
+          const seriesId = String(seriesItem && seriesItem.id || "").trim();
+          const isExpanded = Boolean(expandedSeriesIdsLookup[seriesId]);
+          const expandedSeriesWidth = Math.max(168, Number(seriesWidthLookup[seriesId]) || 168);
+          const isDropTarget = activeCurriculumSeriesDropIndicator
+            && String(activeCurriculumSeriesDropIndicator.targetSeriesId || "").trim() === seriesId;
+          const dropPlacement = isDropTarget
+            ? String(activeCurriculumSeriesDropIndicator.placement || "").trim()
+            : "";
+          const dropColor = isDropTarget
+            ? escapeValue(String(activeCurriculumSeriesDropIndicator.color || "#3975ab"))
+            : "";
+          const expandedSeriesWidthStyle = isExpanded
+            ? 'width:' + escapeValue(String(expandedSeriesWidth)) + 'px;min-width:' + escapeValue(String(expandedSeriesWidth)) + 'px;max-width:' + escapeValue(String(expandedSeriesWidth)) + 'px;'
+            : '';
+
+          return [
+            '<td class="planning-curriculum__cell planning-curriculum__cell--series', isDropTarget ? ' is-drop-target is-drop-target--' + escapeValue(dropPlacement || "after") : '', '"',
+            ' data-series-drop-target="', escapeValue(seriesId), '"',
+            (isExpanded || isDropTarget) ? ' style="' + (isDropTarget ? '--planning-curriculum-drop-color:' + dropColor + ';' : '') + expandedSeriesWidthStyle + '"' : '',
+            ' ondragover="return window.UnterrichtsassistentApp.allowCurriculumSeriesDrop(event, \'', escapeValue(seriesId), '\')"',
+            ' ondragleave="return window.UnterrichtsassistentApp.handleCurriculumSeriesDropLeave(event, \'', escapeValue(seriesId), '\')"',
+            ' ondrop="return window.UnterrichtsassistentApp.dropCurriculumSeries(event, \'', escapeValue(seriesId), '\')"',
+            '>',
+            '<article class="planning-curriculum__series-block', isExpanded ? ' is-expanded' : '', '" style="--planning-curriculum-series-color:', seriesColor, ';', expandedSeriesWidthStyle, '" onclick="return window.UnterrichtsassistentApp.toggleCurriculumSeriesExpansion(\'', escapeValue(seriesId), '\')">',
+            '<button class="planning-curriculum__series-drag" type="button" data-series-color="', seriesColor, '" aria-label="Unterrichtsreihe verschieben" onclick="return window.UnterrichtsassistentApp.stopEventPropagation(event)" onpointerdown="return window.UnterrichtsassistentApp.startCurriculumSeriesDrag(event, \'', escapeValue(seriesId), '\')" ondragstart="return window.UnterrichtsassistentApp.startCurriculumSeriesDrag(event, \'', escapeValue(seriesId), '\')" ondragend="return window.UnterrichtsassistentApp.endCurriculumSeriesDrag()">&#8645;</button>',
+            '<button class="planning-curriculum__series-edit" type="button" aria-label="Unterrichtsreihe bearbeiten" onclick="window.UnterrichtsassistentApp.stopEventPropagation(event); return window.UnterrichtsassistentApp.openCurriculumSeriesModal(\'', escapeValue(String(seriesItem.id || "")), '\')">&#9998;</button>',
+            '<div class="planning-curriculum__series-topic">', escapeValue(String(seriesItem.topic || "").trim() || "Ohne Thema"), '</div>',
+            '<div class="planning-curriculum__series-footer"><div class="planning-curriculum__series-hours">', escapeValue(String(Math.max(0, Number(seriesItem.hourDemand) || 0))), ' Std.</div><span class="planning-curriculum__toggle" aria-hidden="true">', isExpanded ? '&#9660;' : '&#9654;', '</span></div>',
+            '</article>',
+            '</td>'
+          ].join("");
+        }).join(""),
+        '<td class="planning-curriculum__cell planning-curriculum__cell--add',
+        activeCurriculumSeriesDropIndicator && !String(activeCurriculumSeriesDropIndicator.targetSeriesId || "").trim() ? ' is-drop-target is-drop-target--after' : '',
+        '" data-series-drop-target-add="true"',
+        activeCurriculumSeriesDropIndicator && !String(activeCurriculumSeriesDropIndicator.targetSeriesId || "").trim()
+          ? ' style="--planning-curriculum-drop-color:' + escapeValue(String(activeCurriculumSeriesDropIndicator.color || "#3975ab")) + ';"'
+          : '',
+        ' ondragover="return window.UnterrichtsassistentApp.allowCurriculumSeriesDrop(event, \'\')" ondragleave="return window.UnterrichtsassistentApp.handleCurriculumSeriesDropLeave(event, \'\')" ondrop="return window.UnterrichtsassistentApp.dropCurriculumSeries(event, \'\')">',
+        '<button class="planning-curriculum__add" type="button" aria-label="Unterrichtsreihe anlegen" onclick="return window.UnterrichtsassistentApp.openCurriculumSeriesModal()">+</button>',
+        '</td>',
+        '</tr>',
+        expandedCurriculumSeriesIds.length ? [
+          '<tr class="planning-curriculum__row planning-curriculum__row--sequences">',
+          orderedSeries.map(function (seriesItem) {
+            const seriesId = String(seriesItem && seriesItem.id || "").trim();
+            const isExpanded = Boolean(expandedSeriesIdsLookup[seriesId]);
+            const sequenceColor = escapeValue(String(seriesItem && seriesItem.color || "#d9d4cb"));
+            const sequences = isExpanded ? getOrderedCurriculumSequencesForSeries(seriesId) : [];
+            const expandedSeriesWidth = Math.max(168, Number(seriesWidthLookup[seriesId]) || 168);
+
+            if (!isExpanded) {
+              return '<td class="planning-curriculum__cell planning-curriculum__cell--spacer"></td>';
+            }
+
+            return [
+              '<td class="planning-curriculum__cell planning-curriculum__cell--sequence-group" style="width:', escapeValue(String(expandedSeriesWidth)), 'px;min-width:', escapeValue(String(expandedSeriesWidth)), 'px;max-width:', escapeValue(String(expandedSeriesWidth)), 'px;">',
+              '<div class="planning-curriculum__sequence-wrap" style="--planning-curriculum-series-color:', sequenceColor, ';width:', escapeValue(String(expandedSeriesWidth)), 'px;min-width:', escapeValue(String(expandedSeriesWidth)), 'px;max-width:', escapeValue(String(expandedSeriesWidth)), 'px;">',
+              sequences.map(function (sequenceItem) {
+                const sequenceId = String(sequenceItem && sequenceItem.id || "").trim();
+                const sequenceExpansionKey = [seriesId, sequenceId].join("::");
+                const isSequenceExpanded = Boolean(expandedSequenceIdsLookup[sequenceExpansionKey]);
+                const expandedSequenceWidth = getExpandedSequenceBlockWidth(seriesId, sequenceItem, expandedSequenceIdsLookup);
+                const isSequenceDropTarget = activeCurriculumSequenceDropIndicator
+                  && String(activeCurriculumSequenceDropIndicator.seriesId || "").trim() === seriesId
+                  && String(activeCurriculumSequenceDropIndicator.targetSequenceId || "").trim() === sequenceId;
+                const sequenceDropPlacement = isSequenceDropTarget
+                  ? String(activeCurriculumSequenceDropIndicator.placement || "").trim()
+                  : "";
+                const sequenceDropColor = isSequenceDropTarget
+                  ? escapeValue(String(activeCurriculumSequenceDropIndicator.color || "#3975ab"))
+                  : "";
+
+                return [
+                  '<article class="planning-curriculum__sequence-block', isSequenceExpanded ? ' is-expanded' : '', isSequenceDropTarget ? ' is-drop-target is-drop-target--' + escapeValue(sequenceDropPlacement || "after") : '', '" data-sequence-drop-target="', escapeValue(sequenceId), '" data-series-id="', escapeValue(seriesId), '" style="--planning-curriculum-series-color:', sequenceColor, ';', isSequenceDropTarget ? '--planning-curriculum-drop-color:' + sequenceDropColor + ';' : '', 'width:', escapeValue(String(expandedSequenceWidth)), 'px;min-width:', escapeValue(String(expandedSequenceWidth)), 'px;max-width:', escapeValue(String(expandedSequenceWidth)), 'px;" onclick="return window.UnterrichtsassistentApp.toggleCurriculumSequenceExpansion(\'', escapeValue(seriesId), '\', \'', escapeValue(sequenceId), '\')">',
+                  '<button class="planning-curriculum__series-drag planning-curriculum__sequence-drag" type="button" data-series-color="', sequenceColor, '" aria-label="Unterrichtssequenz verschieben" onclick="return window.UnterrichtsassistentApp.stopEventPropagation(event)" onpointerdown="return window.UnterrichtsassistentApp.startCurriculumSequenceDrag(event, \'', escapeValue(seriesId), '\', \'', escapeValue(sequenceId), '\')">&#8645;</button>',
+                  '<button class="planning-curriculum__series-edit" type="button" aria-label="Unterrichtssequenz bearbeiten" onclick="window.UnterrichtsassistentApp.stopEventPropagation(event); return window.UnterrichtsassistentApp.openCurriculumSequenceModal(\'', escapeValue(seriesId), '\', \'', escapeValue(String(sequenceItem.id || "")), '\')">&#9998;</button>',
+                  '<div class="planning-curriculum__sequence-header">', escapeValue(String(sequenceItem.topic || "").trim() || "Ohne Thema"), '</div>',
+                  '<div class="planning-curriculum__sequence-footer"><span>', escapeValue(String(Math.max(0, Number(sequenceItem.hourDemand) || 0))), ' Std.</span><span class="planning-curriculum__toggle" aria-hidden="true">', isSequenceExpanded ? '&#9660;' : '&#9654;', '</span></div>',
+                  '</article>'
+                ].join("");
+              }).join(""),
+              '<button class="planning-curriculum__add planning-curriculum__add--sequence', activeCurriculumSequenceDropIndicator && String(activeCurriculumSequenceDropIndicator.seriesId || "").trim() === seriesId && !String(activeCurriculumSequenceDropIndicator.targetSequenceId || "").trim() ? ' is-drop-target is-drop-target--after' : '', '" data-sequence-drop-target-add="true" data-series-id="', escapeValue(seriesId), '"', activeCurriculumSequenceDropIndicator && String(activeCurriculumSequenceDropIndicator.seriesId || "").trim() === seriesId && !String(activeCurriculumSequenceDropIndicator.targetSequenceId || "").trim() ? ' style="--planning-curriculum-drop-color:' + escapeValue(String(activeCurriculumSequenceDropIndicator.color || "#3975ab")) + ';"' : '', ' type="button" aria-label="Unterrichtssequenz anlegen" onclick="return window.UnterrichtsassistentApp.openCurriculumSequenceModal(\'', escapeValue(seriesId), '\')">+</button>',
+              '</div>',
+              '</td>'
+            ].join("");
+          }).join(""),
+          '<td class="planning-curriculum__cell planning-curriculum__cell--spacer"></td>',
+          '</tr>'
+        ].join("") : '',
+        expandedCurriculumSequenceIds.length ? [
+          '<tr class="planning-curriculum__row planning-curriculum__row--lessons">',
+          orderedSeries.map(function (seriesItem) {
+            const seriesId = String(seriesItem && seriesItem.id || "").trim();
+            const isExpanded = Boolean(expandedSeriesIdsLookup[seriesId]);
+            const sequences = isExpanded ? getOrderedCurriculumSequencesForSeries(seriesId) : [];
+            const expandedSeriesWidth = Math.max(168, Number(seriesWidthLookup[seriesId]) || 168);
+
+            if (!isExpanded) {
+              return '<td class="planning-curriculum__cell planning-curriculum__cell--spacer"></td>';
+            }
+
+            return [
+              '<td class="planning-curriculum__cell planning-curriculum__cell--lesson-group" style="width:', escapeValue(String(expandedSeriesWidth)), 'px;min-width:', escapeValue(String(expandedSeriesWidth)), 'px;max-width:', escapeValue(String(expandedSeriesWidth)), 'px;">',
+              '<div class="planning-curriculum__lesson-series-wrap" style="width:', escapeValue(String(expandedSeriesWidth)), 'px;min-width:', escapeValue(String(expandedSeriesWidth)), 'px;max-width:', escapeValue(String(expandedSeriesWidth)), 'px;">',
+              sequences.map(function (sequenceItem) {
+                const sequenceId = String(sequenceItem && sequenceItem.id || "").trim();
+                const sequenceExpansionKey = [seriesId, sequenceId].join("::");
+                const isSequenceExpanded = Boolean(expandedSequenceIdsLookup[sequenceExpansionKey]);
+                const expandedLessonWidth = getExpandedLessonColumnWidth(sequenceId, isSequenceExpanded);
+
+                if (!isSequenceExpanded) {
+                  return '<div class="planning-curriculum__lesson-column planning-curriculum__lesson-column--spacer"></div>';
+                }
+
+                return [
+                  '<div class="planning-curriculum__lesson-column" style="width:', escapeValue(String(expandedLessonWidth)), 'px;min-width:', escapeValue(String(expandedLessonWidth)), 'px;max-width:', escapeValue(String(expandedLessonWidth)), 'px;">',
+                  '<div class="planning-curriculum__lesson-wrap" style="width:', escapeValue(String(expandedLessonWidth)), 'px;min-width:', escapeValue(String(expandedLessonWidth)), 'px;max-width:', escapeValue(String(expandedLessonWidth)), 'px;">',
+                  getOrderedCurriculumLessonsForSequence(sequenceId).map(function (lessonItem) {
+                    const lessonId = String(lessonItem && lessonItem.id || "").trim();
+                    const lessonColor = escapeValue(String(seriesItem && seriesItem.color || "#d9d4cb"));
+                    const isLessonDropTarget = activeCurriculumLessonDropIndicator
+                      && String(activeCurriculumLessonDropIndicator.sequenceId || "").trim() === sequenceId
+                      && String(activeCurriculumLessonDropIndicator.targetLessonId || "").trim() === lessonId;
+                    const lessonDropPlacement = isLessonDropTarget
+                      ? String(activeCurriculumLessonDropIndicator.placement || "").trim()
+                      : "";
+                    const lessonDropColor = isLessonDropTarget
+                      ? escapeValue(String(activeCurriculumLessonDropIndicator.color || "#3975ab"))
+                      : "";
+                    return [
+                      '<article class="planning-curriculum__lesson-block planning-curriculum__lesson-block--', escapeValue(String(lessonItem && lessonItem.hourType || "single") === "double" ? 'double' : 'single'), isLessonDropTarget ? ' is-drop-target is-drop-target--' + escapeValue(lessonDropPlacement || "after") : '', '" data-lesson-drop-target="', escapeValue(lessonId), '" data-sequence-id="', escapeValue(sequenceId), '" style="', isLessonDropTarget ? '--planning-curriculum-drop-color:' + lessonDropColor + ';"' : '', '">',
+                      '<button class="planning-curriculum__series-drag planning-curriculum__lesson-drag" type="button" aria-label="Unterrichtsstunde verschieben" onclick="return window.UnterrichtsassistentApp.stopEventPropagation(event)" onpointerdown="return window.UnterrichtsassistentApp.startCurriculumLessonDrag(event, \'', escapeValue(sequenceId), '\', \'', escapeValue(lessonId), '\', \'', lessonColor, '\')">&#8645;</button>',
+                      '<button class="planning-curriculum__series-edit planning-curriculum__lesson-edit" type="button" aria-label="Unterrichtsstunde bearbeiten" onclick="window.UnterrichtsassistentApp.stopEventPropagation(event); return window.UnterrichtsassistentApp.openCurriculumLessonModal(\'', escapeValue(seriesId), '\', \'', escapeValue(sequenceId), '\', \'', escapeValue(String(lessonItem && lessonItem.id || "")), '\')">&#9998;</button>',
+                      '<div class="planning-curriculum__lesson-topic">', escapeValue(String(lessonItem && lessonItem.topic || "").trim() || "Ohne Thema"), '</div>',
+                      '<div class="planning-curriculum__lesson-type">', String(lessonItem && lessonItem.hourType || "").trim() === "double" ? 'Doppel' : 'Einzel', '</div>',
+                      '</article>'
+                    ].join("");
+                  }).join(""),
+                  '<button class="planning-curriculum__add planning-curriculum__add--lesson', activeCurriculumLessonDropIndicator && String(activeCurriculumLessonDropIndicator.sequenceId || "").trim() === sequenceId && !String(activeCurriculumLessonDropIndicator.targetLessonId || "").trim() ? ' is-drop-target is-drop-target--after' : '', '" data-lesson-drop-target-add="true" data-sequence-id="', escapeValue(sequenceId), '"', activeCurriculumLessonDropIndicator && String(activeCurriculumLessonDropIndicator.sequenceId || "").trim() === sequenceId && !String(activeCurriculumLessonDropIndicator.targetLessonId || "").trim() ? ' style="--planning-curriculum-drop-color:' + escapeValue(String(activeCurriculumLessonDropIndicator.color || "#3975ab")) + ';"' : '', ' type="button" aria-label="Unterrichtsstunde anlegen" onclick="return window.UnterrichtsassistentApp.openCurriculumLessonModal(\'', escapeValue(seriesId), '\', \'', escapeValue(sequenceId), '\')">+</button>',
+                  '</div>',
+                  '</div>'
+                ].join("");
+              }).join(""),
+              '</div>',
+              '</td>'
+            ].join("");
+          }).join(""),
+          '<td class="planning-curriculum__cell planning-curriculum__cell--spacer"></td>',
+          '</tr>'
+        ].join("") : '',
+        '</tbody>',
+        '</table>',
+        '</div>',
+        '</article>',
+        buildCurriculumSeriesModal(),
+        buildCurriculumSequenceModal(),
+        buildCurriculumLessonModal(),
+        '</div>'
+      ].join("");
+    }
+
+    if (planningViewMode !== "stoffplanung" && (!startDate || !endDate || startDate > endDate)) {
       return [
         '<div class="panel-grid panel-grid--planung">',
         '<article class="panel panel--full">',
@@ -724,6 +1263,10 @@ window.Unterrichtsassistent.ui.views.planung = {
 
     if (planningViewMode === "unterrichtsplanung") {
       return buildInstructionPlanningContent();
+    }
+
+    if (planningViewMode === "stoffplanung") {
+      return buildStoffPlanningContent();
     }
 
     if (activePlanningDate && activePlanningDate > endDate) {

@@ -5,6 +5,9 @@ function createDomainSnapshot(rawData) {
   const {
     Assessment,
     AttendanceRecord,
+    CurriculumLessonPlan,
+    CurriculumSequence,
+    CurriculumSeries,
     HomeworkRecord,
     Lesson,
     PlanningCategory,
@@ -56,6 +59,9 @@ function createDomainSnapshot(rawData) {
     seatPlans: rawData.seatPlans.map((item) => new SeatPlan(item)),
     planningEvents: (Array.isArray(rawData.planningEvents) ? rawData.planningEvents : []).map((item) => new PlanningEvent(item)),
     planningCategories: (Array.isArray(rawData.planningCategories) ? rawData.planningCategories : []).map((item) => new PlanningCategory(item)),
+    curriculumSeries: (Array.isArray(rawData.curriculumSeries) ? rawData.curriculumSeries : []).map((item) => new CurriculumSeries(item)),
+    curriculumSequences: (Array.isArray(rawData.curriculumSequences) ? rawData.curriculumSequences : []).map((item) => new CurriculumSequence(item)),
+    curriculumLessonPlans: (Array.isArray(rawData.curriculumLessonPlans) ? rawData.curriculumLessonPlans : []).map((item) => new CurriculumLessonPlan(item)),
     seatOrders: (Array.isArray(rawData.seatOrders) ? rawData.seatOrders : rawData.seatPlans.map(function (item) {
       return {
         id: (item && item.id ? String(item.id) : "seat-order") + "-order",
@@ -138,6 +144,9 @@ function serializeDomainSnapshot(snapshot) {
     seatPlans: cloneItems(snapshot.seatPlans, ["id", "classId", "room", "validFrom", "validTo", "updatedAt", "seats", "deskLayoutItems", "deskLayoutLinks", "roomWindowSide", "roomWidth", "roomHeight"]),
     planningEvents: cloneItems(snapshot.planningEvents || [], ["id", "title", "startDate", "endDate", "startTime", "endTime", "category", "description", "priority"]),
     planningCategories: cloneItems(snapshot.planningCategories || [], ["id", "name", "color"]),
+    curriculumSeries: cloneItems(snapshot.curriculumSeries || [], ["id", "classId", "topic", "hourDemand", "color", "nextSeriesId"]),
+    curriculumSequences: cloneItems(snapshot.curriculumSequences || [], ["id", "seriesId", "topic", "hourDemand", "nextSequenceId"]),
+    curriculumLessonPlans: cloneItems(snapshot.curriculumLessonPlans || [], ["id", "sequenceId", "topic", "hourType", "nextLessonId"]),
     seatOrders: cloneItems(snapshot.seatOrders || [], ["id", "classId", "room", "validFrom", "validTo", "updatedAt", "seats"])
   };
 }
