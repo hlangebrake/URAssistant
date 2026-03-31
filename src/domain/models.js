@@ -214,13 +214,25 @@ class PlanningCategory {
     }
   }
 
+class PlanningInstructionLessonStatus {
+  constructor({ id, classId = "", lessonDate = "", isCancelled = false, cancelReason = "" }) {
+    this.id = id;
+    this.classId = classId;
+    this.lessonDate = String(lessonDate || "").slice(0, 10);
+    this.isCancelled = Boolean(isCancelled);
+    this.cancelReason = this.isCancelled ? String(cancelReason || "").trim() : "";
+  }
+}
+
 class CurriculumSeries {
-  constructor({ id, classId = "", topic = "", hourDemand = 0, color = "", nextSeriesId = "" }) {
+  constructor({ id, classId = "", topic = "", hourDemand = 0, color = "", startMode = "automatic", startDate = "", nextSeriesId = "" }) {
     this.id = id;
     this.classId = classId;
     this.topic = topic;
     this.hourDemand = Math.max(0, Number(hourDemand) || 0);
     this.color = color;
+    this.startMode = startMode === "manual" ? "manual" : "automatic";
+    this.startDate = this.startMode === "manual" ? String(startDate || "").trim() : "";
     this.nextSeriesId = nextSeriesId;
   }
 }
@@ -245,6 +257,46 @@ class CurriculumLessonPlan {
   }
 }
 
+class CurriculumLessonPhase {
+  constructor({ id, lessonPlanId = "", title = "", durationMinutes = 0, isReserve = false, nextPhaseId = "" }) {
+    this.id = id;
+    this.lessonPlanId = lessonPlanId;
+    this.title = String(title || "").trim();
+    this.durationMinutes = Math.max(0, Number(durationMinutes) || 0);
+    this.isReserve = Boolean(isReserve);
+    this.nextPhaseId = nextPhaseId;
+  }
+}
+
+class CurriculumLessonStep {
+  constructor({ id, phaseId = "", title = "", content = "", socialForm = "plenum", material = "", nextStepId = "" }) {
+    const normalizedSocialForm = String(socialForm || "").trim().toLowerCase();
+
+    this.id = id;
+    this.phaseId = phaseId;
+    this.title = String(title || "").trim();
+    this.content = String(content || "").trim();
+    this.socialForm = ["einzel", "partner", "gruppe", "plenum"].indexOf(normalizedSocialForm) >= 0
+      ? normalizedSocialForm
+      : "plenum";
+    this.material = String(material || "").trim();
+    this.nextStepId = nextStepId;
+  }
+}
+
+class CurriculumLessonPhaseStatus {
+  constructor({ id, classId = "", lessonDate = "", lessonPlanId = "", phaseId = "", isCompleted = false, elapsedMinutes = 0, resumeStartMinutes = 0 }) {
+    this.id = id;
+    this.classId = classId;
+    this.lessonDate = String(lessonDate || "").slice(0, 10);
+    this.lessonPlanId = lessonPlanId;
+    this.phaseId = phaseId;
+    this.isCompleted = Boolean(isCompleted);
+    this.elapsedMinutes = Math.max(0, Number(elapsedMinutes) || 0);
+    this.resumeStartMinutes = Math.max(0, Number(resumeStartMinutes) || 0);
+  }
+}
+
 window.Unterrichtsassistent.domain.Student = Student;
 window.Unterrichtsassistent.domain.SchoolClass = SchoolClass;
 window.Unterrichtsassistent.domain.Lesson = Lesson;
@@ -259,6 +311,10 @@ window.Unterrichtsassistent.domain.SeatPlan = SeatPlan;
 window.Unterrichtsassistent.domain.SeatOrder = SeatOrder;
 window.Unterrichtsassistent.domain.PlanningEvent = PlanningEvent;
 window.Unterrichtsassistent.domain.PlanningCategory = PlanningCategory;
+window.Unterrichtsassistent.domain.PlanningInstructionLessonStatus = PlanningInstructionLessonStatus;
 window.Unterrichtsassistent.domain.CurriculumSeries = CurriculumSeries;
 window.Unterrichtsassistent.domain.CurriculumSequence = CurriculumSequence;
 window.Unterrichtsassistent.domain.CurriculumLessonPlan = CurriculumLessonPlan;
+window.Unterrichtsassistent.domain.CurriculumLessonPhase = CurriculumLessonPhase;
+window.Unterrichtsassistent.domain.CurriculumLessonStep = CurriculumLessonStep;
+window.Unterrichtsassistent.domain.CurriculumLessonPhaseStatus = CurriculumLessonPhaseStatus;

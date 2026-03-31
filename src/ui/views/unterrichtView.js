@@ -13,20 +13,76 @@ window.Unterrichtsassistent.ui.views.unterricht = {
     const toolMode = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getUnterrichtToolMode === "function"
       ? window.UnterrichtsassistentApp.getUnterrichtToolMode()
       : "attendance";
+    const referenceDate = service && typeof service.getReferenceDate === "function"
+      ? service.getReferenceDate()
+      : new Date();
     const currentClassLesson = activeClass && typeof service.getCurrentLessonForClass === "function"
-      ? service.getCurrentLessonForClass(activeClass.id, service.getReferenceDate())
+      ? service.getCurrentLessonForClass(activeClass.id, referenceDate)
       : null;
     const activeDateTimeMode = service && service.snapshot
       ? String(service.snapshot.activeDateTimeMode || "live")
       : "live";
-    const activeRoom = activeClass ? service.getRelevantRoomForClass(activeClass.id, service.getReferenceDate()) : "";
+    const snapshot = service && service.snapshot ? service.snapshot : {};
+    const activeRoom = activeClass ? service.getRelevantRoomForClass(activeClass.id, referenceDate) : "";
     const currentSeatOrder = activeClass && typeof service.getCurrentSeatOrder === "function"
-      ? service.getCurrentSeatOrder(activeClass.id, activeRoom, service.getReferenceDate())
+      ? service.getCurrentSeatOrder(activeClass.id, activeRoom, referenceDate)
       : null;
     const currentSeatPlan = activeClass
-      ? service.getCurrentSeatPlan(activeClass.id, activeRoom, service.getReferenceDate())
+      ? service.getCurrentSeatPlan(activeClass.id, activeRoom, referenceDate)
       : null;
     const students = activeClass ? service.getStudentsForClass(activeClass.id) : [];
+    const planningEvents = Array.isArray(snapshot.planningEvents) ? snapshot.planningEvents : [];
+    const schoolYearStart = String(snapshot.schoolYearStart || "").slice(0, 10);
+    const schoolYearEnd = String(snapshot.schoolYearEnd || "").slice(0, 10);
+    const lessonStatusLookup = (Array.isArray(snapshot.planningInstructionLessonStatuses) ? snapshot.planningInstructionLessonStatuses : []).reduce(function (lookup, statusItem) {
+      const classId = String(statusItem && statusItem.classId || "").trim();
+      const lessonDate = String(statusItem && statusItem.lessonDate || "").slice(0, 10);
+
+      if (classId && lessonDate) {
+        lookup[[classId, lessonDate].join("::")] = statusItem;
+      }
+
+      return lookup;
+    }, {});
+    const lessonPlanLookup = (Array.isArray(snapshot.curriculumLessonPlans) ? snapshot.curriculumLessonPlans : []).reduce(function (lookup, entry) {
+      const entryId = String(entry && entry.id || "").trim();
+
+      if (entryId) {
+        lookup[entryId] = entry;
+      }
+
+      return lookup;
+    }, {});
+    const sequenceLookup = (Array.isArray(snapshot.curriculumSequences) ? snapshot.curriculumSequences : []).reduce(function (lookup, entry) {
+      const entryId = String(entry && entry.id || "").trim();
+
+      if (entryId) {
+        lookup[entryId] = entry;
+      }
+
+      return lookup;
+    }, {});
+    const seriesLookup = (Array.isArray(snapshot.curriculumSeries) ? snapshot.curriculumSeries : []).reduce(function (lookup, entry) {
+      const entryId = String(entry && entry.id || "").trim();
+
+      if (entryId) {
+        lookup[entryId] = entry;
+      }
+
+      return lookup;
+    }, {});
+    const lessonPhaseStatusLookup = (Array.isArray(snapshot.curriculumLessonPhaseStatuses) ? snapshot.curriculumLessonPhaseStatuses : []).reduce(function (lookup, statusItem) {
+      const classId = String(statusItem && statusItem.classId || "").trim();
+      const lessonDate = String(statusItem && statusItem.lessonDate || "").slice(0, 10);
+      const lessonPlanId = String(statusItem && statusItem.lessonPlanId || "").trim();
+      const phaseId = String(statusItem && statusItem.phaseId || "").trim();
+
+      if (classId && lessonDate && lessonPlanId && phaseId && statusItem) {
+        lookup[[classId, lessonDate, lessonPlanId, phaseId].join("::")] = statusItem;
+      }
+
+      return lookup;
+    }, {});
     const deskLayoutItemsSource = currentSeatPlan && Array.isArray(currentSeatPlan.deskLayoutItems)
       ? currentSeatPlan.deskLayoutItems
       : [];
@@ -48,6 +104,593 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         .replace(/>/g, "&gt;")
         .replace(/\r/g, "&#13;")
         .replace(/\n/g, "&#10;");
+    }
+
+    function parseLocalDate(dateValue) {
+      const normalized = String(dateValue || "").slice(0, 10);
+      const parts = normalized.split("-");
+      const year = Number(parts[0]);
+      const month = Number(parts[1]);
+      const day = Number(parts[2]);
+
+      if (parts.length !== 3 || Number.isNaN(year) || Number.isNaN(month) || Number.isNaN(day)) {
+        return null;
+      }
+
+      return new Date(year, month - 1, day);
+    }
+
+    function toIsoDate(dateValue) {
+      if (!(dateValue instanceof Date) || Number.isNaN(dateValue.getTime())) {
+        return "";
+      }
+
+      return [
+        String(dateValue.getFullYear()).padStart(4, "0"),
+        String(dateValue.getMonth() + 1).padStart(2, "0"),
+        String(dateValue.getDate()).padStart(2, "0")
+      ].join("-");
+    }
+
+    function formatShortDateLabel(dateValue) {
+      const normalizedDate = String(dateValue || "").slice(0, 10);
+
+      if (!normalizedDate) {
+        return "";
+      }
+
+      return normalizedDate.slice(8, 10) + "." + normalizedDate.slice(5, 7) + ".";
+    }
+
+    function normalizePlanningCategoryKey(value) {
+      return String(value || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[\s_-]+/g, "");
+    }
+
+    function isInstructionFreeDateValue(isoDate) {
+      return planningEvents.some(function (eventItem) {
+        const category = normalizePlanningCategoryKey(eventItem && eventItem.category);
+        const startDateValue = String(eventItem && eventItem.startDate || "").slice(0, 10);
+        const endDateValue = String(eventItem && eventItem.endDate || startDateValue).slice(0, 10);
+
+        return category === "unterrichtsfrei" && startDateValue && startDateValue <= isoDate && isoDate <= endDateValue;
+      });
+    }
+
+    function getOrderedCurriculumSeriesForClass(classId) {
+      const items = (Array.isArray(snapshot.curriculumSeries) ? snapshot.curriculumSeries : []).filter(function (entry) {
+        return String(entry && entry.classId || "").trim() === String(classId || "").trim();
+      });
+      const incomingCounts = {};
+      const itemById = {};
+      const ordered = [];
+      let current = null;
+
+      items.forEach(function (entry) {
+        const entryId = String(entry && entry.id || "").trim();
+
+        if (!entryId) {
+          return;
+        }
+
+        itemById[entryId] = entry;
+        incomingCounts[entryId] = incomingCounts[entryId] || 0;
+      });
+
+      items.forEach(function (entry) {
+        const nextId = String(entry && entry.nextSeriesId || "").trim();
+
+        if (nextId && Object.prototype.hasOwnProperty.call(incomingCounts, nextId)) {
+          incomingCounts[nextId] += 1;
+        }
+      });
+
+      current = items.find(function (entry) {
+        return !incomingCounts[String(entry && entry.id || "").trim()];
+      }) || items[0] || null;
+
+      while (current) {
+        const currentId = String(current && current.id || "").trim();
+        const nextId = String(current && current.nextSeriesId || "").trim();
+
+        if (!currentId || ordered.some(function (entry) {
+          return String(entry && entry.id || "").trim() === currentId;
+        })) {
+          break;
+        }
+
+        ordered.push(current);
+        current = nextId && itemById[nextId] ? itemById[nextId] : null;
+      }
+
+      items.forEach(function (entry) {
+        if (!ordered.some(function (orderedEntry) {
+          return String(orderedEntry && orderedEntry.id || "").trim() === String(entry && entry.id || "").trim();
+        })) {
+          ordered.push(entry);
+        }
+      });
+
+      return ordered;
+    }
+
+    function getOrderedCurriculumSequencesForSeries(seriesId) {
+      const items = (Array.isArray(snapshot.curriculumSequences) ? snapshot.curriculumSequences : []).filter(function (entry) {
+        return String(entry && entry.seriesId || "").trim() === String(seriesId || "").trim();
+      });
+      const incomingCounts = {};
+      const itemById = {};
+      const ordered = [];
+      let current = null;
+
+      items.forEach(function (entry) {
+        const entryId = String(entry && entry.id || "").trim();
+
+        if (!entryId) {
+          return;
+        }
+
+        itemById[entryId] = entry;
+        incomingCounts[entryId] = incomingCounts[entryId] || 0;
+      });
+
+      items.forEach(function (entry) {
+        const nextId = String(entry && entry.nextSequenceId || "").trim();
+
+        if (nextId && Object.prototype.hasOwnProperty.call(incomingCounts, nextId)) {
+          incomingCounts[nextId] += 1;
+        }
+      });
+
+      current = items.find(function (entry) {
+        return !incomingCounts[String(entry && entry.id || "").trim()];
+      }) || items[0] || null;
+
+      while (current) {
+        const currentId = String(current && current.id || "").trim();
+        const nextId = String(current && current.nextSequenceId || "").trim();
+
+        if (!currentId || ordered.some(function (entry) {
+          return String(entry && entry.id || "").trim() === currentId;
+        })) {
+          break;
+        }
+
+        ordered.push(current);
+        current = nextId && itemById[nextId] ? itemById[nextId] : null;
+      }
+
+      items.forEach(function (entry) {
+        if (!ordered.some(function (orderedEntry) {
+          return String(orderedEntry && orderedEntry.id || "").trim() === String(entry && entry.id || "").trim();
+        })) {
+          ordered.push(entry);
+        }
+      });
+
+      return ordered;
+    }
+
+    function getOrderedCurriculumLessonsForSequence(sequenceId) {
+      const items = (Array.isArray(snapshot.curriculumLessonPlans) ? snapshot.curriculumLessonPlans : []).filter(function (entry) {
+        return String(entry && entry.sequenceId || "").trim() === String(sequenceId || "").trim();
+      });
+      const incomingCounts = {};
+      const itemById = {};
+      const ordered = [];
+      let current = null;
+
+      items.forEach(function (entry) {
+        const entryId = String(entry && entry.id || "").trim();
+
+        if (!entryId) {
+          return;
+        }
+
+        itemById[entryId] = entry;
+        incomingCounts[entryId] = incomingCounts[entryId] || 0;
+      });
+
+      items.forEach(function (entry) {
+        const nextId = String(entry && entry.nextLessonId || "").trim();
+
+        if (nextId && Object.prototype.hasOwnProperty.call(incomingCounts, nextId)) {
+          incomingCounts[nextId] += 1;
+        }
+      });
+
+      current = items.find(function (entry) {
+        return !incomingCounts[String(entry && entry.id || "").trim()];
+      }) || items[0] || null;
+
+      while (current) {
+        const currentId = String(current && current.id || "").trim();
+        const nextId = String(current && current.nextLessonId || "").trim();
+
+        if (!currentId || ordered.some(function (entry) {
+          return String(entry && entry.id || "").trim() === currentId;
+        })) {
+          break;
+        }
+
+        ordered.push(current);
+        current = nextId && itemById[nextId] ? itemById[nextId] : null;
+      }
+
+      items.forEach(function (entry) {
+        if (!ordered.some(function (orderedEntry) {
+          return String(orderedEntry && orderedEntry.id || "").trim() === String(entry && entry.id || "").trim();
+        })) {
+          ordered.push(entry);
+        }
+      });
+
+      return ordered;
+    }
+
+    function getOrderedCurriculumLessonPhasesForLesson(lessonPlanId) {
+      const items = (Array.isArray(snapshot.curriculumLessonPhases) ? snapshot.curriculumLessonPhases : []).filter(function (entry) {
+        return String(entry && entry.lessonPlanId || "").trim() === String(lessonPlanId || "").trim();
+      });
+      const incomingCounts = {};
+      const itemById = {};
+      const ordered = [];
+      let current = null;
+
+      items.forEach(function (entry) {
+        const entryId = String(entry && entry.id || "").trim();
+
+        if (!entryId) {
+          return;
+        }
+
+        itemById[entryId] = entry;
+        incomingCounts[entryId] = incomingCounts[entryId] || 0;
+      });
+
+      items.forEach(function (entry) {
+        const nextId = String(entry && entry.nextPhaseId || "").trim();
+
+        if (nextId && Object.prototype.hasOwnProperty.call(incomingCounts, nextId)) {
+          incomingCounts[nextId] += 1;
+        }
+      });
+
+      current = items.find(function (entry) {
+        return !incomingCounts[String(entry && entry.id || "").trim()];
+      }) || items[0] || null;
+
+      while (current) {
+        const currentId = String(current && current.id || "").trim();
+        const nextId = String(current && current.nextPhaseId || "").trim();
+
+        if (!currentId || ordered.some(function (entry) {
+          return String(entry && entry.id || "").trim() === currentId;
+        })) {
+          break;
+        }
+
+        ordered.push(current);
+        current = nextId && itemById[nextId] ? itemById[nextId] : null;
+      }
+
+      items.forEach(function (entry) {
+        if (!ordered.some(function (orderedEntry) {
+          return String(orderedEntry && orderedEntry.id || "").trim() === String(entry && entry.id || "").trim();
+        })) {
+          ordered.push(entry);
+        }
+      });
+
+      return ordered;
+    }
+
+    function getOrderedCurriculumLessonStepsForPhase(phaseId) {
+      const items = (Array.isArray(snapshot.curriculumLessonSteps) ? snapshot.curriculumLessonSteps : []).filter(function (entry) {
+        return String(entry && entry.phaseId || "").trim() === String(phaseId || "").trim();
+      });
+      const incomingCounts = {};
+      const itemById = {};
+      const ordered = [];
+      let current = null;
+
+      items.forEach(function (entry) {
+        const entryId = String(entry && entry.id || "").trim();
+
+        if (!entryId) {
+          return;
+        }
+
+        itemById[entryId] = entry;
+        incomingCounts[entryId] = incomingCounts[entryId] || 0;
+      });
+
+      items.forEach(function (entry) {
+        const nextId = String(entry && entry.nextStepId || "").trim();
+
+        if (nextId && Object.prototype.hasOwnProperty.call(incomingCounts, nextId)) {
+          incomingCounts[nextId] += 1;
+        }
+      });
+
+      current = items.find(function (entry) {
+        return !incomingCounts[String(entry && entry.id || "").trim()];
+      }) || items[0] || null;
+
+      while (current) {
+        const currentId = String(current && current.id || "").trim();
+        const nextId = String(current && current.nextStepId || "").trim();
+
+        if (!currentId || ordered.some(function (entry) {
+          return String(entry && entry.id || "").trim() === currentId;
+        })) {
+          break;
+        }
+
+        ordered.push(current);
+        current = nextId && itemById[nextId] ? itemById[nextId] : null;
+      }
+
+      items.forEach(function (entry) {
+        if (!ordered.some(function (orderedEntry) {
+          return String(orderedEntry && orderedEntry.id || "").trim() === String(entry && entry.id || "").trim();
+        })) {
+          ordered.push(entry);
+        }
+      });
+
+      return ordered;
+    }
+
+    function getCurriculumLessonHourDemand(lessonItem) {
+      return String(lessonItem && lessonItem.hourType || "").trim() === "double" ? 2 : 1;
+    }
+
+    function getCurriculumLessonStepSocialFormLabel(socialFormValue) {
+      const normalizedValue = String(socialFormValue || "").trim().toLowerCase();
+
+      if (normalizedValue === "einzel") {
+        return "Einzel";
+      }
+
+      if (normalizedValue === "partner") {
+        return "Partner";
+      }
+
+      if (normalizedValue === "gruppe") {
+        return "Gruppe";
+      }
+
+      return "Plenum";
+    }
+
+    function getCurriculumLessonStepSocialFormShortLabel(socialFormValue) {
+      const fullLabel = getCurriculumLessonStepSocialFormLabel(socialFormValue);
+      return fullLabel ? fullLabel.charAt(0) : "";
+    }
+
+    function getTimeValueInMinutes(timeValue) {
+      const parts = String(timeValue || "").split(":");
+      return ((Number(parts[0]) || 0) * 60) + (Number(parts[1]) || 0);
+    }
+
+    function buildInstructionAssignmentSlotsForClass(classId) {
+      const startDate = parseLocalDate(schoolYearStart);
+      const endDate = parseLocalDate(schoolYearEnd);
+      const cursor = startDate ? new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()) : null;
+      const lastDate = endDate ? new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate()) : null;
+      const lessonSlots = [];
+      const orderedSeries = getOrderedCurriculumSeriesForClass(classId);
+      let previousSeriesLastAssignedSlotIndex = -1;
+
+      if (!classId || !cursor || !lastDate || !service || typeof service.getLessonUnitsForClass !== "function") {
+        return [];
+      }
+
+      while (cursor <= lastDate) {
+        const isoDate = toIsoDate(cursor);
+        const lessonStatus = lessonStatusLookup[[String(classId || "").trim(), isoDate].join("::")] || null;
+
+        if (!isInstructionFreeDateValue(isoDate) && !(lessonStatus && lessonStatus.isCancelled)) {
+          service.getLessonUnitsForClass(classId, cursor).forEach(function (lessonUnit) {
+            const currentTimetable = typeof service.getCurrentTimetable === "function"
+              ? service.getCurrentTimetable(cursor)
+              : null;
+            const timetableRows = currentTimetable && typeof service.getTimetableRows === "function"
+              ? service.getTimetableRows(currentTimetable)
+              : [];
+            const weekdayKey = String(Number(lessonUnit && lessonUnit.weekday));
+            const sourceRowId = String(lessonUnit && lessonUnit.sourceRowId || "");
+            const lessonCount = timetableRows.filter(function (row) {
+              const cell = row && row.cells ? row.cells[weekdayKey] : null;
+              const effectiveClassId = row && row.type === "lesson" && cell
+                ? (cell.isBlocked ? cell.inheritedClassId : cell.classId)
+                : "";
+              const effectiveSourceRowId = row && row.type === "lesson" && cell
+                ? String(cell.isBlocked ? (cell.sourceRowId || row.id) : row.id)
+                : "";
+
+              return effectiveClassId === classId && effectiveSourceRowId === sourceRowId;
+            }).length || 1;
+            let partIndex = 0;
+
+            while (partIndex < Math.max(1, lessonCount)) {
+              lessonSlots.push({
+                lessonDate: isoDate,
+                sourceRowId: sourceRowId,
+                startTime: String(lessonUnit && lessonUnit.startTime || "").trim(),
+                endTime: String(lessonUnit && lessonUnit.endTime || "").trim(),
+                unitIndex: partIndex,
+                unitCount: Math.max(1, lessonCount),
+                assignedSeriesId: "",
+                assignedSequenceId: "",
+                assignedLessonId: ""
+              });
+              partIndex += 1;
+            }
+          });
+        }
+
+        cursor.setDate(cursor.getDate() + 1);
+      }
+
+      orderedSeries.forEach(function (seriesItem) {
+        const seriesId = String(seriesItem && seriesItem.id || "").trim();
+        const startMode = String(seriesItem && seriesItem.startMode || "").trim() === "manual" ? "manual" : "automatic";
+        const manualStartDate = String(seriesItem && seriesItem.startDate || "").slice(0, 10);
+        let remainingDemand = Math.max(0, Number(seriesItem && seriesItem.hourDemand) || 0);
+        const earliestAllowedSlotIndex = previousSeriesLastAssignedSlotIndex + 1;
+        let startIndex = -1;
+        let cursorIndex;
+        let lastAssignedSlotIndex = -1;
+
+        if (!remainingDemand) {
+          return;
+        }
+
+        startIndex = lessonSlots.findIndex(function (slot, slotIndex) {
+          if (slotIndex < earliestAllowedSlotIndex || slot.assignedSeriesId) {
+            return false;
+          }
+
+          if (startMode === "manual" && manualStartDate) {
+            return String(slot.lessonDate || "") >= manualStartDate;
+          }
+
+          return true;
+        });
+
+        if (startIndex < 0) {
+          return;
+        }
+
+        cursorIndex = startIndex;
+
+        while (cursorIndex < lessonSlots.length && remainingDemand > 0) {
+          if (!lessonSlots[cursorIndex].assignedSeriesId) {
+            lessonSlots[cursorIndex].assignedSeriesId = seriesId;
+            remainingDemand -= 1;
+            lastAssignedSlotIndex = cursorIndex;
+          }
+
+          cursorIndex += 1;
+        }
+
+        if (lastAssignedSlotIndex >= 0) {
+          previousSeriesLastAssignedSlotIndex = lastAssignedSlotIndex;
+        }
+      });
+
+      orderedSeries.forEach(function (seriesItem) {
+        const seriesId = String(seriesItem && seriesItem.id || "").trim();
+        const seriesSlots = lessonSlots.filter(function (slot) {
+          return String(slot && slot.assignedSeriesId || "").trim() === seriesId;
+        });
+        const orderedSequences = getOrderedCurriculumSequencesForSeries(seriesId);
+        let seriesSlotIndex = 0;
+
+        orderedSequences.forEach(function (sequenceItem) {
+          const sequenceId = String(sequenceItem && sequenceItem.id || "").trim();
+          let remainingDemand = Math.max(0, Number(sequenceItem && sequenceItem.hourDemand) || 0);
+
+          while (seriesSlotIndex < seriesSlots.length && remainingDemand > 0) {
+            if (seriesSlots[seriesSlotIndex]) {
+              seriesSlots[seriesSlotIndex].assignedSequenceId = sequenceId;
+              remainingDemand -= 1;
+            }
+
+            seriesSlotIndex += 1;
+          }
+        });
+      });
+
+      (Array.isArray(snapshot.curriculumSequences) ? snapshot.curriculumSequences : []).forEach(function (sequenceItem) {
+        const sequenceId = String(sequenceItem && sequenceItem.id || "").trim();
+        const sequenceSlots = lessonSlots.filter(function (slot) {
+          return String(slot && slot.assignedSequenceId || "").trim() === sequenceId;
+        });
+        const orderedLessons = getOrderedCurriculumLessonsForSequence(sequenceId);
+        let sequenceSlotIndex = 0;
+
+        orderedLessons.forEach(function (lessonItem) {
+          let remainingDemand = getCurriculumLessonHourDemand(lessonItem);
+          const lessonId = String(lessonItem && lessonItem.id || "").trim();
+
+          while (sequenceSlotIndex < sequenceSlots.length && remainingDemand > 0) {
+            if (sequenceSlots[sequenceSlotIndex]) {
+              sequenceSlots[sequenceSlotIndex].assignedLessonId = lessonId;
+              remainingDemand -= 1;
+            }
+
+            sequenceSlotIndex += 1;
+          }
+        });
+      });
+
+      return lessonSlots;
+    }
+
+    function getCurrentAssignedCurriculumLessonFlow() {
+      const normalizedClassId = String(activeClass && activeClass.id || "").trim();
+      const lessonDate = toIsoDate(referenceDate);
+      const lessonSlots = normalizedClassId ? buildInstructionAssignmentSlotsForClass(normalizedClassId) : [];
+      const currentSourceRowId = String(currentClassLesson && currentClassLesson.sourceRowId || "").trim();
+      const currentMinutes = (referenceDate.getHours() * 60) + referenceDate.getMinutes();
+      const matchingSlots = lessonSlots.filter(function (slot) {
+        return String(slot && slot.lessonDate || "").trim() === lessonDate
+          && String(slot && slot.sourceRowId || "").trim() === currentSourceRowId;
+      });
+      let slotIndex = 0;
+      let selectedSlot = null;
+      let lessonPlan = null;
+      let sequence = null;
+      let series = null;
+      let phases = [];
+
+      if (!activeClass || !currentClassLesson || !lessonDate || !matchingSlots.length) {
+        return null;
+      }
+
+      if (matchingSlots.length > 1) {
+        const startMinutes = (() => {
+          const parts = String(currentClassLesson.startTime || "").split(":");
+          return ((Number(parts[0]) || 0) * 60) + (Number(parts[1]) || 0);
+        })();
+        const endMinutes = (() => {
+          const parts = String(currentClassLesson.endTime || "").split(":");
+          return ((Number(parts[0]) || 0) * 60) + (Number(parts[1]) || 0);
+        })();
+        const segmentSize = Math.max((endMinutes - startMinutes) / matchingSlots.length, 1);
+
+        slotIndex = Math.max(0, Math.min(matchingSlots.length - 1, Math.floor((currentMinutes - startMinutes) / segmentSize)));
+      }
+
+      selectedSlot = matchingSlots[slotIndex] || matchingSlots[0] || null;
+      lessonPlan = selectedSlot && lessonPlanLookup[String(selectedSlot.assignedLessonId || "").trim()]
+        ? lessonPlanLookup[String(selectedSlot.assignedLessonId || "").trim()]
+        : null;
+
+      if (!lessonPlan) {
+        return null;
+      }
+
+      sequence = sequenceLookup[String(lessonPlan.sequenceId || "").trim()] || null;
+      series = sequence ? (seriesLookup[String(sequence.seriesId || "").trim()] || null) : null;
+      phases = getOrderedCurriculumLessonPhasesForLesson(String(lessonPlan.id || "").trim());
+
+      if (!phases.length) {
+        return null;
+      }
+
+      return {
+        lessonDate: lessonDate,
+        lessonPlan: lessonPlan,
+        sequence: sequence,
+        series: series,
+        phases: phases
+      };
     }
 
     function getStudentById(studentId) {
@@ -393,12 +1036,137 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       ].join("");
     }
 
+    function renderLiveLessonFlowPanel() {
+      const lessonFlowData = getCurrentAssignedCurriculumLessonFlow();
+      const lessonTopic = lessonFlowData && lessonFlowData.lessonPlan
+        ? String(lessonFlowData.lessonPlan.topic || "").trim()
+        : "";
+      const lessonDateLabel = lessonFlowData ? formatShortDateLabel(lessonFlowData.lessonDate) : "";
+
+      if (!activeClass || !currentClassLesson) {
+        return [
+          '<article class="unterricht-layout__live-flow">',
+          '<div class="unterricht-live-flow__header">',
+          '<h2 class="unterricht-live-flow__title">Stundenverlauf</h2>',
+          '</div>',
+          '<div class="unterricht-live-flow__empty">Aktuell ist keine Unterrichtsstunde aktiv.</div>',
+          '</article>'
+        ].join("");
+      }
+
+      if (!lessonFlowData) {
+        return [
+          '<article class="unterricht-layout__live-flow">',
+          '<div class="unterricht-live-flow__header">',
+          '<h2 class="unterricht-live-flow__title">Stundenverlauf</h2>',
+          '</div>',
+          '<div class="unterricht-live-flow__empty">Fuer diese Stunde ist kein geplanter Stundenverlauf hinterlegt.</div>',
+          '</article>'
+        ].join("");
+      }
+
+      return [
+        '<article class="unterricht-layout__live-flow">',
+        '<div class="unterricht-live-flow__header">',
+        '<h2 class="unterricht-live-flow__title">Stundenverlauf</h2>',
+        '<div class="unterricht-live-flow__meta">',
+        lessonTopic ? '<span class="unterricht-live-flow__meta-topic">' + escapeValue(lessonTopic) + '</span>' : "",
+        lessonDateLabel ? '<span class="unterricht-live-flow__meta-date">' + escapeValue(lessonDateLabel) + '</span>' : "",
+        '</div>',
+        '</div>',
+        '<div class="unterricht-live-flow__phase-list">',
+        (() => {
+          const totalLessonElapsedMinutes = Math.max(0, ((referenceDate.getHours() * 60) + referenceDate.getMinutes()) - getTimeValueInMinutes(currentClassLesson && currentClassLesson.startTime || ""));
+          let consumedCompletedMinutes = 0;
+
+          return lessonFlowData.phases.map(function (phaseItem) {
+            const phaseItemId = String(phaseItem && phaseItem.id || "").trim();
+            const phaseTitle = String(phaseItem && phaseItem.title || "").trim() || "Ohne Titel";
+            const phaseDuration = Number(phaseItem && phaseItem.durationMinutes) || 0;
+            const phaseSteps = getOrderedCurriculumLessonStepsForPhase(phaseItemId);
+            const phaseStatus = lessonPhaseStatusLookup[[String(activeClass && activeClass.id || "").trim(), lessonFlowData.lessonDate, String(lessonFlowData.lessonPlan && lessonFlowData.lessonPlan.id || "").trim(), phaseItemId].join("::")] || null;
+            const persistedElapsedMinutes = Math.max(0, Number(phaseStatus && phaseStatus.elapsedMinutes) || 0);
+            const resumeStartMinutes = Math.max(0, Number(phaseStatus && phaseStatus.resumeStartMinutes) || 0);
+            const isCompleted = Boolean(phaseStatus && phaseStatus.isCompleted);
+            let elapsedMinutes = 0;
+            let diffLabel = "";
+            let titleClasses = ["unterricht-live-flow__phase-title"];
+            let diffClass = "";
+
+            if (isCompleted) {
+              elapsedMinutes = persistedElapsedMinutes;
+            } else if (phaseStatus && persistedElapsedMinutes > 0) {
+              elapsedMinutes = persistedElapsedMinutes + Math.max(0, totalLessonElapsedMinutes - resumeStartMinutes);
+            } else {
+              elapsedMinutes = Math.max(0, totalLessonElapsedMinutes - consumedCompletedMinutes);
+            }
+
+            if (elapsedMinutes > phaseDuration && phaseDuration > 0) {
+              titleClasses.push("is-overdue");
+            }
+
+            if (isCompleted && phaseDuration > 0 && elapsedMinutes !== phaseDuration) {
+              if (elapsedMinutes > phaseDuration) {
+                diffClass = " is-overdue";
+                diffLabel = ' <span class="unterricht-live-flow__phase-diff' + diffClass + '">+' + escapeValue(String(elapsedMinutes - phaseDuration)) + '</span>';
+              } else {
+                diffClass = " is-under";
+                diffLabel = ' <span class="unterricht-live-flow__phase-diff' + diffClass + '">-' + escapeValue(String(phaseDuration - elapsedMinutes)) + '</span>';
+              }
+            }
+
+            consumedCompletedMinutes += elapsedMinutes;
+
+            return [
+              '<section class="unterricht-live-flow__phase' + (isCompleted ? ' is-completed' : '') + '">',
+              '<div class="unterricht-live-flow__phase-content">',
+              '<div class="unterricht-live-flow__phase-title-row">',
+              '<h3 class="' + titleClasses.join(" ") + '"><label class="unterricht-live-flow__phase-title-label"><input type="checkbox" aria-label="Phase erledigt" ' + (isCompleted ? 'checked ' : '') + 'onchange="return window.UnterrichtsassistentApp.toggleCurriculumLessonPhaseCompleted(\'' + escapeValue(String(activeClass && activeClass.id || "").trim()) + '\', \'' + escapeValue(lessonFlowData.lessonDate) + '\', \'' + escapeValue(String(lessonFlowData.lessonPlan && lessonFlowData.lessonPlan.id || "").trim()) + '\', \'' + escapeValue(phaseItemId) + '\', this.checked, ' + String(elapsedMinutes) + ', ' + String(totalLessonElapsedMinutes) + ')"><span>' + escapeValue(phaseTitle) + ' <span>(' + escapeValue(String(elapsedMinutes)) + ' / ' + escapeValue(String(phaseDuration)) + ' Min.)</span>' + diffLabel + '</span></label></h3>',
+              phaseItem && phaseItem.isReserve
+                ? '<span class="unterricht-live-flow__phase-flag">Reserve</span>'
+                : "",
+              '</div>',
+              !isCompleted && phaseSteps.length
+                ? '<div class="unterricht-live-flow__step-list">' + phaseSteps.map(function (stepItem) {
+                  const stepTitle = String(stepItem && stepItem.title || "").trim();
+                  const stepContent = String(stepItem && stepItem.content || "").trim();
+                  const stepMaterial = String(stepItem && stepItem.material || "").trim();
+
+                  return [
+                    '<div class="unterricht-live-flow__step">',
+                    '<div class="unterricht-live-flow__step-main">',
+                    stepTitle ? '<div class="unterricht-live-flow__step-title">' + escapeValue(stepTitle) + '</div>' : "",
+                    stepContent ? '<div class="unterricht-live-flow__step-content">' + escapeValue(stepContent) + '</div>' : "",
+                    (!stepTitle && !stepContent) ? '<div class="unterricht-live-flow__empty unterricht-live-flow__empty--inline">Noch kein Inhalt.</div>' : "",
+                    '</div>',
+                    '<div class="unterricht-live-flow__step-side">',
+                    '<div class="unterricht-live-flow__step-meta"><span>S</span><strong>' + escapeValue(getCurriculumLessonStepSocialFormShortLabel(stepItem && stepItem.socialForm)) + '</strong></div>',
+                    '<div class="unterricht-live-flow__step-meta"><span>M</span><strong>' + escapeValue(stepMaterial || "-") + '</strong></div>',
+                    '</div>',
+                    '</div>'
+                  ].join("");
+                }).join("") + '</div>'
+                : (!isCompleted
+                  ? '<div class="unterricht-live-flow__empty unterricht-live-flow__empty--inline">Noch keine Schritte angelegt.</div>'
+                  : ""),
+              '</div>',
+              '</section>'
+            ].join("");
+          }).join("");
+        })(),
+        '</div>',
+        '</article>'
+      ].join("");
+    }
+
     if (viewMode === "live") {
       return [
         '<div class="unterricht-layout unterricht-layout--live">',
-        '<article class="panel unterricht-layout__seatplan unterricht-layout__seatplan--full">',
         renderLiveNotice(),
+        '<article class="panel unterricht-layout__seatplan unterricht-layout__seatplan--full">',
         renderCompactSeatPlan(),
+        '</article>',
+        renderLiveLessonFlowPanel(),
         '<div class="import-modal" id="unterrichtWarningOtherModal" hidden>',
         '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeUnterrichtWarningOtherModal()"></div>',
         '<div class="import-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="unterrichtWarningOtherTitle">',
@@ -496,7 +1264,6 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         '</div>',
         '</form>',
         '</div>',
-        '</article>',
         '</div>'
       ].join("");
     }

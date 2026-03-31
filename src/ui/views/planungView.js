@@ -15,6 +15,9 @@ window.Unterrichtsassistent.ui.views.planung = {
     const planningEventDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActivePlanningEventDraft === "function"
       ? window.UnterrichtsassistentApp.getActivePlanningEventDraft()
       : null;
+    const planningInstructionLessonDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActivePlanningInstructionLessonDraft === "function"
+      ? window.UnterrichtsassistentApp.getActivePlanningInstructionLessonDraft()
+      : null;
     const curriculumSeriesDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveCurriculumSeriesDraft === "function"
       ? window.UnterrichtsassistentApp.getActiveCurriculumSeriesDraft()
       : null;
@@ -24,6 +27,14 @@ window.Unterrichtsassistent.ui.views.planung = {
     const curriculumLessonDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveCurriculumLessonDraft === "function"
       ? window.UnterrichtsassistentApp.getActiveCurriculumLessonDraft()
       : null;
+    const activeCurriculumLessonFlowLessonId = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveCurriculumLessonFlowLessonId === "function"
+      ? String(window.UnterrichtsassistentApp.getActiveCurriculumLessonFlowLessonId() || "").trim()
+      : "";
+    const activeCurriculumLessonFlowViewPhaseIds = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveCurriculumLessonFlowViewPhaseIds === "function"
+      ? window.UnterrichtsassistentApp.getActiveCurriculumLessonFlowViewPhaseIds().map(function (entry) {
+          return String(entry || "").trim();
+        }).filter(Boolean)
+      : [];
     const expandedCurriculumSeriesIds = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getExpandedCurriculumSeriesIds === "function"
       ? window.UnterrichtsassistentApp.getExpandedCurriculumSeriesIds().map(function (entry) {
           return String(entry || "").trim();
@@ -598,6 +609,16 @@ window.Unterrichtsassistent.ui.views.planung = {
       const occurrencesByDate = {};
       const cursor = startDate ? new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()) : null;
       const lastDate = endDate ? new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate()) : null;
+      const lessonStatusLookup = (Array.isArray(snapshot.planningInstructionLessonStatuses) ? snapshot.planningInstructionLessonStatuses : []).reduce(function (lookup, statusItem) {
+        const classId = String(statusItem && statusItem.classId || "").trim();
+        const lessonDate = String(statusItem && statusItem.lessonDate || "").slice(0, 10);
+
+        if (classId && lessonDate) {
+          lookup[[classId, lessonDate].join("::")] = statusItem;
+        }
+
+        return lookup;
+      }, {});
 
       if (!activeClass || !cursor || !lastDate || !service || typeof service.getLessonUnitsForClass !== "function") {
         return [];
@@ -655,17 +676,21 @@ window.Unterrichtsassistent.ui.views.planung = {
             }).length || 1;
 
             if (!occurrencesByDate[isoDate]) {
+              const lessonStatus = lessonStatusLookup[[String(activeClass.id || "").trim(), isoDate].join("::")] || null;
+
               occurrencesByDate[isoDate] = {
                 id: "unterrichtstag::" + isoDate,
                 lessonDate: isoDate,
                 lessonCount: 0,
-                remainingLessonCount: 0
+                remainingLessonCount: 0,
+                isCancelled: Boolean(lessonStatus && lessonStatus.isCancelled),
+                cancelReason: String(lessonStatus && lessonStatus.cancelReason || "").trim()
               };
             }
 
             occurrencesByDate[isoDate].lessonCount += Math.max(1, lessonCount);
 
-            if (!isLessonOccurrencePast(isoDate, lessonUnit && lessonUnit.endTime)) {
+            if (!occurrencesByDate[isoDate].isCancelled && !isLessonOccurrencePast(isoDate, lessonUnit && lessonUnit.endTime)) {
               occurrencesByDate[isoDate].remainingLessonCount += Math.max(1, lessonCount);
             }
           });
@@ -683,8 +708,579 @@ window.Unterrichtsassistent.ui.views.planung = {
       });
     }
 
-    function buildInstructionPlanningContent() {
+    function formatInstructionSeriesRange(startValue, endValue) {
+      if (!startValue) {
+        return "";
+      }
+
+      if (!endValue || startValue === endValue) {
+        return formatShortDateLabel(startValue);
+      }
+
+      return formatShortDateLabel(startValue) + " - " + formatShortDateLabel(endValue);
+    }
+
+    function buildInstructionLessonAssignmentData() {
       const lessonOccurrences = buildInstructionLessonOccurrences();
+      const orderedSeries = getOrderedCurriculumSeriesForActiveClass();
+      const lessonSlots = [];
+      const occurrenceLookup = {};
+      const seriesAssignments = {};
+      const sequenceAssignments = {};
+      const lessonPlanAssignments = {};
+      let previousSeriesLastAssignedSlotIndex = -1;
+
+      lessonOccurrences.forEach(function (occurrence) {
+        const occurrenceId = String(occurrence && occurrence.id || "").trim();
+        const totalUnits = Math.max(1, Number(occurrence && occurrence.lessonCount || 1));
+        const availableUnits = Math.max(0, Number(occurrence && occurrence.remainingLessonCount || 0));
+        const isCancelled = Boolean(occurrence && occurrence.isCancelled);
+        const assignmentColors = [];
+        const assignmentSequenceIds = [];
+        const assignmentSeriesIds = [];
+        const assignmentLessonIds = [];
+        let slotIndex = 0;
+
+        occurrenceLookup[occurrenceId] = {
+          occurrence: occurrence,
+          totalUnits: totalUnits,
+          availableUnits: availableUnits,
+          isCancelled: isCancelled,
+          cancelReason: String(occurrence && occurrence.cancelReason || "").trim(),
+          assignmentColors: assignmentColors,
+          assignmentSequenceIds: assignmentSequenceIds,
+          assignmentSeriesIds: assignmentSeriesIds,
+          assignmentLessonIds: assignmentLessonIds
+        };
+
+        while (slotIndex < (isCancelled ? 0 : totalUnits)) {
+          lessonSlots.push({
+            occurrenceId: occurrenceId,
+            lessonDate: String(occurrence && occurrence.lessonDate || "").trim(),
+            assignedSeriesId: "",
+            assignedColor: ""
+          });
+          slotIndex += 1;
+        }
+      });
+
+      orderedSeries.forEach(function (seriesItem) {
+        const seriesId = String(seriesItem && seriesItem.id || "").trim();
+        const startMode = String(seriesItem && seriesItem.startMode || "").trim() === "manual" ? "manual" : "automatic";
+        const manualStartDate = String(seriesItem && seriesItem.startDate || "").slice(0, 10);
+        const hourDemand = Math.max(0, Number(seriesItem && seriesItem.hourDemand) || 0);
+        const seriesColor = String(seriesItem && seriesItem.color || "#d9d4cb");
+        let remainingDemand = hourDemand;
+        const earliestAllowedSlotIndex = previousSeriesLastAssignedSlotIndex + 1;
+        let startIndex = -1;
+        let cursorIndex;
+        let lastAssignedSlotIndex = -1;
+
+        seriesAssignments[seriesId] = {
+          firstDate: "",
+          lastDate: "",
+          assignedUnitCount: 0,
+          color: seriesColor
+        };
+
+        if (!remainingDemand) {
+          return;
+        }
+
+        startIndex = lessonSlots.findIndex(function (slot, slotIndex) {
+          if (slotIndex < earliestAllowedSlotIndex) {
+            return false;
+          }
+
+          if (slot.assignedSeriesId) {
+            return false;
+          }
+
+          if (startMode === "manual" && manualStartDate) {
+            return String(slot.lessonDate || "") >= manualStartDate;
+          }
+
+          return true;
+        });
+
+        if (startIndex < 0) {
+          return;
+        }
+
+        cursorIndex = startIndex;
+
+        while (cursorIndex < lessonSlots.length && remainingDemand > 0) {
+          const slot = lessonSlots[cursorIndex];
+          const occurrenceEntry = occurrenceLookup[String(slot && slot.occurrenceId || "").trim()];
+
+          if (slot && !slot.assignedSeriesId && occurrenceEntry) {
+            slot.assignedSeriesId = seriesId;
+            slot.assignedColor = seriesColor;
+            occurrenceEntry.assignmentColors.push(seriesColor);
+            occurrenceEntry.assignmentSeriesIds.push(seriesId);
+            seriesAssignments[seriesId].assignedUnitCount += 1;
+
+            if (!seriesAssignments[seriesId].firstDate) {
+              seriesAssignments[seriesId].firstDate = String(slot.lessonDate || "").trim();
+            }
+
+            seriesAssignments[seriesId].lastDate = String(slot.lessonDate || "").trim();
+            remainingDemand -= 1;
+            lastAssignedSlotIndex = cursorIndex;
+          }
+
+          cursorIndex += 1;
+        }
+
+        if (lastAssignedSlotIndex >= 0) {
+          previousSeriesLastAssignedSlotIndex = lastAssignedSlotIndex;
+        }
+      });
+
+      orderedSeries.forEach(function (seriesItem) {
+        const seriesId = String(seriesItem && seriesItem.id || "").trim();
+        const seriesSlots = lessonSlots.filter(function (slot) {
+          return String(slot && slot.assignedSeriesId || "").trim() === seriesId;
+        });
+        const orderedSequences = getOrderedCurriculumSequencesForSeries(seriesId);
+        let seriesSlotIndex = 0;
+
+        orderedSequences.forEach(function (sequenceItem) {
+          const sequenceId = String(sequenceItem && sequenceItem.id || "").trim();
+          let remainingDemand = Math.max(0, Number(sequenceItem && sequenceItem.hourDemand) || 0);
+
+          sequenceAssignments[sequenceId] = {
+            firstDate: "",
+            lastDate: "",
+            assignedUnitCount: 0,
+            seriesId: seriesId
+          };
+
+          while (seriesSlotIndex < seriesSlots.length && remainingDemand > 0) {
+            const slot = seriesSlots[seriesSlotIndex];
+            const occurrenceEntry = occurrenceLookup[String(slot && slot.occurrenceId || "").trim()];
+
+            if (slot) {
+              slot.assignedSequenceId = sequenceId;
+              if (occurrenceEntry) {
+                occurrenceEntry.assignmentSequenceIds.push(sequenceId);
+              }
+              sequenceAssignments[sequenceId].assignedUnitCount += 1;
+
+              if (!sequenceAssignments[sequenceId].firstDate) {
+                sequenceAssignments[sequenceId].firstDate = String(slot.lessonDate || "").trim();
+              }
+
+              sequenceAssignments[sequenceId].lastDate = String(slot.lessonDate || "").trim();
+              remainingDemand -= 1;
+            }
+
+            seriesSlotIndex += 1;
+          }
+        });
+      });
+
+      Object.keys(sequenceAssignments).forEach(function (sequenceId) {
+        const sequenceSlots = lessonSlots.filter(function (slot) {
+          return String(slot && slot.assignedSequenceId || "").trim() === sequenceId;
+        });
+        const orderedLessons = getOrderedCurriculumLessonsForSequence(sequenceId);
+        let sequenceSlotIndex = 0;
+
+        orderedLessons.forEach(function (lessonItem) {
+          const lessonId = String(lessonItem && lessonItem.id || "").trim();
+          let remainingDemand = getCurriculumLessonHourDemand(lessonItem);
+
+          lessonPlanAssignments[lessonId] = {
+            firstDate: "",
+            lastDate: "",
+            assignedUnitCount: 0,
+            sequenceId: sequenceId
+          };
+
+          while (sequenceSlotIndex < sequenceSlots.length && remainingDemand > 0) {
+            const slot = sequenceSlots[sequenceSlotIndex];
+            const occurrenceEntry = occurrenceLookup[String(slot && slot.occurrenceId || "").trim()];
+
+            if (slot) {
+              slot.assignedLessonId = lessonId;
+              if (occurrenceEntry) {
+                occurrenceEntry.assignmentLessonIds.push(lessonId);
+              }
+              lessonPlanAssignments[lessonId].assignedUnitCount += 1;
+
+              if (!lessonPlanAssignments[lessonId].firstDate) {
+                lessonPlanAssignments[lessonId].firstDate = String(slot.lessonDate || "").trim();
+              }
+
+              lessonPlanAssignments[lessonId].lastDate = String(slot.lessonDate || "").trim();
+              remainingDemand -= 1;
+            }
+
+            sequenceSlotIndex += 1;
+          }
+        });
+      });
+
+      orderedSeries.forEach(function (seriesItem) {
+        const seriesId = String(seriesItem && seriesItem.id || "").trim();
+        const manualHourDemand = Math.max(0, Number(seriesItem && seriesItem.hourDemand) || 0);
+        const assignedUnitCount = seriesAssignments[seriesId]
+          ? Math.max(0, Number(seriesAssignments[seriesId].assignedUnitCount) || 0)
+          : 0;
+
+        if (seriesAssignments[seriesId]) {
+          seriesAssignments[seriesId].hasUnassignedDemand = manualHourDemand > assignedUnitCount;
+          seriesAssignments[seriesId].unassignedDemand = Math.max(0, manualHourDemand - assignedUnitCount);
+          if (seriesAssignments[seriesId].hasUnassignedDemand) {
+            seriesAssignments[seriesId].hasWarning = true;
+          }
+        }
+      });
+
+      Object.keys(occurrenceLookup).forEach(function (occurrenceId) {
+        const occurrenceEntry = occurrenceLookup[occurrenceId];
+        const totalUnits = occurrenceEntry ? Math.max(1, Number(occurrenceEntry.totalUnits) || 1) : 1;
+        const uniqueSeriesIds = occurrenceEntry && Array.isArray(occurrenceEntry.assignmentSeriesIds)
+          ? occurrenceEntry.assignmentSeriesIds.filter(Boolean).filter(function (seriesId, index, source) {
+              return source.indexOf(seriesId) === index;
+            })
+          : [];
+        const uniqueSequenceIds = occurrenceEntry && Array.isArray(occurrenceEntry.assignmentSequenceIds)
+          ? occurrenceEntry.assignmentSequenceIds.filter(Boolean).filter(function (sequenceId, index, source) {
+              return source.indexOf(sequenceId) === index;
+            })
+          : [];
+        const uniqueLessonIds = occurrenceEntry && Array.isArray(occurrenceEntry.assignmentLessonIds)
+          ? occurrenceEntry.assignmentLessonIds.filter(Boolean).filter(function (lessonId, index, source) {
+              return source.indexOf(lessonId) === index;
+            })
+          : [];
+
+        if (!occurrenceEntry || totalUnits < 2) {
+          return;
+        }
+
+        if (uniqueSeriesIds.length > 1) {
+          uniqueSeriesIds.forEach(function (seriesId) {
+            if (seriesAssignments[seriesId]) {
+              seriesAssignments[seriesId].hasWarning = true;
+            }
+          });
+        }
+
+        if (uniqueSequenceIds.length > 1) {
+          uniqueSequenceIds.forEach(function (sequenceId) {
+            if (sequenceAssignments[sequenceId]) {
+              sequenceAssignments[sequenceId].hasWarning = true;
+            }
+          });
+        }
+
+        if (uniqueLessonIds.length > 1) {
+          uniqueLessonIds.forEach(function (lessonId) {
+            if (lessonPlanAssignments[lessonId]) {
+              lessonPlanAssignments[lessonId].hasSplitOccurrence = true;
+            }
+          });
+        }
+
+        occurrenceEntry.hasSeriesConflict = uniqueSeriesIds.length > 1;
+        occurrenceEntry.hasSequenceConflict = uniqueSequenceIds.length > 1;
+      });
+
+      Object.keys(lessonPlanAssignments).forEach(function (lessonId) {
+        const lessonAssignment = lessonPlanAssignments[lessonId];
+        const lessonItem = getOrderedCurriculumLessonsForSequence(String(lessonAssignment && lessonAssignment.sequenceId || "").trim()).find(function (entry) {
+          return String(entry && entry.id || "").trim() === lessonId;
+        }) || null;
+        const isDoubleLesson = String(lessonItem && lessonItem.hourType || "").trim() === "double";
+
+        lessonAssignment.hasWarning = Boolean(isDoubleLesson && lessonAssignment && lessonAssignment.hasSplitOccurrence);
+
+        if (lessonAssignment.hasWarning && sequenceAssignments[String(lessonAssignment.sequenceId || "").trim()]) {
+          sequenceAssignments[String(lessonAssignment.sequenceId || "").trim()].hasWarning = true;
+        }
+      });
+
+      Object.keys(occurrenceLookup).forEach(function (occurrenceId) {
+        const occurrenceEntry = occurrenceLookup[occurrenceId];
+        const lessonIds = occurrenceEntry && Array.isArray(occurrenceEntry.assignmentLessonIds)
+          ? occurrenceEntry.assignmentLessonIds.filter(Boolean)
+          : [];
+
+        occurrenceEntry.hasProblem = Boolean(
+          occurrenceEntry
+          && (
+            occurrenceEntry.hasSeriesConflict
+            || occurrenceEntry.hasSequenceConflict
+            || lessonIds.some(function (lessonId) {
+              return Boolean(lessonPlanAssignments[lessonId] && lessonPlanAssignments[lessonId].hasWarning);
+            })
+          )
+        );
+      });
+
+      Object.keys(sequenceAssignments).forEach(function (sequenceId) {
+        const sequenceAssignment = sequenceAssignments[sequenceId];
+        const seriesId = String(sequenceAssignment && sequenceAssignment.seriesId || "").trim();
+
+        if (sequenceAssignment && sequenceAssignment.hasWarning && seriesAssignments[seriesId]) {
+          seriesAssignments[seriesId].hasWarning = true;
+        }
+      });
+
+      return {
+        lessonOccurrences: lessonOccurrences,
+        occurrenceLookup: occurrenceLookup,
+        seriesAssignments: seriesAssignments,
+        sequenceAssignments: sequenceAssignments,
+        lessonPlanAssignments: lessonPlanAssignments
+      };
+    }
+
+    function withAlpha(colorValue, alphaValue) {
+      const normalizedColor = String(colorValue || "").trim();
+      const normalizedAlpha = Math.max(0, Math.min(1, Number(alphaValue)));
+      let hexValue = normalizedColor.replace("#", "");
+      let red;
+      let green;
+      let blue;
+
+      if (/^[0-9a-f]{3}$/i.test(hexValue)) {
+        hexValue = hexValue.split("").map(function (part) {
+          return part + part;
+        }).join("");
+      }
+
+      if (!/^[0-9a-f]{6}$/i.test(hexValue)) {
+        return normalizedColor || "rgba(255, 255, 255, " + String(normalizedAlpha) + ")";
+      }
+
+      red = parseInt(hexValue.slice(0, 2), 16);
+      green = parseInt(hexValue.slice(2, 4), 16);
+      blue = parseInt(hexValue.slice(4, 6), 16);
+
+      return "rgba(" + [red, green, blue, normalizedAlpha].join(", ") + ")";
+    }
+
+    function buildInstructionLessonBackground(occurrenceEntry) {
+      const totalUnits = occurrenceEntry ? Math.max(1, Number(occurrenceEntry.totalUnits) || 1) : 1;
+      const assignmentColors = occurrenceEntry && Array.isArray(occurrenceEntry.assignmentColors)
+        ? occurrenceEntry.assignmentColors.slice(0, totalUnits)
+        : [];
+      const availableUnits = occurrenceEntry ? Math.max(0, Number(occurrenceEntry.availableUnits) || 0) : 0;
+      const isPastOnly = availableUnits <= 0;
+      const colorStops = [];
+      let index = 0;
+
+      while (index < totalUnits) {
+        const startPercent = (index / totalUnits) * 100;
+        const endPercent = ((index + 1) / totalUnits) * 100;
+        const fillColor = assignmentColors[index]
+          ? (isPastOnly ? withAlpha(assignmentColors[index], 0.5) : assignmentColors[index])
+          : (isPastOnly ? "rgba(23, 49, 62, 0.08)" : "rgba(255, 255, 255, 0.72)");
+
+        colorStops.push(fillColor + " " + startPercent + "%");
+        colorStops.push(fillColor + " " + endPercent + "%");
+        index += 1;
+      }
+
+      return "linear-gradient(90deg, " + colorStops.join(", ") + ")";
+    }
+
+    function getInstructionOccurrenceSequenceMeta(lessonOccurrences, occurrenceLookup) {
+      return lessonOccurrences.map(function (occurrence, index) {
+        const occurrenceId = String(occurrence && occurrence.id || "").trim();
+        const occurrenceEntry = occurrenceLookup[occurrenceId] || null;
+        const sequenceIds = occurrenceEntry && Array.isArray(occurrenceEntry.assignmentSequenceIds)
+          ? occurrenceEntry.assignmentSequenceIds.filter(Boolean)
+          : [];
+        const uniqueSequenceIds = sequenceIds.filter(function (sequenceId, sequenceIndex) {
+          return sequenceIds.indexOf(sequenceId) === sequenceIndex;
+        });
+        const primarySequenceId = uniqueSequenceIds.length === 1 ? uniqueSequenceIds[0] : "";
+        const previousOccurrence = index > 0 ? lessonOccurrences[index - 1] : null;
+        const nextOccurrence = index + 1 < lessonOccurrences.length ? lessonOccurrences[index + 1] : null;
+        const previousEntry = previousOccurrence ? occurrenceLookup[String(previousOccurrence && previousOccurrence.id || "").trim()] : null;
+        const nextEntry = nextOccurrence ? occurrenceLookup[String(nextOccurrence && nextOccurrence.id || "").trim()] : null;
+        const previousSequenceIds = previousEntry && Array.isArray(previousEntry.assignmentSequenceIds)
+          ? previousEntry.assignmentSequenceIds.filter(Boolean)
+          : [];
+        const nextSequenceIds = nextEntry && Array.isArray(nextEntry.assignmentSequenceIds)
+          ? nextEntry.assignmentSequenceIds.filter(Boolean)
+          : [];
+        const tracks = uniqueSequenceIds.slice(0, 2).map(function (sequenceId) {
+          return {
+            sequenceId: sequenceId,
+            color: occurrenceEntry && Array.isArray(occurrenceEntry.assignmentColors)
+              ? occurrenceEntry.assignmentColors[sequenceIds.indexOf(sequenceId)] || ""
+            : "",
+            connectBefore: previousSequenceIds.indexOf(sequenceId) >= 0,
+            connectAfter: nextSequenceIds.indexOf(sequenceId) >= 0
+          };
+        });
+        let hasIncomingConnection = false;
+        let hasOutgoingConnection = false;
+
+        tracks.forEach(function (track, trackIndex) {
+          if (track && track.connectBefore) {
+            if (hasIncomingConnection) {
+              tracks[trackIndex].connectBefore = false;
+            } else {
+              hasIncomingConnection = true;
+            }
+          }
+        });
+
+        tracks.slice().reverse().forEach(function (track, reverseIndex) {
+          const trackIndex = tracks.length - 1 - reverseIndex;
+
+          if (track && track.connectAfter) {
+            if (hasOutgoingConnection) {
+              tracks[trackIndex].connectAfter = false;
+            } else {
+              hasOutgoingConnection = true;
+            }
+          }
+        });
+
+        return {
+          occurrenceId: occurrenceId,
+          tracks: tracks
+        };
+      }).reduce(function (lookup, entry) {
+        lookup[entry.occurrenceId] = entry;
+        return lookup;
+      }, {});
+    }
+
+    function buildPlanningInstructionLessonModal(instructionAssignmentData) {
+      const draft = planningInstructionLessonDraft;
+      const occurrenceLookup = instructionAssignmentData && instructionAssignmentData.occurrenceLookup
+        ? instructionAssignmentData.occurrenceLookup
+        : {};
+      const occurrenceId = draft && draft.lessonDate
+        ? "unterrichtstag::" + String(draft.lessonDate || "").slice(0, 10)
+        : "";
+      const occurrenceEntry = occurrenceId ? occurrenceLookup[occurrenceId] || null : null;
+      const seriesLookup = (Array.isArray(snapshot.curriculumSeries) ? snapshot.curriculumSeries : []).reduce(function (lookup, entry) {
+        const entryId = String(entry && entry.id || "").trim();
+
+        if (entryId) {
+          lookup[entryId] = entry;
+        }
+
+        return lookup;
+      }, {});
+      const sequenceLookup = (Array.isArray(snapshot.curriculumSequences) ? snapshot.curriculumSequences : []).reduce(function (lookup, entry) {
+        const entryId = String(entry && entry.id || "").trim();
+
+        if (entryId) {
+          lookup[entryId] = entry;
+        }
+
+        return lookup;
+      }, {});
+      const lessonLookup = (Array.isArray(snapshot.curriculumLessonPlans) ? snapshot.curriculumLessonPlans : []).reduce(function (lookup, entry) {
+        const entryId = String(entry && entry.id || "").trim();
+
+        if (entryId) {
+          lookup[entryId] = entry;
+        }
+
+        return lookup;
+      }, {});
+
+      function getUniqueIds(values) {
+        return (Array.isArray(values) ? values : []).map(function (entry) {
+          return String(entry || "").trim();
+        }).filter(Boolean).filter(function (entry, index, source) {
+          return source.indexOf(entry) === index;
+        });
+      }
+
+      function buildSummaryList(itemIds, lookup, formatter) {
+        if (!itemIds.length) {
+          return '<p class="planning-instruction-modal__empty">Keine Zuordnung</p>';
+        }
+
+        return [
+          '<ul class="planning-instruction-modal__list">',
+          itemIds.map(function (itemId) {
+            return '<li>' + formatter(lookup[itemId] || null, itemId) + '</li>';
+          }).join(""),
+          '</ul>'
+        ].join("");
+      }
+
+      if (!draft) {
+        return "";
+      }
+
+      return [
+        '<div class="import-modal is-open" id="planningInstructionLessonModal">',
+        '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closePlanningInstructionLessonModal()"></div>',
+        '<div class="import-modal__dialog import-modal__dialog--planning import-modal__dialog--instruction-lesson" role="dialog" aria-modal="true" aria-labelledby="planningInstructionLessonTitle">',
+        '<div class="import-modal__header">',
+        '<div><h3 id="planningInstructionLessonTitle">Verfuegbare Unterrichtsstunde</h3><p class="planning-instruction-modal__date">' + escapeValue(formatShortDateLabel(String(draft.lessonDate || "").slice(0, 10))) + '</p></div>',
+        '<div class="import-modal__icon-actions">',
+        '<button class="import-modal__icon-button import-modal__icon-button--confirm" type="submit" form="planningInstructionLessonForm" aria-label="Aenderungen speichern">&#10003;</button>',
+        '<button class="import-modal__icon-button import-modal__icon-button--cancel" type="button" aria-label="Bearbeitung abbrechen" onclick="return window.UnterrichtsassistentApp.closePlanningInstructionLessonModal()">&#10005;</button>',
+        '</div>',
+        '</div>',
+        '<form class="import-modal__form planning-instruction-modal" id="planningInstructionLessonForm" autocomplete="off" method="post" action="about:blank" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitPlanningInstructionLessonModal(event)">',
+        '<section class="planning-instruction-modal__section">',
+        '<h4 class="planning-instruction-modal__title">Zugeordnete Reihe</h4>',
+        buildSummaryList(
+          getUniqueIds(occurrenceEntry && occurrenceEntry.assignmentSeriesIds),
+          seriesLookup,
+          function (seriesItem) {
+            return escapeValue(String(seriesItem && seriesItem.topic || "").trim() || "Ohne Thema");
+          }
+        ),
+        '</section>',
+        '<section class="planning-instruction-modal__section">',
+        '<h4 class="planning-instruction-modal__title">Zugeordnete Sequenz</h4>',
+        buildSummaryList(
+          getUniqueIds(occurrenceEntry && occurrenceEntry.assignmentSequenceIds),
+          sequenceLookup,
+          function (sequenceItem) {
+            return escapeValue(String(sequenceItem && sequenceItem.topic || "").trim() || "Ohne Thema");
+          }
+        ),
+        '</section>',
+        '<section class="planning-instruction-modal__section">',
+        '<h4 class="planning-instruction-modal__title">Zugeordnete geplante Stunde</h4>',
+        buildSummaryList(
+          getUniqueIds(occurrenceEntry && occurrenceEntry.assignmentLessonIds),
+          lessonLookup,
+          function (lessonItem) {
+            const topic = String(lessonItem && lessonItem.topic || "").trim() || "Ohne Thema";
+            const hourType = String(lessonItem && lessonItem.hourType || "").trim() === "double"
+              ? "Doppelstunde"
+              : "Einzelstunde";
+
+            return escapeValue(topic + " (" + hourType + ")");
+          }
+        ),
+        '</section>',
+        '<section class="planning-instruction-modal__section planning-instruction-modal__section--settings">',
+        '<label class="planning-instruction-modal__checkbox"><input id="planningInstructionLessonCancelledInput" type="checkbox"' + (draft && draft.isCancelled ? ' checked' : '') + ' onchange="return window.UnterrichtsassistentApp.handlePlanningInstructionLessonCancelledChange(this.checked)"><span>Faellt aus</span></label>',
+        '<label class="import-modal__field planning-instruction-modal__reason" id="planningInstructionLessonReasonField"' + (draft && draft.isCancelled ? '' : ' hidden') + '><span>Grund</span><textarea id="planningInstructionLessonReasonInput" rows="4" placeholder="Grund fuer den Ausfall"' + (draft && draft.isCancelled ? '' : ' disabled') + '>' + escapeValue(String(draft && draft.cancelReason || "").trim()) + '</textarea></label>',
+        '</section>',
+        '</form>',
+        '</div>',
+        '</div>'
+      ].join("");
+    }
+
+    function buildInstructionPlanningContent() {
+      const instructionAssignmentData = buildInstructionLessonAssignmentData();
+      const lessonOccurrences = instructionAssignmentData.lessonOccurrences;
+      const occurrenceLookup = instructionAssignmentData.occurrenceLookup;
+      const occurrenceSequenceMeta = getInstructionOccurrenceSequenceMeta(lessonOccurrences, occurrenceLookup);
+      const seriesAssignments = instructionAssignmentData.seriesAssignments;
       const classColor = getClassDisplayColor(activeClass);
       const classLabel = getClassDisplayName(activeClass) || "Aktive Lerngruppe";
       const totalLessonCount = lessonOccurrences.reduce(function (sum, occurrence) {
@@ -693,6 +1289,9 @@ window.Unterrichtsassistent.ui.views.planung = {
       const remainingLessonCount = lessonOccurrences.reduce(function (sum, occurrence) {
         return sum + Math.max(0, Number(occurrence && occurrence.remainingLessonCount || 0));
       }, 0);
+      const hasPlanningCapacityWarning = Object.keys(seriesAssignments || {}).some(function (seriesId) {
+        return Boolean(seriesAssignments[seriesId] && seriesAssignments[seriesId].hasUnassignedDemand);
+      });
 
       if (!activeClass) {
         return [
@@ -711,7 +1310,11 @@ window.Unterrichtsassistent.ui.views.planung = {
         '<div class="planning-instruction__section-header">',
         '<h2 class="planning-instruction__title">Geplante Unterrichtsstunden</h2>',
         '</div>',
+        hasPlanningCapacityWarning
+          ? '<p class="empty-message planning-instruction__warning-message">Nicht genuegend verfuegbare Stunden vorhanden: Mindestens eine Unterrichtsreihe hat noch offene Bedarfsstunden, die aktuell nicht mehr zugeordnet werden koennen.</p>'
+          : '',
         buildStoffPlanningContent(false),
+        buildCurriculumLessonFlowContent(instructionAssignmentData),
         '</section>',
         '<section class="planning-instruction__section planning-instruction__section--available">',
         '<button class="planning-instruction__section-toggle" type="button" aria-expanded="', isPlanningAvailableLessonsExpanded ? 'true' : 'false', '" onclick="return window.UnterrichtsassistentApp.togglePlanningAvailableLessons()">',
@@ -722,8 +1325,35 @@ window.Unterrichtsassistent.ui.views.planung = {
           ? (
               lessonOccurrences.length
                 ? '<div class="planning-instruction__grid">' + lessonOccurrences.map(function (occurrence) {
+                    const occurrenceEntry = occurrenceLookup[String(occurrence && occurrence.id || "").trim()] || null;
+                    const occurrenceMeta = occurrenceSequenceMeta[String(occurrence && occurrence.id || "").trim()] || null;
+                    const lessonBackground = occurrenceEntry && Number(occurrence && occurrence.remainingLessonCount || 0) > 0
+                      ? buildInstructionLessonBackground(occurrenceEntry)
+                      : "";
+                    const isPastOccurrence = Number(occurrence && occurrence.remainingLessonCount || 0) <= 0;
+                    const isCancelledOccurrence = Boolean(occurrence && occurrence.isCancelled);
+                    const lessonLinkMarkup = occurrenceMeta && Array.isArray(occurrenceMeta.tracks)
+                      ? occurrenceMeta.tracks.map(function (track, trackIndex) {
+                          const lineColor = track && track.color
+                            ? escapeValue(isPastOccurrence ? withAlpha(track.color, 0.62) : track.color)
+                            : "transparent";
+                          const positionClass = occurrenceMeta.tracks.length > 1
+                            ? (trackIndex === 0 ? ' planning-instruction__lesson-link--top' : ' planning-instruction__lesson-link--bottom')
+                            : ' planning-instruction__lesson-link--middle';
+
+                          return [
+                            '<span class="planning-instruction__lesson-link',
+                            positionClass,
+                            track && track.connectAfter ? ' planning-instruction__lesson-link--after' : '',
+                            '" style="--planning-instruction-sequence-color:',
+                            lineColor,
+                            ';"></span>'
+                          ].join("");
+                        }).join("")
+                      : "";
                     return [
-                      '<article class="planning-instruction__lesson', Number(occurrence.remainingLessonCount || 0) <= 0 ? ' planning-instruction__lesson--past' : '', '" style="--planning-instruction-color:', escapeValue(classColor), ';">',
+                      '<article class="planning-instruction__lesson', isPastOccurrence ? ' planning-instruction__lesson--past' : '', isCancelledOccurrence ? ' planning-instruction__lesson--cancelled' : '', occurrenceEntry && occurrenceEntry.hasProblem ? ' planning-instruction__lesson--problem' : '', '" style="--planning-instruction-color:', escapeValue(classColor), ';', lessonBackground ? '--planning-instruction-lesson-background:' + escapeValue(lessonBackground) + ';' : '', '" onclick="return window.UnterrichtsassistentApp.openPlanningInstructionLessonModal(\'', escapeValue(String(occurrence && occurrence.lessonDate || "").slice(0, 10)), '\')">',
+                      lessonLinkMarkup,
                       '<div class="planning-instruction__lesson-date">', escapeValue(formatShortDateLabel(occurrence.lessonDate)), '</div>',
                       '<div class="planning-instruction__lesson-count">', escapeValue(String(Math.max(1, Number(occurrence.lessonCount || 1)))), '</div>',
                       '</article>'
@@ -733,6 +1363,7 @@ window.Unterrichtsassistent.ui.views.planung = {
             )
           : '',
         '</section>',
+        buildPlanningInstructionLessonModal(instructionAssignmentData),
         '</article>',
         '</div>'
       ].join("");
@@ -909,8 +1540,166 @@ window.Unterrichtsassistent.ui.views.planung = {
       return ordered;
     }
 
+    function getOrderedCurriculumLessonPhasesForLesson(lessonPlanId) {
+      const allPhases = Array.isArray(snapshot.curriculumLessonPhases) ? snapshot.curriculumLessonPhases.filter(function (entry) {
+        return String(entry && entry.lessonPlanId || "").trim() === String(lessonPlanId || "").trim();
+      }) : [];
+      const incomingCounts = {};
+      const itemById = {};
+      const ordered = [];
+      let current = null;
+
+      allPhases.forEach(function (entry) {
+        const entryId = String(entry && entry.id || "").trim();
+
+        if (!entryId) {
+          return;
+        }
+
+        itemById[entryId] = entry;
+        incomingCounts[entryId] = incomingCounts[entryId] || 0;
+      });
+
+      allPhases.forEach(function (entry) {
+        const nextId = String(entry && entry.nextPhaseId || "").trim();
+
+        if (nextId && Object.prototype.hasOwnProperty.call(incomingCounts, nextId)) {
+          incomingCounts[nextId] += 1;
+        }
+      });
+
+      current = allPhases.find(function (entry) {
+        return !incomingCounts[String(entry && entry.id || "").trim()];
+      }) || allPhases[0] || null;
+
+      while (current) {
+        const currentId = String(current && current.id || "").trim();
+        const nextId = String(current && current.nextPhaseId || "").trim();
+
+        if (!currentId || ordered.some(function (entry) {
+          return String(entry && entry.id || "").trim() === currentId;
+        })) {
+          break;
+        }
+
+        ordered.push(current);
+        current = nextId && itemById[nextId] ? itemById[nextId] : null;
+      }
+
+      allPhases.forEach(function (entry) {
+        if (!ordered.some(function (orderedEntry) {
+          return String(orderedEntry && orderedEntry.id || "").trim() === String(entry && entry.id || "").trim();
+        })) {
+          ordered.push(entry);
+        }
+      });
+
+      return ordered;
+    }
+
+    function getOrderedCurriculumLessonStepsForPhase(phaseId) {
+      const allSteps = Array.isArray(snapshot.curriculumLessonSteps) ? snapshot.curriculumLessonSteps.filter(function (entry) {
+        return String(entry && entry.phaseId || "").trim() === String(phaseId || "").trim();
+      }) : [];
+      const incomingCounts = {};
+      const itemById = {};
+      const ordered = [];
+      let current = null;
+
+      allSteps.forEach(function (entry) {
+        const entryId = String(entry && entry.id || "").trim();
+
+        if (!entryId) {
+          return;
+        }
+
+        itemById[entryId] = entry;
+        incomingCounts[entryId] = incomingCounts[entryId] || 0;
+      });
+
+      allSteps.forEach(function (entry) {
+        const nextId = String(entry && entry.nextStepId || "").trim();
+
+        if (nextId && Object.prototype.hasOwnProperty.call(incomingCounts, nextId)) {
+          incomingCounts[nextId] += 1;
+        }
+      });
+
+      current = allSteps.find(function (entry) {
+        return !incomingCounts[String(entry && entry.id || "").trim()];
+      }) || allSteps[0] || null;
+
+      while (current) {
+        const currentId = String(current && current.id || "").trim();
+        const nextId = String(current && current.nextStepId || "").trim();
+
+        if (!currentId || ordered.some(function (entry) {
+          return String(entry && entry.id || "").trim() === currentId;
+        })) {
+          break;
+        }
+
+        ordered.push(current);
+        current = nextId && itemById[nextId] ? itemById[nextId] : null;
+      }
+
+      allSteps.forEach(function (entry) {
+        if (!ordered.some(function (orderedEntry) {
+          return String(orderedEntry && orderedEntry.id || "").trim() === String(entry && entry.id || "").trim();
+        })) {
+          ordered.push(entry);
+        }
+      });
+
+      return ordered;
+    }
+
+    function getCurriculumLessonStepSocialFormLabel(socialFormValue) {
+      const normalizedValue = String(socialFormValue || "").trim().toLowerCase();
+
+      if (normalizedValue === "einzel") {
+        return "Einzel";
+      }
+
+      if (normalizedValue === "partner") {
+        return "Partner";
+      }
+
+      if (normalizedValue === "gruppe") {
+        return "Gruppe";
+      }
+
+      return "Plenum";
+    }
+
     function getCurriculumLessonVisualWidth(lessonItem) {
       return String(lessonItem && lessonItem.hourType || "").trim() === "double" ? 56 : 44;
+    }
+
+    function getCurriculumLessonHourDemand(lessonItem) {
+      return String(lessonItem && lessonItem.hourType || "").trim() === "double" ? 2 : 1;
+    }
+
+    function getCalculatedHourDemandForSequence(sequenceId) {
+      return getOrderedCurriculumLessonsForSequence(sequenceId).reduce(function (sum, lessonItem) {
+        return sum + getCurriculumLessonHourDemand(lessonItem);
+      }, 0);
+    }
+
+    function getEffectiveHourDemandForSequence(sequenceItem) {
+      const calculatedHourDemand = getCalculatedHourDemandForSequence(String(sequenceItem && sequenceItem.id || "").trim());
+
+      if (calculatedHourDemand > 0) {
+        return calculatedHourDemand;
+      }
+
+      return Math.max(0, Number(sequenceItem && sequenceItem.hourDemand) || 0);
+    }
+
+    function getCalculatedHourDemandForSeries(seriesId) {
+      return getOrderedCurriculumSequencesForSeries(seriesId).reduce(function (sum, sequenceItem) {
+        return sum + getEffectiveHourDemandForSequence(sequenceItem);
+      }, 0);
     }
 
     function getExpandedLessonColumnWidth(sequenceId, isSequenceExpanded) {
@@ -961,6 +1750,8 @@ window.Unterrichtsassistent.ui.views.planung = {
         '<form class="import-modal__form curriculum-series-form" id="curriculumSeriesForm" autocomplete="off" method="post" action="about:blank" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitCurriculumSeriesModal(event)">',
         '<label class="import-modal__field"><span>Thema</span><input id="curriculumSeriesTopicInput" type="text" value="', escapeValue(curriculumSeriesDraft.topic || ""), '" placeholder="Thema der Unterrichtsreihe"></label>',
         '<label class="import-modal__field"><span>Stundenbedarf</span><input id="curriculumSeriesHourDemandInput" type="number" min="0" step="1" value="', escapeValue(String(curriculumSeriesDraft.hourDemand || 0)), '" placeholder="0"></label>',
+        '<label class="import-modal__field"><span>Beginn</span><select id="curriculumSeriesStartModeInput" onchange="return window.UnterrichtsassistentApp.handleCurriculumSeriesStartModeChange(this.value)"><option value="automatic"', String(curriculumSeriesDraft.startMode || "automatic") === "manual" ? '' : ' selected', '>Automatik</option><option value="manual"', String(curriculumSeriesDraft.startMode || "automatic") === "manual" ? ' selected' : '', '>Manuell</option></select></label>',
+        '<label class="import-modal__field curriculum-series-form__start-date-field" id="curriculumSeriesStartDateField"', String(curriculumSeriesDraft.startMode || "automatic") === "manual" ? '' : ' hidden', '><span>Beginndatum</span><input id="curriculumSeriesStartDateInput" class="curriculum-series-form__start-date-input" type="date" value="', escapeValue(String(curriculumSeriesDraft.startDate || "")), '"', String(curriculumSeriesDraft.startMode || "automatic") === "manual" ? '' : ' disabled', '></label>',
         '<label class="import-modal__field curriculum-series-form__color-field"><span>Farbe</span><span class="curriculum-series-form__color-input-wrap"><span id="curriculumSeriesColorPreview" class="curriculum-series-form__color-preview" style="background:', escapeValue(curriculumSeriesDraft.color || "#d9d4cb"), ';"></span><input id="curriculumSeriesColorInput" class="curriculum-series-form__color-input" type="color" value="', escapeValue(curriculumSeriesDraft.color || "#d9d4cb"), '" oninput="window.UnterrichtsassistentApp.handleCurriculumSeriesColorPickerInput(this.value)" onchange="window.UnterrichtsassistentApp.handleCurriculumSeriesColorPickerInput(this.value)"></span></label>',
         '<div class="import-modal__actions">',
         curriculumSeriesDraft.id
@@ -1033,9 +1824,143 @@ window.Unterrichtsassistent.ui.views.planung = {
       ].join("");
     }
 
+    function buildCurriculumLessonFlowContent(instructionAssignmentData) {
+      const normalizedLessonId = String(activeCurriculumLessonFlowLessonId || "").trim();
+      const lessonItem = normalizedLessonId && Array.isArray(snapshot.curriculumLessonPlans)
+        ? snapshot.curriculumLessonPlans.find(function (entry) {
+            return String(entry && entry.id || "").trim() === normalizedLessonId;
+          }) || null
+        : null;
+      const sequenceItem = lessonItem && Array.isArray(snapshot.curriculumSequences)
+        ? snapshot.curriculumSequences.find(function (entry) {
+            return String(entry && entry.id || "").trim() === String(lessonItem.sequenceId || "").trim();
+          }) || null
+        : null;
+      const seriesItem = sequenceItem && Array.isArray(snapshot.curriculumSeries)
+        ? snapshot.curriculumSeries.find(function (entry) {
+            return String(entry && entry.id || "").trim() === String(sequenceItem.seriesId || "").trim();
+          }) || null
+        : null;
+      const lessonAssignment = instructionAssignmentData && instructionAssignmentData.lessonPlanAssignments
+        ? instructionAssignmentData.lessonPlanAssignments[normalizedLessonId] || null
+        : null;
+      const lessonDateLabel = lessonAssignment && lessonAssignment.firstDate
+        ? formatInstructionSeriesRange(lessonAssignment.firstDate, lessonAssignment.lastDate)
+        : "Noch ohne Datum";
+      const orderedPhases = lessonItem ? getOrderedCurriculumLessonPhasesForLesson(normalizedLessonId) : [];
+      const viewPhaseLookup = activeCurriculumLessonFlowViewPhaseIds.reduce(function (lookup, phaseId) {
+        lookup[phaseId] = true;
+        return lookup;
+      }, {});
+
+      if (!activeClass || !lessonItem || !sequenceItem || !seriesItem || String(seriesItem.classId || "").trim() !== String(activeClass.id || "").trim()) {
+        return "";
+      }
+
+      return [
+        '<section class="planning-lesson-flow">',
+        '<div class="planning-lesson-flow__header">',
+        '<h2 class="planning-lesson-flow__title">Stundenverlauf</h2>',
+        '<p class="planning-lesson-flow__meta"><strong>', escapeValue(String(lessonItem.topic || "").trim() || "Ohne Thema"), '</strong><span>', escapeValue(lessonDateLabel), '</span></p>',
+        '</div>',
+        '<table class="planning-lesson-flow__phase-table">',
+        '<tbody>',
+        orderedPhases.length ? orderedPhases.map(function (phaseItem) {
+          const phaseId = String(phaseItem && phaseItem.id || "").trim();
+          const orderedSteps = getOrderedCurriculumLessonStepsForPhase(phaseId);
+          const isViewMode = Boolean(viewPhaseLookup[phaseId]);
+
+          return [
+            '<tr class="planning-lesson-flow__phase-row">',
+            '<td>',
+            '<div class="planning-lesson-flow__phase-card">',
+            '<div class="planning-lesson-flow__phase-toolbar">',
+            isViewMode
+              ? '<div class="planning-lesson-flow__phase-summary"><div class="planning-lesson-flow__phase-summary-title">' + escapeValue(String(phaseItem && phaseItem.title || "").trim() || "Ohne Titel") + '</div><div class="planning-lesson-flow__phase-summary-meta"><span>' + escapeValue(String(Math.max(0, Number(phaseItem && phaseItem.durationMinutes) || 0))) + ' Min.</span>' + (phaseItem && phaseItem.isReserve ? '<span>Reserve</span>' : '') + '</div></div>'
+              : '<label class="planning-lesson-flow__phase-field planning-lesson-flow__phase-field--title"><span>Phase</span><input type="text" value="' + escapeValue(String(phaseItem && phaseItem.title || "").trim()) + '" placeholder="Titel der Phase" onchange="return window.UnterrichtsassistentApp.updateCurriculumLessonPhaseField(\'' + escapeValue(phaseId) + '\', \'title\', this.value)"></label>',
+            isViewMode
+              ? ''
+              : '<label class="planning-lesson-flow__phase-field planning-lesson-flow__phase-field--duration"><span>Dauer</span><input type="number" min="0" step="1" value="' + escapeValue(String(Math.max(0, Number(phaseItem && phaseItem.durationMinutes) || 0))) + '" onchange="return window.UnterrichtsassistentApp.updateCurriculumLessonPhaseField(\'' + escapeValue(phaseId) + '\', \'durationMinutes\', this.value)"></label>',
+            isViewMode
+              ? ''
+              : '<label class="planning-lesson-flow__phase-checkbox"><input type="checkbox"' + (phaseItem && phaseItem.isReserve ? ' checked' : '') + ' onchange="return window.UnterrichtsassistentApp.updateCurriculumLessonPhaseField(\'' + escapeValue(phaseId) + '\', \'isReserve\', this.checked)"><span>Reserve</span></label>',
+            '<button class="planning-lesson-flow__mode-button" type="button" onclick="return window.UnterrichtsassistentApp.toggleCurriculumLessonFlowPhaseMode(\'', escapeValue(phaseId), '\')">', isViewMode ? 'Edit' : 'View', '</button>',
+            '<button class="planning-lesson-flow__delete-button" type="button" onclick="return window.UnterrichtsassistentApp.deleteCurriculumLessonPhase(\'', escapeValue(phaseId), '\')">Loeschen</button>',
+            '</div>',
+            isViewMode
+              ? [
+                  '<table class="planning-lesson-flow__step-table planning-lesson-flow__step-table--compact">',
+                  '<tbody>',
+                  orderedSteps.length ? orderedSteps.map(function (stepItem) {
+                    return [
+                      '<tr class="planning-lesson-flow__step-row planning-lesson-flow__step-row--compact">',
+                      '<td class="planning-lesson-flow__step-main-cell">',
+                      '<div class="planning-lesson-flow__step-view-title">', escapeValue(String(stepItem && stepItem.title || "").trim() || "Ohne Titel"), '</div>',
+                      String(stepItem && stepItem.content || "").trim()
+                        ? '<div class="planning-lesson-flow__step-view-content">' + escapeValue(String(stepItem && stepItem.content || "").trim()) + '</div>'
+                        : '',
+                      '</td>',
+                      '<td class="planning-lesson-flow__step-social-cell"><span class="planning-lesson-flow__step-pill">', escapeValue(getCurriculumLessonStepSocialFormLabel(stepItem && stepItem.socialForm)), '</span></td>',
+                      '<td class="planning-lesson-flow__step-material-cell">', escapeValue(String(stepItem && stepItem.material || "").trim() || "-"), '</td>',
+                      '</tr>'
+                    ].join("");
+                  }).join("") : '<tr class="planning-lesson-flow__step-row planning-lesson-flow__step-row--compact"><td colspan="3" class="planning-lesson-flow__step-empty">Noch keine Schritte angelegt.</td></tr>',
+                  '</tbody>',
+                  '</table>'
+                ].join("")
+              : [
+                  '<table class="planning-lesson-flow__step-table">',
+                  '<thead><tr><th>Schritt</th><th>Sozialform</th><th>Material</th></tr></thead>',
+                  '<tbody>',
+                  orderedSteps.map(function (stepItem) {
+                    const stepId = String(stepItem && stepItem.id || "").trim();
+
+                    return [
+                      '<tr class="planning-lesson-flow__step-row">',
+                      '<td class="planning-lesson-flow__step-main-cell">',
+                      '<div class="planning-lesson-flow__step-main-top">',
+                      '<input class="planning-lesson-flow__step-title" type="text" value="', escapeValue(String(stepItem && stepItem.title || "").trim()), '" placeholder="Titel des Schritts" onchange="return window.UnterrichtsassistentApp.updateCurriculumLessonStepField(\'', escapeValue(stepId), '\', \'title\', this.value)">',
+                      '<button class="planning-lesson-flow__delete-button planning-lesson-flow__delete-button--step" type="button" onclick="return window.UnterrichtsassistentApp.deleteCurriculumLessonStep(\'', escapeValue(stepId), '\')">Loeschen</button>',
+                      '</div>',
+                      '<textarea class="planning-lesson-flow__textarea planning-lesson-flow__textarea--content" rows="3" placeholder="Inhalt" onchange="return window.UnterrichtsassistentApp.updateCurriculumLessonStepField(\'', escapeValue(stepId), '\', \'content\', this.value)">', escapeValue(String(stepItem && stepItem.content || "").trim()), '</textarea>',
+                      '</td>',
+                      '<td class="planning-lesson-flow__step-social-cell">',
+                      '<select class="planning-lesson-flow__select" onchange="return window.UnterrichtsassistentApp.updateCurriculumLessonStepField(\'', escapeValue(stepId), '\', \'socialForm\', this.value)">',
+                      ['einzel', 'partner', 'gruppe', 'plenum'].map(function (socialFormValue) {
+                        return '<option value="' + escapeValue(socialFormValue) + '"' + (String(stepItem && stepItem.socialForm || "plenum").trim().toLowerCase() === socialFormValue ? ' selected' : '') + '>' + escapeValue(getCurriculumLessonStepSocialFormLabel(socialFormValue)) + '</option>';
+                      }).join(""),
+                      '</select>',
+                      '</td>',
+                      '<td class="planning-lesson-flow__step-material-cell">',
+                      '<textarea class="planning-lesson-flow__textarea planning-lesson-flow__textarea--material" rows="3" placeholder="Benoetigtes Material" onchange="return window.UnterrichtsassistentApp.updateCurriculumLessonStepField(\'', escapeValue(stepId), '\', \'material\', this.value)">', escapeValue(String(stepItem && stepItem.material || "").trim()), '</textarea>',
+                      '</td>',
+                      '</tr>'
+                    ].join("");
+                  }).join(""),
+                  '<tr class="planning-lesson-flow__step-add-row"><td colspan="3"><button class="planning-lesson-flow__add-button planning-lesson-flow__add-button--step" type="button" onclick="return window.UnterrichtsassistentApp.addCurriculumLessonStep(\'', escapeValue(phaseId), '\')">+ Schritt hinzufuegen</button></td></tr>',
+                  '</tbody>',
+                  '</table>'
+                ].join(""),
+            '</div>',
+            '</td>',
+            '</tr>'
+          ].join("");
+        }).join("") : '<tr class="planning-lesson-flow__phase-empty-row"><td><p class="planning-lesson-flow__empty">Noch keine Phasen angelegt.</p></td></tr>',
+        '<tr class="planning-lesson-flow__phase-add-row"><td><button class="planning-lesson-flow__add-button planning-lesson-flow__add-button--phase" type="button" onclick="return window.UnterrichtsassistentApp.addCurriculumLessonPhase(\'', escapeValue(normalizedLessonId), '\')">+ Phase hinzufuegen</button></td></tr>',
+        '</tbody>',
+        '</table>',
+        '</section>'
+      ].join("");
+    }
+
     function buildStoffPlanningContent(includePanelWrapper) {
       const shouldWrapInPanel = includePanelWrapper !== false;
       const orderedSeries = getOrderedCurriculumSeriesForActiveClass();
+      const instructionAssignmentData = buildInstructionLessonAssignmentData();
+      const seriesAssignments = instructionAssignmentData.seriesAssignments;
+      const sequenceAssignments = instructionAssignmentData.sequenceAssignments;
+      const lessonPlanAssignments = instructionAssignmentData.lessonPlanAssignments;
+      const autoApplyCalculatedHourDemands = snapshot.autoApplyCalculatedCurriculumHourDemands === true;
       const hasSeries = orderedSeries.length > 0;
       const expandedSeriesIdsLookup = expandedCurriculumSeriesIds.reduce(function (lookup, entry) {
         lookup[String(entry || "").trim()] = true;
@@ -1052,6 +1977,21 @@ window.Unterrichtsassistent.ui.views.planung = {
         lookup[seriesId] = isExpanded
           ? getExpandedSeriesBlockWidth(seriesId, expandedSequenceIdsLookup)
           : 168;
+        return lookup;
+      }, {});
+      const seriesCalculatedHourDemandLookup = orderedSeries.reduce(function (lookup, seriesItem) {
+        const seriesId = String(seriesItem && seriesItem.id || "").trim();
+
+        lookup[seriesId] = getCalculatedHourDemandForSeries(seriesId);
+        return lookup;
+      }, {});
+      const sequenceCalculatedHourDemandLookup = (Array.isArray(snapshot.curriculumSequences) ? snapshot.curriculumSequences : []).reduce(function (lookup, sequenceItem) {
+        const sequenceId = String(sequenceItem && sequenceItem.id || "").trim();
+
+        if (sequenceId) {
+          lookup[sequenceId] = getCalculatedHourDemandForSequence(sequenceId);
+        }
+
         return lookup;
       }, {});
 
@@ -1076,7 +2016,16 @@ window.Unterrichtsassistent.ui.views.planung = {
             '</div>'
           ]
         : [
-            '<div class="planning-curriculum planning-curriculum--embedded">'
+            '<div class="planning-curriculum planning-curriculum--embedded">',
+            '<div class="planning-curriculum__header planning-curriculum__header--embedded">',
+            '<h3 class="planning-curriculum__title planning-curriculum__title--embedded">Unterrichtsreihen</h3>',
+            '<div class="planning-curriculum__header-actions">',
+            autoApplyCalculatedHourDemands
+              ? ''
+              : '<button class="planning-curriculum__sync-button" type="button" onclick="return window.UnterrichtsassistentApp.applyCalculatedCurriculumHourDemands()">Errechnete Stunden uebernehmen</button>',
+            '<label class="planning-curriculum__auto-apply"><input type="checkbox" ' + (autoApplyCalculatedHourDemands ? 'checked ' : '') + 'onchange="return window.UnterrichtsassistentApp.updateAutoApplyCalculatedCurriculumHourDemands(this.checked)"><span>automatisch</span></label>',
+            '</div>',
+            '</div>'
           ]
       ).concat([
         hasSeries ? '' : '<p class="empty-message">Lege die erste Unterrichtsreihe ueber das Plus-Feld an.</p>',
@@ -1109,6 +2058,19 @@ window.Unterrichtsassistent.ui.views.planung = {
           const expandedSeriesWidthStyle = isExpanded
             ? 'width:' + escapeValue(String(expandedSeriesWidth)) + 'px;min-width:' + escapeValue(String(expandedSeriesWidth)) + 'px;max-width:' + escapeValue(String(expandedSeriesWidth)) + 'px;'
             : '';
+          const manualHourDemand = Math.max(0, Number(seriesItem && seriesItem.hourDemand) || 0);
+          const calculatedHourDemand = Math.max(0, Number(seriesCalculatedHourDemandLookup[seriesId]) || 0);
+          const hasSeriesMismatch = calculatedHourDemand > 0 && calculatedHourDemand !== manualHourDemand;
+          const seriesAssignment = seriesAssignments[seriesId] || null;
+          const seriesRangeLabel = seriesAssignment
+            ? formatInstructionSeriesRange(seriesAssignment.firstDate, seriesAssignment.lastDate)
+            : "";
+          const seriesWarningMarkup = seriesAssignment && seriesAssignment.hasWarning
+            ? '<span class="planning-curriculum__warning" aria-hidden="true">&#9888;</span>'
+            : '';
+          const calculatedSeriesHourDemandMarkup = calculatedHourDemand > 0
+            ? '<span class="planning-curriculum__calculated-hours' + (hasSeriesMismatch ? ' planning-curriculum__hours--mismatch' : '') + '"><span class="planning-curriculum__calculated-icon" aria-hidden="true">&#8721;</span><span>' + escapeValue(String(calculatedHourDemand)) + ' h</span></span>'
+            : '';
 
           return [
             '<td class="planning-curriculum__cell planning-curriculum__cell--series', isDropTarget ? ' is-drop-target is-drop-target--' + escapeValue(dropPlacement || "after") : '', '"',
@@ -1119,10 +2081,13 @@ window.Unterrichtsassistent.ui.views.planung = {
             ' ondrop="return window.UnterrichtsassistentApp.dropCurriculumSeries(event, \'', escapeValue(seriesId), '\')"',
             '>',
             '<article class="planning-curriculum__series-block', isExpanded ? ' is-expanded' : '', '" style="--planning-curriculum-series-color:', seriesColor, ';', expandedSeriesWidthStyle, '" onclick="return window.UnterrichtsassistentApp.toggleCurriculumSeriesExpansion(\'', escapeValue(seriesId), '\')">',
+            '<div class="planning-curriculum__card-top">',
             '<button class="planning-curriculum__series-drag" type="button" data-series-color="', seriesColor, '" aria-label="Unterrichtsreihe verschieben" onclick="return window.UnterrichtsassistentApp.stopEventPropagation(event)" onpointerdown="return window.UnterrichtsassistentApp.startCurriculumSeriesDrag(event, \'', escapeValue(seriesId), '\')" ondragstart="return window.UnterrichtsassistentApp.startCurriculumSeriesDrag(event, \'', escapeValue(seriesId), '\')" ondragend="return window.UnterrichtsassistentApp.endCurriculumSeriesDrag()">&#8645;</button>',
+            '<div class="planning-curriculum__card-range">', escapeValue(seriesRangeLabel || ""), '</div>',
             '<button class="planning-curriculum__series-edit" type="button" aria-label="Unterrichtsreihe bearbeiten" onclick="window.UnterrichtsassistentApp.stopEventPropagation(event); return window.UnterrichtsassistentApp.openCurriculumSeriesModal(\'', escapeValue(String(seriesItem.id || "")), '\')">&#9998;</button>',
-            '<div class="planning-curriculum__series-topic">', escapeValue(String(seriesItem.topic || "").trim() || "Ohne Thema"), '</div>',
-            '<div class="planning-curriculum__series-footer"><div class="planning-curriculum__series-hours">', escapeValue(String(Math.max(0, Number(seriesItem.hourDemand) || 0))), ' Std.</div><span class="planning-curriculum__toggle" aria-hidden="true">', isExpanded ? '&#9660;' : '&#9654;', '</span></div>',
+            '</div>',
+            '<div class="planning-curriculum__series-topic">', seriesWarningMarkup, escapeValue(String(seriesItem.topic || "").trim() || "Ohne Thema"), '</div>',
+            '<div class="planning-curriculum__series-footer"><div class="planning-curriculum__series-hours', calculatedHourDemand > 0 ? '' : ' planning-curriculum__series-hours--standalone', hasSeriesMismatch ? ' planning-curriculum__hours--mismatch' : '', '"><span>', escapeValue(String(manualHourDemand)), ' h</span>', calculatedSeriesHourDemandMarkup, '</div></div>',
             '</article>',
             '</td>'
           ].join("");
@@ -1167,13 +2132,29 @@ window.Unterrichtsassistent.ui.views.planung = {
                 const sequenceDropColor = isSequenceDropTarget
                   ? escapeValue(String(activeCurriculumSequenceDropIndicator.color || "#3975ab"))
                   : "";
+                const manualSequenceHourDemand = Math.max(0, Number(sequenceItem && sequenceItem.hourDemand) || 0);
+                const calculatedSequenceHourDemand = Math.max(0, Number(sequenceCalculatedHourDemandLookup[sequenceId]) || 0);
+                const hasSequenceMismatch = calculatedSequenceHourDemand > 0 && calculatedSequenceHourDemand !== manualSequenceHourDemand;
+                const sequenceAssignment = sequenceAssignments[sequenceId] || null;
+                const sequenceRangeLabel = sequenceAssignment
+                  ? formatInstructionSeriesRange(sequenceAssignment.firstDate, sequenceAssignment.lastDate)
+                  : "";
+                const sequenceWarningMarkup = sequenceAssignment && sequenceAssignment.hasWarning
+                  ? '<span class="planning-curriculum__warning" aria-hidden="true">&#9888;</span>'
+                  : '';
+                const calculatedSequenceHourDemandMarkup = calculatedSequenceHourDemand > 0
+                  ? '<span class="planning-curriculum__calculated-hours' + (hasSequenceMismatch ? ' planning-curriculum__hours--mismatch' : '') + '"><span class="planning-curriculum__calculated-icon" aria-hidden="true">&#8721;</span><span>' + escapeValue(String(calculatedSequenceHourDemand)) + ' h</span></span>'
+                  : '';
 
                 return [
                   '<article class="planning-curriculum__sequence-block', isSequenceExpanded ? ' is-expanded' : '', isSequenceDropTarget ? ' is-drop-target is-drop-target--' + escapeValue(sequenceDropPlacement || "after") : '', '" data-sequence-drop-target="', escapeValue(sequenceId), '" data-series-id="', escapeValue(seriesId), '" style="--planning-curriculum-series-color:', sequenceColor, ';', isSequenceDropTarget ? '--planning-curriculum-drop-color:' + sequenceDropColor + ';' : '', 'width:', escapeValue(String(expandedSequenceWidth)), 'px;min-width:', escapeValue(String(expandedSequenceWidth)), 'px;max-width:', escapeValue(String(expandedSequenceWidth)), 'px;" onclick="return window.UnterrichtsassistentApp.toggleCurriculumSequenceExpansion(\'', escapeValue(seriesId), '\', \'', escapeValue(sequenceId), '\')">',
+                  '<div class="planning-curriculum__card-top planning-curriculum__card-top--sequence">',
                   '<button class="planning-curriculum__series-drag planning-curriculum__sequence-drag" type="button" data-series-color="', sequenceColor, '" aria-label="Unterrichtssequenz verschieben" onclick="return window.UnterrichtsassistentApp.stopEventPropagation(event)" onpointerdown="return window.UnterrichtsassistentApp.startCurriculumSequenceDrag(event, \'', escapeValue(seriesId), '\', \'', escapeValue(sequenceId), '\')">&#8645;</button>',
+                  '<div class="planning-curriculum__card-range planning-curriculum__card-range--sequence">', escapeValue(sequenceRangeLabel || ""), '</div>',
                   '<button class="planning-curriculum__series-edit" type="button" aria-label="Unterrichtssequenz bearbeiten" onclick="window.UnterrichtsassistentApp.stopEventPropagation(event); return window.UnterrichtsassistentApp.openCurriculumSequenceModal(\'', escapeValue(seriesId), '\', \'', escapeValue(String(sequenceItem.id || "")), '\')">&#9998;</button>',
-                  '<div class="planning-curriculum__sequence-header">', escapeValue(String(sequenceItem.topic || "").trim() || "Ohne Thema"), '</div>',
-                  '<div class="planning-curriculum__sequence-footer"><span>', escapeValue(String(Math.max(0, Number(sequenceItem.hourDemand) || 0))), ' Std.</span><span class="planning-curriculum__toggle" aria-hidden="true">', isSequenceExpanded ? '&#9660;' : '&#9654;', '</span></div>',
+                  '</div>',
+                  '<div class="planning-curriculum__sequence-header">', sequenceWarningMarkup, escapeValue(String(sequenceItem.topic || "").trim() || "Ohne Thema"), '</div>',
+                  '<div class="planning-curriculum__sequence-footer"><span class="planning-curriculum__sequence-hours', calculatedSequenceHourDemand > 0 ? '' : ' planning-curriculum__sequence-hours--standalone', hasSequenceMismatch ? ' planning-curriculum__hours--mismatch' : '', '"><span>', escapeValue(String(manualSequenceHourDemand)), ' h</span>', calculatedSequenceHourDemandMarkup, '</span></div>',
                   '</article>'
                 ].join("");
               }).join(""),
@@ -1216,6 +2197,13 @@ window.Unterrichtsassistent.ui.views.planung = {
                   getOrderedCurriculumLessonsForSequence(sequenceId).map(function (lessonItem) {
                     const lessonId = String(lessonItem && lessonItem.id || "").trim();
                     const lessonColor = escapeValue(String(seriesItem && seriesItem.color || "#d9d4cb"));
+                    const lessonAssignment = lessonPlanAssignments[lessonId] || null;
+                    const lessonDateLabel = lessonAssignment && lessonAssignment.firstDate
+                      ? formatShortDateLabel(lessonAssignment.firstDate)
+                      : "";
+                    const lessonWarningMarkup = lessonAssignment && lessonAssignment.hasWarning
+                      ? '<span class="planning-curriculum__lesson-warning" aria-hidden="true">&#9888;</span>'
+                      : '';
                     const isLessonDropTarget = activeCurriculumLessonDropIndicator
                       && String(activeCurriculumLessonDropIndicator.sequenceId || "").trim() === sequenceId
                       && String(activeCurriculumLessonDropIndicator.targetLessonId || "").trim() === lessonId;
@@ -1226,9 +2214,10 @@ window.Unterrichtsassistent.ui.views.planung = {
                       ? escapeValue(String(activeCurriculumLessonDropIndicator.color || "#3975ab"))
                       : "";
                     return [
-                      '<article class="planning-curriculum__lesson-block planning-curriculum__lesson-block--', escapeValue(String(lessonItem && lessonItem.hourType || "single") === "double" ? 'double' : 'single'), isLessonDropTarget ? ' is-drop-target is-drop-target--' + escapeValue(lessonDropPlacement || "after") : '', '" data-lesson-drop-target="', escapeValue(lessonId), '" data-sequence-id="', escapeValue(sequenceId), '" style="', isLessonDropTarget ? '--planning-curriculum-drop-color:' + lessonDropColor + ';"' : '', '">',
+                      '<article class="planning-curriculum__lesson-block planning-curriculum__lesson-block--', escapeValue(String(lessonItem && lessonItem.hourType || "single") === "double" ? 'double' : 'single'), activeCurriculumLessonFlowLessonId === lessonId ? ' is-selected' : '', isLessonDropTarget ? ' is-drop-target is-drop-target--' + escapeValue(lessonDropPlacement || "after") : '', '" data-lesson-drop-target="', escapeValue(lessonId), '" data-sequence-id="', escapeValue(sequenceId), '"', lessonAssignment && lessonAssignment.firstDate ? ' title="' + escapeValue(formatInstructionSeriesRange(lessonAssignment.firstDate, lessonAssignment.lastDate)) + '"' : '', ' style="', isLessonDropTarget ? '--planning-curriculum-drop-color:' + lessonDropColor + ';"' : '', '" onclick="return window.UnterrichtsassistentApp.selectCurriculumLessonFlow(\'', escapeValue(seriesId), '\', \'', escapeValue(sequenceId), '\', \'', escapeValue(lessonId), '\')">',
                       '<button class="planning-curriculum__series-drag planning-curriculum__lesson-drag" type="button" aria-label="Unterrichtsstunde verschieben" onclick="return window.UnterrichtsassistentApp.stopEventPropagation(event)" onpointerdown="return window.UnterrichtsassistentApp.startCurriculumLessonDrag(event, \'', escapeValue(sequenceId), '\', \'', escapeValue(lessonId), '\', \'', lessonColor, '\')">&#8645;</button>',
                       '<button class="planning-curriculum__series-edit planning-curriculum__lesson-edit" type="button" aria-label="Unterrichtsstunde bearbeiten" onclick="window.UnterrichtsassistentApp.stopEventPropagation(event); return window.UnterrichtsassistentApp.openCurriculumLessonModal(\'', escapeValue(seriesId), '\', \'', escapeValue(sequenceId), '\', \'', escapeValue(String(lessonItem && lessonItem.id || "")), '\')">&#9998;</button>',
+                      lessonDateLabel || lessonWarningMarkup ? '<div class="planning-curriculum__lesson-date">' + lessonWarningMarkup + escapeValue(lessonDateLabel) + '</div>' : '',
                       '<div class="planning-curriculum__lesson-topic">', escapeValue(String(lessonItem && lessonItem.topic || "").trim() || "Ohne Thema"), '</div>',
                       '<div class="planning-curriculum__lesson-type">', String(lessonItem && lessonItem.hourType || "").trim() === "double" ? 'Doppel' : 'Einzel', '</div>',
                       '</article>'
