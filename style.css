@@ -1327,8 +1327,8 @@ button {
 }
 
 #planningEventDescription {
-  min-height: 190px;
-  padding: 0.85rem 1rem;
+  min-height: 260px;
+  padding: 1rem 1.1rem;
   border: 1px solid rgba(23, 49, 62, 0.16);
   border-radius: 14px;
   background: #fff;
@@ -1338,8 +1338,8 @@ button {
 }
 
 .import-modal__dialog--planning {
-  width: min(1180px, calc(100% - 2rem));
-  max-width: 1180px;
+  width: min(1240px, calc(100% - 2rem));
+  max-width: 1240px;
   max-height: min(86vh, 920px);
   display: flex;
   flex-direction: column;
@@ -1347,21 +1347,35 @@ button {
 }
 
 .planning-event-form {
-  grid-template-columns: minmax(0, 1.95fr) minmax(280px, 0.8fr);
-  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.1rem;
   align-items: start;
   overflow: visible;
   padding-right: 0.15rem;
 }
 
+.planning-event-form__section--meta {
+  display: grid;
+  align-content: start;
+}
+
+.planning-event-form__section--description {
+  display: grid;
+  align-content: start;
+}
+
+.planning-event-form__section--schedule {
+  grid-column: 1 / -1;
+}
+
 .planning-event-form__field--title input {
-  min-height: 50px;
-  padding: 0.8rem 1rem;
-  font-size: 1rem;
+  min-height: 58px;
+  padding: 0.95rem 1rem;
+  font-size: 1.05rem;
 }
 
 .planning-event-form__field--description textarea {
-  min-height: 190px;
+  min-height: 260px;
 }
 
 .planning-event-form__section {
@@ -1374,21 +1388,6 @@ button {
   overflow: visible;
 }
 
-.planning-event-form__section--wide {
-  grid-row: span 2;
-}
-
-.planning-event-form__section--category {
-  align-self: start;
-}
-
-.planning-event-form__section-title {
-  margin: 0;
-  color: var(--sidebar);
-  font-size: 0.95rem;
-  font-weight: 800;
-}
-
 .planning-event-form__grid {
   display: grid;
   gap: 0.8rem;
@@ -1396,16 +1395,99 @@ button {
 }
 
 .planning-event-form__grid--dates {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.65rem;
-  align-items: end;
+  grid-template-columns: repeat(2, minmax(240px, 300px));
+  gap: 1rem;
+  align-items: start;
+  justify-content: space-between;
 }
 
-.planning-event-form__field--compact input {
+.planning-event-form__schedule-column {
+  display: grid;
+  gap: 0.8rem;
   min-width: 0;
-  min-height: 38px;
-  padding: 0.45rem 0.65rem;
-  font-size: 0.94rem;
+  width: min(100%, 300px);
+}
+
+.planning-event-form__field--schedule input {
+  min-width: 0;
+  min-height: 44px;
+  padding: 0;
+  font-size: 0.95rem;
+}
+
+.planning-event-form__field--schedule {
+  gap: 0.35rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(23, 49, 62, 0.14);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 242, 235, 0.96));
+  box-shadow: 0 8px 18px rgba(23, 49, 62, 0.06);
+}
+
+.planning-event-form__field--schedule > span {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-soft);
+}
+
+.planning-event-form__field--schedule input[type="date"],
+.planning-event-form__field--schedule input[type="time"] {
+  width: auto;
+  max-width: calc(100% - 0.6rem);
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  box-shadow: none;
+  appearance: none;
+  -webkit-appearance: none;
+  overflow: hidden;
+}
+
+.planning-event-form__field--schedule input[type="date"]::-webkit-date-and-time-value,
+.planning-event-form__field--schedule input[type="time"]::-webkit-date-and-time-value {
+  min-height: 1.2em;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.planning-event-form__field--schedule input[type="date"]::-webkit-datetime-edit,
+.planning-event-form__field--schedule input[type="time"]::-webkit-datetime-edit {
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+}
+
+.planning-event-form__field--schedule input[type="date"]::-webkit-datetime-edit-fields-wrapper,
+.planning-event-form__field--schedule input[type="time"]::-webkit-datetime-edit-fields-wrapper {
+  padding: 0;
+  overflow: hidden;
+}
+
+.planning-event-form__field--schedule input[type="date"]::-webkit-calendar-picker-indicator,
+.planning-event-form__field--schedule input[type="time"]::-webkit-calendar-picker-indicator {
+  margin: 0;
+  padding: 0.1rem 0.2rem 0.1rem 0.2rem;
+  opacity: 0.72;
+  cursor: pointer;
+}
+
+.planning-event-form__field--schedule input[type="date"]:focus,
+.planning-event-form__field--schedule input[type="time"]:focus {
+  outline: none;
+}
+
+.planning-event-form__field--schedule:focus-within {
+  border-color: rgba(199, 104, 55, 0.45);
+  box-shadow: 0 0 0 3px rgba(199, 104, 55, 0.12);
 }
 
 .planning-event-form__section,
@@ -4568,15 +4650,16 @@ body.is-desk-dragging {
   }
 
   .planning-event-form {
-    grid-template-columns: minmax(0, 1.45fr) minmax(220px, 0.7fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .planning-event-form__section--wide {
-    grid-row: auto;
+  .planning-event-form__field--description textarea {
+    min-height: 220px;
   }
 
   .planning-event-form__grid--dates {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(220px, 280px));
+    justify-content: space-between;
   }
 
   .schedule-table {
@@ -4646,8 +4729,49 @@ body.is-desk-dragging {
   }
 }
 
+@media (max-width: 1024px) {
+  .import-modal__dialog--planning {
+    width: min(96vw, 1100px);
+    max-width: none;
+  }
+
+  .planning-event-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .planning-event-form__grid--dates {
+    grid-template-columns: repeat(2, minmax(200px, 240px));
+    justify-content: space-between;
+  }
+
+  .planning-event-form__field--title input,
+  .planning-event-form .import-modal__field select,
+  .planning-event-form .import-modal__field input {
+    min-height: 52px;
+  }
+
+  .planning-event-form__field--schedule input,
+  .planning-event-form .import-modal__field select,
+  .planning-event-form .import-modal__field input[type="time"],
+  .planning-event-form .import-modal__field input[type="date"] {
+    min-height: 44px;
+  }
+
+  .planning-event-form__field--description textarea {
+    min-height: 220px;
+  }
+}
+
 @media (max-width: 560px) {
+  .planning-event-form {
+    grid-template-columns: 1fr;
+  }
+
   .planning-event-form__grid--dates {
     grid-template-columns: 1fr;
+  }
+
+  .planning-event-form__field--description textarea {
+    min-height: 200px;
   }
 }
