@@ -481,22 +481,22 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       const viewportWidth = typeof window !== "undefined" && window && window.innerWidth
         ? Number(window.innerWidth) || 0
         : 0;
-      const estimatedSidebarWidth = 248;
-      const estimatedContentPadding = 48;
-      const estimatedColumnGap = 6;
+      const estimatedSidebarWidth = 224;
+      const estimatedContentPadding = 28;
+      const estimatedColumnGap = 0;
       let targetWidth = 0;
 
       if (!hasLiveFlow) {
         return 1;
       }
 
-      targetWidth = Math.max(360, ((viewportWidth - estimatedSidebarWidth - estimatedContentPadding - estimatedColumnGap) * 0.6) - 4);
+      targetWidth = Math.max(388, ((viewportWidth - estimatedSidebarWidth - estimatedContentPadding - estimatedColumnGap) * 0.62) - 2);
 
       if (!targetWidth || !canvasWidth) {
         return 0.7;
       }
 
-      return Math.max(0.66, Math.min(1, (targetWidth / canvasWidth) * 1.015));
+      return Math.max(0.7, Math.min(1, (targetWidth / canvasWidth) * 1.025));
     }
 
     function getLiveSeatPlanMinimumCanvasSize() {
