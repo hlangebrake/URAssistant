@@ -499,6 +499,14 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       return Math.max(0.66, Math.min(1, (targetWidth / canvasWidth) * 1.015));
     }
 
+    function getLiveSeatPlanMinimumCanvasSize() {
+      const viewportWidth = typeof window !== "undefined" && window && window.innerWidth
+        ? Number(window.innerWidth) || 0
+        : 0;
+
+      return viewportWidth > 0 && viewportWidth <= 768 ? 280 : 360;
+    }
+
     function buildInstructionAssignmentSlotsForClass(classId) {
       const startDate = parseLocalDate(schoolYearStart);
       const endDate = parseLocalDate(schoolYearEnd);
@@ -967,10 +975,13 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       const canvasHeight = deskBounds
         ? Math.max(Math.ceil(deskBounds.maxY - deskBounds.minY) + (padding * 2), 180)
         : 220;
+      const minimumCanvasSize = getLiveSeatPlanMinimumCanvasSize();
+      const effectiveCanvasWidth = Math.max(canvasWidth, minimumCanvasSize);
+      const effectiveCanvasHeight = Math.max(canvasHeight, minimumCanvasSize);
       const seatPlanScale = getLiveSeatPlanScale(canvasWidth);
       const actionBarHeight = 86;
-      const scaledCanvasWidth = Math.max(180, Math.round(canvasWidth * seatPlanScale));
-      const scaledCanvasHeight = Math.max(180, Math.round(canvasHeight * seatPlanScale));
+      const scaledCanvasWidth = Math.max(180, Math.round(effectiveCanvasWidth * seatPlanScale));
+      const scaledCanvasHeight = Math.max(180, Math.round(effectiveCanvasHeight * seatPlanScale));
       const scaledFrameWidth = scaledCanvasWidth;
       const scaledFrameHeight = Math.max(180, scaledCanvasHeight + actionBarHeight);
       const canvasStyle = "width:" + String(canvasWidth) + "px;height:" + String(canvasHeight) + "px";
