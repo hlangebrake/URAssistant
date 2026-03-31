@@ -133,6 +133,7 @@ let hasBoundClassAnalysisResize = false;
 let classAnalysisScrollLeftByClassId = {};
 let planningCurriculumScrollLeftByClassId = {};
 let activeTimetableWeekShiftAnimation = null;
+let activeTimetableSwipe = null;
 let activeKnowledgeGapSuggestionListId = "";
 let activeKnowledgeGapSuggestionInputId = "";
 let activeKnowledgeGapSuggestionBlurTimerId = 0;
@@ -12075,6 +12076,70 @@ window.UnterrichtsassistentApp.shiftActiveDateByDays = function (dayOffset) {
 };
 window.UnterrichtsassistentApp.getTimetableWeekShiftAnimationDirection = function () {
   return getTimetableWeekShiftAnimationDirection();
+};
+window.UnterrichtsassistentApp.startTimetableWeekSwipe = function (event) {
+  const pointerType = String(event && event.pointerType || "").toLowerCase();
+  const sourceElement = event && event.currentTarget ? event.currentTarget : null;
+
+  if (!event || !sourceElement || (pointerType && pointerType === "mouse")) {
+    return false;
+  }
+
+  activeTimetableSwipe = {
+    pointerId: typeof event.pointerId === "number" ? event.pointerId : null,
+    startClientX: Number(event.clientX) || 0,
+    startClientY: Number(event.clientY) || 0,
+    hasTriggered: false
+  };
+
+  if (typeof sourceElement.setPointerCapture === "function" && typeof event.pointerId === "number") {
+    try {
+      sourceElement.setPointerCapture(event.pointerId);
+    } catch (error) {
+      // ignore
+    }
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.handleTimetableWeekSwipeMove = function (event) {
+  const deltaX = activeTimetableSwipe ? (Number(event.clientX) || 0) - Number(activeTimetableSwipe.startClientX || 0) : 0;
+  const deltaY = activeTimetableSwipe ? (Number(event.clientY) || 0) - Number(activeTimetableSwipe.startClientY || 0) : 0;
+
+  if (!activeTimetableSwipe) {
+    return false;
+  }
+
+  if (activeTimetableSwipe.pointerId !== null && typeof event.pointerId === "number" && event.pointerId !== activeTimetableSwipe.pointerId) {
+    return false;
+  }
+
+  if (Math.abs(deltaX) > Math.abs(deltaY) && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.endTimetableWeekSwipe = function (event) {
+  const deltaX = activeTimetableSwipe ? (Number(event.clientX) || 0) - Number(activeTimetableSwipe.startClientX || 0) : 0;
+  const deltaY = activeTimetableSwipe ? (Number(event.clientY) || 0) - Number(activeTimetableSwipe.startClientY || 0) : 0;
+  let result = false;
+
+  if (!activeTimetableSwipe) {
+    return false;
+  }
+
+  if (activeTimetableSwipe.pointerId !== null && typeof event.pointerId === "number" && event.pointerId !== activeTimetableSwipe.pointerId) {
+    return false;
+  }
+
+  if (!activeTimetableSwipe.hasTriggered && Math.abs(deltaX) >= 56 && Math.abs(deltaX) > (Math.abs(deltaY) * 1.25)) {
+    activeTimetableSwipe.hasTriggered = true;
+    result = window.UnterrichtsassistentApp.shiftActiveDateByDays(deltaX < 0 ? 7 : -7);
+  }
+
+  activeTimetableSwipe = null;
+  return result;
 };
 window.UnterrichtsassistentApp.openClassImportModal = function () {
   const modal = getClassImportModal();

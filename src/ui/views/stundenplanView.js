@@ -1072,7 +1072,7 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
       return [
         '<div class="student-table-wrap schedule-table-wrap schedule-table-wrap--compact',
         timetableWeekShiftAnimationDirection ? ' is-week-shifting-' + escapeValue(timetableWeekShiftAnimationDirection) : '',
-        '">',
+        '" onpointerdown="return window.UnterrichtsassistentApp.startTimetableWeekSwipe(event)" onpointermove="return window.UnterrichtsassistentApp.handleTimetableWeekSwipeMove(event)" onpointerup="return window.UnterrichtsassistentApp.endTimetableWeekSwipe(event)" onpointercancel="return window.UnterrichtsassistentApp.endTimetableWeekSwipe(event)">',
         '<table class="schedule-compact-table">',
         "<thead><tr><th></th>",
         weekdays.map(function (weekday) {

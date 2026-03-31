@@ -4777,6 +4777,7 @@ button {
   background: transparent;
   position: relative;
   overflow: hidden;
+  touch-action: pan-y;
 }
 
 .schedule-table-wrap--compact.is-week-shifting-forward .schedule-compact-table,
