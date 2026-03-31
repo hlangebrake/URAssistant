@@ -5,6 +5,8 @@ window.Unterrichtsassistent.data.demoData = {
   activeTimetableId: null,
   activeDateTime: "",
   activeDateTimeMode: "live",
+  schoolYearStart: "",
+  schoolYearEnd: "",
   timetables: [],
   students: [],
   classes: [],
@@ -15,5 +17,7 @@ window.Unterrichtsassistent.data.demoData = {
   warningRecords: [],
   todos: [],
   seatPlans: [],
-  seatOrders: []
+  seatOrders: [],
+  planningEvents: [],
+  planningCategories: []
 };

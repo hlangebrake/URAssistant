@@ -93,6 +93,33 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
       return String(dateValue || "").slice(0, 10);
     }
 
+    function renderRoomPicker() {
+      if (!activeClass) {
+        return "";
+      }
+
+      if (availableRooms.length <= 1) {
+        return [
+          '<div class="seat-plan-room-picker">',
+          '<span class="seat-plan-room-picker__label">Raum</span>',
+          '<span class="content__subtitle-room-pill">', escapeValue(activeRoom || "Raum offen"), '</span>',
+          '</div>'
+        ].join("");
+      }
+
+      return [
+        '<label class="seat-plan-room-picker">',
+        '<span class="seat-plan-room-picker__label">Raum</span>',
+        '<select class="content__subtitle-room-select" aria-label="Raum fuer Sitzplan waehlen" onchange="return window.UnterrichtsassistentApp.changeActiveSeatPlanRoom(this.value)">',
+        availableRooms.map(function (room) {
+          const isSelected = room === activeRoom ? ' selected' : "";
+          return '<option value="' + escapeValue(room) + '"' + isSelected + ">" + escapeValue(room) + "</option>";
+        }).join(""),
+        '</select>',
+        '</label>'
+      ].join("");
+    }
+
     function getStudentShortLabel(student) {
       const firstName = String(student && student.firstName || "").trim();
       const lastName = String(student && student.lastName || "").trim();
@@ -845,6 +872,7 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
     return [
       '<div class="panel-grid panel-grid--klasse">',
       '<article class="panel panel--full">',
+      activeClass ? renderRoomPicker() : "",
       activeClass
         ? (
           seatPlanViewMode === "ansicht"

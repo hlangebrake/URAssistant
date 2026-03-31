@@ -7,6 +7,8 @@ function createDomainSnapshot(rawData) {
     AttendanceRecord,
     HomeworkRecord,
     Lesson,
+    PlanningCategory,
+    PlanningEvent,
     SchoolClass,
     SeatOrder,
     SeatPlan,
@@ -40,6 +42,8 @@ function createDomainSnapshot(rawData) {
     activeSeatPlanRoom: rawData.activeSeatPlanRoom || "",
     activeDateTime: rawData.activeDateTime || "",
     activeDateTimeMode: rawData.activeDateTimeMode || "live",
+    schoolYearStart: rawData.schoolYearStart || "",
+    schoolYearEnd: rawData.schoolYearEnd || "",
     timetables: timetables,
     students: rawData.students.map((item) => new Student(item)),
     classes: rawData.classes.map((item) => new SchoolClass(item)),
@@ -50,6 +54,8 @@ function createDomainSnapshot(rawData) {
     warningRecords: (Array.isArray(rawData.warningRecords) ? rawData.warningRecords : []).map((item) => new WarningRecord(item)),
     todos: rawData.todos.map((item) => new TodoItem(item)),
     seatPlans: rawData.seatPlans.map((item) => new SeatPlan(item)),
+    planningEvents: (Array.isArray(rawData.planningEvents) ? rawData.planningEvents : []).map((item) => new PlanningEvent(item)),
+    planningCategories: (Array.isArray(rawData.planningCategories) ? rawData.planningCategories : []).map((item) => new PlanningCategory(item)),
     seatOrders: (Array.isArray(rawData.seatOrders) ? rawData.seatOrders : rawData.seatPlans.map(function (item) {
       return {
         id: (item && item.id ? String(item.id) : "seat-order") + "-order",
@@ -118,6 +124,8 @@ function serializeDomainSnapshot(snapshot) {
     activeSeatPlanRoom: snapshot.activeSeatPlanRoom || "",
     activeDateTime: snapshot.activeDateTime || "",
     activeDateTimeMode: snapshot.activeDateTimeMode || "live",
+    schoolYearStart: snapshot.schoolYearStart || "",
+    schoolYearEnd: snapshot.schoolYearEnd || "",
     timetables: (snapshot.timetables || []).map(cloneTimetable),
     students: cloneItems(snapshot.students, ["id", "firstName", "lastName", "className", "gender", "strengths", "gaps", "attendanceRate"]),
     classes: cloneItems(snapshot.classes, ["id", "name", "room", "subject", "studentIds", "displayColor"]),
@@ -128,6 +136,8 @@ function serializeDomainSnapshot(snapshot) {
     warningRecords: cloneItems(snapshot.warningRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "category", "note"]),
     todos: cloneItems(snapshot.todos, ["id", "title", "dueDate", "relatedClassId", "done"]),
     seatPlans: cloneItems(snapshot.seatPlans, ["id", "classId", "room", "validFrom", "validTo", "updatedAt", "seats", "deskLayoutItems", "deskLayoutLinks", "roomWindowSide", "roomWidth", "roomHeight"]),
+    planningEvents: cloneItems(snapshot.planningEvents || [], ["id", "title", "startDate", "endDate", "startTime", "endTime", "category", "description", "priority"]),
+    planningCategories: cloneItems(snapshot.planningCategories || [], ["id", "name", "color"]),
     seatOrders: cloneItems(snapshot.seatOrders || [], ["id", "classId", "room", "validFrom", "validTo", "updatedAt", "seats"])
   };
 }

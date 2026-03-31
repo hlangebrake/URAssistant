@@ -192,6 +192,28 @@ class SeatOrder {
   }
 }
 
+class PlanningEvent {
+    constructor({ id, title = "", startDate = "", endDate = "", startTime = "", endTime = "", category = "", description = "", priority = 3 }) {
+      this.id = id;
+      this.title = title;
+      this.startDate = startDate;
+      this.endDate = endDate;
+      this.startTime = startTime;
+      this.endTime = endTime;
+      this.category = category;
+      this.description = description;
+      this.priority = [1, 2, 3].indexOf(Number(priority)) >= 0 ? Number(priority) : 3;
+    }
+  }
+
+class PlanningCategory {
+    constructor({ id, name = "", color = "" }) {
+      this.id = id;
+      this.name = name;
+      this.color = color;
+    }
+  }
+
 window.Unterrichtsassistent.domain.Student = Student;
 window.Unterrichtsassistent.domain.SchoolClass = SchoolClass;
 window.Unterrichtsassistent.domain.Lesson = Lesson;
@@ -204,3 +226,5 @@ window.Unterrichtsassistent.domain.WarningRecord = WarningRecord;
 window.Unterrichtsassistent.domain.TodoItem = TodoItem;
 window.Unterrichtsassistent.domain.SeatPlan = SeatPlan;
 window.Unterrichtsassistent.domain.SeatOrder = SeatOrder;
+window.Unterrichtsassistent.domain.PlanningEvent = PlanningEvent;
+window.Unterrichtsassistent.domain.PlanningCategory = PlanningCategory;

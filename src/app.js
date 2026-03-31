@@ -4,7 +4,9 @@ const navLinks = document.querySelectorAll(".nav-link");
 const views = document.querySelectorAll("[data-view]");
 const viewTitle = document.getElementById("viewTitle");
 const viewHeaderActions = document.getElementById("viewHeaderActions");
+const viewHeaderUtility = document.getElementById("viewHeaderUtility");
 const viewSubtitle = document.getElementById("viewSubtitle");
+const viewSecondaryActions = document.getElementById("viewSecondaryActions");
 const contentHeader = document.querySelector(".content__header");
 const sidebar = document.getElementById("sidebar");
 const activeClassBadge = document.getElementById("activeClassBadge");
@@ -69,6 +71,14 @@ let classAnalysisEnabledTypes = {
 let timetableViewMode = "ansicht";
 let seatPlanViewMode = "ansicht";
 let planningViewMode = "jahresplanung";
+let planningAdminMode = false;
+let activePlanningEventDraft = null;
+let activePlanningRangeDraft = null;
+let suppressPlanningDayClickUntil = 0;
+let planningSidebarFilterOpen = false;
+let planningSidebarCategoryFilters = [];
+let planningSidebarCategoryFiltersInitialized = false;
+let selectedPlanningEventId = "";
 let seatPlanManageMode = "sitzordnung";
 let seatPlanDeskToolMode = "move";
 let seatPlanMoveLinkMode = true;
@@ -106,6 +116,10 @@ let activeKnowledgeGapSuggestionListId = "";
 let activeKnowledgeGapSuggestionInputId = "";
 let activeKnowledgeGapSuggestionBlurTimerId = 0;
 let activeKnowledgeGapSuggestionDrag = null;
+let activePlanningCategorySuggestionListId = "";
+let activePlanningCategorySuggestionInputId = "";
+let activePlanningCategorySuggestionBlurTimerId = 0;
+let activePlanningCategorySuggestionDrag = null;
 let suppressKnowledgeGapSuggestionClickUntil = 0;
 let lastTouchClientY = 0;
 const AUTOSAVE_DELAY_MS = 30000;
@@ -238,6 +252,7 @@ function storeAuthReturnState() {
       timetableViewMode: timetableViewMode,
       seatPlanViewMode: seatPlanViewMode,
       planningViewMode: planningViewMode,
+      planningAdminMode: planningAdminMode,
       activeClassId: rawState && rawState.activeClassId ? rawState.activeClassId : null,
     activeTimetableId: rawState && rawState.activeTimetableId ? rawState.activeTimetableId : null,
     activeSeatPlanId: rawState && rawState.activeSeatPlanId ? rawState.activeSeatPlanId : null,
@@ -284,6 +299,7 @@ function applyAuthReturnStateToRawState(snapshot) {
   planningViewMode = ["jahresplanung", "unterrichtsplanung", "stoffplanung"].indexOf(String(returnState.planningViewMode || "")) >= 0
     ? String(returnState.planningViewMode)
     : planningViewMode;
+  planningAdminMode = Boolean(returnState.planningAdminMode);
   nextSnapshot.activeClassId = returnState.activeClassId || null;
   nextSnapshot.activeTimetableId = returnState.activeTimetableId || null;
   nextSnapshot.activeSeatPlanId = returnState.activeSeatPlanId || null;
@@ -692,6 +708,10 @@ function closeOpenTransientUi() {
   if (typeof window.UnterrichtsassistentApp.closeClassImportModal === "function") {
     window.UnterrichtsassistentApp.closeClassImportModal();
   }
+
+  if (typeof window.UnterrichtsassistentApp.closePlanningEventModal === "function") {
+    window.UnterrichtsassistentApp.closePlanningEventModal();
+  }
 }
 
 async function ensureAuthAccess() {
@@ -781,6 +801,15 @@ function clearKnowledgeGapSuggestionBlurTimer() {
   activeKnowledgeGapSuggestionBlurTimerId = 0;
 }
 
+function clearPlanningCategorySuggestionBlurTimer() {
+  if (!activePlanningCategorySuggestionBlurTimerId) {
+    return;
+  }
+
+  window.clearTimeout(activePlanningCategorySuggestionBlurTimerId);
+  activePlanningCategorySuggestionBlurTimerId = 0;
+}
+
 function isScrollableY(element) {
   if (!element || element === document.body || element === document.documentElement) {
     return false;
@@ -818,8 +847,198 @@ function escapeKnowledgeGapSuggestionHtml(value) {
     .replace(/\n/g, "&#10;");
 }
 
+function escapePlanningCategorySuggestionHtml(value) {
+  return escapeKnowledgeGapSuggestionHtml(value);
+}
+
 function getKnowledgeGapSuggestionList(listId) {
   return listId ? document.getElementById(listId) : null;
+}
+
+function getPlanningCategorySuggestionList(listId) {
+  return listId ? document.getElementById(listId) : null;
+}
+
+function getPlanningCollections(snapshot) {
+  const source = snapshot || {};
+
+  if (!Array.isArray(source.planningEvents)) {
+    source.planningEvents = [];
+  }
+
+  if (!Array.isArray(source.planningCategories)) {
+    source.planningCategories = [];
+  }
+
+  return {
+    events: source.planningEvents,
+    categories: source.planningCategories
+  };
+}
+
+function getDefaultPlanningCategoryNames(snapshot) {
+  const classes = snapshot && Array.isArray(snapshot.classes) ? snapshot.classes : [];
+
+  return ["Unterrichtsfrei", "Sonstiges"].concat(classes.map(function (schoolClass) {
+    return [String(schoolClass && schoolClass.name || "").trim(), String(schoolClass && schoolClass.subject || "").trim()]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+    }).filter(Boolean));
+}
+
+function normalizePlanningColorValue(value) {
+  const trimmed = String(value || "").trim();
+
+  return /^#[0-9a-f]{6}$/i.test(trimmed) ? trimmed : "";
+}
+
+function getStoredPlanningCategoryEntry(snapshot, name) {
+  const collections = getPlanningCollections(snapshot);
+  const normalizedName = String(name || "").trim().toLowerCase();
+
+  if (!normalizedName) {
+    return null;
+  }
+
+  return collections.categories.find(function (entry) {
+    return String(entry && entry.name || "").trim().toLowerCase() === normalizedName;
+  }) || null;
+}
+
+function getDefaultPlanningCategoryDefinition(snapshot, name) {
+  const classes = snapshot && Array.isArray(snapshot.classes) ? snapshot.classes : [];
+  const normalizedName = String(name || "").trim().toLowerCase();
+  let schoolClass = null;
+
+  if (normalizedName === "unterrichtsfrei") {
+    return {
+      name: "Unterrichtsfrei",
+      color: "#a9cf8f",
+      isClassCategory: false,
+      isSystemCategory: true
+    };
+  }
+
+  if (normalizedName === "sonstiges") {
+    return {
+      name: "Sonstiges",
+      color: "#b8bec7",
+      isClassCategory: false,
+      isSystemCategory: true
+    };
+  }
+  schoolClass = classes.find(function (entry) {
+    return [String(entry && entry.name || "").trim(), String(entry && entry.subject || "").trim()]
+      .filter(Boolean)
+      .join(" ")
+      .trim()
+      .toLowerCase() === normalizedName;
+  }) || null;
+
+  if (!schoolClass) {
+    return null;
+  }
+
+  return {
+    name: [String(schoolClass.name || "").trim(), String(schoolClass.subject || "").trim()].filter(Boolean).join(" ").trim(),
+    color: getClassDisplayColor(schoolClass),
+    isClassCategory: true
+  };
+}
+
+function getPlanningCategoryColor(snapshot, name) {
+  const defaultCategory = getDefaultPlanningCategoryDefinition(snapshot, name);
+  const storedCategory = getStoredPlanningCategoryEntry(snapshot, name);
+  const storedColor = normalizePlanningColorValue(storedCategory && storedCategory.color);
+
+  if (defaultCategory) {
+    return defaultCategory.color;
+  }
+
+  if (storedColor) {
+    return storedColor;
+  }
+
+  if (typeof createPastelColorFn === "function") {
+    return createPastelColorFn(String(name || "").trim() || "planung");
+  }
+
+  return "#d9d4cb";
+}
+
+function getPlanningCategoryDefinitions(snapshot) {
+  const sourceSnapshot = snapshot || {};
+  const definitionsByKey = {};
+  const collections = getPlanningCollections(sourceSnapshot);
+
+  getDefaultPlanningCategoryNames(sourceSnapshot).forEach(function (name) {
+    const trimmedName = String(name || "").trim();
+    const normalizedName = trimmedName.toLowerCase();
+    const defaultDefinition = getDefaultPlanningCategoryDefinition(sourceSnapshot, trimmedName);
+
+    if (!trimmedName || definitionsByKey[normalizedName]) {
+      return;
+    }
+
+    definitionsByKey[normalizedName] = {
+      name: defaultDefinition && defaultDefinition.name ? defaultDefinition.name : trimmedName,
+      color: getPlanningCategoryColor(sourceSnapshot, trimmedName),
+      isClassCategory: Boolean(defaultDefinition && defaultDefinition.isClassCategory),
+      isSystemCategory: Boolean(defaultDefinition && defaultDefinition.isSystemCategory)
+    };
+  });
+
+  collections.categories.forEach(function (entry) {
+    const trimmedName = String(entry && entry.name || "").trim();
+    const normalizedName = trimmedName.toLowerCase();
+
+    if (!trimmedName || definitionsByKey[normalizedName]) {
+      return;
+    }
+
+    definitionsByKey[normalizedName] = {
+      name: trimmedName,
+      color: getPlanningCategoryColor(sourceSnapshot, trimmedName),
+      isClassCategory: false
+    };
+  });
+
+  collections.events.forEach(function (entry) {
+    const trimmedName = String(entry && entry.category || "").trim();
+    const normalizedName = trimmedName.toLowerCase();
+
+    if (!trimmedName || definitionsByKey[normalizedName]) {
+      return;
+    }
+
+    definitionsByKey[normalizedName] = {
+      name: trimmedName,
+      color: getPlanningCategoryColor(sourceSnapshot, trimmedName),
+      isClassCategory: false
+    };
+  });
+
+  return Object.keys(definitionsByKey).map(function (key) {
+    return definitionsByKey[key];
+  }).sort(function (left, right) {
+    if (left.isClassCategory !== right.isClassCategory) {
+      return left.isClassCategory ? -1 : 1;
+    }
+
+    return String(left.name || "").localeCompare(String(right.name || ""), "de", { sensitivity: "base" });
+  });
+}
+
+function getDefaultPlanningSidebarFilters(snapshot) {
+  return getPlanningCategoryDefinitions(snapshot)
+    .filter(function (entry) {
+      return String(entry && entry.name || "").trim().toLowerCase() !== "unterrichtsfrei";
+    })
+    .map(function (entry) {
+      return String(entry && entry.name || "").trim();
+    })
+    .filter(Boolean);
 }
 
 function getClassSubjectById(rawSnapshot, classId) {
@@ -915,6 +1134,145 @@ function getKnowledgeGapSuggestions(prefix, inputId) {
   });
 }
 
+function getPlanningCategorySuggestions(prefix) {
+  const sourceSnapshot = getMutableRawSnapshot();
+  const lowerPrefix = String(prefix || "").trim().toLowerCase();
+  const countsByKey = {};
+  const collections = sourceSnapshot ? getPlanningCollections(sourceSnapshot) : null;
+  const activeClassCategoryName = sourceSnapshot && sourceSnapshot.activeClassId
+    ? getClassSubjectById(sourceSnapshot, sourceSnapshot.activeClassId)
+    : getClassSubjectById(sourceSnapshot, "");
+  function getPlanningCategorySuggestionRank(value) {
+    const trimmedValue = String(value || "").trim();
+    const normalizedValue = trimmedValue.toLowerCase();
+    const defaultDefinition = getDefaultPlanningCategoryDefinition(sourceSnapshot, trimmedValue);
+
+    if (activeClassCategoryName && normalizedValue === String(activeClassCategoryName).trim().toLowerCase()) {
+      return -1;
+    }
+
+    if (normalizedValue === "unterrichtsfrei") {
+      return 3;
+    }
+
+    if (normalizedValue === "sonstiges") {
+      return 2;
+    }
+
+    if (defaultDefinition && defaultDefinition.isClassCategory) {
+      return 0;
+    }
+
+    return 1;
+  }
+
+  if (!sourceSnapshot) {
+    return [];
+  }
+
+  collections.categories.forEach(function (entry) {
+    const rawValue = String(entry && entry.name || "").trim();
+    const normalizedKey = rawValue.toLowerCase();
+
+    if (!rawValue) {
+      return;
+    }
+
+    if (lowerPrefix && normalizedKey.indexOf(lowerPrefix) === -1) {
+      return;
+    }
+
+    if (!countsByKey[normalizedKey]) {
+      countsByKey[normalizedKey] = {
+        value: rawValue,
+        count: 0
+      };
+    }
+  });
+
+  getDefaultPlanningCategoryNames(sourceSnapshot).forEach(function (rawValue) {
+    const normalizedKey = String(rawValue || "").trim().toLowerCase();
+
+    if (!normalizedKey) {
+      return;
+    }
+
+    if (lowerPrefix && normalizedKey.indexOf(lowerPrefix) === -1) {
+      return;
+    }
+
+    if (!countsByKey[normalizedKey]) {
+      countsByKey[normalizedKey] = {
+        value: rawValue,
+        count: 0
+      };
+    }
+  });
+
+  collections.events.forEach(function (entry) {
+    const rawValue = String(entry && entry.category || "").trim();
+    const normalizedKey = rawValue.toLowerCase();
+
+    if (!rawValue) {
+      return;
+    }
+
+    if (lowerPrefix && normalizedKey.indexOf(lowerPrefix) === -1) {
+      return;
+    }
+
+    if (!countsByKey[normalizedKey]) {
+      countsByKey[normalizedKey] = {
+        value: rawValue,
+        count: 0
+      };
+    }
+
+    countsByKey[normalizedKey].count += 1;
+  });
+
+  return Object.keys(countsByKey).map(function (key) {
+    return countsByKey[key];
+  }).sort(function (leftItem, rightItem) {
+    const leftRank = getPlanningCategorySuggestionRank(leftItem.value);
+    const rightRank = getPlanningCategorySuggestionRank(rightItem.value);
+
+    if (leftRank !== rightRank) {
+      return leftRank - rightRank;
+    }
+
+    if (rightItem.count !== leftItem.count) {
+      return rightItem.count - leftItem.count;
+    }
+
+    return String(leftItem.value || "").localeCompare(String(rightItem.value || ""), "de", { sensitivity: "base" });
+  });
+}
+
+function normalizePlanningEventCategoryValue(categoryValue) {
+  const normalized = String(categoryValue || "").trim();
+  return normalized || "Sonstiges";
+}
+
+function closePlanningRangeSelection() {
+  if (activePlanningRangeDraft) {
+    activePlanningRangeDraft = null;
+
+    if (activeViewId === "planung") {
+      setActiveView("planung");
+    }
+  }
+}
+
+function getOrderedPlanningRange(startDateValue, endDateValue) {
+  const start = String(startDateValue || "").slice(0, 10);
+  const end = String(endDateValue || start).slice(0, 10) || start;
+
+  return start && end && start > end
+    ? { startDate: end, endDate: start }
+    : { startDate: start, endDate: end };
+}
+
 function closeKnowledgeGapSuggestions() {
   const list = getKnowledgeGapSuggestionList(activeKnowledgeGapSuggestionListId);
 
@@ -929,6 +1287,22 @@ function closeKnowledgeGapSuggestions() {
 
   activeKnowledgeGapSuggestionListId = "";
   activeKnowledgeGapSuggestionInputId = "";
+}
+
+function closePlanningCategorySuggestions() {
+  const list = getPlanningCategorySuggestionList(activePlanningCategorySuggestionListId);
+
+  clearPlanningCategorySuggestionBlurTimer();
+  activePlanningCategorySuggestionDrag = null;
+
+  if (list) {
+    list.hidden = true;
+    list.classList.remove("is-dragging");
+    list.innerHTML = "";
+  }
+
+  activePlanningCategorySuggestionListId = "";
+  activePlanningCategorySuggestionInputId = "";
 }
 
 function renderKnowledgeGapSuggestions(inputId, listId) {
@@ -957,10 +1331,43 @@ function renderKnowledgeGapSuggestions(inputId, listId) {
   return false;
 }
 
+function renderPlanningCategorySuggestions(inputId, listId) {
+  const input = inputId ? document.getElementById(inputId) : null;
+  const list = getPlanningCategorySuggestionList(listId);
+  const suggestions = getPlanningCategorySuggestions(input && input.value);
+
+  if (!input || !list || !document.body.contains(input)) {
+    closePlanningCategorySuggestions();
+    return false;
+  }
+
+  activePlanningCategorySuggestionInputId = inputId;
+  activePlanningCategorySuggestionListId = listId;
+
+  if (!suggestions.length) {
+    list.hidden = true;
+    list.innerHTML = "";
+    return false;
+  }
+
+  list.innerHTML = suggestions.map(function (entry) {
+    return '<button class="knowledge-gap-suggestion" type="button" data-value="' + escapePlanningCategorySuggestionHtml(entry.value) + '" onclick="return window.UnterrichtsassistentApp.selectPlanningCategorySuggestion(this.dataset.value, \'' + escapePlanningCategorySuggestionHtml(inputId) + '\', \'' + escapePlanningCategorySuggestionHtml(listId) + '\')">' + escapePlanningCategorySuggestionHtml(entry.value) + ' <span class="knowledge-gap-suggestion__count">(' + escapePlanningCategorySuggestionHtml(String(entry.count)) + ')</span></button>';
+  }).join("");
+  list.hidden = false;
+  return false;
+}
+
 function scheduleKnowledgeGapSuggestionsClose() {
   clearKnowledgeGapSuggestionBlurTimer();
   activeKnowledgeGapSuggestionBlurTimerId = window.setTimeout(function () {
     closeKnowledgeGapSuggestions();
+  }, 120);
+}
+
+function schedulePlanningCategorySuggestionsClose() {
+  clearPlanningCategorySuggestionBlurTimer();
+  activePlanningCategorySuggestionBlurTimerId = window.setTimeout(function () {
+    closePlanningCategorySuggestions();
   }, 120);
 }
 
@@ -973,6 +1380,26 @@ function beginKnowledgeGapSuggestionsDrag(event, listId) {
 
   clearKnowledgeGapSuggestionBlurTimer();
   activeKnowledgeGapSuggestionDrag = {
+    listId: listId,
+    pointerId: event.pointerId,
+    startY: Number(event.clientY) || 0,
+    startScrollTop: list.scrollTop,
+    moved: false
+  };
+  list.classList.remove("is-dragging");
+  trySetPointerCapture(list, event.pointerId);
+  return false;
+}
+
+function beginPlanningCategorySuggestionsDrag(event, listId) {
+  const list = getPlanningCategorySuggestionList(listId);
+
+  if (!event || !list || (event.target && event.target.closest(".knowledge-gap-suggestion"))) {
+    return false;
+  }
+
+  clearPlanningCategorySuggestionBlurTimer();
+  activePlanningCategorySuggestionDrag = {
     listId: listId,
     pointerId: event.pointerId,
     startY: Number(event.clientY) || 0,
@@ -1007,6 +1434,29 @@ function moveKnowledgeGapSuggestionsDrag(event, listId) {
   return false;
 }
 
+function movePlanningCategorySuggestionsDrag(event, listId) {
+  const list = getPlanningCategorySuggestionList(listId);
+  let currentY;
+  let offsetY;
+
+  if (!activePlanningCategorySuggestionDrag || activePlanningCategorySuggestionDrag.listId !== listId || event.pointerId !== activePlanningCategorySuggestionDrag.pointerId || !list) {
+    return false;
+  }
+
+  currentY = Number(event && event.clientY) || 0;
+  offsetY = currentY - activePlanningCategorySuggestionDrag.startY;
+
+  if (Math.abs(offsetY) >= 4) {
+    activePlanningCategorySuggestionDrag.moved = true;
+    suppressKnowledgeGapSuggestionClickUntil = Date.now() + 180;
+    list.classList.add("is-dragging");
+  }
+
+  list.scrollTop = activePlanningCategorySuggestionDrag.startScrollTop - offsetY;
+  event.preventDefault();
+  return false;
+}
+
 function endKnowledgeGapSuggestionsDrag(event, listId) {
   const list = getKnowledgeGapSuggestionList(listId);
 
@@ -1023,6 +1473,25 @@ function endKnowledgeGapSuggestionsDrag(event, listId) {
   }
 
   activeKnowledgeGapSuggestionDrag = null;
+  return false;
+}
+
+function endPlanningCategorySuggestionsDrag(event, listId) {
+  const list = getPlanningCategorySuggestionList(listId);
+
+  if (!activePlanningCategorySuggestionDrag || activePlanningCategorySuggestionDrag.listId !== listId || event.pointerId !== activePlanningCategorySuggestionDrag.pointerId) {
+    return false;
+  }
+
+  if (list) {
+    list.classList.remove("is-dragging");
+  }
+
+  if (activePlanningCategorySuggestionDrag.moved) {
+    event.preventDefault();
+  }
+
+  activePlanningCategorySuggestionDrag = null;
   return false;
 }
 
@@ -1375,6 +1844,11 @@ function buildSeatPlanRoomControlHtml() {
   }).join("") + "</select>";
 }
 
+function buildManageActionButtonsHtml(deleteAction, deleteLabel, createAction, createLabel) {
+  return '<button class="circle-action circle-action--danger" type="button" aria-label="' + escapeHtml(deleteLabel) + '" onclick="return ' + deleteAction + '">-</button>'
+    + '<button class="circle-action" type="button" aria-label="' + escapeHtml(createLabel) + '" onclick="return ' + createAction + '">+</button>';
+}
+
 function getSeatPlansForActiveRoom() {
   const activeClass = getActiveSeatPlanClass();
   const activeRoom = getActiveSeatPlanRoom(activeClass);
@@ -1525,17 +1999,13 @@ function updateHeaderSubtitle(viewId, config) {
       ? [activeClass.name || "", activeClass.subject || "", room || ""].filter(Boolean)
       : [];
     const subtitle = subtitleParts.join(" ").trim();
-    const dateLabel = referenceDate && !Number.isNaN(referenceDate.getTime())
-      ? String(referenceDate.getDate()).padStart(2, "0") + "." + String(referenceDate.getMonth() + 1).padStart(2, "0") + "." + referenceDate.getFullYear()
-      : "";
-
-    if (!subtitle && !dateLabel) {
+    if (!subtitle) {
       viewSubtitle.textContent = "";
       viewSubtitle.hidden = true;
       return;
     }
 
-    viewSubtitle.innerHTML = '<span class="content__subtitle-main">' + escapeHtml(subtitle) + '</span>' + (dateLabel ? '<span class="content__subtitle-subtle">' + escapeHtml(dateLabel) + '</span>' : "");
+    viewSubtitle.innerHTML = '<span class="content__subtitle-main">' + escapeHtml(subtitle) + "</span>";
     viewSubtitle.hidden = false;
     return;
   }
@@ -1545,7 +2015,6 @@ function updateHeaderSubtitle(viewId, config) {
     const subtitle = activeClass
       ? [activeClass.name || "", activeClass.subject || ""].join(" ").trim()
       : "";
-    const roomControlHtml = activeClass ? buildSeatPlanRoomControlHtml() : "";
 
     if (!subtitle) {
       viewSubtitle.textContent = "";
@@ -1553,7 +2022,7 @@ function updateHeaderSubtitle(viewId, config) {
       return;
     }
 
-    viewSubtitle.innerHTML = '<span class="content__subtitle-inline"><span>' + escapeHtml(subtitle) + '</span>' + roomControlHtml + "</span>";
+    viewSubtitle.innerHTML = '<span class="content__subtitle-main">' + escapeHtml(subtitle) + "</span>";
     viewSubtitle.hidden = false;
     return;
   }
@@ -1574,18 +2043,7 @@ function updateHeaderActions(viewId) {
     return;
   }
 
-  if (contentHeader) {
-    contentHeader.classList.remove("has-secondary-actions");
-    contentHeader.classList.remove("has-secondary-actions--compact");
-    contentHeader.classList.remove("has-secondary-actions--stacked");
-  }
-
   if (viewId === "klasse") {
-    if (contentHeader && isClassManageMode()) {
-      contentHeader.classList.add("has-secondary-actions");
-      contentHeader.classList.add("has-secondary-actions--compact");
-    }
-
     viewHeaderActions.innerHTML = buildViewModeToggleHtml({
       ariaLabel: "Ansicht der Lerngruppe wechseln",
       activeMode: classViewMode,
@@ -1594,10 +2052,7 @@ function updateHeaderActions(viewId) {
       leftAction: "window.UnterrichtsassistentApp.setClassViewMode('analyse')",
       rightMode: "verwalten",
       rightLabel: "Verwalten",
-      rightAction: "window.UnterrichtsassistentApp.setClassViewMode('verwalten')",
-      trailingHtml: isClassManageMode()
-        ? '<button class="circle-action circle-action--danger" type="button" aria-label="Aktive Lerngruppe loeschen" onclick="return window.UnterrichtsassistentApp.deleteActiveClass()">-</button><button class="circle-action" type="button" aria-label="Neue Lerngruppe anlegen" onclick="return window.UnterrichtsassistentApp.openClassImportModal()">+</button>'
-        : ""
+      rightAction: "window.UnterrichtsassistentApp.setClassViewMode('verwalten')"
     });
     return;
   }
@@ -1628,10 +2083,6 @@ function updateHeaderActions(viewId) {
   }
 
   if (viewId === "stundenplan") {
-    if (contentHeader && isTimetableManageMode()) {
-      contentHeader.classList.add("has-secondary-actions");
-    }
-
     viewHeaderActions.innerHTML = buildViewModeToggleHtml({
       ariaLabel: "Ansicht des Stundenplans wechseln",
       activeMode: timetableViewMode,
@@ -1640,25 +2091,12 @@ function updateHeaderActions(viewId) {
       leftAction: "window.UnterrichtsassistentApp.setTimetableViewMode('ansicht')",
       rightMode: "verwalten",
       rightLabel: "Verwalten",
-      rightAction: "window.UnterrichtsassistentApp.setTimetableViewMode('verwalten')",
-      trailingHtml: isTimetableManageMode()
-        ? buildTimetableDropdownHtml() + '<button class="circle-action circle-action--danger" type="button" aria-label="Aktuellen Stundenplan loeschen" onclick="return window.UnterrichtsassistentApp.deleteActiveTimetable()">-</button><button class="circle-action" type="button" aria-label="Neuen Stundenplan anlegen" onclick="return window.UnterrichtsassistentApp.createTimetable()">+</button>'
-        : ""
+      rightAction: "window.UnterrichtsassistentApp.setTimetableViewMode('verwalten')"
     });
     return;
   }
 
     if (viewId === "sitzplan") {
-    if (contentHeader && seatPlanViewMode !== "ansicht") {
-      contentHeader.classList.add("has-secondary-actions");
-
-      if (seatPlanViewMode === "sitzordnung") {
-        contentHeader.classList.add("has-secondary-actions--compact");
-      } else {
-        contentHeader.classList.add("has-secondary-actions--stacked");
-      }
-    }
-
     viewHeaderActions.innerHTML = buildMultiModeToggleHtml({
       ariaLabel: "Ansicht des Sitzplans wechseln",
       activeMode: seatPlanViewMode,
@@ -1678,13 +2116,10 @@ function updateHeaderActions(viewId) {
           label: "Tischordnung",
           action: "window.UnterrichtsassistentApp.setSeatPlanViewMode('tischordnung')"
         }
-      ],
-      trailingHtml: seatPlanViewMode === "sitzordnung" || seatPlanViewMode === "tischordnung"
-        ? buildSeatPlanDropdownHtml(seatPlanViewMode === "sitzordnung" ? "Sitzordnung" : "Tischordnung") + '<button class="circle-action circle-action--danger" type="button" aria-label="Aktive ' + (seatPlanViewMode === "sitzordnung" ? 'Sitzordnung' : 'Tischordnung') + ' loeschen" onclick="return window.UnterrichtsassistentApp.deleteActiveSeatPlan()">-</button><button class="circle-action" type="button" aria-label="Neue ' + (seatPlanViewMode === "sitzordnung" ? 'Sitzordnung' : 'Tischordnung') + ' anlegen" onclick="return window.UnterrichtsassistentApp.createSeatPlan()">+</button>'
-        : ""
-      });
-      return;
-    }
+      ]
+    });
+    return;
+  }
 
     if (viewId === "planung") {
       viewHeaderActions.innerHTML = buildMultiModeToggleHtml({
@@ -1713,6 +2148,86 @@ function updateHeaderActions(viewId) {
 
     viewHeaderActions.innerHTML = "";
   }
+
+function updateHeaderUtility(viewId) {
+  if (!viewHeaderUtility) {
+    return;
+  }
+
+  if (viewId === "planung") {
+    viewHeaderUtility.innerHTML = '<button class="header-utility-button' + (planningAdminMode ? ' is-active' : '') + '" type="button" aria-label="' + (planningAdminMode ? "Arbeitsmodus aktivieren" : "Adminmodus aktivieren") + '" title="Verwalten" onclick="return window.UnterrichtsassistentApp.togglePlanningAdminMode()">Verwalten</button>';
+    return;
+  }
+
+  viewHeaderUtility.innerHTML = "";
+}
+
+function updateSecondaryActions(viewId) {
+  if (!viewSecondaryActions) {
+    return;
+  }
+
+  let html = "";
+
+  if (viewId === "klasse" && isClassManageMode()) {
+    html = buildManageActionButtonsHtml(
+      "window.UnterrichtsassistentApp.deleteActiveClass()",
+      "Aktive Lerngruppe loeschen",
+      "window.UnterrichtsassistentApp.openClassImportModal()",
+      "Neue Lerngruppe anlegen"
+    );
+  } else if (viewId === "stundenplan" && isTimetableManageMode()) {
+    html = buildTimetableDropdownHtml()
+      + buildManageActionButtonsHtml(
+        "window.UnterrichtsassistentApp.deleteActiveTimetable()",
+        "Aktuellen Stundenplan loeschen",
+        "window.UnterrichtsassistentApp.createTimetable()",
+        "Neuen Stundenplan anlegen"
+      );
+  } else if (viewId === "sitzplan" && (seatPlanViewMode === "sitzordnung" || seatPlanViewMode === "tischordnung")) {
+    const label = seatPlanViewMode === "sitzordnung" ? "Sitzordnung" : "Tischordnung";
+    html = buildSeatPlanDropdownHtml(label)
+      + buildManageActionButtonsHtml(
+        "window.UnterrichtsassistentApp.deleteActiveSeatPlan()",
+        "Aktive " + label + " loeschen",
+        "window.UnterrichtsassistentApp.createSeatPlan()",
+        "Neue " + label + " anlegen"
+      );
+  }
+
+  viewSecondaryActions.innerHTML = html ? '<div class="content__secondary-actions-inner">' + html + "</div>" : "";
+  viewSecondaryActions.hidden = !html;
+}
+
+function normalizePlanningDateValue(value) {
+  return String(value || "").slice(0, 10);
+}
+
+window.UnterrichtsassistentApp.updatePlanningSchoolYearField = function (fieldName, nextValue) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const normalizedValue = normalizePlanningDateValue(nextValue);
+  let startValue;
+  let endValue;
+
+  if (!currentRawSnapshot || ["schoolYearStart", "schoolYearEnd"].indexOf(fieldName) === -1) {
+    return false;
+  }
+
+  currentRawSnapshot[fieldName] = normalizedValue;
+  startValue = normalizePlanningDateValue(currentRawSnapshot.schoolYearStart);
+  endValue = normalizePlanningDateValue(currentRawSnapshot.schoolYearEnd);
+
+  if (startValue && endValue && startValue > endValue) {
+    if (fieldName === "schoolYearStart") {
+      currentRawSnapshot.schoolYearEnd = startValue;
+    } else {
+      currentRawSnapshot.schoolYearStart = endValue;
+    }
+  }
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return false;
+};
 
 function syncClassAnalysisTableLayout() {
   const wraps = document.querySelectorAll(".student-table-wrap--analysis[data-drag-scroll='true']");
@@ -1875,6 +2390,8 @@ function setActiveView(viewId) {
   viewTitle.textContent = config.title;
   updateHeaderSubtitle(viewId, config);
   updateHeaderActions(viewId);
+  updateHeaderUtility(viewId);
+  updateSecondaryActions(viewId);
   renderActiveClassContext();
 
   if (viewId !== previousViewId) {
@@ -2021,6 +2538,14 @@ function createDeskLayoutLinkId() {
 
 function createSeatAssignmentId() {
   return "seat-assignment-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+}
+
+function createPlanningEventId() {
+  return "planning-event-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+}
+
+function createPlanningCategoryId() {
+  return "planning-category-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
 }
 
 function createAttendanceRecordId() {
@@ -5373,6 +5898,118 @@ window.UnterrichtsassistentApp.toggleMenu = toggleMenu;
 window.UnterrichtsassistentApp.collapseMenu = collapseMenu;
 window.UnterrichtsassistentApp.toggleCollapsedClassPicker = toggleCollapsedClassPicker;
 window.UnterrichtsassistentApp.getClassDisplayColor = getClassDisplayColor;
+window.UnterrichtsassistentApp.getPlanningCategoryColor = function (categoryName) {
+  return getPlanningCategoryColor(getMutableRawSnapshot(), categoryName);
+};
+window.UnterrichtsassistentApp.getPlanningCategoryDefinitions = function () {
+  return getPlanningCategoryDefinitions(getMutableRawSnapshot());
+};
+window.UnterrichtsassistentApp.getPlanningSidebarCategoryFilters = function () {
+  const sourceSnapshot = getMutableRawSnapshot();
+
+  if (!planningSidebarCategoryFiltersInitialized) {
+    planningSidebarCategoryFilters = getDefaultPlanningSidebarFilters(sourceSnapshot);
+    planningSidebarCategoryFiltersInitialized = true;
+  }
+
+  return planningSidebarCategoryFilters.slice();
+};
+window.UnterrichtsassistentApp.isPlanningSidebarFilterAllOff = function () {
+  return planningSidebarCategoryFiltersInitialized && !planningSidebarCategoryFilters.length;
+};
+window.UnterrichtsassistentApp.isPlanningSidebarFilterOpen = function () {
+  return planningSidebarFilterOpen;
+};
+window.UnterrichtsassistentApp.togglePlanningSidebarFilter = function () {
+  planningSidebarFilterOpen = !planningSidebarFilterOpen;
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.togglePlanningSidebarCategoryFilter = function (categoryName) {
+  const normalizedName = String(categoryName || "").trim();
+  const existingIndex = planningSidebarCategoryFilters.findIndex(function (entry) {
+    return String(entry || "").trim().toLowerCase() === normalizedName.toLowerCase();
+  });
+
+  if (!normalizedName) {
+    return false;
+  }
+
+  if (existingIndex >= 0) {
+    planningSidebarCategoryFilters.splice(existingIndex, 1);
+  } else {
+    planningSidebarCategoryFilters.push(normalizedName);
+  }
+  planningSidebarCategoryFiltersInitialized = true;
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.clearPlanningSidebarCategoryFilters = function () {
+  planningSidebarCategoryFilters = getDefaultPlanningSidebarFilters(getMutableRawSnapshot());
+  planningSidebarCategoryFiltersInitialized = true;
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.clearAllPlanningSidebarCategoryFilters = function () {
+  planningSidebarCategoryFilters = [];
+  planningSidebarCategoryFiltersInitialized = true;
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.getSelectedPlanningEventId = function () {
+  return String(selectedPlanningEventId || "").trim();
+};
+window.UnterrichtsassistentApp.selectPlanningEvent = function (eventId) {
+  selectedPlanningEventId = String(eventId || "").trim();
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.clearSelectedPlanningEvent = function () {
+  if (!String(selectedPlanningEventId || "").trim()) {
+    return false;
+  }
+
+  selectedPlanningEventId = "";
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.handlePlanningBackgroundClick = function (event) {
+  const target = event && event.target;
+
+  if (!target || typeof target.closest !== "function") {
+    return true;
+  }
+
+  if (target.closest(".planning-sidebar__event-row, .planning-sidebar__filters, .planning-year__day, #planningEventModal")) {
+    return true;
+  }
+
+  return window.UnterrichtsassistentApp.clearSelectedPlanningEvent();
+};
 window.UnterrichtsassistentApp.getUnterrichtViewMode = function () {
   return unterrichtViewMode;
 };
@@ -6056,6 +6693,482 @@ window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerMove = functi
 };
 window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerUp = function (event, listId) {
   return endKnowledgeGapSuggestionsDrag(event, listId);
+};
+window.UnterrichtsassistentApp.handlePlanningCategoryInputFocus = function (inputId, listId) {
+  clearPlanningCategorySuggestionBlurTimer();
+  return renderPlanningCategorySuggestions(inputId, listId);
+};
+window.UnterrichtsassistentApp.handlePlanningCategoryInput = function (event, listId) {
+  const input = event && event.target ? event.target : document.getElementById(activePlanningCategorySuggestionInputId);
+
+  clearPlanningCategorySuggestionBlurTimer();
+
+  if (!input || !input.id) {
+    closePlanningCategorySuggestions();
+    return false;
+  }
+
+  return renderPlanningCategorySuggestions(input.id, listId);
+};
+window.UnterrichtsassistentApp.handlePlanningCategoryInputBlur = function (listId) {
+  if (listId && listId !== activePlanningCategorySuggestionListId) {
+    closePlanningCategorySuggestions();
+    return false;
+  }
+
+  schedulePlanningCategorySuggestionsClose();
+  return false;
+};
+window.UnterrichtsassistentApp.selectPlanningCategorySuggestion = function (value, inputId) {
+  const input = inputId ? document.getElementById(inputId) : null;
+
+  if (Date.now() < suppressKnowledgeGapSuggestionClickUntil) {
+    return false;
+  }
+
+  clearPlanningCategorySuggestionBlurTimer();
+
+  if (!input) {
+    closePlanningCategorySuggestions();
+    return false;
+  }
+
+  input.value = String(value || "");
+  closePlanningCategorySuggestions();
+  window.setTimeout(function () {
+    if (typeof input.focus === "function") {
+      input.focus();
+      if (typeof input.setSelectionRange === "function") {
+        input.setSelectionRange(input.value.length, input.value.length);
+      }
+    }
+  }, 0);
+  return false;
+};
+window.UnterrichtsassistentApp.handlePlanningCategorySuggestionsPointerDown = function (event, listId) {
+  return beginPlanningCategorySuggestionsDrag(event, listId);
+};
+window.UnterrichtsassistentApp.handlePlanningCategorySuggestionsPointerMove = function (event, listId) {
+  return movePlanningCategorySuggestionsDrag(event, listId);
+};
+window.UnterrichtsassistentApp.handlePlanningCategorySuggestionsPointerUp = function (event, listId) {
+  return endPlanningCategorySuggestionsDrag(event, listId);
+};
+window.UnterrichtsassistentApp.openPlanningEventModal = function (dateValue) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const collections = currentRawSnapshot ? getPlanningCollections(currentRawSnapshot) : null;
+  const normalizedDate = String(dateValue || "").slice(0, 10);
+  const eventId = arguments.length > 1 ? String(arguments[1] || "").trim() : "";
+  const rangeEndDate = arguments.length > 2 ? String(arguments[2] || "").slice(0, 10) : "";
+  const orderedRange = getOrderedPlanningRange(normalizedDate, rangeEndDate || normalizedDate);
+  let existingEvent = null;
+
+  if (planningViewMode !== "jahresplanung" || planningAdminMode) {
+    return false;
+  }
+
+  if (!eventId && Date.now() < suppressPlanningDayClickUntil) {
+    return false;
+  }
+
+  if (eventId && collections) {
+    existingEvent = collections.events.find(function (entry) {
+      return String(entry && entry.id || "").trim() === eventId;
+    }) || null;
+  }
+
+  if (existingEvent) {
+    selectedPlanningEventId = String(existingEvent.id || "").trim();
+    activePlanningEventDraft = {
+      id: String(existingEvent.id || "").trim(),
+      title: String(existingEvent.title || "").trim(),
+      startDate: String(existingEvent.startDate || "").slice(0, 10),
+      endDate: String(existingEvent.endDate || existingEvent.startDate || "").slice(0, 10),
+      startTime: String(existingEvent.startTime || "").trim(),
+      endTime: String(existingEvent.endTime || "").trim(),
+      category: String(existingEvent.category || "").trim(),
+      description: String(existingEvent.description || "").trim(),
+      priority: [1, 2, 3].indexOf(Number(existingEvent.priority)) >= 0 ? Number(existingEvent.priority) : 3
+    };
+  } else {
+    if (!orderedRange.startDate) {
+      return false;
+    }
+
+    activePlanningEventDraft = {
+      date: orderedRange.startDate,
+      title: "",
+      startDate: orderedRange.startDate,
+      endDate: orderedRange.endDate,
+      startTime: "",
+      endTime: "",
+      category: "",
+      description: "",
+      priority: 3
+    };
+  }
+
+  activePlanningRangeDraft = null;
+  setActiveView("planung");
+  return false;
+};
+window.UnterrichtsassistentApp.closePlanningEventModal = function () {
+  activePlanningEventDraft = null;
+  closePlanningCategorySuggestions();
+  closePlanningRangeSelection();
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.submitPlanningEventModal = function (event) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const startDateInput = document.getElementById("planningEventStartDate");
+  const endDateInput = document.getElementById("planningEventEndDate");
+  const startTimeInput = document.getElementById("planningEventStartTime");
+  const endTimeInput = document.getElementById("planningEventEndTime");
+  const titleInput = document.getElementById("planningEventTitleInput");
+  const priorityInput = document.getElementById("planningEventPriority");
+  const categoryInput = document.getElementById("planningEventCategory");
+  const descriptionInput = document.getElementById("planningEventDescription");
+  const collections = currentRawSnapshot ? getPlanningCollections(currentRawSnapshot) : null;
+  let startDateValue;
+  let endDateValue;
+  let startTimeValue;
+  let endTimeValue;
+  let titleValue;
+  let priorityValue;
+  let categoryValue;
+  let descriptionValue;
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  if (!currentRawSnapshot || !activePlanningEventDraft || !collections) {
+    return window.UnterrichtsassistentApp.closePlanningEventModal();
+  }
+
+  startDateValue = String(startDateInput && startDateInput.value || "").slice(0, 10);
+  endDateValue = String(endDateInput && endDateInput.value || "").slice(0, 10);
+  startTimeValue = String(startTimeInput && startTimeInput.value || "").trim();
+  endTimeValue = String(endTimeInput && endTimeInput.value || "").trim();
+  titleValue = String(titleInput && titleInput.value || "").trim();
+  priorityValue = [1, 2, 3].indexOf(Number(priorityInput && priorityInput.value)) >= 0 ? Number(priorityInput.value) : 3;
+  categoryValue = normalizePlanningEventCategoryValue(categoryInput && categoryInput.value);
+  descriptionValue = String(descriptionInput && descriptionInput.value || "").trim();
+
+  if (!startDateValue) {
+    return false;
+  }
+
+  if (!endDateValue || endDateValue < startDateValue) {
+    endDateValue = startDateValue;
+  }
+
+  if (activePlanningEventDraft.id) {
+    const existingEvent = collections.events.find(function (entry) {
+      return String(entry && entry.id || "").trim() === String(activePlanningEventDraft.id || "").trim();
+    });
+
+    if (existingEvent) {
+      existingEvent.title = titleValue;
+      existingEvent.startDate = startDateValue;
+      existingEvent.endDate = endDateValue;
+      existingEvent.startTime = startTimeValue;
+      existingEvent.endTime = endTimeValue;
+      existingEvent.category = categoryValue;
+      existingEvent.description = descriptionValue;
+      existingEvent.priority = priorityValue;
+    } else {
+      collections.events.push({
+        id: String(activePlanningEventDraft.id || createPlanningEventId()).trim(),
+        title: titleValue,
+        startDate: startDateValue,
+        endDate: endDateValue,
+        startTime: startTimeValue,
+        endTime: endTimeValue,
+        category: categoryValue,
+        description: descriptionValue,
+        priority: priorityValue
+      });
+    }
+  } else {
+    collections.events.push({
+      id: createPlanningEventId(),
+      title: titleValue,
+      startDate: startDateValue,
+      endDate: endDateValue,
+      startTime: startTimeValue,
+      endTime: endTimeValue,
+      category: categoryValue,
+      description: descriptionValue,
+      priority: priorityValue
+    });
+  }
+
+  if (categoryValue) {
+    const normalizedCategory = categoryValue.toLowerCase();
+    const exists = collections.categories.some(function (entry) {
+      return String(entry && entry.name || "").trim().toLowerCase() === normalizedCategory;
+    });
+
+    if (!exists) {
+      collections.categories.push({
+        id: createPlanningCategoryId(),
+        name: categoryValue,
+        color: ""
+      });
+    }
+  }
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return window.UnterrichtsassistentApp.closePlanningEventModal();
+};
+window.UnterrichtsassistentApp.updatePlanningCategoryColor = function (categoryName, colorValue) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const collections = currentRawSnapshot ? getPlanningCollections(currentRawSnapshot) : null;
+  const normalizedName = String(categoryName || "").trim();
+  const normalizedColor = normalizePlanningColorValue(colorValue);
+  let existingCategory = null;
+
+  if (!currentRawSnapshot || !collections || !normalizedName) {
+    return false;
+  }
+
+  if (getDefaultPlanningCategoryDefinition(currentRawSnapshot, normalizedName)) {
+    return false;
+  }
+
+  existingCategory = getStoredPlanningCategoryEntry(currentRawSnapshot, normalizedName);
+
+  if (!existingCategory) {
+    existingCategory = {
+      id: createPlanningCategoryId(),
+      name: normalizedName,
+      color: normalizedColor
+    };
+    collections.categories.push(existingCategory);
+  } else {
+    existingCategory.color = normalizedColor;
+  }
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return false;
+};
+window.UnterrichtsassistentApp.addPlanningCategory = function (inputId) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const collections = currentRawSnapshot ? getPlanningCollections(currentRawSnapshot) : null;
+  const input = inputId ? document.getElementById(inputId) : null;
+  const categoryName = String(input && input.value || "").trim();
+  const normalizedName = categoryName.toLowerCase();
+  const alreadyExists = collections
+    ? getPlanningCategoryDefinitions(currentRawSnapshot).some(function (entry) {
+        return String(entry && entry.name || "").trim().toLowerCase() === normalizedName;
+      })
+    : false;
+
+  if (!currentRawSnapshot || !collections || !categoryName) {
+    return false;
+  }
+
+  if (alreadyExists) {
+    if (input && typeof input.focus === "function") {
+      input.focus();
+      if (typeof input.select === "function") {
+        input.select();
+      }
+    }
+    return false;
+  }
+
+  collections.categories.push({
+    id: createPlanningCategoryId(),
+    name: categoryName,
+    color: ""
+  });
+  currentRawSnapshot.planningCategories = collections.categories;
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return false;
+};
+window.UnterrichtsassistentApp.deletePlanningCategory = function (categoryName) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const collections = currentRawSnapshot ? getPlanningCollections(currentRawSnapshot) : null;
+  const normalizedName = String(categoryName || "").trim();
+  const fallbackCategory = "Sonstiges";
+
+  if (!currentRawSnapshot || !collections || !normalizedName) {
+    return false;
+  }
+
+  if (getDefaultPlanningCategoryDefinition(currentRawSnapshot, normalizedName)) {
+    return false;
+  }
+
+  if (!window.confirm("Soll die Kategorie wirklich geloescht werden? Betroffene Termine werden auf 'Sonstiges' gesetzt.")) {
+    return false;
+  }
+
+  collections.categories = collections.categories.filter(function (entry) {
+    return String(entry && entry.name || "").trim().toLowerCase() !== normalizedName.toLowerCase();
+  });
+  currentRawSnapshot.planningCategories = collections.categories;
+
+  collections.events.forEach(function (entry) {
+    if (String(entry && entry.category || "").trim().toLowerCase() === normalizedName.toLowerCase()) {
+      entry.category = fallbackCategory;
+    }
+  });
+
+  if (!getStoredPlanningCategoryEntry(currentRawSnapshot, fallbackCategory) && !getDefaultPlanningCategoryDefinition(currentRawSnapshot, fallbackCategory)) {
+    collections.categories.push({
+      id: createPlanningCategoryId(),
+      name: fallbackCategory,
+      color: ""
+    });
+    currentRawSnapshot.planningCategories = collections.categories;
+  }
+
+  planningSidebarCategoryFilters = planningSidebarCategoryFilters.map(function (entry) {
+    return String(entry || "").trim().toLowerCase() === normalizedName.toLowerCase()
+      ? fallbackCategory
+      : entry;
+  }).filter(function (entry, index, array) {
+    return array.findIndex(function (candidate) {
+      return String(candidate || "").trim().toLowerCase() === String(entry || "").trim().toLowerCase();
+    }) === index;
+  });
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return false;
+};
+window.UnterrichtsassistentApp.deletePlanningEvent = function (eventId) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const collections = currentRawSnapshot ? getPlanningCollections(currentRawSnapshot) : null;
+  const normalizedEventId = String(eventId || "").trim();
+  const nextEvents = collections
+    ? collections.events.filter(function (entry) {
+        return String(entry && entry.id || "").trim() !== normalizedEventId;
+      })
+    : null;
+
+  if (!currentRawSnapshot || !collections || !normalizedEventId) {
+    return false;
+  }
+
+  if (!window.confirm("Soll dieser Termin wirklich geloescht werden?")) {
+    return false;
+  }
+
+  if (nextEvents.length === collections.events.length) {
+    return false;
+  }
+
+  if (String(selectedPlanningEventId || "").trim() === normalizedEventId) {
+    selectedPlanningEventId = "";
+  }
+
+  collections.events = nextEvents;
+  currentRawSnapshot.planningEvents = nextEvents;
+
+  if (activePlanningEventDraft && String(activePlanningEventDraft.id || "").trim() === normalizedEventId) {
+    activePlanningEventDraft = null;
+    closePlanningCategorySuggestions();
+  }
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return false;
+};
+window.UnterrichtsassistentApp.beginPlanningRangeSelection = function (event, dateValue) {
+  const normalizedDate = String(dateValue || "").slice(0, 10);
+
+  if (!event || !normalizedDate || planningViewMode !== "jahresplanung" || planningAdminMode) {
+    return false;
+  }
+
+  if (typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  activePlanningRangeDraft = {
+    startDate: normalizedDate,
+    endDate: normalizedDate,
+    pointerId: event.pointerId,
+    moved: false
+  };
+
+  return false;
+};
+window.UnterrichtsassistentApp.updatePlanningRangeSelection = function (event, dateValue) {
+  const normalizedDate = String(dateValue || "").slice(0, 10);
+  const orderedRange = getOrderedPlanningRange(
+    activePlanningRangeDraft && activePlanningRangeDraft.startDate,
+    normalizedDate
+  );
+
+  if (!activePlanningRangeDraft || !normalizedDate) {
+    return false;
+  }
+
+  if (event && activePlanningRangeDraft.pointerId !== undefined && event.pointerId !== activePlanningRangeDraft.pointerId) {
+    return false;
+  }
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  activePlanningRangeDraft.endDate = normalizedDate;
+  activePlanningRangeDraft.moved = orderedRange.startDate !== orderedRange.endDate || activePlanningRangeDraft.moved;
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.endPlanningRangeSelection = function (event, dateValue) {
+  const normalizedDate = String(dateValue || "").slice(0, 10);
+  let orderedRange;
+
+  if (!activePlanningRangeDraft) {
+    return false;
+  }
+
+  if (event && activePlanningRangeDraft.pointerId !== undefined && event.pointerId !== activePlanningRangeDraft.pointerId) {
+    return false;
+  }
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  orderedRange = getOrderedPlanningRange(
+    activePlanningRangeDraft.startDate,
+    normalizedDate || activePlanningRangeDraft.endDate
+  );
+
+  if (activePlanningRangeDraft.moved || orderedRange.startDate !== orderedRange.endDate) {
+    activePlanningRangeDraft = null;
+    window.UnterrichtsassistentApp.openPlanningEventModal(orderedRange.startDate, "", orderedRange.endDate);
+    suppressPlanningDayClickUntil = Date.now() + 250;
+    return false;
+  }
+
+  activePlanningRangeDraft = null;
+  return false;
+};
+window.UnterrichtsassistentApp.cancelPlanningRangeSelection = function () {
+  activePlanningRangeDraft = null;
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
 };
 window.UnterrichtsassistentApp.openUnterrichtAssessmentModal = function () {
   const modal = getUnterrichtAssessmentModal();
@@ -6777,6 +7890,15 @@ window.UnterrichtsassistentApp.getSeatPlanViewMode = function () {
 window.UnterrichtsassistentApp.getPlanningViewMode = function () {
   return planningViewMode;
 };
+window.UnterrichtsassistentApp.isPlanningAdminMode = function () {
+  return planningAdminMode;
+};
+window.UnterrichtsassistentApp.getActivePlanningEventDraft = function () {
+  return activePlanningEventDraft;
+};
+window.UnterrichtsassistentApp.getActivePlanningRangeDraft = function () {
+  return activePlanningRangeDraft;
+};
 window.UnterrichtsassistentApp.getSeatPlanManageMode = function () {
   return seatPlanViewMode === "tischordnung" ? "tischordnung" : "sitzordnung";
 };
@@ -6818,6 +7940,17 @@ window.UnterrichtsassistentApp.setPlanningViewMode = function (nextMode) {
 
   if (activeViewId === "planung") {
     setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.togglePlanningAdminMode = function () {
+  planningAdminMode = !planningAdminMode;
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  } else {
+    updateHeaderUtility(activeViewId);
   }
 
   return false;
