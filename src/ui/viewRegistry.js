@@ -6,5 +6,6 @@ window.Unterrichtsassistent.ui.viewConfig = {
   unterricht: window.Unterrichtsassistent.ui.views.unterricht,
   klasse: window.Unterrichtsassistent.ui.views.klasse,
   stundenplan: window.Unterrichtsassistent.ui.views.stundenplan,
-  sitzplan: window.Unterrichtsassistent.ui.views.sitzplan
+  sitzplan: window.Unterrichtsassistent.ui.views.sitzplan,
+  planung: window.Unterrichtsassistent.ui.views.planung
 };

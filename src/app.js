@@ -68,6 +68,7 @@ let classAnalysisEnabledTypes = {
 };
 let timetableViewMode = "ansicht";
 let seatPlanViewMode = "ansicht";
+let planningViewMode = "jahresplanung";
 let seatPlanManageMode = "sitzordnung";
 let seatPlanDeskToolMode = "move";
 let seatPlanMoveLinkMode = true;
@@ -230,13 +231,14 @@ function getAuthPageUrl(mode, reason) {
 function storeAuthReturnState() {
   window.sessionStorage.setItem(AUTH_RETURN_STATE_STORAGE_KEY, JSON.stringify({
     returnUrl: new URL("index.html", window.location.href).toString(),
-    viewId: activeViewId,
-    unterrichtViewMode: unterrichtViewMode,
-    unterrichtToolMode: unterrichtToolMode,
-    classViewMode: classViewMode,
-    timetableViewMode: timetableViewMode,
-    seatPlanViewMode: seatPlanViewMode,
-    activeClassId: rawState && rawState.activeClassId ? rawState.activeClassId : null,
+      viewId: activeViewId,
+      unterrichtViewMode: unterrichtViewMode,
+      unterrichtToolMode: unterrichtToolMode,
+      classViewMode: classViewMode,
+      timetableViewMode: timetableViewMode,
+      seatPlanViewMode: seatPlanViewMode,
+      planningViewMode: planningViewMode,
+      activeClassId: rawState && rawState.activeClassId ? rawState.activeClassId : null,
     activeTimetableId: rawState && rawState.activeTimetableId ? rawState.activeTimetableId : null,
     activeSeatPlanId: rawState && rawState.activeSeatPlanId ? rawState.activeSeatPlanId : null,
     activeSeatOrderId: rawState && rawState.activeSeatOrderId ? rawState.activeSeatOrderId : null,
@@ -279,6 +281,9 @@ function applyAuthReturnStateToRawState(snapshot) {
   classViewMode = String(returnState.classViewMode || classViewMode || "analyse");
   timetableViewMode = String(returnState.timetableViewMode || timetableViewMode || "ansicht");
   seatPlanViewMode = String(returnState.seatPlanViewMode || seatPlanViewMode || "ansicht");
+  planningViewMode = ["jahresplanung", "unterrichtsplanung", "stoffplanung"].indexOf(String(returnState.planningViewMode || "")) >= 0
+    ? String(returnState.planningViewMode)
+    : planningViewMode;
   nextSnapshot.activeClassId = returnState.activeClassId || null;
   nextSnapshot.activeTimetableId = returnState.activeTimetableId || null;
   nextSnapshot.activeSeatPlanId = returnState.activeSeatPlanId || null;
@@ -1643,7 +1648,7 @@ function updateHeaderActions(viewId) {
     return;
   }
 
-  if (viewId === "sitzplan") {
+    if (viewId === "sitzplan") {
     if (contentHeader && seatPlanViewMode !== "ansicht") {
       contentHeader.classList.add("has-secondary-actions");
 
@@ -1677,12 +1682,37 @@ function updateHeaderActions(viewId) {
       trailingHtml: seatPlanViewMode === "sitzordnung" || seatPlanViewMode === "tischordnung"
         ? buildSeatPlanDropdownHtml(seatPlanViewMode === "sitzordnung" ? "Sitzordnung" : "Tischordnung") + '<button class="circle-action circle-action--danger" type="button" aria-label="Aktive ' + (seatPlanViewMode === "sitzordnung" ? 'Sitzordnung' : 'Tischordnung') + ' loeschen" onclick="return window.UnterrichtsassistentApp.deleteActiveSeatPlan()">-</button><button class="circle-action" type="button" aria-label="Neue ' + (seatPlanViewMode === "sitzordnung" ? 'Sitzordnung' : 'Tischordnung') + ' anlegen" onclick="return window.UnterrichtsassistentApp.createSeatPlan()">+</button>'
         : ""
-    });
-    return;
-  }
+      });
+      return;
+    }
 
-  viewHeaderActions.innerHTML = "";
-}
+    if (viewId === "planung") {
+      viewHeaderActions.innerHTML = buildMultiModeToggleHtml({
+        ariaLabel: "Planungsmodus wechseln",
+        activeMode: planningViewMode,
+        modes: [
+          {
+            value: "jahresplanung",
+            label: "Jahresplanung",
+            action: "window.UnterrichtsassistentApp.setPlanningViewMode('jahresplanung')"
+          },
+          {
+            value: "unterrichtsplanung",
+            label: "Unterrichtsplanung",
+            action: "window.UnterrichtsassistentApp.setPlanningViewMode('unterrichtsplanung')"
+          },
+          {
+            value: "stoffplanung",
+            label: "Stoffplanung",
+            action: "window.UnterrichtsassistentApp.setPlanningViewMode('stoffplanung')"
+          }
+        ]
+      });
+      return;
+    }
+
+    viewHeaderActions.innerHTML = "";
+  }
 
 function syncClassAnalysisTableLayout() {
   const wraps = document.querySelectorAll(".student-table-wrap--analysis[data-drag-scroll='true']");
@@ -1803,14 +1833,20 @@ function setActiveView(viewId) {
     timetableViewMode = "ansicht";
   }
 
-  if (viewId === "sitzplan" && previousViewId !== "sitzplan") {
-    seatPlanViewMode = "ansicht";
-    seatPlanManageMode = "sitzordnung";
-    seatPlanDeskToolMode = "move";
-    seatPlanMoveLinkMode = true;
-    seatPlanRotateMode = "90";
-    seatPlanMirrorMode = "horizontal";
-  }
+    if (viewId === "sitzplan" && previousViewId !== "sitzplan") {
+      seatPlanViewMode = "ansicht";
+      seatPlanManageMode = "sitzordnung";
+      seatPlanDeskToolMode = "move";
+      seatPlanMoveLinkMode = true;
+      seatPlanRotateMode = "90";
+      seatPlanMirrorMode = "horizontal";
+    }
+
+    if (viewId === "planung" && previousViewId !== "planung") {
+      planningViewMode = ["jahresplanung", "unterrichtsplanung", "stoffplanung"].indexOf(planningViewMode) >= 0
+        ? planningViewMode
+        : "jahresplanung";
+    }
 
   eachNode(navLinks, function (link) {
     const isActive = link.dataset.viewTarget === viewId;
@@ -6738,6 +6774,9 @@ window.UnterrichtsassistentApp.setTimetableViewMode = function (nextMode) {
 window.UnterrichtsassistentApp.getSeatPlanViewMode = function () {
   return seatPlanViewMode;
 };
+window.UnterrichtsassistentApp.getPlanningViewMode = function () {
+  return planningViewMode;
+};
 window.UnterrichtsassistentApp.getSeatPlanManageMode = function () {
   return seatPlanViewMode === "tischordnung" ? "tischordnung" : "sitzordnung";
 };
@@ -6768,6 +6807,17 @@ window.UnterrichtsassistentApp.setSeatPlanViewMode = function (nextMode) {
 
   if (activeViewId === "sitzplan") {
     setActiveView("sitzplan");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.setPlanningViewMode = function (nextMode) {
+  planningViewMode = ["jahresplanung", "unterrichtsplanung", "stoffplanung"].indexOf(String(nextMode || "")) >= 0
+    ? String(nextMode)
+    : "jahresplanung";
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
   }
 
   return false;

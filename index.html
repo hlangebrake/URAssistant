@@ -64,6 +64,10 @@
           <span class="nav-link__icon" aria-hidden="true">P</span>
           <span class="nav-link__label">Sitzplan</span>
         </button>
+        <button class="nav-link" type="button" data-view-target="planung" data-view-title="Planung" onclick="window.UnterrichtsassistentApp.activateView('planung'); return false;">
+          <span class="nav-link__icon" aria-hidden="true">J</span>
+          <span class="nav-link__label">Planung</span>
+        </button>
       </nav>
       <div class="sidebar__footer">
         <div class="sidebar__footer-actions">
@@ -110,6 +114,7 @@
       <section class="view" id="klasse" data-view hidden></section>
       <section class="view" id="stundenplan" data-view hidden></section>
       <section class="view" id="sitzplan" data-view hidden></section>
+      <section class="view" id="planung" data-view hidden></section>
     </main>
   </div>
 
@@ -246,8 +251,9 @@
   <script src="src/ui/views/klasseView.js?v=20260330a"></script>
   <script src="src/ui/views/stundenplanView.js?v=20260330a"></script>
   <script src="src/ui/views/sitzplanView.js?v=20260330a"></script>
-  <script src="src/ui/viewRegistry.js?v=20260330a"></script>
-  <script src="src/ui/renderers.js?v=20260330a"></script>
-  <script src="src/app.js?v=20260330c"></script>
-</body>
+  <script src="src/ui/views/planungView.js?v=20260331a"></script>
+  <script src="src/ui/viewRegistry.js?v=20260331a"></script>
+  <script src="src/ui/renderers.js?v=20260331a"></script>
+    <script src="src/app.js?v=20260331a"></script>
+  </body>
 </html>
