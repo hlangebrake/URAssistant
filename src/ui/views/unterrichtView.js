@@ -476,6 +476,29 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       return ((Number(parts[0]) || 0) * 60) + (Number(parts[1]) || 0);
     }
 
+    function getLiveSeatPlanScale(canvasWidth) {
+      const hasLiveFlow = viewMode === "live" && Boolean(getCurrentAssignedCurriculumLessonFlow());
+      const viewportWidth = typeof window !== "undefined" && window && window.innerWidth
+        ? Number(window.innerWidth) || 0
+        : 0;
+      const estimatedSidebarWidth = 248;
+      const estimatedContentPadding = 48;
+      const estimatedColumnGap = 6;
+      let targetWidth = 0;
+
+      if (!hasLiveFlow) {
+        return 1;
+      }
+
+      targetWidth = Math.max(360, ((viewportWidth - estimatedSidebarWidth - estimatedContentPadding - estimatedColumnGap) * 0.6) - 4);
+
+      if (!targetWidth || !canvasWidth) {
+        return 0.7;
+      }
+
+      return Math.max(0.66, Math.min(1, (targetWidth / canvasWidth) * 1.015));
+    }
+
     function buildInstructionAssignmentSlotsForClass(classId) {
       const startDate = parseLocalDate(schoolYearStart);
       const endDate = parseLocalDate(schoolYearEnd);
@@ -944,7 +967,16 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       const canvasHeight = deskBounds
         ? Math.max(Math.ceil(deskBounds.maxY - deskBounds.minY) + (padding * 2), 180)
         : 220;
+      const seatPlanScale = getLiveSeatPlanScale(canvasWidth);
+      const actionBarHeight = 86;
+      const scaledCanvasWidth = Math.max(180, Math.round(canvasWidth * seatPlanScale));
+      const scaledCanvasHeight = Math.max(180, Math.round(canvasHeight * seatPlanScale));
+      const scaledFrameWidth = scaledCanvasWidth;
+      const scaledFrameHeight = Math.max(180, scaledCanvasHeight + actionBarHeight);
       const canvasStyle = "width:" + String(canvasWidth) + "px;height:" + String(canvasHeight) + "px";
+      const frameStyle = "width:" + String(scaledFrameWidth) + "px;height:" + String(scaledFrameHeight) + "px";
+      const shellStyle = "width:" + String(scaledCanvasWidth) + "px;height:" + String(scaledCanvasHeight) + "px";
+      const anchorStyle = "transform:scale(" + String(seatPlanScale) + ");transform-origin:top left";
 
       if (!activeClass) {
         return '<div class="seat-plan-placeholder">Noch keine aktive Lerngruppe vorhanden.</div>';
@@ -960,10 +992,11 @@ window.Unterrichtsassistent.ui.views.unterricht = {
 
       return [
         '<div class="unterricht-seatplan">',
-        '<div class="unterricht-seatplan-frame">',
+        '<div class="unterricht-seatplan-frame" style="', frameStyle, '">',
         '<div class="desk-layout-builder desk-layout-builder--readonly desk-layout-builder--readonly-single">',
         '<div class="desk-layout-builder__canvas-wrap desk-layout-builder__canvas-wrap--readonly desk-layout-builder__canvas-wrap--tight desk-layout-builder__canvas-wrap--unterricht">',
-        '<div class="unterricht-seatplan-canvas-anchor">',
+        '<div class="unterricht-seatplan-canvas-shell" style="', shellStyle, '">',
+        '<div class="unterricht-seatplan-canvas-anchor" style="', anchorStyle, '">',
         '<div class="desk-layout-builder__canvas desk-layout-builder__canvas--readonly desk-layout-builder__canvas--tight" style="', canvasStyle, '">',
         deskLayoutItems.map(function (item) {
           const metrics = getDeskItemMetrics(item);
@@ -998,12 +1031,12 @@ window.Unterrichtsassistent.ui.views.unterricht = {
           }
         }).join(""),
         '</div>',
+        '</div>',
         '<div class="unterricht-seatplan-actions" aria-label="Unterrichtsaktionen">',
         '<button class="' + getToolButtonClass("attendance") + '" type="button" aria-label="Anwesenheit markieren" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'attendance\')">&#10003;</button>',
         '<button class="' + getToolButtonClass("homework") + '" type="button" aria-label="Hausaufgabe markieren" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'homework\')">H</button>',
         '<button class="' + getToolButtonClass("warning") + '" type="button" aria-label="Warnung vergeben" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'warning\')">&#9888;</button>',
         '<button class="' + getToolButtonClass("assessment") + '" type="button" aria-label="Bewertung oeffnen" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'assessment\')">&#128269;</button>',
-        '</div>',
         '</div>',
         '</div>',
         '</div>',
@@ -1036,33 +1069,14 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       ].join("");
     }
 
-    function renderLiveLessonFlowPanel() {
-      const lessonFlowData = getCurrentAssignedCurriculumLessonFlow();
+    function renderLiveLessonFlowPanel(lessonFlowData) {
       const lessonTopic = lessonFlowData && lessonFlowData.lessonPlan
         ? String(lessonFlowData.lessonPlan.topic || "").trim()
         : "";
       const lessonDateLabel = lessonFlowData ? formatShortDateLabel(lessonFlowData.lessonDate) : "";
 
-      if (!activeClass || !currentClassLesson) {
-        return [
-          '<article class="unterricht-layout__live-flow">',
-          '<div class="unterricht-live-flow__header">',
-          '<h2 class="unterricht-live-flow__title">Stundenverlauf</h2>',
-          '</div>',
-          '<div class="unterricht-live-flow__empty">Aktuell ist keine Unterrichtsstunde aktiv.</div>',
-          '</article>'
-        ].join("");
-      }
-
       if (!lessonFlowData) {
-        return [
-          '<article class="unterricht-layout__live-flow">',
-          '<div class="unterricht-live-flow__header">',
-          '<h2 class="unterricht-live-flow__title">Stundenverlauf</h2>',
-          '</div>',
-          '<div class="unterricht-live-flow__empty">Fuer diese Stunde ist kein geplanter Stundenverlauf hinterlegt.</div>',
-          '</article>'
-        ].join("");
+        return "";
       }
 
       return [
@@ -1160,13 +1174,15 @@ window.Unterrichtsassistent.ui.views.unterricht = {
     }
 
     if (viewMode === "live") {
+      const liveLessonFlowData = getCurrentAssignedCurriculumLessonFlow();
+
       return [
-        '<div class="unterricht-layout unterricht-layout--live">',
+        '<div class="unterricht-layout unterricht-layout--live' + (liveLessonFlowData ? ' has-live-flow' : '') + '">',
         renderLiveNotice(),
         '<article class="panel unterricht-layout__seatplan unterricht-layout__seatplan--full">',
         renderCompactSeatPlan(),
         '</article>',
-        renderLiveLessonFlowPanel(),
+        renderLiveLessonFlowPanel(liveLessonFlowData),
         '<div class="import-modal" id="unterrichtWarningOtherModal" hidden>',
         '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeUnterrichtWarningOtherModal()"></div>',
         '<div class="import-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="unterrichtWarningOtherTitle">',
