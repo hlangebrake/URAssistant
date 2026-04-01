@@ -79,6 +79,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
 
       if (classId && lessonDate && lessonPlanId && phaseId && statusItem) {
         lookup[[classId, lessonDate, lessonPlanId, phaseId].join("::")] = statusItem;
+        lookup[[classId, lessonPlanId, phaseId].join("::")] = statusItem;
       }
 
       return lookup;
@@ -471,6 +472,169 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       return fullLabel ? fullLabel.charAt(0) : "";
     }
 
+    function getCurriculumSituationTypeLabel(situationTypeValue) {
+      const normalizedValue = String(situationTypeValue || "").trim().toLowerCase();
+
+      if (normalizedValue === "lernsituation" || normalizedValue === "lernen") {
+        return "Lernen";
+      }
+
+      if (normalizedValue === "leistungssituation" || normalizedValue === "leisten") {
+        return "Leisten";
+      }
+
+      return "";
+    }
+
+    function getCurriculumDemandLevelLabel(demandLevelValue) {
+      const normalizedValue = String(demandLevelValue || "").trim().toLowerCase();
+
+      if (normalizedValue === "afb1") {
+        return "AFB1";
+      }
+
+      if (normalizedValue === "afb1/2") {
+        return "AFB1/2";
+      }
+
+      if (normalizedValue === "afb2") {
+        return "AFB2";
+      }
+
+      if (normalizedValue === "afb2/3") {
+        return "AFB2/3";
+      }
+
+      if (normalizedValue === "afb3") {
+        return "AFB3";
+      }
+
+      return "";
+    }
+
+    function getCurrentLivePhaseControlState(lessonFlowData) {
+      const activeSegment = lessonFlowData && Array.isArray(lessonFlowData.segments)
+        ? lessonFlowData.segments[Math.max(0, Number(lessonFlowData.activeSegmentIndex) || 0)] || lessonFlowData.segments[0] || null
+        : null;
+      const orderedPhases = activeSegment && Array.isArray(activeSegment.phases)
+        ? activeSegment.phases
+        : [];
+      const activePhase = orderedPhases.find(function (phaseItem) {
+        const phaseItemId = String(phaseItem && phaseItem.id || "").trim();
+        const phaseStatus = lessonPhaseStatusLookup[[String(activeClass && activeClass.id || "").trim(), String(activeSegment && activeSegment.lessonPlan && activeSegment.lessonPlan.id || "").trim(), phaseItemId].join("::")] || lessonPhaseStatusLookup[[String(activeClass && activeClass.id || "").trim(), String(lessonFlowData && lessonFlowData.lessonDate || "").trim(), String(activeSegment && activeSegment.lessonPlan && activeSegment.lessonPlan.id || "").trim(), phaseItemId].join("::")] || null;
+
+        return !(phaseStatus && phaseStatus.isCompleted);
+      }) || orderedPhases[orderedPhases.length - 1] || null;
+      const activePhaseId = String(activePhase && activePhase.id || "").trim();
+      const fallbackLessonPlanId = activeSegment && activeSegment.lessonPlan
+        ? String(activeSegment.lessonPlan.id || "").trim()
+        : [
+            "__live__",
+            String(activeClass && activeClass.id || "").trim(),
+            toIsoDate(referenceDate),
+            String(currentClassLesson && currentClassLesson.sourceRowId || "").trim() || "nosourcerow",
+            String(currentClassLesson && currentClassLesson.startTime || "").trim() || "nostart",
+            String(currentClassLesson && currentClassLesson.endTime || "").trim() || "noend"
+          ].join("::");
+      const fallbackPhaseId = activePhaseId || "__fallback__";
+      const liveOverride = activePhaseId && activeSegment && window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getCurriculumLessonPhaseLiveOverride === "function"
+        ? window.UnterrichtsassistentApp.getCurriculumLessonPhaseLiveOverride(
+            String(activeClass && activeClass.id || "").trim(),
+            String(lessonFlowData && lessonFlowData.lessonDate || "").trim(),
+            String(activeSegment && activeSegment.lessonPlan && activeSegment.lessonPlan.id || "").trim(),
+            activePhaseId
+          )
+        : (window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getCurriculumLessonPhaseLiveOverride === "function"
+          ? window.UnterrichtsassistentApp.getCurriculumLessonPhaseLiveOverride(
+              String(activeClass && activeClass.id || "").trim(),
+              String(lessonFlowData && lessonFlowData.lessonDate || toIsoDate(referenceDate) || "").trim(),
+              fallbackLessonPlanId,
+              fallbackPhaseId
+            )
+          : null);
+      const normalizedSituation = String(liveOverride && liveOverride.situationType || activePhase && activePhase.situationType || "").trim().toLowerCase();
+      const normalizedDemandLevel = String(liveOverride && liveOverride.demandLevel || activePhase && activePhase.demandLevel || "").trim().toLowerCase();
+
+      return {
+        classId: String(activeClass && activeClass.id || "").trim(),
+        lessonDate: String(lessonFlowData && lessonFlowData.lessonDate || toIsoDate(referenceDate) || "").trim(),
+        lessonPlanId: fallbackLessonPlanId,
+        phaseId: fallbackPhaseId,
+        situationType: normalizedSituation === "leisten" ? "leisten" : "lernen",
+        demandLevel: ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(normalizedDemandLevel) >= 0
+          ? normalizedDemandLevel
+          : "afb2"
+      };
+    }
+
+    function getDemandLevelSliderValue(demandLevelValue) {
+      switch (String(demandLevelValue || "").trim().toLowerCase()) {
+        case "afb1":
+          return 0;
+        case "afb1/2":
+          return 1;
+        case "afb2":
+          return 2;
+        case "afb2/3":
+          return 3;
+        case "afb3":
+          return 4;
+        default:
+          return null;
+      }
+    }
+
+    function getDemandLevelSliderDisplayLabel(sliderValue) {
+      switch (Math.max(0, Math.min(4, Number(sliderValue) || 0))) {
+        case 0:
+          return "1";
+        case 1:
+          return "1/2";
+        case 2:
+          return "2";
+        case 3:
+          return "2/3";
+        case 4:
+          return "3";
+        default:
+          return "2";
+      }
+    }
+
+    function renderLivePhaseControls(lessonFlowData) {
+      const controlState = getCurrentLivePhaseControlState(lessonFlowData);
+      const sliderValue = getDemandLevelSliderValue(controlState.demandLevel);
+      const normalizedClassId = String(controlState.classId || "").trim();
+      const normalizedLessonDate = String(controlState.lessonDate || "").trim();
+      const normalizedLessonPlanId = String(controlState.lessonPlanId || "").trim();
+      const normalizedPhaseId = String(controlState.phaseId || "").trim();
+      const isDisabled = !normalizedClassId || !normalizedLessonDate || !normalizedLessonPlanId || !normalizedPhaseId;
+      const demandLevelOptions = [
+        { value: "afb1", sliderValue: 0, label: "1" },
+        { value: "afb1/2", sliderValue: 1, label: "" },
+        { value: "afb2", sliderValue: 2, label: "2" },
+        { value: "afb2/3", sliderValue: 3, label: "" },
+        { value: "afb3", sliderValue: 4, label: "3" }
+      ];
+
+      return [
+        '<div class="unterricht-live-controls" aria-label="Aktuelle Phasenattribute">',
+        '<div class="unterricht-live-controls__switch" role="group" aria-label="Situation">',
+        '<button class="unterricht-live-controls__switch-option' + (controlState.situationType === "lernen" ? ' is-active' : '') + '" type="button"' + (isDisabled ? ' disabled' : '') + ' onclick="return window.UnterrichtsassistentApp.updateCurriculumLessonPhaseLiveField(\'' + escapeValue(normalizedClassId) + '\', \'' + escapeValue(normalizedLessonDate) + '\', \'' + escapeValue(normalizedLessonPlanId) + '\', \'' + escapeValue(normalizedPhaseId) + '\', \'liveSituationType\', \'lernen\')">Lernen</button>',
+        '<button class="unterricht-live-controls__switch-option' + (controlState.situationType === "leisten" ? ' is-active' : '') + '" type="button"' + (isDisabled ? ' disabled' : '') + ' onclick="return window.UnterrichtsassistentApp.updateCurriculumLessonPhaseLiveField(\'' + escapeValue(normalizedClassId) + '\', \'' + escapeValue(normalizedLessonDate) + '\', \'' + escapeValue(normalizedLessonPlanId) + '\', \'' + escapeValue(normalizedPhaseId) + '\', \'liveSituationType\', \'leisten\')">Leisten</button>',
+        '</div>',
+        '<div class="unterricht-live-controls__afb">',
+        '<span class="unterricht-live-controls__afb-label">AFB</span>',
+        '<div class="unterricht-live-controls__slider" role="group" aria-label="' + escapeValue(controlState.demandLevel ? ('Anforderungsbereich ' + getCurriculumDemandLevelLabel(controlState.demandLevel)) : 'Anforderungsbereich nicht gesetzt') + '">',
+        '<input class="unterricht-live-controls__slider-input" type="range" min="0" max="4" step="1" value="' + escapeValue(String(sliderValue !== null ? sliderValue : 2)) + '"' + (isDisabled ? ' disabled' : '') + ' oninput="return window.UnterrichtsassistentApp.handleUnterrichtLiveAfbSliderInput(event, \'' + escapeValue(normalizedClassId) + '\', \'' + escapeValue(normalizedLessonDate) + '\', \'' + escapeValue(normalizedLessonPlanId) + '\', \'' + escapeValue(normalizedPhaseId) + '\')" onchange="return window.UnterrichtsassistentApp.handleUnterrichtLiveAfbSliderInput(event, \'' + escapeValue(normalizedClassId) + '\', \'' + escapeValue(normalizedLessonDate) + '\', \'' + escapeValue(normalizedLessonPlanId) + '\', \'' + escapeValue(normalizedPhaseId) + '\')">',
+        '<div class="unterricht-live-controls__slider-value unterricht-live-controls__slider-value--' + escapeValue(String(sliderValue !== null ? sliderValue : 2)) + '">' + escapeValue(getDemandLevelSliderDisplayLabel(sliderValue !== null ? sliderValue : 2)) + '</div>',
+        '<div class="unterricht-live-controls__slider-labels"><span>1</span><span>2</span><span>3</span></div>',
+        '</div>',
+        '</div>',
+        '</div>'
+      ].join("");
+    }
+
     function getTimeValueInMinutes(timeValue) {
       const parts = String(timeValue || "").split(":");
       return ((Number(parts[0]) || 0) * 60) + (Number(parts[1]) || 0);
@@ -668,21 +832,36 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       const lessonDate = toIsoDate(referenceDate);
       const lessonSlots = normalizedClassId ? buildInstructionAssignmentSlotsForClass(normalizedClassId) : [];
       const currentSourceRowId = String(currentClassLesson && currentClassLesson.sourceRowId || "").trim();
+      const currentLessonStartMinutes = timeToMinutes(currentClassLesson && currentClassLesson.startTime || "");
+      const currentLessonEndMinutes = timeToMinutes(currentClassLesson && currentClassLesson.endTime || "");
       const currentMinutes = (referenceDate.getHours() * 60) + referenceDate.getMinutes();
-      const matchingSlots = lessonSlots.filter(function (slot) {
+      let matchingSlots = lessonSlots.filter(function (slot) {
         return String(slot && slot.lessonDate || "").trim() === lessonDate
           && String(slot && slot.sourceRowId || "").trim() === currentSourceRowId;
       });
       let slotIndex = 0;
-      let selectedSlot = null;
-      let lessonPlan = null;
-      let sequence = null;
-      let series = null;
-      let phases = [];
+      let activeSegmentIndex = 0;
+      let segmentDurationMinutes = 0;
+      let segmentStartMinutes = 0;
+      let segments = [];
+
+      if (!matchingSlots.length) {
+        matchingSlots = lessonSlots.filter(function (slot) {
+          const slotDate = String(slot && slot.lessonDate || "").trim();
+          const slotStartMinutes = timeToMinutes(slot && slot.startTime || "");
+          const slotEndMinutes = timeToMinutes(slot && slot.endTime || "");
+
+          return slotDate === lessonDate
+            && slotStartMinutes < currentLessonEndMinutes
+            && slotEndMinutes > currentLessonStartMinutes;
+        });
+      }
 
       if (!activeClass || !currentClassLesson || !lessonDate || !matchingSlots.length) {
         return null;
       }
+
+      segmentDurationMinutes = Math.max(1, Math.round((timeToMinutes(currentClassLesson.endTime) - timeToMinutes(currentClassLesson.startTime)) / Math.max(matchingSlots.length, 1)));
 
       if (matchingSlots.length > 1) {
         const startMinutes = (() => {
@@ -698,29 +877,66 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         slotIndex = Math.max(0, Math.min(matchingSlots.length - 1, Math.floor((currentMinutes - startMinutes) / segmentSize)));
       }
 
-      selectedSlot = matchingSlots[slotIndex] || matchingSlots[0] || null;
-      lessonPlan = selectedSlot && lessonPlanLookup[String(selectedSlot.assignedLessonId || "").trim()]
-        ? lessonPlanLookup[String(selectedSlot.assignedLessonId || "").trim()]
-        : null;
+      segments = matchingSlots.reduce(function (result, slot, currentIndex) {
+        const lessonId = String(slot && slot.assignedLessonId || "").trim();
+        const lessonPlan = lessonId && lessonPlanLookup[lessonId]
+          ? lessonPlanLookup[lessonId]
+          : null;
+        const lastSegment = result.length ? result[result.length - 1] : null;
+        const phases = lessonPlan ? getOrderedCurriculumLessonPhasesForLesson(lessonId) : [];
 
-      if (!lessonPlan) {
+        if (!lessonPlan || !phases.length) {
+          return result;
+        }
+
+        if (lastSegment && String(lastSegment.lessonPlan && lastSegment.lessonPlan.id || "").trim() === lessonId) {
+          lastSegment.slotCount += 1;
+          lastSegment.endSlotIndex = currentIndex;
+          lastSegment.endMinutes += segmentDurationMinutes;
+          return result;
+        }
+
+        result.push({
+          lessonDate: lessonDate,
+          lessonPlan: lessonPlan,
+          sequence: sequenceLookup[String(lessonPlan.sequenceId || "").trim()] || null,
+          series: null,
+          phases: phases,
+          startSlotIndex: currentIndex,
+          endSlotIndex: currentIndex,
+          slotCount: 1,
+          startMinutes: timeToMinutes(currentClassLesson.startTime) + (currentIndex * segmentDurationMinutes),
+          endMinutes: timeToMinutes(currentClassLesson.startTime) + ((currentIndex + 1) * segmentDurationMinutes)
+        });
+
+        result[result.length - 1].series = result[result.length - 1].sequence
+          ? (seriesLookup[String(result[result.length - 1].sequence.seriesId || "").trim()] || null)
+          : null;
+
+        return result;
+      }, []);
+
+      if (!segments.length) {
         return null;
       }
 
-      sequence = sequenceLookup[String(lessonPlan.sequenceId || "").trim()] || null;
-      series = sequence ? (seriesLookup[String(sequence.seriesId || "").trim()] || null) : null;
-      phases = getOrderedCurriculumLessonPhasesForLesson(String(lessonPlan.id || "").trim());
+      activeSegmentIndex = segments.findIndex(function (segmentItem) {
+        return currentMinutes >= segmentItem.startMinutes && currentMinutes < segmentItem.endMinutes;
+      });
 
-      if (!phases.length) {
-        return null;
+      if (activeSegmentIndex < 0) {
+        activeSegmentIndex = Math.max(0, Math.min(segments.length - 1, slotIndex));
       }
+
+      segments.forEach(function (segmentItem, segmentIndex) {
+        segmentItem.elapsedMinutes = Math.max(0, Math.min(segmentItem.endMinutes - segmentItem.startMinutes, currentMinutes - segmentItem.startMinutes));
+        segmentItem.isActiveNow = segmentIndex === activeSegmentIndex;
+      });
 
       return {
         lessonDate: lessonDate,
-        lessonPlan: lessonPlan,
-        sequence: sequence,
-        series: series,
-        phases: phases
+        segments: segments,
+        activeSegmentIndex: activeSegmentIndex
       };
     }
 
@@ -1081,9 +1297,6 @@ window.Unterrichtsassistent.ui.views.unterricht = {
     }
 
     function renderLiveLessonFlowPanel(lessonFlowData) {
-      const lessonTopic = lessonFlowData && lessonFlowData.lessonPlan
-        ? String(lessonFlowData.lessonPlan.topic || "").trim()
-        : "";
       const lessonDateLabel = lessonFlowData ? formatShortDateLabel(lessonFlowData.lessonDate) : "";
 
       if (!lessonFlowData) {
@@ -1094,22 +1307,28 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         '<article class="unterricht-layout__live-flow">',
         '<div class="unterricht-live-flow__header">',
         '<h2 class="unterricht-live-flow__title">Stundenverlauf</h2>',
-        '<div class="unterricht-live-flow__meta">',
-        lessonTopic ? '<span class="unterricht-live-flow__meta-topic">' + escapeValue(lessonTopic) + '</span>' : "",
-        lessonDateLabel ? '<span class="unterricht-live-flow__meta-date">' + escapeValue(lessonDateLabel) + '</span>' : "",
+        lessonDateLabel ? '<div class="unterricht-live-flow__meta"><span class="unterricht-live-flow__meta-date">' + escapeValue(lessonDateLabel) + '</span></div>' : "",
         '</div>',
-        '</div>',
-        '<div class="unterricht-live-flow__phase-list">',
-        (() => {
-          const totalLessonElapsedMinutes = Math.max(0, ((referenceDate.getHours() * 60) + referenceDate.getMinutes()) - getTimeValueInMinutes(currentClassLesson && currentClassLesson.startTime || ""));
+        lessonFlowData.segments.map(function (segmentItem) {
           let consumedCompletedMinutes = 0;
 
-          return lessonFlowData.phases.map(function (phaseItem) {
+          return [
+            '<section class="unterricht-live-flow__lesson' + (segmentItem.isActiveNow ? ' is-active' : '') + '">',
+            '<div class="unterricht-live-flow__meta">',
+            '<span class="unterricht-live-flow__meta-topic">' + escapeValue(String(segmentItem.lessonPlan && segmentItem.lessonPlan.topic || "").trim() || "Ohne Thema") + '</span>',
+            segmentItem.slotCount > 1 ? '<span class="unterricht-live-flow__meta-date">x' + escapeValue(String(segmentItem.slotCount)) + '</span>' : '',
+            '</div>',
+            '<div class="unterricht-live-flow__phase-list">',
+            segmentItem.phases.map(function (phaseItem) {
             const phaseItemId = String(phaseItem && phaseItem.id || "").trim();
             const phaseTitle = String(phaseItem && phaseItem.title || "").trim() || "Ohne Titel";
             const phaseDuration = Number(phaseItem && phaseItem.durationMinutes) || 0;
             const phaseSteps = getOrderedCurriculumLessonStepsForPhase(phaseItemId);
-            const phaseStatus = lessonPhaseStatusLookup[[String(activeClass && activeClass.id || "").trim(), lessonFlowData.lessonDate, String(lessonFlowData.lessonPlan && lessonFlowData.lessonPlan.id || "").trim(), phaseItemId].join("::")] || null;
+            const phaseStatus = lessonPhaseStatusLookup[[String(activeClass && activeClass.id || "").trim(), String(segmentItem.lessonPlan && segmentItem.lessonPlan.id || "").trim(), phaseItemId].join("::")] || lessonPhaseStatusLookup[[String(activeClass && activeClass.id || "").trim(), lessonFlowData.lessonDate, String(segmentItem.lessonPlan && segmentItem.lessonPlan.id || "").trim(), phaseItemId].join("::")] || null;
+            const phaseMetaParts = [
+              getCurriculumDemandLevelLabel(phaseItem && phaseItem.demandLevel),
+              getCurriculumSituationTypeLabel(phaseItem && phaseItem.situationType)
+            ].filter(Boolean);
             const persistedElapsedMinutes = Math.max(0, Number(phaseStatus && phaseStatus.elapsedMinutes) || 0);
             const resumeStartMinutes = Math.max(0, Number(phaseStatus && phaseStatus.resumeStartMinutes) || 0);
             const isCompleted = Boolean(phaseStatus && phaseStatus.isCompleted);
@@ -1121,9 +1340,9 @@ window.Unterrichtsassistent.ui.views.unterricht = {
             if (isCompleted) {
               elapsedMinutes = persistedElapsedMinutes;
             } else if (phaseStatus && persistedElapsedMinutes > 0) {
-              elapsedMinutes = persistedElapsedMinutes + Math.max(0, totalLessonElapsedMinutes - resumeStartMinutes);
+              elapsedMinutes = persistedElapsedMinutes + Math.max(0, segmentItem.elapsedMinutes - resumeStartMinutes);
             } else {
-              elapsedMinutes = Math.max(0, totalLessonElapsedMinutes - consumedCompletedMinutes);
+              elapsedMinutes = Math.max(0, segmentItem.elapsedMinutes - consumedCompletedMinutes);
             }
 
             if (elapsedMinutes > phaseDuration && phaseDuration > 0) {
@@ -1146,7 +1365,12 @@ window.Unterrichtsassistent.ui.views.unterricht = {
               '<section class="unterricht-live-flow__phase' + (isCompleted ? ' is-completed' : '') + '">',
               '<div class="unterricht-live-flow__phase-content">',
               '<div class="unterricht-live-flow__phase-title-row">',
-              '<h3 class="' + titleClasses.join(" ") + '"><label class="unterricht-live-flow__phase-title-label"><input type="checkbox" aria-label="Phase erledigt" ' + (isCompleted ? 'checked ' : '') + 'onchange="return window.UnterrichtsassistentApp.toggleCurriculumLessonPhaseCompleted(\'' + escapeValue(String(activeClass && activeClass.id || "").trim()) + '\', \'' + escapeValue(lessonFlowData.lessonDate) + '\', \'' + escapeValue(String(lessonFlowData.lessonPlan && lessonFlowData.lessonPlan.id || "").trim()) + '\', \'' + escapeValue(phaseItemId) + '\', this.checked, ' + String(elapsedMinutes) + ', ' + String(totalLessonElapsedMinutes) + ')"><span>' + escapeValue(phaseTitle) + ' <span>(' + escapeValue(String(elapsedMinutes)) + ' / ' + escapeValue(String(phaseDuration)) + ' Min.)</span>' + diffLabel + '</span></label></h3>',
+              '<h3 class="' + titleClasses.join(" ") + '"><label class="unterricht-live-flow__phase-title-label"><input type="checkbox" aria-label="Phase erledigt" ' + (isCompleted ? 'checked ' : '') + 'onchange="return window.UnterrichtsassistentApp.toggleCurriculumLessonPhaseCompleted(\'' + escapeValue(String(activeClass && activeClass.id || "").trim()) + '\', \'' + escapeValue(lessonFlowData.lessonDate) + '\', \'' + escapeValue(String(segmentItem.lessonPlan && segmentItem.lessonPlan.id || "").trim()) + '\', \'' + escapeValue(phaseItemId) + '\', this.checked, ' + String(elapsedMinutes) + ', ' + String(segmentItem.elapsedMinutes) + ')"><span>' + escapeValue(phaseTitle) + ' <span>(' + escapeValue(String(elapsedMinutes)) + ' / ' + escapeValue(String(phaseDuration)) + ' Min.)</span>' + diffLabel + '</span></label></h3>',
+              phaseMetaParts.length
+                ? '<div class="unterricht-live-flow__phase-meta">' + phaseMetaParts.map(function (entry) {
+                    return '<span>' + escapeValue(entry) + '</span>';
+                  }).join("") + '</div>'
+                : "",
               phaseItem && phaseItem.isReserve
                 ? '<span class="unterricht-live-flow__phase-flag">Reserve</span>'
                 : "",
@@ -1177,9 +1401,11 @@ window.Unterrichtsassistent.ui.views.unterricht = {
               '</div>',
               '</section>'
             ].join("");
-          }).join("");
-        })(),
-        '</div>',
+            }).join(""),
+            '</div>',
+            '</section>'
+          ].join("");
+        }).join(""),
         '</article>'
       ].join("");
     }
@@ -1191,6 +1417,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         '<div class="unterricht-layout unterricht-layout--live' + (liveLessonFlowData ? ' has-live-flow' : '') + '">',
         renderLiveNotice(),
         '<article class="panel unterricht-layout__seatplan unterricht-layout__seatplan--full">',
+        renderLivePhaseControls(liveLessonFlowData),
         renderCompactSeatPlan(),
         '</article>',
         renderLiveLessonFlowPanel(liveLessonFlowData),

@@ -142,6 +142,8 @@ let activePlanningCategorySuggestionListId = "";
 let activePlanningCategorySuggestionInputId = "";
 let activePlanningCategorySuggestionBlurTimerId = 0;
 let activePlanningCategorySuggestionDrag = null;
+let activeUnterrichtLivePhaseControlOverride = null;
+let activeUnterrichtLiveAfbSliderDrag = null;
 let suppressKnowledgeGapSuggestionClickUntil = 0;
 let lastTouchClientY = 0;
 const AUTOSAVE_DELAY_MS = 30000;
@@ -8738,14 +8740,38 @@ window.UnterrichtsassistentApp.openCurriculumLessonModal = function (seriesId, s
         sequenceId: normalizedSequenceId,
         seriesId: normalizedSeriesId,
         topic: String(existingLesson.topic || "").trim(),
-        hourType: String(existingLesson.hourType || "").trim() === "double" ? "double" : "single"
+        hourType: String(existingLesson.hourType || "").trim() === "double" ? "double" : "single",
+        functionType: ["erarbeiten", "vertiefen", "ueben", "wiederholen", "ueberpruefen"].indexOf(String(existingLesson.functionType || "").trim().toLowerCase()) >= 0
+          ? String(existingLesson.functionType || "").trim().toLowerCase()
+          : "",
+        situationType: (function () {
+          const normalizedValue = String(existingLesson.situationType || "").trim().toLowerCase();
+
+          if (normalizedValue === "lernsituation") {
+            return "lernen";
+          }
+
+          if (normalizedValue === "leistungssituation") {
+            return "leisten";
+          }
+
+          return ["lernen", "leisten"].indexOf(normalizedValue) >= 0
+            ? normalizedValue
+            : "";
+        })(),
+        demandLevel: ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(String(existingLesson.demandLevel || "").trim().toLowerCase()) >= 0
+          ? String(existingLesson.demandLevel || "").trim().toLowerCase()
+          : ""
       }
     : {
         id: "",
         sequenceId: normalizedSequenceId,
         seriesId: normalizedSeriesId,
         topic: "",
-        hourType: "single"
+        hourType: "single",
+        functionType: "",
+        situationType: "",
+        demandLevel: ""
       };
 
   setActiveView("planung");
@@ -8813,6 +8839,11 @@ window.UnterrichtsassistentApp.addCurriculumLessonPhase = function (lessonId) {
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
   const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
   const normalizedLessonId = String(lessonId || "").trim();
+  const lessonItem = collections
+    ? collections.lessons.find(function (entry) {
+        return String(entry && entry.id || "").trim() === normalizedLessonId;
+      }) || null
+    : null;
   const orderedPhases = currentRawSnapshot
     ? getOrderedCurriculumLessonPhasesForLesson(currentRawSnapshot, normalizedLessonId).slice()
     : [];
@@ -8822,6 +8853,24 @@ window.UnterrichtsassistentApp.addCurriculumLessonPhase = function (lessonId) {
     title: "",
     durationMinutes: 0,
     isReserve: false,
+    situationType: (function () {
+      const normalizedValue = String(lessonItem && lessonItem.situationType || "").trim().toLowerCase();
+
+      if (normalizedValue === "lernsituation") {
+        return "lernen";
+      }
+
+      if (normalizedValue === "leistungssituation") {
+        return "leisten";
+      }
+
+      return ["lernen", "leisten"].indexOf(normalizedValue) >= 0
+        ? normalizedValue
+        : "";
+    })(),
+    demandLevel: ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(String(lessonItem && lessonItem.demandLevel || "").trim().toLowerCase()) >= 0
+      ? String(lessonItem && lessonItem.demandLevel || "").trim().toLowerCase()
+      : "",
     nextPhaseId: ""
   };
 
@@ -8882,8 +8931,9 @@ window.UnterrichtsassistentApp.updateCurriculumLessonPhaseField = function (phas
         return String(entry && entry.id || "").trim() === normalizedPhaseId;
       }) || null
     : null;
+  const canUpdateFromLive = activeViewId === "unterricht";
 
-  if (!isCurriculumPlanningMode() || !currentRawSnapshot || !collections || !phaseItem || !normalizedFieldName) {
+  if ((!isCurriculumPlanningMode() && !canUpdateFromLive) || !currentRawSnapshot || !collections || !phaseItem || !normalizedFieldName) {
     return false;
   }
 
@@ -8893,13 +8943,250 @@ window.UnterrichtsassistentApp.updateCurriculumLessonPhaseField = function (phas
     phaseItem.durationMinutes = Math.max(0, Number(nextValue) || 0);
   } else if (normalizedFieldName === "isReserve") {
     phaseItem.isReserve = Boolean(nextValue);
+  } else if (normalizedFieldName === "situationType") {
+    phaseItem.situationType = (function () {
+      const normalizedValue = String(nextValue || "").trim().toLowerCase();
+
+      if (normalizedValue === "lernsituation") {
+        return "lernen";
+      }
+
+      if (normalizedValue === "leistungssituation") {
+        return "leisten";
+      }
+
+      return ["lernen", "leisten"].indexOf(normalizedValue) >= 0
+        ? normalizedValue
+        : "";
+    })();
+  } else if (normalizedFieldName === "demandLevel") {
+    phaseItem.demandLevel = ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(String(nextValue || "").trim().toLowerCase()) >= 0
+      ? String(nextValue || "").trim().toLowerCase()
+      : "";
   } else {
     return false;
   }
 
   currentRawSnapshot.curriculumLessonPhases = collections.lessonPhases;
   activeCurriculumLessonFlowLessonId = String(phaseItem.lessonPlanId || "").trim();
-  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  saveAndRefreshSnapshot(currentRawSnapshot, canUpdateFromLive ? "unterricht" : "planung");
+  return false;
+};
+window.UnterrichtsassistentApp.updateCurriculumLessonPhaseLiveField = function (classId, lessonDate, lessonPlanId, phaseId, fieldName, nextValue, shouldRefreshView) {
+  const normalizedClassId = String(classId || "").trim();
+  const normalizedLessonDate = String(lessonDate || "").slice(0, 10);
+  const normalizedLessonPlanId = String(lessonPlanId || "").trim();
+  const normalizedPhaseId = String(phaseId || "").trim();
+  const normalizedFieldName = String(fieldName || "").trim();
+  const refreshView = shouldRefreshView !== false;
+
+  if (activeViewId !== "unterricht" || !normalizedClassId || !normalizedLessonDate || !normalizedLessonPlanId || !normalizedPhaseId || !normalizedFieldName) {
+    return false;
+  }
+
+  activeUnterrichtLivePhaseControlOverride = activeUnterrichtLivePhaseControlOverride && activeUnterrichtLivePhaseControlOverride.phaseKey === [normalizedClassId, normalizedLessonDate, normalizedLessonPlanId, normalizedPhaseId].join("::")
+    ? activeUnterrichtLivePhaseControlOverride
+    : {
+        phaseKey: [normalizedClassId, normalizedLessonDate, normalizedLessonPlanId, normalizedPhaseId].join("::"),
+        situationType: "",
+        demandLevel: ""
+      };
+
+  if (normalizedFieldName === "liveSituationType") {
+    activeUnterrichtLivePhaseControlOverride.situationType = ["lernen", "leisten"].indexOf(String(nextValue || "").trim().toLowerCase()) >= 0
+      ? String(nextValue || "").trim().toLowerCase()
+      : "";
+  } else if (normalizedFieldName === "liveDemandLevel") {
+    activeUnterrichtLivePhaseControlOverride.demandLevel = ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(String(nextValue || "").trim().toLowerCase()) >= 0
+      ? String(nextValue || "").trim().toLowerCase()
+      : "";
+  } else {
+    return false;
+  }
+
+  if (refreshView) {
+    setActiveView("unterricht");
+  }
+  return false;
+};
+window.UnterrichtsassistentApp.getCurriculumLessonPhaseLiveOverride = function (classId, lessonDate, lessonPlanId, phaseId) {
+  const phaseKey = [String(classId || "").trim(), String(lessonDate || "").slice(0, 10), String(lessonPlanId || "").trim(), String(phaseId || "").trim()].join("::");
+
+  if (activeUnterrichtLivePhaseControlOverride && activeUnterrichtLivePhaseControlOverride.phaseKey !== phaseKey) {
+    activeUnterrichtLivePhaseControlOverride = null;
+  }
+
+  if (!activeUnterrichtLivePhaseControlOverride || activeUnterrichtLivePhaseControlOverride.phaseKey !== phaseKey) {
+    return null;
+  }
+
+  return {
+    situationType: String(activeUnterrichtLivePhaseControlOverride.situationType || "").trim().toLowerCase(),
+    demandLevel: String(activeUnterrichtLivePhaseControlOverride.demandLevel || "").trim().toLowerCase()
+  };
+};
+function getUnterrichtLiveAfbDemandLevelByIndex(index) {
+  return ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"][Math.max(0, Math.min(4, Number(index) || 0))] || "afb1";
+}
+
+function getUnterrichtLiveAfbSliderLabelByIndex(index) {
+  switch (Math.max(0, Math.min(4, Number(index) || 0))) {
+    case 0:
+      return "1";
+    case 1:
+      return "1/2";
+    case 2:
+      return "2";
+    case 3:
+      return "2/3";
+    case 4:
+      return "3";
+    default:
+      return "2";
+  }
+}
+
+function getUnterrichtLiveAfbSliderIndexFromClientX(clientX, sourceElement) {
+  const stopElements = sourceElement && typeof sourceElement.querySelectorAll === "function"
+    ? Array.prototype.slice.call(sourceElement.querySelectorAll(".unterricht-live-controls__slider-stop"))
+    : [];
+
+  if (!stopElements.length) {
+    const bounds = sourceElement && typeof sourceElement.getBoundingClientRect === "function"
+      ? sourceElement.getBoundingClientRect()
+      : null;
+    const width = Math.max(1, Number(bounds && bounds.width) || 0);
+    const left = Number(bounds && bounds.left) || 0;
+    const ratio = Math.max(0, Math.min(1, (Number(clientX) - left) / width));
+    return Math.max(0, Math.min(4, Math.round(ratio * 4)));
+  }
+
+  return stopElements.reduce(function (nearestIndex, stopElement, currentIndex) {
+    const rect = stopElement && typeof stopElement.getBoundingClientRect === "function"
+      ? stopElement.getBoundingClientRect()
+      : null;
+    const centerX = rect ? (rect.left + (rect.width / 2)) : 0;
+    const currentDistance = Math.abs(Number(clientX) - centerX);
+    const nearestRect = stopElements[nearestIndex] && typeof stopElements[nearestIndex].getBoundingClientRect === "function"
+      ? stopElements[nearestIndex].getBoundingClientRect()
+      : null;
+    const nearestCenterX = nearestRect ? (nearestRect.left + (nearestRect.width / 2)) : 0;
+    const nearestDistance = Math.abs(Number(clientX) - nearestCenterX);
+
+    return currentDistance < nearestDistance ? currentIndex : nearestIndex;
+  }, 0);
+}
+
+function clearUnterrichtLiveAfbSliderDrag() {
+  if (!activeUnterrichtLiveAfbSliderDrag) {
+    return;
+  }
+
+  if (activeUnterrichtLiveAfbSliderDrag.sourceElement && typeof activeUnterrichtLiveAfbSliderDrag.pointerId === "number") {
+    tryReleasePointerCapture(activeUnterrichtLiveAfbSliderDrag.sourceElement, activeUnterrichtLiveAfbSliderDrag.pointerId);
+  }
+
+  window.removeEventListener("pointermove", window.UnterrichtsassistentApp.handleUnterrichtLiveAfbSliderPointerMove);
+  window.removeEventListener("pointerup", window.UnterrichtsassistentApp.handleUnterrichtLiveAfbSliderPointerEnd);
+  window.removeEventListener("pointercancel", window.UnterrichtsassistentApp.handleUnterrichtLiveAfbSliderPointerEnd);
+  activeUnterrichtLiveAfbSliderDrag = null;
+}
+
+window.UnterrichtsassistentApp.startUnterrichtLiveAfbSliderPointer = function (event, classId, lessonDate, lessonPlanId, phaseId) {
+  const currentTarget = event && event.currentTarget ? event.currentTarget : null;
+  const sourceElement = currentTarget && typeof currentTarget.closest === "function"
+    ? currentTarget.closest(".unterricht-live-controls__slider") || currentTarget
+    : currentTarget;
+  const normalizedClassId = String(classId || "").trim();
+  const normalizedLessonDate = String(lessonDate || "").slice(0, 10);
+  const normalizedLessonPlanId = String(lessonPlanId || "").trim();
+  const normalizedPhaseId = String(phaseId || "").trim();
+
+  if (!event || activeViewId !== "unterricht" || !sourceElement || !normalizedClassId || !normalizedLessonDate || !normalizedLessonPlanId || !normalizedPhaseId) {
+    return false;
+  }
+
+  clearUnterrichtLiveAfbSliderDrag();
+  activeUnterrichtLiveAfbSliderDrag = {
+    pointerId: typeof event.pointerId === "number" ? event.pointerId : null,
+    sourceElement: sourceElement,
+    classId: normalizedClassId,
+    lessonDate: normalizedLessonDate,
+    lessonPlanId: normalizedLessonPlanId,
+    phaseId: normalizedPhaseId
+  };
+
+  trySetPointerCapture(sourceElement, event.pointerId);
+  window.addEventListener("pointermove", window.UnterrichtsassistentApp.handleUnterrichtLiveAfbSliderPointerMove);
+  window.addEventListener("pointerup", window.UnterrichtsassistentApp.handleUnterrichtLiveAfbSliderPointerEnd);
+  window.addEventListener("pointercancel", window.UnterrichtsassistentApp.handleUnterrichtLiveAfbSliderPointerEnd);
+  if (typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+  return window.UnterrichtsassistentApp.handleUnterrichtLiveAfbSliderPointerMove(event);
+};
+
+window.UnterrichtsassistentApp.handleUnterrichtLiveAfbSliderPointerMove = function (event) {
+  const dragState = activeUnterrichtLiveAfbSliderDrag;
+
+  if (!dragState || !dragState.sourceElement || (typeof dragState.pointerId === "number" && dragState.pointerId !== event.pointerId)) {
+    return false;
+  }
+
+  window.UnterrichtsassistentApp.updateCurriculumLessonPhaseLiveField(
+    dragState.classId,
+    dragState.lessonDate,
+    dragState.lessonPlanId,
+    dragState.phaseId,
+    "liveDemandLevel",
+    getUnterrichtLiveAfbDemandLevelByIndex(getUnterrichtLiveAfbSliderIndexFromClientX(event.clientX, dragState.sourceElement))
+  );
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  return false;
+};
+
+window.UnterrichtsassistentApp.handleUnterrichtLiveAfbSliderPointerEnd = function (event) {
+  if (!activeUnterrichtLiveAfbSliderDrag) {
+    return false;
+  }
+
+  if (!event || typeof activeUnterrichtLiveAfbSliderDrag.pointerId !== "number" || activeUnterrichtLiveAfbSliderDrag.pointerId === event.pointerId) {
+    clearUnterrichtLiveAfbSliderDrag();
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.handleUnterrichtLiveAfbSliderInput = function (event, classId, lessonDate, lessonPlanId, phaseId) {
+  const input = event && event.currentTarget ? event.currentTarget : null;
+  const slider = input && input.parentElement ? input.parentElement : null;
+  const sliderValue = Math.max(0, Math.min(4, Number(input && input.value) || 0));
+  const valueElement = slider && typeof slider.querySelector === "function"
+    ? slider.querySelector(".unterricht-live-controls__slider-value")
+    : null;
+
+  if (!input) {
+    return false;
+  }
+
+  window.UnterrichtsassistentApp.updateCurriculumLessonPhaseLiveField(
+    classId,
+    lessonDate,
+    lessonPlanId,
+    phaseId,
+    "liveDemandLevel",
+    getUnterrichtLiveAfbDemandLevelByIndex(sliderValue),
+    false
+  );
+
+  if (valueElement) {
+    valueElement.textContent = getUnterrichtLiveAfbSliderLabelByIndex(sliderValue);
+    valueElement.className = "unterricht-live-controls__slider-value unterricht-live-controls__slider-value--" + String(sliderValue);
+  }
+
   return false;
 };
 window.UnterrichtsassistentApp.deleteCurriculumLessonPhase = function (phaseId) {
@@ -9100,7 +9387,6 @@ window.UnterrichtsassistentApp.toggleCurriculumLessonPhaseCompleted = function (
   const existingStatus = collections
     ? collections.lessonPhaseStatuses.find(function (entry) {
         return String(entry && entry.classId || "").trim() === normalizedClassId
-          && String(entry && entry.lessonDate || "").slice(0, 10) === normalizedLessonDate
           && String(entry && entry.lessonPlanId || "").trim() === normalizedLessonPlanId
           && String(entry && entry.phaseId || "").trim() === normalizedPhaseId;
       }) || null
@@ -9124,7 +9410,9 @@ window.UnterrichtsassistentApp.toggleCurriculumLessonPhaseCompleted = function (
         phaseId: normalizedPhaseId,
         isCompleted: true,
         elapsedMinutes: normalizedElapsedMinutes,
-        resumeStartMinutes: 0
+        resumeStartMinutes: 0,
+        liveSituationType: "",
+        liveDemandLevel: ""
       });
     }
   } else if (existingStatus) {
@@ -9247,10 +9535,29 @@ window.UnterrichtsassistentApp.submitCurriculumLessonModal = function (event) {
   const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
   const topicInput = document.getElementById("curriculumLessonTopicInput");
   const hourTypeInput = document.getElementById("curriculumLessonHourTypeInput");
+  const functionTypeInput = document.getElementById("curriculumLessonFunctionTypeInput");
+  const situationTypeInput = document.getElementById("curriculumLessonSituationTypeInput");
+  const demandLevelInput = document.getElementById("curriculumLessonDemandLevelInput");
   const normalizedSequenceId = String(activeCurriculumLessonDraft && activeCurriculumLessonDraft.sequenceId || "").trim();
   const normalizedDraftId = String(activeCurriculumLessonDraft && activeCurriculumLessonDraft.id || "").trim();
   const topicValue = String(topicInput && topicInput.value || "").trim();
   const hourTypeValue = String(hourTypeInput && hourTypeInput.value || "").trim() === "double" ? "double" : "single";
+  const functionTypeRawValue = String(functionTypeInput && functionTypeInput.value || "").trim().toLowerCase();
+  const functionTypeValue = ["erarbeiten", "vertiefen", "ueben", "wiederholen", "ueberpruefen"].indexOf(functionTypeRawValue) >= 0
+    ? functionTypeRawValue
+    : "";
+  const situationTypeRawValue = String(situationTypeInput && situationTypeInput.value || "").trim().toLowerCase();
+  const situationTypeValue = situationTypeRawValue === "lernsituation"
+    ? "lernen"
+    : (situationTypeRawValue === "leistungssituation"
+      ? "leisten"
+      : (["lernen", "leisten"].indexOf(situationTypeRawValue) >= 0
+        ? situationTypeRawValue
+        : ""));
+  const demandLevelRawValue = String(demandLevelInput && demandLevelInput.value || "").trim().toLowerCase();
+  const demandLevelValue = ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(demandLevelRawValue) >= 0
+    ? demandLevelRawValue
+    : "";
   const orderedLessons = currentRawSnapshot
     ? getOrderedCurriculumLessonsForSequence(currentRawSnapshot, normalizedSequenceId).slice()
     : [];
@@ -9259,6 +9566,9 @@ window.UnterrichtsassistentApp.submitCurriculumLessonModal = function (event) {
     sequenceId: normalizedSequenceId,
     topic: topicValue,
     hourType: hourTypeValue,
+    functionType: functionTypeValue,
+    situationType: situationTypeValue,
+    demandLevel: demandLevelValue,
     nextLessonId: ""
   };
   let nextOrderedLessons;

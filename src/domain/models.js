@@ -248,22 +248,56 @@ class CurriculumSequence {
 }
 
 class CurriculumLessonPlan {
-  constructor({ id, sequenceId = "", topic = "", hourType = "single", nextLessonId = "" }) {
+  constructor({ id, sequenceId = "", topic = "", hourType = "single", functionType = "", situationType = "", demandLevel = "", nextLessonId = "" }) {
+    const normalizedFunctionType = String(functionType || "").trim().toLowerCase();
+    const normalizedSituationType = String(situationType || "").trim().toLowerCase();
+    const normalizedDemandLevel = String(demandLevel || "").trim().toLowerCase();
+
     this.id = id;
     this.sequenceId = sequenceId;
     this.topic = topic;
     this.hourType = hourType === "double" ? "double" : "single";
+    this.functionType = ["erarbeiten", "vertiefen", "ueben", "wiederholen", "ueberpruefen"].indexOf(normalizedFunctionType) >= 0
+      ? normalizedFunctionType
+      : "";
+    if (normalizedSituationType === "lernsituation") {
+      this.situationType = "lernen";
+    } else if (normalizedSituationType === "leistungssituation") {
+      this.situationType = "leisten";
+    } else {
+      this.situationType = ["lernen", "leisten"].indexOf(normalizedSituationType) >= 0
+        ? normalizedSituationType
+        : "";
+    }
+    this.demandLevel = ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(normalizedDemandLevel) >= 0
+      ? normalizedDemandLevel
+      : "";
     this.nextLessonId = nextLessonId;
   }
 }
 
 class CurriculumLessonPhase {
-  constructor({ id, lessonPlanId = "", title = "", durationMinutes = 0, isReserve = false, nextPhaseId = "" }) {
+  constructor({ id, lessonPlanId = "", title = "", durationMinutes = 0, isReserve = false, situationType = "", demandLevel = "", nextPhaseId = "" }) {
+    const normalizedSituationType = String(situationType || "").trim().toLowerCase();
+    const normalizedDemandLevel = String(demandLevel || "").trim().toLowerCase();
+
     this.id = id;
     this.lessonPlanId = lessonPlanId;
     this.title = String(title || "").trim();
     this.durationMinutes = Math.max(0, Number(durationMinutes) || 0);
     this.isReserve = Boolean(isReserve);
+    if (normalizedSituationType === "lernsituation") {
+      this.situationType = "lernen";
+    } else if (normalizedSituationType === "leistungssituation") {
+      this.situationType = "leisten";
+    } else {
+      this.situationType = ["lernen", "leisten"].indexOf(normalizedSituationType) >= 0
+        ? normalizedSituationType
+        : "";
+    }
+    this.demandLevel = ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(normalizedDemandLevel) >= 0
+      ? normalizedDemandLevel
+      : "";
     this.nextPhaseId = nextPhaseId;
   }
 }
@@ -285,7 +319,10 @@ class CurriculumLessonStep {
 }
 
 class CurriculumLessonPhaseStatus {
-  constructor({ id, classId = "", lessonDate = "", lessonPlanId = "", phaseId = "", isCompleted = false, elapsedMinutes = 0, resumeStartMinutes = 0 }) {
+  constructor({ id, classId = "", lessonDate = "", lessonPlanId = "", phaseId = "", isCompleted = false, elapsedMinutes = 0, resumeStartMinutes = 0, liveSituationType = "", liveDemandLevel = "" }) {
+    const normalizedSituationType = String(liveSituationType || "").trim().toLowerCase();
+    const normalizedDemandLevel = String(liveDemandLevel || "").trim().toLowerCase();
+
     this.id = id;
     this.classId = classId;
     this.lessonDate = String(lessonDate || "").slice(0, 10);
@@ -294,6 +331,12 @@ class CurriculumLessonPhaseStatus {
     this.isCompleted = Boolean(isCompleted);
     this.elapsedMinutes = Math.max(0, Number(elapsedMinutes) || 0);
     this.resumeStartMinutes = Math.max(0, Number(resumeStartMinutes) || 0);
+    this.liveSituationType = ["lernen", "leisten"].indexOf(normalizedSituationType) >= 0
+      ? normalizedSituationType
+      : "";
+    this.liveDemandLevel = ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(normalizedDemandLevel) >= 0
+      ? normalizedDemandLevel
+      : "";
   }
 }
 

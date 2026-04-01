@@ -1672,6 +1672,46 @@ window.Unterrichtsassistent.ui.views.planung = {
       return "Plenum";
     }
 
+    function getCurriculumSituationTypeLabel(situationTypeValue) {
+      const normalizedValue = String(situationTypeValue || "").trim().toLowerCase();
+
+      if (normalizedValue === "lernsituation" || normalizedValue === "lernen") {
+        return "Lernen";
+      }
+
+      if (normalizedValue === "leistungssituation" || normalizedValue === "leisten") {
+        return "Leisten";
+      }
+
+      return "";
+    }
+
+    function getCurriculumDemandLevelLabel(demandLevelValue) {
+      const normalizedValue = String(demandLevelValue || "").trim().toLowerCase();
+
+      if (normalizedValue === "afb1") {
+        return "AFB1";
+      }
+
+      if (normalizedValue === "afb1/2") {
+        return "AFB1/2";
+      }
+
+      if (normalizedValue === "afb2") {
+        return "AFB2";
+      }
+
+      if (normalizedValue === "afb2/3") {
+        return "AFB2/3";
+      }
+
+      if (normalizedValue === "afb3") {
+        return "AFB3";
+      }
+
+      return "";
+    }
+
     function getCurriculumLessonVisualWidth(lessonItem) {
       return String(lessonItem && lessonItem.hourType || "").trim() === "double" ? 56 : 44;
     }
@@ -1813,6 +1853,9 @@ window.Unterrichtsassistent.ui.views.planung = {
         '<form class="import-modal__form curriculum-series-form" id="curriculumLessonForm" autocomplete="off" method="post" action="about:blank" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitCurriculumLessonModal(event)">',
         '<label class="import-modal__field"><span>Thema</span><input id="curriculumLessonTopicInput" type="text" value="', escapeValue(curriculumLessonDraft.topic || ""), '" placeholder="Thema der Unterrichtsstunde"></label>',
         '<label class="import-modal__field"><span>Stundentyp</span><select id="curriculumLessonHourTypeInput"><option value="single"', String(curriculumLessonDraft.hourType || "single") === "single" ? ' selected' : '', '>Einzelstunde</option><option value="double"', String(curriculumLessonDraft.hourType || "single") === "double" ? ' selected' : '', '>Doppelstunde</option></select></label>',
+        '<label class="import-modal__field"><span>Funktion</span><select id="curriculumLessonFunctionTypeInput"><option value=""', !String(curriculumLessonDraft.functionType || "").trim() ? ' selected' : '', '></option><option value="erarbeiten"', String(curriculumLessonDraft.functionType || "").trim() === 'erarbeiten' ? ' selected' : '', '>Erarbeiten</option><option value="vertiefen"', String(curriculumLessonDraft.functionType || "").trim() === 'vertiefen' ? ' selected' : '', '>Vertiefen</option><option value="ueben"', String(curriculumLessonDraft.functionType || "").trim() === 'ueben' ? ' selected' : '', '>Ueben</option><option value="wiederholen"', String(curriculumLessonDraft.functionType || "").trim() === 'wiederholen' ? ' selected' : '', '>Wiederholen</option><option value="ueberpruefen"', String(curriculumLessonDraft.functionType || "").trim() === 'ueberpruefen' ? ' selected' : '', '>Ueberpruefen</option></select></label>',
+        '<label class="import-modal__field"><span>ueberwiegend Situation</span><select id="curriculumLessonSituationTypeInput"><option value=""', !String(curriculumLessonDraft.situationType || "").trim() ? ' selected' : '', '></option><option value="lernen"', String(curriculumLessonDraft.situationType || "").trim() === 'lernen' ? ' selected' : '', '>Lernen</option><option value="leisten"', String(curriculumLessonDraft.situationType || "").trim() === 'leisten' ? ' selected' : '', '>Leisten</option></select></label>',
+        '<label class="import-modal__field"><span>ueberwiegend Anforderungsbereich</span><select id="curriculumLessonDemandLevelInput"><option value=""', !String(curriculumLessonDraft.demandLevel || "").trim() ? ' selected' : '', '></option><option value="afb1"', String(curriculumLessonDraft.demandLevel || "").trim() === 'afb1' ? ' selected' : '', '>AFB1</option><option value="afb1/2"', String(curriculumLessonDraft.demandLevel || "").trim() === 'afb1/2' ? ' selected' : '', '>AFB1/2</option><option value="afb2"', String(curriculumLessonDraft.demandLevel || "").trim() === 'afb2' ? ' selected' : '', '>AFB2</option><option value="afb2/3"', String(curriculumLessonDraft.demandLevel || "").trim() === 'afb2/3' ? ' selected' : '', '>AFB2/3</option><option value="afb3"', String(curriculumLessonDraft.demandLevel || "").trim() === 'afb3' ? ' selected' : '', '>AFB3</option></select></label>',
         '<div class="import-modal__actions">',
         curriculumLessonDraft.id
           ? '<button class="circle-action circle-action--danger" type="button" onclick="return window.UnterrichtsassistentApp.deleteCurriculumLesson(\'' + escapeValue(String(curriculumLessonDraft.id || "")) + '\')">Loeschen</button>'
@@ -1869,6 +1912,14 @@ window.Unterrichtsassistent.ui.views.planung = {
           const phaseId = String(phaseItem && phaseItem.id || "").trim();
           const orderedSteps = getOrderedCurriculumLessonStepsForPhase(phaseId);
           const isViewMode = Boolean(viewPhaseLookup[phaseId]);
+          const phaseSituationType = String(phaseItem && phaseItem.situationType || "").trim().toLowerCase();
+          const phaseDemandLevel = String(phaseItem && phaseItem.demandLevel || "").trim().toLowerCase();
+          const phaseSummaryMetaParts = [
+            String(Math.max(0, Number(phaseItem && phaseItem.durationMinutes) || 0)) + ' Min.',
+            phaseItem && phaseItem.isReserve ? 'Reserve' : '',
+            getCurriculumSituationTypeLabel(phaseSituationType),
+            getCurriculumDemandLevelLabel(phaseDemandLevel)
+          ].filter(Boolean);
 
           return [
             '<tr class="planning-lesson-flow__phase-row">',
@@ -1876,7 +1927,7 @@ window.Unterrichtsassistent.ui.views.planung = {
             '<div class="planning-lesson-flow__phase-card">',
             '<div class="planning-lesson-flow__phase-toolbar">',
             isViewMode
-              ? '<div class="planning-lesson-flow__phase-summary"><div class="planning-lesson-flow__phase-summary-title">' + escapeValue(String(phaseItem && phaseItem.title || "").trim() || "Ohne Titel") + '</div><div class="planning-lesson-flow__phase-summary-meta"><span>' + escapeValue(String(Math.max(0, Number(phaseItem && phaseItem.durationMinutes) || 0))) + ' Min.</span>' + (phaseItem && phaseItem.isReserve ? '<span>Reserve</span>' : '') + '</div></div>'
+              ? '<div class="planning-lesson-flow__phase-summary"><div class="planning-lesson-flow__phase-summary-title">' + escapeValue(String(phaseItem && phaseItem.title || "").trim() || "Ohne Titel") + '</div><div class="planning-lesson-flow__phase-summary-meta">' + phaseSummaryMetaParts.map(function (entry) { return '<span>' + escapeValue(entry) + '</span>'; }).join("") + '</div></div>'
               : '<label class="planning-lesson-flow__phase-field planning-lesson-flow__phase-field--title"><span>Phase</span><input type="text" value="' + escapeValue(String(phaseItem && phaseItem.title || "").trim()) + '" placeholder="Titel der Phase" onchange="return window.UnterrichtsassistentApp.updateCurriculumLessonPhaseField(\'' + escapeValue(phaseId) + '\', \'title\', this.value)"></label>',
             isViewMode
               ? ''
@@ -1884,8 +1935,14 @@ window.Unterrichtsassistent.ui.views.planung = {
             isViewMode
               ? ''
               : '<label class="planning-lesson-flow__phase-checkbox"><input type="checkbox"' + (phaseItem && phaseItem.isReserve ? ' checked' : '') + ' onchange="return window.UnterrichtsassistentApp.updateCurriculumLessonPhaseField(\'' + escapeValue(phaseId) + '\', \'isReserve\', this.checked)"><span>Reserve</span></label>',
-            '<button class="planning-lesson-flow__mode-button" type="button" onclick="return window.UnterrichtsassistentApp.toggleCurriculumLessonFlowPhaseMode(\'', escapeValue(phaseId), '\')">', isViewMode ? 'Edit' : 'View', '</button>',
+            isViewMode
+              ? ''
+              : '<label class="planning-lesson-flow__phase-field planning-lesson-flow__phase-field--compact"><span>Situation</span><select class="planning-lesson-flow__select planning-lesson-flow__select--compact" onchange="return window.UnterrichtsassistentApp.updateCurriculumLessonPhaseField(\'' + escapeValue(phaseId) + '\', \'situationType\', this.value)"><option value=""' + (!phaseSituationType ? ' selected' : '') + '></option><option value="lernen"' + (phaseSituationType === 'lernen' ? ' selected' : '') + '>Lernen</option><option value="leisten"' + (phaseSituationType === 'leisten' ? ' selected' : '') + '>Leisten</option></select></label>',
+            isViewMode
+              ? ''
+              : '<label class="planning-lesson-flow__phase-field planning-lesson-flow__phase-field--compact"><span>Anforderungsbereich</span><select class="planning-lesson-flow__select planning-lesson-flow__select--compact" onchange="return window.UnterrichtsassistentApp.updateCurriculumLessonPhaseField(\'' + escapeValue(phaseId) + '\', \'demandLevel\', this.value)"><option value=""' + (!phaseDemandLevel ? ' selected' : '') + '></option><option value="afb1"' + (phaseDemandLevel === 'afb1' ? ' selected' : '') + '>AFB1</option><option value="afb1/2"' + (phaseDemandLevel === 'afb1/2' ? ' selected' : '') + '>AFB1/2</option><option value="afb2"' + (phaseDemandLevel === 'afb2' ? ' selected' : '') + '>AFB2</option><option value="afb2/3"' + (phaseDemandLevel === 'afb2/3' ? ' selected' : '') + '>AFB2/3</option><option value="afb3"' + (phaseDemandLevel === 'afb3' ? ' selected' : '') + '>AFB3</option></select></label>',
             '<button class="planning-lesson-flow__delete-button" type="button" onclick="return window.UnterrichtsassistentApp.deleteCurriculumLessonPhase(\'', escapeValue(phaseId), '\')">Loeschen</button>',
+            '<button class="planning-lesson-flow__mode-button" type="button" onclick="return window.UnterrichtsassistentApp.toggleCurriculumLessonFlowPhaseMode(\'', escapeValue(phaseId), '\')">', isViewMode ? 'Edit' : 'View', '</button>',
             '</div>',
             isViewMode
               ? [
