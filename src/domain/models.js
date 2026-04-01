@@ -112,6 +112,63 @@ class Assessment {
   }
 }
 
+class EvaluationSheet {
+  constructor({ id, classId = "", type = "aufgabenbogen", title = "", createdAt = "", workingTimeMinutes = 0, taskSheet = {}, competencyGrid = {}, curriculumSeriesIds = [], curriculumSequenceIds = [], curriculumLessonIds = [] }) {
+    const normalizedType = String(type || "").trim().toLowerCase() === "kompetenzraster"
+      ? "kompetenzraster"
+      : "aufgabenbogen";
+    function normalizeTaskSheet(rawTaskSheet) {
+      const source = rawTaskSheet && typeof rawTaskSheet === "object" ? rawTaskSheet : {};
+      const tasks = Array.isArray(source.tasks) ? source.tasks : [];
+
+      return {
+        tasks: tasks.map(function (task) {
+          const taskSource = task && typeof task === "object" ? task : {};
+          const subtasks = Array.isArray(taskSource.subtasks) ? taskSource.subtasks : [];
+
+          return {
+            id: String(taskSource.id || "").trim(),
+            title: String(taskSource.title || "").trim(),
+            subtasks: subtasks.map(function (subtask) {
+              const subtaskSource = subtask && typeof subtask === "object" ? subtask : {};
+
+              return {
+                id: String(subtaskSource.id || "").trim(),
+                title: String(subtaskSource.title || "").trim(),
+                topics: String(subtaskSource.topics || "").trim(),
+                afb: String(subtaskSource.afb || "").trim(),
+                be: Math.max(0, Number.isFinite(Number(subtaskSource.be)) ? Math.round(Number(subtaskSource.be)) : 0)
+              };
+            })
+          };
+        })
+      };
+    }
+
+    function normalizeCompetencyGrid(rawCompetencyGrid) {
+      return rawCompetencyGrid && typeof rawCompetencyGrid === "object"
+        ? JSON.parse(JSON.stringify(rawCompetencyGrid))
+        : {};
+    }
+
+    this.id = id;
+    this.classId = classId;
+    this.type = normalizedType;
+    this.title = String(title || "").trim();
+    this.createdAt = String(createdAt || "").trim();
+    this.workingTimeMinutes = Math.max(0, Number.isFinite(Number(workingTimeMinutes)) ? Math.round(Number(workingTimeMinutes)) : 0);
+    this.curriculumSeriesIds = Array.isArray(curriculumSeriesIds) ? curriculumSeriesIds.slice() : [];
+    this.curriculumSequenceIds = Array.isArray(curriculumSequenceIds) ? curriculumSequenceIds.slice() : [];
+    this.curriculumLessonIds = Array.isArray(curriculumLessonIds) ? curriculumLessonIds.slice() : [];
+    this.taskSheet = normalizedType === "aufgabenbogen" && taskSheet && typeof taskSheet === "object"
+      ? normalizeTaskSheet(taskSheet)
+      : { tasks: [] };
+    this.competencyGrid = normalizedType === "kompetenzraster" && competencyGrid && typeof competencyGrid === "object"
+      ? normalizeCompetencyGrid(competencyGrid)
+      : {};
+  }
+}
+
 class AttendanceRecord {
   constructor({ id, studentId, classId, lessonId = "", lessonDate = "", room = "", status = "absent", recordedAt = "", effectiveAt = "" }) {
     this.id = id;
@@ -346,6 +403,7 @@ window.Unterrichtsassistent.domain.Lesson = Lesson;
 window.Unterrichtsassistent.domain.Timetable = Timetable;
 window.Unterrichtsassistent.domain.TimetableRow = TimetableRow;
 window.Unterrichtsassistent.domain.Assessment = Assessment;
+window.Unterrichtsassistent.domain.EvaluationSheet = EvaluationSheet;
 window.Unterrichtsassistent.domain.AttendanceRecord = AttendanceRecord;
 window.Unterrichtsassistent.domain.HomeworkRecord = HomeworkRecord;
 window.Unterrichtsassistent.domain.WarningRecord = WarningRecord;

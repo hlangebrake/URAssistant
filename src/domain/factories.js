@@ -4,6 +4,7 @@ window.Unterrichtsassistent.domain = window.Unterrichtsassistent.domain || {};
 function createDomainSnapshot(rawData) {
   const {
     Assessment,
+    EvaluationSheet,
     AttendanceRecord,
     CurriculumLessonPlan,
     CurriculumLessonPhase,
@@ -46,6 +47,7 @@ function createDomainSnapshot(rawData) {
     activeTimetableId: rawData.activeTimetableId || (timetables[0] ? timetables[0].id : null),
     activeSeatPlanId: rawData.activeSeatPlanId || null,
     activeSeatOrderId: rawData.activeSeatOrderId || null,
+    activeEvaluationSheetId: rawData.activeEvaluationSheetId || null,
     activeSeatPlanRoom: rawData.activeSeatPlanRoom || "",
     activeDateTime: rawData.activeDateTime || "",
     activeDateTimeMode: rawData.activeDateTimeMode || "live",
@@ -59,6 +61,7 @@ function createDomainSnapshot(rawData) {
     classes: rawData.classes.map((item) => new SchoolClass(item)),
     lessons: rawData.lessons.map((item) => new Lesson(item)),
     assessments: rawData.assessments.map((item) => new Assessment(item)),
+    evaluationSheets: (Array.isArray(rawData.evaluationSheets) ? rawData.evaluationSheets : []).map((item) => new EvaluationSheet(item)),
     attendanceRecords: (Array.isArray(rawData.attendanceRecords) ? rawData.attendanceRecords : []).map((item) => new AttendanceRecord(item)),
     homeworkRecords: (Array.isArray(rawData.homeworkRecords) ? rawData.homeworkRecords : []).map((item) => new HomeworkRecord(item)),
     warningRecords: (Array.isArray(rawData.warningRecords) ? rawData.warningRecords : []).map((item) => new WarningRecord(item)),
@@ -101,6 +104,19 @@ function serializeDomainSnapshot(snapshot) {
     });
   }
 
+  function cloneEvaluationSheets(items) {
+    return cloneItems(items || [], ["id", "classId", "type", "title", "createdAt", "workingTimeMinutes", "taskSheet", "competencyGrid", "curriculumSeriesIds", "curriculumSequenceIds", "curriculumLessonIds"]).map(function (item) {
+      return Object.assign({}, item, {
+        taskSheet: item.taskSheet && typeof item.taskSheet === "object"
+          ? JSON.parse(JSON.stringify(item.taskSheet))
+          : { tasks: [] },
+        competencyGrid: item.competencyGrid && typeof item.competencyGrid === "object"
+          ? JSON.parse(JSON.stringify(item.competencyGrid))
+          : {}
+      });
+    });
+  }
+
   function cloneTimetable(timetable) {
     const source = timetable || {};
     const rows = Array.isArray(source.rows) ? source.rows : [];
@@ -138,6 +154,7 @@ function serializeDomainSnapshot(snapshot) {
     activeTimetableId: snapshot.activeTimetableId || (snapshot.timetables && snapshot.timetables[0] ? snapshot.timetables[0].id : null),
     activeSeatPlanId: snapshot.activeSeatPlanId || null,
     activeSeatOrderId: snapshot.activeSeatOrderId || null,
+    activeEvaluationSheetId: snapshot.activeEvaluationSheetId || null,
     activeSeatPlanRoom: snapshot.activeSeatPlanRoom || "",
     activeDateTime: snapshot.activeDateTime || "",
     activeDateTimeMode: snapshot.activeDateTimeMode || "live",
@@ -151,6 +168,7 @@ function serializeDomainSnapshot(snapshot) {
     classes: cloneItems(snapshot.classes, ["id", "name", "room", "subject", "studentIds", "displayColor"]),
     lessons: cloneItems(snapshot.lessons, ["id", "classId", "subject", "room", "weekday", "startTime", "endTime", "topic"]),
     assessments: cloneItems(snapshot.assessments, ["id", "studentId", "classId", "type", "score", "maxScore", "date", "lessonId", "lessonDate", "room", "recordedAt", "category", "afb1", "afb2", "afb3", "workBehavior", "socialBehavior", "knowledgeGap", "note"]),
+    evaluationSheets: cloneEvaluationSheets(snapshot.evaluationSheets || []),
     attendanceRecords: cloneItems(snapshot.attendanceRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "status", "recordedAt", "effectiveAt"]),
     homeworkRecords: cloneItems(snapshot.homeworkRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "quality"]),
     warningRecords: cloneItems(snapshot.warningRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "category", "note"]),
