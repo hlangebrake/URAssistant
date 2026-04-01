@@ -71,6 +71,7 @@ let classAnalysisEnabledTypes = {
 let timetableViewMode = "ansicht";
 let seatPlanViewMode = "ansicht";
 let planningViewMode = "jahresplanung";
+let bewertungViewMode = "bewerten";
 let planningAvailableLessonsExpanded = true;
 let planningAdminMode = false;
 let activePlanningEventDraft = null;
@@ -294,6 +295,7 @@ function storeAuthReturnState() {
       timetableViewMode: timetableViewMode,
       seatPlanViewMode: seatPlanViewMode,
       planningViewMode: planningViewMode,
+      bewertungViewMode: bewertungViewMode,
       planningAdminMode: planningAdminMode,
       activeClassId: rawState && rawState.activeClassId ? rawState.activeClassId : null,
     activeTimetableId: rawState && rawState.activeTimetableId ? rawState.activeTimetableId : null,
@@ -341,6 +343,9 @@ function applyAuthReturnStateToRawState(snapshot) {
   planningViewMode = ["jahresplanung", "unterrichtsplanung", "stoffplanung"].indexOf(String(returnState.planningViewMode || "")) >= 0
     ? String(returnState.planningViewMode)
     : planningViewMode;
+  bewertungViewMode = ["analysieren", "entwerfen"].indexOf(String(returnState.bewertungViewMode || "")) >= 0
+    ? String(returnState.bewertungViewMode)
+    : "bewerten";
   if (planningViewMode === "stoffplanung") {
     planningViewMode = "unterrichtsplanung";
   }
@@ -3061,6 +3066,26 @@ function updateHeaderSubtitle(viewId, config) {
     return;
   }
 
+  if (viewId === "bewertung" && schoolService) {
+    const activeClass = schoolService.getActiveClass();
+    const referenceDate = schoolService.getReferenceDate();
+    const room = activeClass ? schoolService.getRelevantRoomForClass(activeClass.id, referenceDate) : "";
+    const subtitleParts = activeClass
+      ? [activeClass.name || "", activeClass.subject || "", room || ""].filter(Boolean)
+      : [];
+    const subtitle = subtitleParts.join(" ").trim();
+
+    if (!subtitle) {
+      viewSubtitle.textContent = "";
+      viewSubtitle.hidden = true;
+      return;
+    }
+
+    viewSubtitle.innerHTML = '<span class="content__subtitle-main">' + escapeHtml(subtitle) + "</span>";
+    viewSubtitle.hidden = false;
+    return;
+  }
+
   if (viewId === "klasse" && config && typeof config.getSubtitle === "function" && schoolService) {
     const subtitle = config.getSubtitle(schoolService);
     viewSubtitle.textContent = subtitle;
@@ -3172,6 +3197,31 @@ function updateHeaderActions(viewId) {
         }
       ]
     });
+      return;
+    }
+
+    if (viewId === "bewertung") {
+      viewHeaderActions.innerHTML = buildMultiModeToggleHtml({
+        ariaLabel: "Bewertungsmodus wechseln",
+        activeMode: bewertungViewMode,
+        modes: [
+          {
+            value: "bewerten",
+            label: "Bewerten",
+            action: "window.UnterrichtsassistentApp.setBewertungViewMode('bewerten')"
+          },
+          {
+            value: "analysieren",
+            label: "Analysieren",
+            action: "window.UnterrichtsassistentApp.setBewertungViewMode('analysieren')"
+          },
+          {
+            value: "entwerfen",
+            label: "Entwerfen",
+            action: "window.UnterrichtsassistentApp.setBewertungViewMode('entwerfen')"
+          }
+        ]
+      });
       return;
     }
 
@@ -3570,6 +3620,12 @@ function setActiveView(viewId) {
         ? "unterrichtsplanung"
         : "jahresplanung";
     }
+
+  if (viewId === "bewertung" && previousViewId !== "bewertung") {
+    bewertungViewMode = ["analysieren", "entwerfen"].indexOf(bewertungViewMode) >= 0
+      ? bewertungViewMode
+      : "bewerten";
+  }
 
   eachNode(navLinks, function (link) {
     const isActive = link.dataset.viewTarget === viewId;
@@ -11201,6 +11257,9 @@ window.UnterrichtsassistentApp.getSeatPlanViewMode = function () {
 window.UnterrichtsassistentApp.getPlanningViewMode = function () {
   return planningViewMode;
 };
+window.UnterrichtsassistentApp.getBewertungViewMode = function () {
+  return bewertungViewMode;
+};
 window.UnterrichtsassistentApp.isPlanningAvailableLessonsExpanded = function () {
   return planningAvailableLessonsExpanded !== false;
 };
@@ -11280,6 +11339,19 @@ window.UnterrichtsassistentApp.setPlanningViewMode = function (nextMode) {
 
   if (activeViewId === "planung") {
     setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.setBewertungViewMode = function (nextMode) {
+  const normalizedMode = String(nextMode || "");
+
+  bewertungViewMode = ["analysieren", "entwerfen"].indexOf(normalizedMode) >= 0
+    ? normalizedMode
+    : "bewerten";
+
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
   }
 
   return false;
