@@ -5,6 +5,8 @@ function createDomainSnapshot(rawData) {
   const {
     Assessment,
     EvaluationSheet,
+    PlannedEvaluation,
+    PerformedEvaluation,
     AttendanceRecord,
     CurriculumLessonPlan,
     CurriculumLessonPhase,
@@ -62,6 +64,8 @@ function createDomainSnapshot(rawData) {
     lessons: rawData.lessons.map((item) => new Lesson(item)),
     assessments: rawData.assessments.map((item) => new Assessment(item)),
     evaluationSheets: (Array.isArray(rawData.evaluationSheets) ? rawData.evaluationSheets : []).map((item) => new EvaluationSheet(item)),
+    plannedEvaluations: (Array.isArray(rawData.plannedEvaluations) ? rawData.plannedEvaluations : []).map((item) => new PlannedEvaluation(item)),
+    performedEvaluations: (Array.isArray(rawData.performedEvaluations) ? rawData.performedEvaluations : []).map((item) => new PerformedEvaluation(item)),
     attendanceRecords: (Array.isArray(rawData.attendanceRecords) ? rawData.attendanceRecords : []).map((item) => new AttendanceRecord(item)),
     homeworkRecords: (Array.isArray(rawData.homeworkRecords) ? rawData.homeworkRecords : []).map((item) => new HomeworkRecord(item)),
     warningRecords: (Array.isArray(rawData.warningRecords) ? rawData.warningRecords : []).map((item) => new WarningRecord(item)),
@@ -113,6 +117,26 @@ function serializeDomainSnapshot(snapshot) {
         competencyGrid: item.competencyGrid && typeof item.competencyGrid === "object"
           ? JSON.parse(JSON.stringify(item.competencyGrid))
           : {}
+      });
+    });
+  }
+
+  function clonePlannedEvaluations(items) {
+    return cloneItems(items || [], ["id", "classId", "type", "evaluationSheetId", "date", "studentIds", "createdAt"]).map(function (item) {
+      return Object.assign({}, item, {
+        studentIds: Array.isArray(item.studentIds) ? item.studentIds.slice() : []
+      });
+    });
+  }
+
+  function clonePerformedEvaluations(items) {
+    return cloneItems(items || [], ["id", "plannedEvaluationId", "classId", "studentId", "evaluationSheetId", "subtaskResults", "overallNote", "createdAt", "updatedAt"]).map(function (item) {
+      return Object.assign({}, item, {
+        subtaskResults: Array.isArray(item.subtaskResults)
+          ? item.subtaskResults.map(function (entry) {
+              return Object.assign({}, entry);
+            })
+          : []
       });
     });
   }
@@ -169,6 +193,8 @@ function serializeDomainSnapshot(snapshot) {
     lessons: cloneItems(snapshot.lessons, ["id", "classId", "subject", "room", "weekday", "startTime", "endTime", "topic"]),
     assessments: cloneItems(snapshot.assessments, ["id", "studentId", "classId", "type", "score", "maxScore", "date", "lessonId", "lessonDate", "room", "recordedAt", "category", "afb1", "afb2", "afb3", "workBehavior", "socialBehavior", "knowledgeGap", "note"]),
     evaluationSheets: cloneEvaluationSheets(snapshot.evaluationSheets || []),
+    plannedEvaluations: clonePlannedEvaluations(snapshot.plannedEvaluations || []),
+    performedEvaluations: clonePerformedEvaluations(snapshot.performedEvaluations || []),
     attendanceRecords: cloneItems(snapshot.attendanceRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "status", "recordedAt", "effectiveAt"]),
     homeworkRecords: cloneItems(snapshot.homeworkRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "quality"]),
     warningRecords: cloneItems(snapshot.warningRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "category", "note"]),

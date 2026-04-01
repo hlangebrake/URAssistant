@@ -169,6 +169,56 @@ class EvaluationSheet {
   }
 }
 
+class PlannedEvaluation {
+  constructor({ id, classId = "", type = "sonstige", evaluationSheetId = "", date = "", studentIds = [], createdAt = "" }) {
+    this.id = id;
+    this.classId = String(classId || "").trim();
+    this.type = String(type || "").trim().toLowerCase() === "schriftliche"
+      ? "schriftliche"
+      : "sonstige";
+    this.evaluationSheetId = String(evaluationSheetId || "").trim();
+    this.date = String(date || "").slice(0, 10);
+    this.studentIds = Array.isArray(studentIds)
+      ? studentIds.map(function (studentId) {
+          return String(studentId || "").trim();
+        }).filter(Boolean)
+      : [];
+    this.createdAt = String(createdAt || "").trim();
+  }
+}
+
+class PerformedEvaluation {
+  constructor({ id, plannedEvaluationId = "", classId = "", studentId = "", evaluationSheetId = "", subtaskResults = [], overallNote = "", createdAt = "", updatedAt = "" }) {
+    this.id = id;
+    this.plannedEvaluationId = String(plannedEvaluationId || "").trim();
+    this.classId = String(classId || "").trim();
+    this.studentId = String(studentId || "").trim();
+    this.evaluationSheetId = String(evaluationSheetId || "").trim();
+    this.subtaskResults = Array.isArray(subtaskResults)
+      ? subtaskResults.map(function (entry) {
+          const source = entry && typeof entry === "object" ? entry : {};
+
+          return {
+            subtaskId: String(source.subtaskId || "").trim(),
+            points: Math.max(0, Number.isFinite(Number(source.points)) ? Number(source.points) : 0),
+            negativeNotes: Array.isArray(source.negativeNotes)
+              ? source.negativeNotes.map(function (entry) { return String(entry || "").trim(); }).filter(Boolean)
+              : (String(source.negativeNote || "").trim() ? [String(source.negativeNote || "").trim()] : []),
+            positiveNotes: Array.isArray(source.positiveNotes)
+              ? source.positiveNotes.map(function (entry) { return String(entry || "").trim(); }).filter(Boolean)
+              : (String(source.positiveNote || "").trim() ? [String(source.positiveNote || "").trim()] : []),
+            generalNote: String(source.generalNote || "").trim()
+          };
+        }).filter(function (entry) {
+          return Boolean(entry.subtaskId);
+        })
+      : [];
+    this.overallNote = String(overallNote || "").trim();
+    this.createdAt = String(createdAt || "").trim();
+    this.updatedAt = String(updatedAt || "").trim();
+  }
+}
+
 class AttendanceRecord {
   constructor({ id, studentId, classId, lessonId = "", lessonDate = "", room = "", status = "absent", recordedAt = "", effectiveAt = "" }) {
     this.id = id;
@@ -404,6 +454,8 @@ window.Unterrichtsassistent.domain.Timetable = Timetable;
 window.Unterrichtsassistent.domain.TimetableRow = TimetableRow;
 window.Unterrichtsassistent.domain.Assessment = Assessment;
 window.Unterrichtsassistent.domain.EvaluationSheet = EvaluationSheet;
+window.Unterrichtsassistent.domain.PlannedEvaluation = PlannedEvaluation;
+window.Unterrichtsassistent.domain.PerformedEvaluation = PerformedEvaluation;
 window.Unterrichtsassistent.domain.AttendanceRecord = AttendanceRecord;
 window.Unterrichtsassistent.domain.HomeworkRecord = HomeworkRecord;
 window.Unterrichtsassistent.domain.WarningRecord = WarningRecord;
