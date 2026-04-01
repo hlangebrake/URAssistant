@@ -15,6 +15,9 @@ window.Unterrichtsassistent.ui.views.planung = {
     const planningEventDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActivePlanningEventDraft === "function"
       ? window.UnterrichtsassistentApp.getActivePlanningEventDraft()
       : null;
+    const planningEventControlledByLabel = planningEventDraft && planningEventDraft.isExternallyControlled
+      ? String(planningEventDraft.controlledByView || "").trim() || "anderen Bereich"
+      : "";
     const planningInstructionLessonDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActivePlanningInstructionLessonDraft === "function"
       ? window.UnterrichtsassistentApp.getActivePlanningInstructionLessonDraft()
       : null;
@@ -75,6 +78,9 @@ window.Unterrichtsassistent.ui.views.planung = {
     const isSidebarFilterAllOff = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.isPlanningSidebarFilterAllOff === "function"
       ? window.UnterrichtsassistentApp.isPlanningSidebarFilterAllOff()
       : false;
+    const normalizedSelectedSidebarFilters = selectedSidebarFilters.map(function (entry) {
+      return String(entry || "").trim().toLowerCase();
+    });
     const selectedPlanningEventId = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getSelectedPlanningEventId === "function"
       ? window.UnterrichtsassistentApp.getSelectedPlanningEventId()
       : "";
@@ -300,9 +306,6 @@ window.Unterrichtsassistent.ui.views.planung = {
       const upcomingEvents = buildUpcomingEvents(activeDate);
       const addDateValue = activeDate ? toIsoDate(activeDate) : "";
       const availableCategories = {};
-      const normalizedSelected = selectedSidebarFilters.map(function (entry) {
-        return String(entry || "").trim().toLowerCase();
-      });
       const filteredEvents = upcomingEvents.filter(function (eventItem) {
         const category = getEventCategoryName(eventItem);
         const normalizedCategory = category.toLowerCase();
@@ -311,11 +314,7 @@ window.Unterrichtsassistent.ui.views.planung = {
           availableCategories[normalizedCategory] = category;
         }
 
-        if (!normalizedSelected.length && !isSidebarFilterAllOff) {
-          return true;
-        }
-
-        return normalizedSelected.indexOf(normalizedCategory) >= 0;
+        return doesEventMatchSidebarFilters(eventItem);
       });
       const availableCategoryList = Object.keys(availableCategories).map(function (key) {
         return availableCategories[key];
@@ -332,7 +331,7 @@ window.Unterrichtsassistent.ui.views.planung = {
         isSidebarFilterOpen ? [
           '<div class="planning-sidebar__filter-menu">',
           availableCategoryList.length ? availableCategoryList.map(function (categoryName) {
-            const isSelected = normalizedSelected.indexOf(String(categoryName || "").trim().toLowerCase()) >= 0;
+            const isSelected = normalizedSelectedSidebarFilters.indexOf(String(categoryName || "").trim().toLowerCase()) >= 0;
             return [
               '<label class="planning-sidebar__filter-option">',
               '<input type="checkbox" ', isSelected ? 'checked ' : '', 'onchange="return window.UnterrichtsassistentApp.togglePlanningSidebarCategoryFilter(\'', escapeValue(categoryName), '\')">',
@@ -356,6 +355,7 @@ window.Unterrichtsassistent.ui.views.planung = {
                 const timeLabel = formatTimeRange(eventItem);
                 const summary = title || "Termin";
                 const isSelected = String(eventItem.id || "").trim() === selectedPlanningEventId;
+                const isExternallyControlled = Boolean(eventItem && eventItem.isExternallyControlled);
 
                 return [
                   '<div class="planning-sidebar__event-row">',
@@ -367,7 +367,7 @@ window.Unterrichtsassistent.ui.views.planung = {
                   '</button>',
                   '<div class="planning-sidebar__event-actions">',
                   '<button class="planning-sidebar__edit" type="button" aria-label="Termin bearbeiten" onclick="return window.UnterrichtsassistentApp.openPlanningEventModal(\'\', \'', escapeValue(String(eventItem.id || "")), '\')">&#9998;</button>',
-                  '<button class="planning-sidebar__delete" type="button" aria-label="Termin loeschen" onclick="return window.UnterrichtsassistentApp.deletePlanningEvent(\'', escapeValue(String(eventItem.id || "")), '\')">&#10005;</button>',
+                  '<button class="planning-sidebar__delete" type="button" aria-label="Termin loeschen" onclick="return window.UnterrichtsassistentApp.deletePlanningEvent(\'', escapeValue(String(eventItem.id || "")), '\')"', isExternallyControlled ? ' disabled' : '', '>&#10005;</button>',
                   '</div>',
                   '</div>'
                 ].join("");
@@ -377,6 +377,16 @@ window.Unterrichtsassistent.ui.views.planung = {
           '</div>'
         ].join("")
       ].join("");
+    }
+
+    function doesEventMatchSidebarFilters(eventItem) {
+      const normalizedCategory = getEventCategoryName(eventItem).toLowerCase();
+
+      if (!normalizedSelectedSidebarFilters.length && !isSidebarFilterAllOff) {
+        return true;
+      }
+
+      return normalizedSelectedSidebarFilters.indexOf(normalizedCategory) >= 0;
     }
 
     function getEventsForDate(isoDate) {
@@ -392,7 +402,8 @@ window.Unterrichtsassistent.ui.views.planung = {
 
     function buildDayDots(isoDate) {
       const dayEvents = getEventsForDate(isoDate).filter(function (eventItem) {
-        return getEventCategoryName(eventItem).toLowerCase() !== "unterrichtsfrei";
+        return getEventCategoryName(eventItem).toLowerCase() !== "unterrichtsfrei"
+          && doesEventMatchSidebarFilters(eventItem);
       }).slice().sort(function (leftItem, rightItem) {
         const leftPriority = [1, 2, 3].indexOf(Number(leftItem && leftItem.priority)) >= 0 ? Number(leftItem.priority) : 2;
         const rightPriority = [1, 2, 3].indexOf(Number(rightItem && rightItem.priority)) >= 0 ? Number(rightItem.priority) : 2;
@@ -2464,30 +2475,32 @@ window.Unterrichtsassistent.ui.views.planung = {
         '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closePlanningEventModal()"></div>',
         '<div class="import-modal__dialog import-modal__dialog--planning" role="dialog" aria-modal="true" aria-labelledby="planningEventTitle">',
         '<div class="import-modal__header">',
-        '<div><h3 id="planningEventTitle">', planningEventDraft.id ? 'Termin bearbeiten' : 'Termin hinzufuegen', '</h3></div>',
+        '<div><h3 id="planningEventTitle">', planningEventDraft.id ? 'Termin bearbeiten' : 'Termin hinzufuegen', '</h3>',
+        planningEventDraft.isExternallyControlled ? '<div class="planning-event-form__control-note">Dieser Termin wird vom View ' + escapeValue(planningEventControlledByLabel) + ' kontrolliert und kann hier nicht bearbeitet werden.</div>' : '',
+        '</div>',
         '<div class="import-modal__icon-actions">',
-        '<button class="import-modal__icon-button import-modal__icon-button--confirm" type="submit" form="planningEventForm" aria-label="Termin uebernehmen">&#10003;</button>',
+        '<button class="import-modal__icon-button import-modal__icon-button--confirm" type="submit" form="planningEventForm" aria-label="Termin uebernehmen"', planningEventDraft.isExternallyControlled ? ' disabled' : '', '>&#10003;</button>',
         '<button class="import-modal__icon-button import-modal__icon-button--cancel" type="button" aria-label="Bearbeitung abbrechen" onclick="return window.UnterrichtsassistentApp.closePlanningEventModal()">&#10005;</button>',
         '</div>',
         '</div>',
         '<form class="import-modal__form planning-event-form" id="planningEventForm" autocomplete="off" method="post" action="about:blank" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitPlanningEventModal(event)">',
         '<section class="planning-event-form__section planning-event-form__section--meta">',
-        '<label class="import-modal__field planning-event-form__field planning-event-form__field--title"><span>Titel</span><input id="planningEventTitleInput" type="text" value="', escapeValue(planningEventDraft.title || ""), '" placeholder="Titel des Termins"></label>',
-        '<label class="import-modal__field import-modal__field--knowledge-gap"><span>Kategorie</span><input id="planningEventCategory" type="text" value="', escapeValue(planningEventDraft.category || ""), '" placeholder="Kategorie" autocomplete="off" autocapitalize="none" spellcheck="false" onfocus="return window.UnterrichtsassistentApp.handlePlanningCategoryInputFocus(\'planningEventCategory\', \'planningEventCategorySuggestions\')" oninput="return window.UnterrichtsassistentApp.handlePlanningCategoryInput(event, \'planningEventCategorySuggestions\')" onblur="return window.UnterrichtsassistentApp.handlePlanningCategoryInputBlur(\'planningEventCategorySuggestions\')"><div class="knowledge-gap-suggestions knowledge-gap-suggestions--planning" id="planningEventCategorySuggestions" hidden onpointerdown="return window.UnterrichtsassistentApp.handlePlanningCategorySuggestionsPointerDown(event, \'planningEventCategorySuggestions\')" onpointermove="return window.UnterrichtsassistentApp.handlePlanningCategorySuggestionsPointerMove(event, \'planningEventCategorySuggestions\')" onpointerup="return window.UnterrichtsassistentApp.handlePlanningCategorySuggestionsPointerUp(event, \'planningEventCategorySuggestions\')" onpointercancel="return window.UnterrichtsassistentApp.handlePlanningCategorySuggestionsPointerUp(event, \'planningEventCategorySuggestions\')"></div></label>',
-        '<label class="import-modal__field"><span>Prioritaet</span><select id="planningEventPriority"><option value="1"', Number(planningEventDraft.priority || 3) === 1 ? ' selected' : '', '>hoch</option><option value="2"', Number(planningEventDraft.priority || 3) === 2 ? ' selected' : '', '>standard</option><option value="3"', Number(planningEventDraft.priority || 3) === 3 ? ' selected' : '', '>niederig</option></select></label>',
+        '<label class="import-modal__field planning-event-form__field planning-event-form__field--title"><span>Titel</span><input id="planningEventTitleInput" type="text" value="', escapeValue(planningEventDraft.title || ""), '" placeholder="Titel des Termins"', planningEventDraft.isExternallyControlled ? ' disabled' : '', '></label>',
+        '<label class="import-modal__field import-modal__field--knowledge-gap"><span>Kategorie</span><input id="planningEventCategory" type="text" value="', escapeValue(planningEventDraft.category || ""), '" placeholder="Kategorie" autocomplete="off" autocapitalize="none" spellcheck="false"', planningEventDraft.isExternallyControlled ? ' disabled' : ' onfocus="return window.UnterrichtsassistentApp.handlePlanningCategoryInputFocus(\'planningEventCategory\', \'planningEventCategorySuggestions\')" oninput="return window.UnterrichtsassistentApp.handlePlanningCategoryInput(event, \'planningEventCategorySuggestions\')" onblur="return window.UnterrichtsassistentApp.handlePlanningCategoryInputBlur(\'planningEventCategorySuggestions\')"', '><div class="knowledge-gap-suggestions knowledge-gap-suggestions--planning" id="planningEventCategorySuggestions" hidden onpointerdown="return window.UnterrichtsassistentApp.handlePlanningCategorySuggestionsPointerDown(event, \'planningEventCategorySuggestions\')" onpointermove="return window.UnterrichtsassistentApp.handlePlanningCategorySuggestionsPointerMove(event, \'planningEventCategorySuggestions\')" onpointerup="return window.UnterrichtsassistentApp.handlePlanningCategorySuggestionsPointerUp(event, \'planningEventCategorySuggestions\')" onpointercancel="return window.UnterrichtsassistentApp.handlePlanningCategorySuggestionsPointerUp(event, \'planningEventCategorySuggestions\')"></div></label>',
+        '<label class="import-modal__field"><span>Prioritaet</span><select id="planningEventPriority"', planningEventDraft.isExternallyControlled ? ' disabled' : '', '><option value="1"', Number(planningEventDraft.priority || 3) === 1 ? ' selected' : '', '>hoch</option><option value="2"', Number(planningEventDraft.priority || 3) === 2 ? ' selected' : '', '>standard</option><option value="3"', Number(planningEventDraft.priority || 3) === 3 ? ' selected' : '', '>niederig</option></select></label>',
         '</section>',
         '<section class="planning-event-form__section planning-event-form__section--description">',
-        '<label class="import-modal__field planning-event-form__field planning-event-form__field--description"><span>Beschreibung</span><textarea id="planningEventDescription" rows="10" placeholder="Beschreibung des Termins">', escapeValue(planningEventDraft.description || ""), '</textarea></label>',
+        '<label class="import-modal__field planning-event-form__field planning-event-form__field--description"><span>Beschreibung</span><textarea id="planningEventDescription" rows="10" placeholder="Beschreibung des Termins"', planningEventDraft.isExternallyControlled ? ' disabled' : '', '>', escapeValue(planningEventDraft.description || ""), '</textarea></label>',
         '</section>',
         '<section class="planning-event-form__section planning-event-form__section--schedule">',
         '<div class="planning-event-form__grid planning-event-form__grid--dates">',
         '<div class="planning-event-form__schedule-column">',
-        '<label class="import-modal__field planning-event-form__field planning-event-form__field--schedule"><span>Start Datum</span><input id="planningEventStartDate" type="date" value="', escapeValue(planningEventDraft.startDate || planningEventDraft.date || ""), '" required></label>',
-        '<label class="import-modal__field planning-event-form__field planning-event-form__field--schedule"><span>Start Zeit</span><input id="planningEventStartTime" type="time" value="', escapeValue(planningEventDraft.startTime || ""), '"></label>',
+        '<label class="import-modal__field planning-event-form__field planning-event-form__field--schedule', planningEventDraft.isExternallyControlled ? ' is-disabled' : '', '"><span>Start Datum</span><input id="planningEventStartDate" type="date" value="', escapeValue(planningEventDraft.startDate || planningEventDraft.date || ""), '" required', planningEventDraft.isExternallyControlled ? ' disabled' : '', '></label>',
+        '<label class="import-modal__field planning-event-form__field planning-event-form__field--schedule', planningEventDraft.isExternallyControlled ? ' is-disabled' : '', '"><span>Start Zeit</span><input id="planningEventStartTime" type="time" value="', escapeValue(planningEventDraft.startTime || ""), '"', planningEventDraft.isExternallyControlled ? ' disabled' : '', '></label>',
         '</div>',
         '<div class="planning-event-form__schedule-column">',
-        '<label class="import-modal__field planning-event-form__field planning-event-form__field--schedule"><span>Ende Datum</span><input id="planningEventEndDate" type="date" value="', escapeValue(planningEventDraft.endDate || planningEventDraft.date || ""), '" required></label>',
-        '<label class="import-modal__field planning-event-form__field planning-event-form__field--schedule"><span>Ende Zeit</span><input id="planningEventEndTime" type="time" value="', escapeValue(planningEventDraft.endTime || ""), '"></label>',
+        '<label class="import-modal__field planning-event-form__field planning-event-form__field--schedule', planningEventDraft.isExternallyControlled ? ' is-disabled' : '', '"><span>Ende Datum</span><input id="planningEventEndDate" type="date" value="', escapeValue(planningEventDraft.endDate || planningEventDraft.date || ""), '" required', planningEventDraft.isExternallyControlled ? ' disabled' : '', '></label>',
+        '<label class="import-modal__field planning-event-form__field planning-event-form__field--schedule', planningEventDraft.isExternallyControlled ? ' is-disabled' : '', '"><span>Ende Zeit</span><input id="planningEventEndTime" type="time" value="', escapeValue(planningEventDraft.endTime || ""), '"', planningEventDraft.isExternallyControlled ? ' disabled' : '', '></label>',
         '</div>',
         '</div>',
         '</section>',

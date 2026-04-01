@@ -170,7 +170,7 @@ class EvaluationSheet {
 }
 
 class PlannedEvaluation {
-  constructor({ id, classId = "", type = "sonstige", evaluationSheetId = "", date = "", studentIds = [], createdAt = "" }) {
+  constructor({ id, classId = "", type = "sonstige", evaluationSheetId = "", date = "", studentIds = [], createPlanningEvent = true, planningEventId = "", createdAt = "", gradingSystem = [] }) {
     this.id = id;
     this.classId = String(classId || "").trim();
     this.type = String(type || "").trim().toLowerCase() === "schriftliche"
@@ -183,12 +183,27 @@ class PlannedEvaluation {
           return String(studentId || "").trim();
         }).filter(Boolean)
       : [];
+    this.createPlanningEvent = Boolean(createPlanningEvent);
+    this.planningEventId = String(planningEventId || "").trim();
     this.createdAt = String(createdAt || "").trim();
+    this.gradingSystem = Array.isArray(gradingSystem)
+      ? gradingSystem.map(function (entry) {
+          const source = entry && typeof entry === "object" ? entry : {};
+
+          return {
+            id: String(source.id || "").trim(),
+            label: String(source.label || "").trim(),
+            minPercent: Math.max(0, Math.min(100, Number.isFinite(Number(source.minPercent)) ? Number(source.minPercent) : 0))
+          };
+        }).filter(function (entry) {
+          return Boolean(entry.id);
+        })
+      : [];
   }
 }
 
 class PerformedEvaluation {
-  constructor({ id, plannedEvaluationId = "", classId = "", studentId = "", evaluationSheetId = "", subtaskResults = [], overallNote = "", createdAt = "", updatedAt = "" }) {
+  constructor({ id, plannedEvaluationId = "", classId = "", studentId = "", evaluationSheetId = "", subtaskResults = [], overallNote = "", isCompleted = false, completedAt = "", createdAt = "", updatedAt = "" }) {
     this.id = id;
     this.plannedEvaluationId = String(plannedEvaluationId || "").trim();
     this.classId = String(classId || "").trim();
@@ -214,6 +229,8 @@ class PerformedEvaluation {
         })
       : [];
     this.overallNote = String(overallNote || "").trim();
+    this.isCompleted = Boolean(isCompleted);
+    this.completedAt = this.isCompleted ? String(completedAt || "").trim() : "";
     this.createdAt = String(createdAt || "").trim();
     this.updatedAt = String(updatedAt || "").trim();
   }
@@ -300,7 +317,7 @@ class SeatOrder {
 }
 
 class PlanningEvent {
-    constructor({ id, title = "", startDate = "", endDate = "", startTime = "", endTime = "", category = "", description = "", priority = 3 }) {
+    constructor({ id, title = "", startDate = "", endDate = "", startTime = "", endTime = "", category = "", description = "", priority = 3, isExternallyControlled = false, controlledByView = "", controlledById = "" }) {
       this.id = id;
       this.title = title;
       this.startDate = startDate;
@@ -310,6 +327,9 @@ class PlanningEvent {
       this.category = category;
       this.description = description;
       this.priority = [1, 2, 3].indexOf(Number(priority)) >= 0 ? Number(priority) : 3;
+      this.isExternallyControlled = Boolean(isExternallyControlled);
+      this.controlledByView = this.isExternallyControlled ? String(controlledByView || "").trim() : "";
+      this.controlledById = this.isExternallyControlled ? String(controlledById || "").trim() : "";
     }
   }
 

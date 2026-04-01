@@ -43,12 +43,17 @@ window.Unterrichtsassistent.ui.views.bewertung = {
       || window.UnterrichtsassistentApp.isBewertungAnalysisSectionExpanded();
     const isPlannedEvaluationsExpanded = Boolean(window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.isBewertungPlannedEvaluationsExpanded === "function"
       && window.UnterrichtsassistentApp.isBewertungPlannedEvaluationsExpanded());
+    const isPlannedEvaluationDetailsExpanded = !(window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.isBewertungPlannedEvaluationDetailsExpanded === "function")
+      || window.UnterrichtsassistentApp.isBewertungPlannedEvaluationDetailsExpanded();
     const activePerformedPlannedEvaluationId = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActivePerformedPlannedEvaluationId === "function"
       ? String(window.UnterrichtsassistentApp.getActivePerformedPlannedEvaluationId() || "").trim()
       : "";
     const activePerformedEvaluationStudentId = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActivePerformedEvaluationStudentId === "function"
       ? String(window.UnterrichtsassistentApp.getActivePerformedEvaluationStudentId() || "").trim()
       : "";
+    const activePerformedEvaluationStudentFilter = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActivePerformedEvaluationStudentFilter === "function"
+      ? String(window.UnterrichtsassistentApp.getActivePerformedEvaluationStudentFilter() || "alle").trim().toLowerCase()
+      : "alle";
     const activePerformedEvaluationDetailModal = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActivePerformedEvaluationDetailModal === "function"
       ? window.UnterrichtsassistentApp.getActivePerformedEvaluationDetailModal()
       : null;
@@ -107,6 +112,17 @@ window.Unterrichtsassistent.ui.views.bewertung = {
             year: "numeric"
           })
         : "";
+    }
+
+    function formatPointsLabel(value) {
+      const numericValue = Number.isFinite(Number(value)) ? Number(value) : 0;
+      const roundedValue = Math.round(numericValue * 2) / 2;
+
+      if (Math.abs(roundedValue - Math.round(roundedValue)) < 0.001) {
+        return String(Math.round(roundedValue));
+      }
+
+      return roundedValue.toFixed(1).replace(".", ",");
     }
 
     function formatDateTimeLabel(dateTimeValue) {
@@ -1401,14 +1417,49 @@ window.Unterrichtsassistent.ui.views.bewertung = {
             return studentLookup[String(studentId || "").trim()] || null;
           }).filter(Boolean)
         : [];
-      const selectedStudent = assignedStudents.find(function (student) {
+      const performedEvaluationLookup = selectedPlannedEvaluation
+        ? performedEvaluations.reduce(function (lookup, entry) {
+            const studentId = String(entry && entry.studentId || "").trim();
+
+            if (studentId && String(entry && entry.plannedEvaluationId || "").trim() === String(selectedPlannedEvaluation.id || "").trim()) {
+              lookup[studentId] = entry;
+            }
+
+            return lookup;
+          }, {})
+        : {};
+      const studentPerformanceSummaries = selectedPlannedEvaluation && selectedEvaluationSheet
+        ? assignedStudents.reduce(function (lookup, student) {
+            const studentId = String(student && student.id || "").trim();
+            const performedEvaluation = performedEvaluationLookup[studentId] || null;
+
+            if (studentId) {
+              lookup[studentId] = buildStudentPerformanceSummary(selectedPlannedEvaluation, selectedEvaluationSheet, performedEvaluation);
+            }
+
+            return lookup;
+          }, {})
+        : {};
+      const visibleAssignedStudents = assignedStudents.filter(function (student) {
+        const studentId = String(student && student.id || "").trim();
+        const summary = studentPerformanceSummaries[studentId] || null;
+        const isCompleted = Boolean(summary && summary.isCompleted);
+
+        if (activePerformedEvaluationStudentFilter === "offen") {
+          return !isCompleted;
+        }
+
+        if (activePerformedEvaluationStudentFilter === "abgeschlossen") {
+          return isCompleted;
+        }
+
+        return true;
+      });
+      const selectedStudent = visibleAssignedStudents.find(function (student) {
         return String(student && student.id || "").trim() === activePerformedEvaluationStudentId;
-      }) || assignedStudents[0] || null;
-      const selectedPerformedEvaluation = selectedPlannedEvaluation && selectedStudent
-        ? performedEvaluations.find(function (entry) {
-            return String(entry && entry.plannedEvaluationId || "").trim() === String(selectedPlannedEvaluation.id || "").trim()
-              && String(entry && entry.studentId || "").trim() === String(selectedStudent.id || "").trim();
-          }) || null
+      }) || visibleAssignedStudents[0] || null;
+      const selectedPerformedEvaluation = selectedStudent
+        ? performedEvaluationLookup[String(selectedStudent && selectedStudent.id || "").trim()] || null
         : null;
       const selectedSubtaskLookup = selectedPerformedEvaluation && Array.isArray(selectedPerformedEvaluation.subtaskResults)
         ? selectedPerformedEvaluation.subtaskResults.reduce(function (lookup, entry) {
@@ -1421,6 +1472,9 @@ window.Unterrichtsassistent.ui.views.bewertung = {
             return lookup;
           }, {})
         : {};
+      const selectedPerformanceSummary = selectedStudent
+        ? studentPerformanceSummaries[String(selectedStudent && selectedStudent.id || "").trim()] || null
+        : null;
 
       function getFeedbackItems(subtaskResult, detailType) {
         if (detailType === "negative") {
@@ -1436,6 +1490,83 @@ window.Unterrichtsassistent.ui.views.bewertung = {
 
       function buildFeedbackSummary(items) {
         return items.length ? items.join(", ") : "Keine";
+      }
+
+      function getNormalizedGradingSystem(plannedEvaluation) {
+        return (Array.isArray(plannedEvaluation && plannedEvaluation.gradingSystem) ? plannedEvaluation.gradingSystem : []).map(function (entry) {
+          return {
+            id: String(entry && entry.id || "").trim(),
+            label: String(entry && entry.label || "").trim(),
+            minPercent: Math.max(0, Math.min(100, Number.isFinite(Number(entry && entry.minPercent)) ? Number(entry.minPercent) : 0))
+          };
+        }).filter(function (entry) {
+          return Boolean(entry.id);
+        }).sort(function (left, right) {
+          if (left.minPercent === right.minPercent) {
+            return left.label.localeCompare(right.label, "de-DE");
+          }
+
+          return right.minPercent - left.minPercent;
+        });
+      }
+
+      function getAchievedStageLabel(plannedEvaluation, percentValue) {
+        const normalizedPercent = Math.max(0, Number.isFinite(Number(percentValue)) ? Number(percentValue) : 0);
+        const stage = getNormalizedGradingSystem(plannedEvaluation).find(function (entry) {
+          return normalizedPercent >= entry.minPercent;
+        }) || null;
+
+        return stage ? stage.label : "";
+      }
+
+      function buildStudentPerformanceSummary(plannedEvaluation, evaluationSheet, performedEvaluation) {
+        const tasks = getTaskSheetTasks(evaluationSheet);
+        const subtaskLookup = performedEvaluation && Array.isArray(performedEvaluation.subtaskResults)
+          ? performedEvaluation.subtaskResults.reduce(function (lookup, entry) {
+              const subtaskId = String(entry && entry.subtaskId || "").trim();
+
+              if (subtaskId) {
+                lookup[subtaskId] = entry;
+              }
+
+              return lookup;
+            }, {})
+          : {};
+        const taskSummaries = tasks.map(function (task) {
+          const subtasks = getSubtasksForTask(task);
+          const achieved = subtasks.reduce(function (sum, subtask) {
+            const result = subtaskLookup[String(subtask && subtask.id || "").trim()] || null;
+            return sum + Math.max(0, Number(result && result.points) || 0);
+          }, 0);
+          const reachable = subtasks.reduce(function (sum, subtask) {
+            return sum + getBeValue(subtask);
+          }, 0);
+
+          return {
+            taskId: String(task && task.id || "").trim(),
+            achieved: achieved,
+            reachable: reachable
+          };
+        });
+        const totalAchieved = taskSummaries.reduce(function (sum, entry) {
+          return sum + entry.achieved;
+        }, 0);
+        const totalReachable = taskSummaries.reduce(function (sum, entry) {
+          return sum + entry.reachable;
+        }, 0);
+        const percent = totalReachable > 0
+          ? (totalAchieved / totalReachable) * 100
+          : 0;
+
+        return {
+          taskSummaries: taskSummaries,
+          totalAchieved: totalAchieved,
+          totalReachable: totalReachable,
+          percent: percent,
+          stageLabel: getAchievedStageLabel(plannedEvaluation, percent),
+          isCompleted: Boolean(performedEvaluation && performedEvaluation.isCompleted),
+          completedAt: String(performedEvaluation && performedEvaluation.completedAt || "").trim()
+        };
       }
 
       function getFeedbackSuggestions(subtaskId, detailType, activeStudentId, filterValue) {
@@ -1472,7 +1603,18 @@ window.Unterrichtsassistent.ui.views.bewertung = {
       function buildPlannedEvaluationCard(plannedEvaluation) {
         const plannedEvaluationId = String(plannedEvaluation && plannedEvaluation.id || "").trim();
         const sheet = sheetLookup[String(plannedEvaluation && plannedEvaluation.evaluationSheetId || "").trim()] || null;
-        const studentCount = Array.isArray(plannedEvaluation && plannedEvaluation.studentIds) ? plannedEvaluation.studentIds.length : 0;
+        const studentIds = Array.isArray(plannedEvaluation && plannedEvaluation.studentIds) ? plannedEvaluation.studentIds : [];
+        const studentCount = studentIds.length;
+        const completedStudentCount = studentIds.reduce(function (count, studentId) {
+          const normalizedStudentId = String(studentId || "").trim();
+          const performedEvaluation = performedEvaluations.find(function (entry) {
+            return String(entry && entry.plannedEvaluationId || "").trim() === plannedEvaluationId
+              && String(entry && entry.studentId || "").trim() === normalizedStudentId
+              && Boolean(entry && entry.isCompleted);
+          }) || null;
+
+          return count + (performedEvaluation ? 1 : 0);
+        }, 0);
         const isSelected = plannedEvaluationId && plannedEvaluationId === activePerformedPlannedEvaluationId;
 
         return [
@@ -1480,9 +1622,138 @@ window.Unterrichtsassistent.ui.views.bewertung = {
           '<div class="bewertung-planung__card-type">', escapeValue(getPlannedEvaluationTypeLabel(plannedEvaluation && plannedEvaluation.type)), '</div>',
           '<div class="bewertung-planung__card-title">', escapeValue(String(sheet && sheet.title || "Bewertungsbogen fehlt")), '</div>',
           '<div class="bewertung-planung__card-date">', escapeValue(formatLongDateLabel(plannedEvaluation && plannedEvaluation.date) || String(plannedEvaluation && plannedEvaluation.date || "")), '</div>',
-          '<div class="bewertung-planung__card-meta">', escapeValue(String(studentCount)), ' Schueler</div>',
+          '<div class="bewertung-planung__card-meta">', escapeValue(String(completedStudentCount)), ' / ', escapeValue(String(studentCount)), ' Schueler bewertet</div>',
           '<button class="bewertung-planung__edit" type="button" onclick="window.UnterrichtsassistentApp.stopEventPropagation(event); return window.UnterrichtsassistentApp.openPlannedEvaluationModal(\'', escapeValue(plannedEvaluationId), '\')">Bearbeiten</button>',
           '</div>'
+        ].join("");
+      }
+
+      function buildPlannedEvaluationDetailsPanel() {
+        const selectedSheetId = String(selectedPlannedEvaluation && selectedPlannedEvaluation.evaluationSheetId || "").trim();
+        const selectedSheetTitle = String((sheetLookup[selectedSheetId] && sheetLookup[selectedSheetId].title) || "").trim();
+        const selectedDate = String(selectedPlannedEvaluation && selectedPlannedEvaluation.date || "").slice(0, 10);
+        const createPlanningEvent = !selectedPlannedEvaluation || selectedPlannedEvaluation.createPlanningEvent !== false;
+        const selectedStudentIdsLookup = (selectedPlannedEvaluation && Array.isArray(selectedPlannedEvaluation.studentIds) ? selectedPlannedEvaluation.studentIds : []).reduce(function (lookup, studentId) {
+          lookup[String(studentId || "").trim()] = true;
+          return lookup;
+        }, {});
+        const gradingStages = getNormalizedGradingSystem(selectedPlannedEvaluation);
+        const studentRows = buildStudentRows(students);
+        const sheetOptions = (function () {
+          const options = sheets.map(function (sheet) {
+            const sheetId = String(sheet && sheet.id || "").trim();
+            return '<option value="' + escapeValue(sheetId) + '"' + (sheetId === selectedSheetId ? ' selected' : '') + '>' + escapeValue(String(sheet && sheet.title || "").trim() || "Ohne Titel") + '</option>';
+          }).join("");
+
+          return options || '<option value="">Keine Bewertungsboegen vorhanden</option>';
+        }());
+        const dateOptions = (function () {
+          const options = availableDates.map(function (entry) {
+            const normalizedDate = String(entry && entry.date || "").slice(0, 10);
+            return '<option value="' + escapeValue(normalizedDate) + '"' + (normalizedDate === selectedDate ? ' selected' : '') + '>' + escapeValue(String(entry && entry.label || normalizedDate)) + '</option>';
+          }).join("");
+
+          return options || '<option value="">Keine verfuegbaren Termine</option>';
+        }());
+
+        if (!selectedPlannedEvaluation) {
+          return "";
+        }
+
+        return [
+          '<article class="panel bewertung-planung-details', isPlannedEvaluationDetailsExpanded ? '' : ' is-collapsed', '">',
+          buildSectionHeader((selectedSheetTitle || "Bewertung") + " - Einstellungen", "planneddetail", isPlannedEvaluationDetailsExpanded),
+          isPlannedEvaluationDetailsExpanded ? [
+            '<div class="bewertung-planung-details__content">',
+            '<div class="bewertung-editor__fields">',
+            '<div class="import-modal__field bewertung-editor__field">',
+            '<span>Art der Leistung</span>',
+            '<div class="bewertung-planung-modal__type-switch" role="group" aria-label="Art der Leistung">',
+            '<button class="bewertung-planung-modal__type-button', String(selectedPlannedEvaluation && selectedPlannedEvaluation.type || "sonstige").trim() === "sonstige" ? ' is-active' : '', '" type="button" onclick="return window.UnterrichtsassistentApp.updateSelectedPlannedEvaluationField(\'type\', \'sonstige\')">Sonstige</button>',
+            '<button class="bewertung-planung-modal__type-button', String(selectedPlannedEvaluation && selectedPlannedEvaluation.type || "").trim() === "schriftliche" ? ' is-active' : '', '" type="button" onclick="return window.UnterrichtsassistentApp.updateSelectedPlannedEvaluationField(\'type\', \'schriftliche\')">Schriftliche</button>',
+            '</div>',
+            '</div>',
+            '<label class="import-modal__field bewertung-editor__field">',
+            '<span>Bewertungsbogen</span>',
+            '<select onchange="return window.UnterrichtsassistentApp.updateSelectedPlannedEvaluationField(\'evaluationSheetId\', this.value)">',
+            sheetOptions,
+            '</select>',
+            '</label>',
+            '<label class="import-modal__field bewertung-editor__field">',
+            '<span>Datum</span>',
+            '<select onchange="return window.UnterrichtsassistentApp.updateSelectedPlannedEvaluationField(\'date\', this.value)">',
+            dateOptions,
+            '</select>',
+            '</label>',
+            '<label class="bewertung-planung-modal__toggle">',
+            '<input type="checkbox"', createPlanningEvent ? ' checked' : '', ' onchange="return window.UnterrichtsassistentApp.updateSelectedPlannedEvaluationField(\'createPlanningEvent\', this.checked)">',
+            '<span>Als Termin setzen</span>',
+            '</label>',
+            '</div>',
+            '<div class="bewertung-planung-details__student-header">',
+            '<span class="bewertung-planung-modal__student-title">Schueler zuordnen</span>',
+            '<div class="bewertung-planung-modal__student-actions">',
+            '<button class="header-utility-button" type="button" onclick="return window.UnterrichtsassistentApp.setAllStudentsForSelectedPlannedEvaluation(true)">Alle</button>',
+            '<button class="header-utility-button" type="button" onclick="return window.UnterrichtsassistentApp.setAllStudentsForSelectedPlannedEvaluation(false)">Keine</button>',
+            '</div>',
+            '</div>',
+            studentRows.length ? [
+              '<div class="bewertung-planung-modal__student-table-wrap">',
+              '<table class="bewertung-planung-modal__student-table"><tbody>',
+              studentRows.map(function (row) {
+                return [
+                  '<tr>',
+                  row.map(function (student) {
+                    const studentId = String(student && student.id || "").trim();
+
+                    return [
+                      '<td>',
+                      '<label class="bewertung-planung-modal__student-option">',
+                      '<input type="checkbox"', selectedStudentIdsLookup[studentId] ? ' checked' : '', ' onclick="return window.UnterrichtsassistentApp.toggleSelectedPlannedEvaluationStudent(\'', escapeValue(studentId), '\')">',
+                      '<span>', escapeValue(String(student && student.firstName || "").trim() || "Ohne Namen"), '</span>',
+                      '</label>',
+                      '</td>'
+                    ].join("");
+                  }).join(""),
+                  row.length < 5 ? new Array(5 - row.length + 1).join('<td class="bewertung-planung-modal__student-empty"></td>') : '',
+                  '</tr>'
+                ].join("");
+              }).join(""),
+              '</tbody></table>',
+              '</div>'
+            ].join("") : '<div class="bewertung-analysis__empty">Keine Schueler in der Lerngruppe vorhanden.</div>',
+            '<section class="bewertung-grading">',
+            '<div class="bewertung-grading__header">',
+            '<h3 class="bewertung-grading__title">Bewertungssystem</h3>',
+            '<p class="bewertung-planung__hint">Definiere Stufen und die benoetigte Prozentgrenze.</p>',
+            '</div>',
+            '<div class="bewertung-grading__presets">',
+            '<button class="header-utility-button" type="button" onclick="return window.UnterrichtsassistentApp.loadSelectedPlannedEvaluationGradingPreset(\'noten\')">Noten</button>',
+            '<button class="header-utility-button" type="button" onclick="return window.UnterrichtsassistentApp.loadSelectedPlannedEvaluationGradingPreset(\'punkte\')">Punkte</button>',
+            '<button class="header-utility-button" type="button" onclick="return window.UnterrichtsassistentApp.loadSelectedPlannedEvaluationGradingPreset(\'plusplus_bis_minusminus\')">++ bis --</button>',
+            '<button class="header-utility-button" type="button" onclick="return window.UnterrichtsassistentApp.loadSelectedPlannedEvaluationGradingPreset(\'plus_bis_minus\')">+ bis -</button>',
+            '</div>',
+            '<div class="bewertung-grading__table">',
+            gradingStages.map(function (stage) {
+              const stageId = String(stage && stage.id || "").trim();
+              return [
+                '<div class="bewertung-grading__row">',
+                '<input class="bewertung-grading__label" type="text" value="', escapeValue(String(stage && stage.label || "").trim()), '" placeholder="Bewertungsstufe" onchange="return window.UnterrichtsassistentApp.updateSelectedPlannedEvaluationGradingStageField(\'', escapeValue(stageId), '\', \'label\', this.value)">',
+                '<input class="bewertung-grading__percent" type="number" min="0" max="100" step="1" value="', escapeValue(String(Number(stage && stage.minPercent) || 0)), '" placeholder="%" onchange="return window.UnterrichtsassistentApp.updateSelectedPlannedEvaluationGradingStageField(\'', escapeValue(stageId), '\', \'minPercent\', this.value)">',
+                '<button class="bewertung-task-sheet__delete" type="button" onclick="return window.UnterrichtsassistentApp.deleteSelectedPlannedEvaluationGradingStage(\'', escapeValue(stageId), '\')">Loeschen</button>',
+                '</div>'
+              ].join("");
+            }).join(""),
+            '<div class="bewertung-grading__row bewertung-grading__row--add">',
+            '<div></div>',
+            '<div></div>',
+            '<button class="bewertung-task-sheet__add-row bewertung-task-sheet__add-row--subtask" type="button" onclick="return window.UnterrichtsassistentApp.addSelectedPlannedEvaluationGradingStage()">+</button>',
+            '</div>',
+            '</div>',
+            '</section>',
+            '</div>'
+          ].join("") : '',
+          '</article>'
         ].join("");
       }
 
@@ -1526,16 +1797,36 @@ window.Unterrichtsassistent.ui.views.bewertung = {
           '<div class="bewertung-durchfuehrung__layout">',
           '<aside class="bewertung-durchfuehrung__students">',
           '<div class="bewertung-durchfuehrung__students-title">Schueler</div>',
-          assignedStudents.length ? assignedStudents.map(function (student) {
-            const studentId = String(student && student.id || "").trim();
-            const isSelectedStudent = selectedStudent && studentId === String(selectedStudent.id || "").trim();
-
+          '<div class="bewertung-durchfuehrung__filters">',
+          [
+            { key: "alle", label: "alle" },
+            { key: "offen", label: "offen" },
+            { key: "abgeschlossen", label: "abgeschlossen" }
+          ].map(function (filter) {
             return [
-              '<button class="bewertung-durchfuehrung__student', isSelectedStudent ? ' is-selected' : '', '" type="button" onclick="return window.UnterrichtsassistentApp.selectPerformedEvaluationStudent(\'', escapeValue(studentId), '\')">',
-              '<span class="bewertung-durchfuehrung__student-name">', escapeValue(String(student && student.firstName || "").trim() || "Ohne Namen"), '</span>',
+              '<button class="bewertung-durchfuehrung__filter', activePerformedEvaluationStudentFilter === filter.key ? ' is-active' : '', '" type="button" onclick="return window.UnterrichtsassistentApp.setPerformedEvaluationStudentFilter(\'', escapeValue(filter.key), '\')">',
+              escapeValue(filter.label),
               '</button>'
             ].join("");
-          }).join("") : '<div class="bewertung-analysis__empty">Keine Schueler sind dieser Bewertung zugeordnet.</div>',
+          }).join(""),
+          '</div>',
+          visibleAssignedStudents.length ? visibleAssignedStudents.map(function (student) {
+            const studentId = String(student && student.id || "").trim();
+            const isSelectedStudent = selectedStudent && studentId === String(selectedStudent.id || "").trim();
+            const summary = studentPerformanceSummaries[studentId] || null;
+            const stageLabel = summary ? String(summary.stageLabel || "").trim() : "";
+            const isCompleted = Boolean(summary && summary.isCompleted);
+
+            return [
+              '<button class="bewertung-durchfuehrung__student', isSelectedStudent ? ' is-selected' : '', isCompleted ? ' is-completed' : '', '" type="button" onclick="return window.UnterrichtsassistentApp.selectPerformedEvaluationStudent(\'', escapeValue(studentId), '\')">',
+              '<span class="bewertung-durchfuehrung__student-main">',
+              '<span class="bewertung-durchfuehrung__student-name">', escapeValue(String(student && student.firstName || "").trim() || "Ohne Namen"), '</span>',
+              stageLabel ? '<span class="bewertung-durchfuehrung__student-stage">' + escapeValue(stageLabel) + '</span>' : '',
+              '</span>',
+              '<span class="bewertung-durchfuehrung__student-status">', escapeValue(isCompleted ? "abgeschlossen" : "offen"), '</span>',
+              '</button>'
+            ].join("");
+          }).join("") : '<div class="bewertung-analysis__empty">Keine Schueler passen zum aktiven Filter.</div>',
           '</aside>',
           '<div class="bewertung-durchfuehrung__workspace">',
           !selectedStudent ? '<div class="bewertung-editor__placeholder">Waehle links einen Schueler aus.</div>' : (
@@ -1543,19 +1834,75 @@ window.Unterrichtsassistent.ui.views.bewertung = {
               ? '<div class="bewertung-editor__placeholder">Die Durchfuehrung fuer Kompetenzraster folgt in einem spaeteren Schritt.</div>'
               : (function () {
                   const tasks = getTaskSheetTasks(selectedEvaluationSheet);
+                  const isCompleted = Boolean(selectedPerformanceSummary && selectedPerformanceSummary.isCompleted);
 
                   return [
                     '<div class="bewertung-durchfuehrung__student-header">',
                     '<h3 class="bewertung-durchfuehrung__student-title">', escapeValue(String(selectedStudent && selectedStudent.fullName || selectedStudent && selectedStudent.firstName || "").trim() || "Ohne Namen"), '</h3>',
+                    '<div class="bewertung-durchfuehrung__student-header-actions">',
                     '<div class="bewertung-durchfuehrung__student-meta">', escapeValue(getPlannedEvaluationTypeLabel(selectedPlannedEvaluation && selectedPlannedEvaluation.type)), '</div>',
+                    isCompleted
+                      ? '<button class="bewertung-durchfuehrung__completed-badge" type="button" onclick="return window.UnterrichtsassistentApp.togglePerformedEvaluationCompletionForSelectedStudent()">Abgeschlossen</button>'
+                      : '<button class="header-utility-button" type="button" onclick="return window.UnterrichtsassistentApp.togglePerformedEvaluationCompletionForSelectedStudent()">Fertig</button>',
                     '</div>',
-                    tasks.length ? tasks.map(function (task, taskIndex) {
+                    '</div>',
+                    isCompleted
+                      ? (
+                        tasks.length ? [
+                          '<div class="bewertung-durchfuehrung__compact-list">',
+                          tasks.map(function (task, taskIndex) {
+                            const taskTitle = String(task && task.title || "").trim();
+                            const subtasks = getSubtasksForTask(task);
+                            const taskSummary = selectedPerformanceSummary && Array.isArray(selectedPerformanceSummary.taskSummaries)
+                              ? selectedPerformanceSummary.taskSummaries.find(function (entry) {
+                                  return String(entry && entry.taskId || "").trim() === String(task && task.id || "").trim();
+                                }) || null
+                              : null;
+
+                            return [
+                              '<div class="bewertung-durchfuehrung__compact-task-row">',
+                              '<span class="bewertung-durchfuehrung__compact-task-title">Aufgabe ', escapeValue(String(taskIndex + 1)), ': ', escapeValue(taskTitle || "Ohne Titel"), '</span>',
+                              '<span class="bewertung-durchfuehrung__compact-task-score">', escapeValue(formatPointsLabel(taskSummary ? taskSummary.achieved : 0)), ' / ', escapeValue(formatPointsLabel(taskSummary ? taskSummary.reachable : 0)), '</span>',
+                              '</div>',
+                              subtasks.length ? subtasks.map(function (subtask) {
+                                const subtaskId = String(subtask && subtask.id || "").trim();
+                                const subtaskResult = selectedSubtaskLookup[subtaskId] || null;
+                                const negativeItems = getFeedbackItems(subtaskResult, "negative");
+                                const positiveItems = getFeedbackItems(subtaskResult, "positive");
+                                const noteValue = String(subtaskResult && subtaskResult.generalNote || "").trim();
+
+                                return [
+                                  '<div class="bewertung-durchfuehrung__compact-subtask-row">',
+                                  '<span class="bewertung-durchfuehrung__compact-subtask-title">', escapeValue(String(subtask && subtask.title || "").trim() || "Ohne Titel"), '</span>',
+                                  '<span class="bewertung-durchfuehrung__compact-subtask-notes">',
+                                  negativeItems.length ? '<span class="bewertung-durchfuehrung__compact-note"><strong>N:</strong> ' + escapeValue(buildFeedbackSummary(negativeItems)) + '</span>' : '',
+                                  positiveItems.length ? '<span class="bewertung-durchfuehrung__compact-note"><strong>P:</strong> ' + escapeValue(buildFeedbackSummary(positiveItems)) + '</span>' : '',
+                                  noteValue ? '<span class="bewertung-durchfuehrung__compact-note"><strong>Notiz:</strong> ' + escapeValue(noteValue) + '</span>' : '',
+                                  '</span>',
+                                  '<span class="bewertung-durchfuehrung__compact-subtask-score">', escapeValue(formatPointsLabel(subtaskResult ? Number(subtaskResult.points) || 0 : 0)), ' / ', escapeValue(formatPointsLabel(getBeValue(subtask))), '</span>',
+                                  '</div>'
+                                ].join("");
+                              }).join("") : ''
+                            ].join("");
+                          }).join(""),
+                          '</div>'
+                        ].join("") : '<div class="bewertung-editor__placeholder">Der verknuepfte Aufgabenbogen enthaelt noch keine Aufgaben.</div>'
+                      )
+                      : (tasks.length ? tasks.map(function (task, taskIndex) {
                       const taskTitle = String(task && task.title || "").trim();
                       const subtasks = getSubtasksForTask(task);
+                      const taskSummary = selectedPerformanceSummary && Array.isArray(selectedPerformanceSummary.taskSummaries)
+                        ? selectedPerformanceSummary.taskSummaries.find(function (entry) {
+                            return String(entry && entry.taskId || "").trim() === String(task && task.id || "").trim();
+                          }) || null
+                        : null;
 
                       return [
                         '<section class="bewertung-durchfuehrung__task">',
+                        '<div class="bewertung-durchfuehrung__task-header">',
                         '<div class="bewertung-durchfuehrung__task-title">Aufgabe ', escapeValue(String(taskIndex + 1)), ': ', escapeValue(taskTitle || "Ohne Titel"), '</div>',
+                        '<div class="bewertung-durchfuehrung__task-score">', escapeValue(formatPointsLabel(taskSummary ? taskSummary.achieved : 0)), ' / ', escapeValue(formatPointsLabel(taskSummary ? taskSummary.reachable : 0)), '</div>',
+                        '</div>',
                         subtasks.length ? subtasks.map(function (subtask) {
                           const subtaskId = String(subtask && subtask.id || "").trim();
                           const subtaskResult = selectedSubtaskLookup[subtaskId] || null;
@@ -1582,8 +1929,8 @@ window.Unterrichtsassistent.ui.views.bewertung = {
                             '</button>',
                             '</div>',
                             '<div class="bewertung-durchfuehrung__points-wrap">',
-                            '<input class="bewertung-durchfuehrung__points-input" type="text" inputmode="numeric" maxlength="2" value="', escapeValue(String(subtaskResult ? Number(subtaskResult.points) || 0 : 0)), '" oninput="this.value = this.value.replace(/[^0-9]/g, \'\').slice(0, 2); return window.UnterrichtsassistentApp.updatePerformedEvaluationSubtaskField(\'', escapeValue(subtaskId), '\', \'points\', this.value, \'', escapeValue(String(getBeValue(subtask))), '\')" onchange="this.value = String(Math.min(', escapeValue(String(getBeValue(subtask))), ', Math.max(0, Number(this.value) || 0))); return window.UnterrichtsassistentApp.updatePerformedEvaluationSubtaskField(\'', escapeValue(subtaskId), '\', \'points\', this.value, \'', escapeValue(String(getBeValue(subtask))), '\')" onkeydown="return window.UnterrichtsassistentApp.handlePerformedEvaluationPointsKeyDown(event)">',
-                            '<span class="bewertung-durchfuehrung__points-max">/ ', escapeValue(String(getBeValue(subtask))), '</span>',
+                            '<input class="bewertung-durchfuehrung__points-input" data-subtask-id="', escapeValue(subtaskId), '" type="text" inputmode="decimal" maxlength="4" value="', escapeValue(formatPointsLabel(subtaskResult ? Number(subtaskResult.points) || 0 : 0)), '" oninput="this.value = this.value.replace(/[^0-9,\\.]/g, \'\').replace(/\\./g, \',\').replace(/(,.*),/g, \'$1\').slice(0, 4); return true" onchange="this.value = String(window.UnterrichtsassistentApp.normalizePerformedEvaluationPoints ? window.UnterrichtsassistentApp.normalizePerformedEvaluationPoints(this.value, \'', escapeValue(String(getBeValue(subtask))), '\') : 0).replace(\'.\', \',\'); return window.UnterrichtsassistentApp.updatePerformedEvaluationSubtaskField(\'', escapeValue(subtaskId), '\', \'points\', this.value, \'', escapeValue(String(getBeValue(subtask))), '\')" onkeydown="return window.UnterrichtsassistentApp.handlePerformedEvaluationPointsKeyDown(event, \'', escapeValue(subtaskId), '\', \'', escapeValue(String(getBeValue(subtask))), '\')">',
+                            '<span class="bewertung-durchfuehrung__points-max">/ ', escapeValue(formatPointsLabel(getBeValue(subtask))), '</span>',
                             '</div>',
                             '</div>',
                             '</div>'
@@ -1591,11 +1938,12 @@ window.Unterrichtsassistent.ui.views.bewertung = {
                         }).join("") : '<div class="bewertung-analysis__empty">Diese Aufgabe hat noch keine Teilaufgaben.</div>',
                         '</section>'
                       ].join("");
-                    }).join("") : '<div class="bewertung-editor__placeholder">Der verknuepfte Aufgabenbogen enthaelt noch keine Aufgaben.</div>',
-                    '<label class="bewertung-durchfuehrung__field bewertung-durchfuehrung__field--overall">',
-                    '<span>Anmerkung zur gesamten Bewertung</span>',
-                    '<textarea rows="4" onchange="return window.UnterrichtsassistentApp.updatePerformedEvaluationOverallNote(this.value)">', escapeValue(String(selectedPerformedEvaluation && selectedPerformedEvaluation.overallNote || "").trim()), '</textarea>',
-                    '</label>'
+                    }).join("") : '<div class="bewertung-editor__placeholder">Der verknuepfte Aufgabenbogen enthaelt noch keine Aufgaben.</div>'),
+                    '<div class="bewertung-durchfuehrung__overall-score">', escapeValue(formatPointsLabel(selectedPerformanceSummary ? selectedPerformanceSummary.totalAchieved : 0)), ' / ', escapeValue(formatPointsLabel(selectedPerformanceSummary ? selectedPerformanceSummary.totalReachable : 0)), ' <span>(', escapeValue((selectedPerformanceSummary ? selectedPerformanceSummary.percent : 0).toFixed(1).replace(".", ",")), '%)</span></div>',
+                    '<div class="bewertung-durchfuehrung__overall-stage">', escapeValue(String(selectedPerformanceSummary && selectedPerformanceSummary.stageLabel || "").trim() || "Keine Bewertungsstufe"), '</div>',
+                    isCompleted
+                      ? '<div class="bewertung-durchfuehrung__overall-note"><span>Anmerkung zur gesamten Bewertung</span><div>' + escapeValue(String(selectedPerformedEvaluation && selectedPerformedEvaluation.overallNote || "").trim() || "Keine") + '</div></div>'
+                      : '<label class="bewertung-durchfuehrung__field bewertung-durchfuehrung__field--overall"><span>Anmerkung zur gesamten Bewertung</span><textarea rows="4" onchange="return window.UnterrichtsassistentApp.updatePerformedEvaluationOverallNote(this.value)">' + escapeValue(String(selectedPerformedEvaluation && selectedPerformedEvaluation.overallNote || "").trim()) + '</textarea></label>'
                   ].join("");
                 }())
           ),
@@ -1760,10 +2108,12 @@ window.Unterrichtsassistent.ui.views.bewertung = {
           '</div>'
         ].join(""),
         '</article>',
+        buildPlannedEvaluationDetailsPanel(),
         buildPerformedEvaluationPanel(),
         plannedEvaluationDraft ? (function () {
           const selectedSheetId = String(plannedEvaluationDraft && plannedEvaluationDraft.evaluationSheetId || "").trim();
           const selectedDate = String(plannedEvaluationDraft && plannedEvaluationDraft.date || "").slice(0, 10);
+          const createPlanningEvent = !plannedEvaluationDraft || plannedEvaluationDraft.createPlanningEvent !== false;
           const hasSelectableSheet = sheets.length || Boolean(selectedSheetId);
           const hasSelectableDate = availableDates.length || Boolean(selectedDate);
           const sheetOptions = (function () {
@@ -1838,6 +2188,10 @@ window.Unterrichtsassistent.ui.views.bewertung = {
             '<select id="plannedEvaluationDateInput"', hasSelectableDate ? '' : ' disabled', ' onchange="return window.UnterrichtsassistentApp.updatePlannedEvaluationDraftField(\'date\', this.value)">',
             dateOptions,
             '</select>',
+            '</label>',
+            '<label class="bewertung-planung-modal__toggle">',
+            '<input id="plannedEvaluationCreatePlanningEvent" type="checkbox"', createPlanningEvent ? ' checked' : '', ' onchange="return window.UnterrichtsassistentApp.updatePlannedEvaluationDraftField(\'createPlanningEvent\', this.checked)">',
+            '<span>Als Termin setzen</span>',
             '</label>',
             '<div class="bewertung-planung-modal__student-header">',
             '<span class="bewertung-planung-modal__student-title">Schueler zuordnen</span>',

@@ -122,15 +122,20 @@ function serializeDomainSnapshot(snapshot) {
   }
 
   function clonePlannedEvaluations(items) {
-    return cloneItems(items || [], ["id", "classId", "type", "evaluationSheetId", "date", "studentIds", "createdAt"]).map(function (item) {
+    return cloneItems(items || [], ["id", "classId", "type", "evaluationSheetId", "date", "studentIds", "createPlanningEvent", "planningEventId", "createdAt", "gradingSystem"]).map(function (item) {
       return Object.assign({}, item, {
-        studentIds: Array.isArray(item.studentIds) ? item.studentIds.slice() : []
+        studentIds: Array.isArray(item.studentIds) ? item.studentIds.slice() : [],
+        gradingSystem: Array.isArray(item.gradingSystem)
+          ? item.gradingSystem.map(function (entry) {
+              return Object.assign({}, entry);
+            })
+          : []
       });
     });
   }
 
   function clonePerformedEvaluations(items) {
-    return cloneItems(items || [], ["id", "plannedEvaluationId", "classId", "studentId", "evaluationSheetId", "subtaskResults", "overallNote", "createdAt", "updatedAt"]).map(function (item) {
+    return cloneItems(items || [], ["id", "plannedEvaluationId", "classId", "studentId", "evaluationSheetId", "subtaskResults", "overallNote", "isCompleted", "completedAt", "createdAt", "updatedAt"]).map(function (item) {
       return Object.assign({}, item, {
         subtaskResults: Array.isArray(item.subtaskResults)
           ? item.subtaskResults.map(function (entry) {
@@ -200,7 +205,7 @@ function serializeDomainSnapshot(snapshot) {
     warningRecords: cloneItems(snapshot.warningRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "category", "note"]),
     todos: cloneItems(snapshot.todos, ["id", "title", "dueDate", "relatedClassId", "done"]),
     seatPlans: cloneItems(snapshot.seatPlans, ["id", "classId", "room", "validFrom", "validTo", "updatedAt", "seats", "deskLayoutItems", "deskLayoutLinks", "roomWindowSide", "roomWidth", "roomHeight"]),
-    planningEvents: cloneItems(snapshot.planningEvents || [], ["id", "title", "startDate", "endDate", "startTime", "endTime", "category", "description", "priority"]),
+    planningEvents: cloneItems(snapshot.planningEvents || [], ["id", "title", "startDate", "endDate", "startTime", "endTime", "category", "description", "priority", "isExternallyControlled", "controlledByView", "controlledById"]),
     planningCategories: cloneItems(snapshot.planningCategories || [], ["id", "name", "color"]),
     planningInstructionLessonStatuses: cloneItems(snapshot.planningInstructionLessonStatuses || [], ["id", "classId", "lessonDate", "isCancelled", "cancelReason"]),
     curriculumSeries: cloneItems(snapshot.curriculumSeries || [], ["id", "classId", "topic", "hourDemand", "color", "startMode", "startDate", "nextSeriesId"]),

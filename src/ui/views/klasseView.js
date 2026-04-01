@@ -29,7 +29,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
       : { key: "name", direction: "asc" };
     const analysisEnabledTypes = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getClassAnalysisEnabledTypes === "function"
       ? window.UnterrichtsassistentApp.getClassAnalysisEnabledTypes()
-      : { attendance: true, homework: true, warning: true, assessment: true };
+      : { attendance: true, homework: true, warning: true, assessment: true, completedEvaluation: true };
     const analysisGrouping = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getClassAnalysisGrouping === "function"
       ? window.UnterrichtsassistentApp.getClassAnalysisGrouping()
       : "day";
@@ -41,6 +41,9 @@ window.Unterrichtsassistent.ui.views.klasse = {
       : null;
     const analysisEditDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveClassAnalysisRecordEditDraft === "function"
       ? window.UnterrichtsassistentApp.getActiveClassAnalysisRecordEditDraft()
+      : null;
+    const analysisPerformedEvaluationDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveClassAnalysisPerformedEvaluationDraft === "function"
+      ? window.UnterrichtsassistentApp.getActiveClassAnalysisPerformedEvaluationDraft()
       : null;
 
     function escapeValue(value) {
@@ -297,6 +300,132 @@ window.Unterrichtsassistent.ui.views.klasse = {
       }).join(" | ");
     }
 
+    function formatPointsLabel(value) {
+      const numericValue = Number.isFinite(Number(value)) ? Number(value) : 0;
+      const roundedValue = Math.round(numericValue * 2) / 2;
+
+      if (Math.abs(roundedValue - Math.round(roundedValue)) < 0.001) {
+        return String(Math.round(roundedValue));
+      }
+
+      return roundedValue.toFixed(1).replace(".", ",");
+    }
+
+    function getTaskSheetTasks(evaluationSheet) {
+      return evaluationSheet && evaluationSheet.taskSheet && Array.isArray(evaluationSheet.taskSheet.tasks)
+        ? evaluationSheet.taskSheet.tasks.filter(function (task) {
+            return task && typeof task === "object";
+          })
+        : [];
+    }
+
+    function getSubtasksForTask(task) {
+      return task && Array.isArray(task.subtasks) ? task.subtasks.filter(Boolean) : [];
+    }
+
+    function getBeValue(item) {
+      return Math.max(0, Number.isFinite(Number(item && item.be)) ? Number(item.be) : 0);
+    }
+
+    function getFeedbackItems(subtaskResult, detailType) {
+      const normalizedType = String(detailType || "").trim().toLowerCase();
+      const sourceItems = normalizedType === "negative"
+        ? (subtaskResult && Array.isArray(subtaskResult.negativeFeedback) ? subtaskResult.negativeFeedback : [])
+        : (subtaskResult && Array.isArray(subtaskResult.positiveFeedback) ? subtaskResult.positiveFeedback : []);
+
+      return sourceItems.map(function (entry) {
+        return String(entry || "").trim();
+      }).filter(Boolean);
+    }
+
+    function buildFeedbackSummary(items) {
+      const values = Array.isArray(items) ? items.filter(Boolean) : [];
+
+      if (!values.length) {
+        return "";
+      }
+
+      if (values.length <= 2) {
+        return values.join(", ");
+      }
+
+      return values.slice(0, 2).join(", ") + " +" + String(values.length - 2);
+    }
+
+    function normalizeGradingSystem(items) {
+      return (Array.isArray(items) ? items : []).map(function (entry) {
+        return {
+          label: String(entry && entry.label || "").trim(),
+          minPercent: Math.max(0, Math.min(100, Number.isFinite(Number(entry && entry.minPercent)) ? Number(entry.minPercent) : 0))
+        };
+      }).filter(function (entry) {
+        return Boolean(entry.label);
+      }).sort(function (left, right) {
+        if (left.minPercent === right.minPercent) {
+          return left.label.localeCompare(right.label, "de-DE");
+        }
+
+        return right.minPercent - left.minPercent;
+      });
+    }
+
+    function getCompletedEvaluationStageLabel(plannedEvaluation, percentValue) {
+      const normalizedPercent = Math.max(0, Number.isFinite(Number(percentValue)) ? Number(percentValue) : 0);
+      const stage = normalizeGradingSystem(plannedEvaluation && plannedEvaluation.gradingSystem).find(function (entry) {
+        return normalizedPercent >= entry.minPercent;
+      }) || null;
+
+      return stage ? stage.label : "";
+    }
+
+    function buildCompletedEvaluationSummary(plannedEvaluation, evaluationSheet, performedEvaluation) {
+      const tasks = getTaskSheetTasks(evaluationSheet);
+      const subtaskLookup = performedEvaluation && Array.isArray(performedEvaluation.subtaskResults)
+        ? performedEvaluation.subtaskResults.reduce(function (lookup, entry) {
+            const subtaskId = String(entry && entry.subtaskId || "").trim();
+
+            if (subtaskId) {
+              lookup[subtaskId] = entry;
+            }
+
+            return lookup;
+          }, {})
+        : {};
+      const taskSummaries = tasks.map(function (task) {
+        const subtasks = getSubtasksForTask(task);
+        const achieved = subtasks.reduce(function (sum, subtask) {
+          const result = subtaskLookup[String(subtask && subtask.id || "").trim()] || null;
+          return sum + Math.max(0, Number(result && result.points) || 0);
+        }, 0);
+        const reachable = subtasks.reduce(function (sum, subtask) {
+          return sum + getBeValue(subtask);
+        }, 0);
+
+        return {
+          taskId: String(task && task.id || "").trim(),
+          achieved: achieved,
+          reachable: reachable
+        };
+      });
+      const totalAchieved = taskSummaries.reduce(function (sum, entry) {
+        return sum + entry.achieved;
+      }, 0);
+      const totalReachable = taskSummaries.reduce(function (sum, entry) {
+        return sum + entry.reachable;
+      }, 0);
+      const percent = totalReachable > 0
+        ? (totalAchieved / totalReachable) * 100
+        : 0;
+
+      return {
+        taskSummaries: taskSummaries,
+        totalAchieved: totalAchieved,
+        totalReachable: totalReachable,
+        percent: percent,
+        stageLabel: getCompletedEvaluationStageLabel(plannedEvaluation, percent)
+      };
+    }
+
     function getAnalysisRecordCreatedAt(record) {
       return String(record && (record.recordedAt || record.effectiveAt || record.lessonDate || record.date) || "");
     }
@@ -350,6 +479,27 @@ window.Unterrichtsassistent.ui.views.klasse = {
           raw: record
         };
       }))
+      .concat((service.snapshot.performedEvaluations || []).filter(function (record) {
+        return record.classId === schoolClass.id && Boolean(record.isCompleted);
+      }).map(function (record, index) {
+        const plannedEvaluation = (service.snapshot.plannedEvaluations || []).find(function (entry) {
+          return String(entry && entry.id || "").trim() === String(record && record.plannedEvaluationId || "").trim();
+        }) || null;
+        const evaluationSheet = (service.snapshot.evaluationSheets || []).find(function (entry) {
+          return String(entry && entry.id || "").trim() === String(record && record.evaluationSheetId || "").trim();
+        }) || null;
+
+        return {
+          studentId: record.studentId,
+          date: normalizeDateValue(plannedEvaluation && plannedEvaluation.date),
+          type: "completedEvaluation",
+          symbol: "★",
+          sortKey: String(record && record.completedAt || record && record.updatedAt || record && record.createdAt || "") + "|" + String(record.id || index).padStart(6, "0"),
+          raw: record,
+          plannedEvaluation: plannedEvaluation,
+          evaluationSheet: evaluationSheet
+        };
+      }))
       : [];
     const analysisRecords = allAnalysisRecords.filter(function (record) {
       return analysisEnabledTypes[String(record.type || "")] !== false;
@@ -401,7 +551,8 @@ window.Unterrichtsassistent.ui.views.klasse = {
           attendance: 0,
           homework: 0,
           warning: 0,
-          assessment: 0
+          assessment: 0,
+          completedEvaluation: 0
         };
       }
 
@@ -569,11 +720,12 @@ window.Unterrichtsassistent.ui.views.klasse = {
         ? String(count)
         : formatCriterionValue(criterionValue);
       const typeCounts = analysisTypeCountsByStudentDate[studentId + "|" + groupInfo.key] || {};
-      const typeItems = [
+            const typeItems = [
         { key: "attendance", symbol: "✓" },
         { key: "homework", symbol: "H" },
         { key: "warning", symbol: "⚠" },
-        { key: "assessment", symbol: "🔍" }
+        { key: "assessment", symbol: "🔍" },
+        { key: "completedEvaluation", symbol: "★" }
       ].filter(function (entry) {
         return Number(typeCounts[entry.key] || 0) > 0;
       }).sort(function (leftEntry, rightEntry) {
@@ -616,11 +768,23 @@ window.Unterrichtsassistent.ui.views.klasse = {
       })
       : [];
     const analysisDetailRows = analysisDetailRecords.map(function (record) {
+      const isCompletedEvaluation = String(record.type || "") === "completedEvaluation";
+      const completedSummary = isCompletedEvaluation
+        ? buildCompletedEvaluationSummary(record.plannedEvaluation, record.evaluationSheet, record.raw)
+        : null;
+      const summaryText = isCompletedEvaluation
+        ? [
+            String(record.evaluationSheet && record.evaluationSheet.title || "").trim() || "Bewertung",
+            completedSummary ? formatPointsLabel(completedSummary.totalAchieved) + " / " + formatPointsLabel(completedSummary.totalReachable) : "",
+            completedSummary && completedSummary.stageLabel ? completedSummary.stageLabel : ""
+          ].filter(Boolean).join(" | ")
+        : (buildAnalysisDetailSummary(record.raw || {}) || "-");
+
       return [
-        '<tr class="class-analysis-detail__row" onclick="return window.UnterrichtsassistentApp.openClassAnalysisRecordEdit(\'', escapeValue(record.type), '\', \'', escapeValue(record.raw && record.raw.id || ""), '\')">',
+        '<tr class="class-analysis-detail__row" onclick="return window.UnterrichtsassistentApp.', isCompletedEvaluation ? 'openClassAnalysisPerformedEvaluation(\'' + escapeValue(record.plannedEvaluation && record.plannedEvaluation.id || "") + '\', \'' + escapeValue(record.studentId || "") + '\')' : 'openClassAnalysisRecordEdit(\'' + escapeValue(record.type) + '\', \'' + escapeValue(record.raw && record.raw.id || "") + '\')', '">',
         '<td class="class-analysis-detail__type-cell">', escapeValue(record.symbol), "</td>",
-        '<td class="class-analysis-detail__summary-cell">', escapeValue(buildAnalysisDetailSummary(record.raw || {})) || "-", "</td>",
-        '<td class="class-analysis-detail__action-cell"><button class="row-delete-button row-delete-button--small" type="button" onclick="event.stopPropagation(); return window.UnterrichtsassistentApp.deleteClassAnalysisRecord(\'', escapeValue(record.type), '\', \'', escapeValue(record.raw && record.raw.id || ""), '\')">Loeschen</button></td>',
+        '<td class="class-analysis-detail__summary-cell">', escapeValue(summaryText), "</td>",
+        '<td class="class-analysis-detail__action-cell">', isCompletedEvaluation ? '<span class="class-analysis-detail__action-placeholder">&#8599;</span>' : '<button class="row-delete-button row-delete-button--small" type="button" onclick="event.stopPropagation(); return window.UnterrichtsassistentApp.deleteClassAnalysisRecord(\'' + escapeValue(record.type) + '\', \'' + escapeValue(record.raw && record.raw.id || "") + '\')">Loeschen</button>', '</td>',
         "</tr>"
       ].join("");
     }).join("");
@@ -741,6 +905,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
         '<button class="unterricht-seatplan-action class-analysis-tool', analysisEnabledTypes.homework !== false ? ' is-active' : "", '" type="button" aria-label="Hausaufgaben filtern" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisType(\'homework\')">H</button>',
         '<button class="unterricht-seatplan-action class-analysis-tool', analysisEnabledTypes.warning !== false ? ' is-active' : "", '" type="button" aria-label="Verwarnungen filtern" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisType(\'warning\')">&#9888;</button>',
         '<button class="unterricht-seatplan-action class-analysis-tool', analysisEnabledTypes.assessment !== false ? ' is-active' : "", '" type="button" aria-label="Bewertungen filtern" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisType(\'assessment\')">&#128269;</button>',
+        '<button class="unterricht-seatplan-action class-analysis-tool', analysisEnabledTypes.completedEvaluation !== false ? ' is-active' : "", '" type="button" aria-label="Abgeschlossene Bewertungen filtern" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisType(\'completedEvaluation\')">&#9733;</button>',
         '</div>',
         '</div>',
         '<label class="class-analysis-grouping"><span class="class-analysis-toolbar__label">Gruppierung:</span><select class="student-table__input student-table__select" onchange="return window.UnterrichtsassistentApp.setClassAnalysisGrouping(this.value)"><option value="day"', analysisGrouping === "day" ? " selected" : "", '>Tag</option><option value="week"', analysisGrouping === "week" ? " selected" : "", '>Woche</option><option value="month"', analysisGrouping === "month" ? " selected" : "", '>Monat</option><option value="total"', analysisGrouping === "total" ? " selected" : "", '>Gesamt</option></select></label>',
@@ -857,6 +1022,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
         '</form>',
         '</div>',
       ].join("") : "",
+      "",
       '<div class="import-modal" id="classImportModal" hidden>',
       '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeClassImportModal()"></div>',
       '<div class="import-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="classImportTitle">',
@@ -888,3 +1054,4 @@ window.Unterrichtsassistent.ui.views.klasse = {
     ].join("");
   }
 };
+
