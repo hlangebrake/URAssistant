@@ -97,6 +97,8 @@ let todoSortMode = "dringlichkeit";
 let todoCategoryFilterOpen = false;
 let todoCategoryFilters = [];
 let todoCategoryFilterAllOff = false;
+let todoViewScrollState = null;
+let todoStudentAssignmentOpen = false;
 let activePlanningInstructionLessonDraft = null;
 let activeTimetablePlanningEventDetail = null;
 let activeCurriculumSeriesDraft = null;
@@ -3219,6 +3221,61 @@ function escapeHtml(value) {
     .replace(/\n/g, "&#10;");
 }
 
+function captureTodoViewScrollState() {
+  const activeTodoView = document.getElementById("todos");
+  const scrollContainers = activeTodoView && typeof activeTodoView.querySelectorAll === "function"
+    ? Array.from(activeTodoView.querySelectorAll("[data-todo-scroll-key]"))
+    : [];
+
+  if (!activeTodoView) {
+    return null;
+  }
+
+  return {
+    viewScrollTop: activeTodoView.scrollTop || 0,
+    viewScrollLeft: activeTodoView.scrollLeft || 0,
+    containers: scrollContainers.reduce(function (entries, element) {
+      const key = String(element && element.getAttribute("data-todo-scroll-key") || "").trim();
+
+      if (!key) {
+        return entries;
+      }
+
+      entries[key] = {
+        top: element.scrollTop || 0,
+        left: element.scrollLeft || 0
+      };
+      return entries;
+    }, {})
+  };
+}
+
+function restoreTodoViewScrollState() {
+  const activeTodoView = document.getElementById("todos");
+  const savedState = todoViewScrollState;
+
+  if (!activeTodoView || !savedState) {
+    return;
+  }
+
+  activeTodoView.scrollTop = Number(savedState.viewScrollTop) || 0;
+  activeTodoView.scrollLeft = Number(savedState.viewScrollLeft) || 0;
+
+  Object.keys(savedState.containers || {}).forEach(function (key) {
+    const state = savedState.containers[key] || {};
+    const element = activeTodoView.querySelector('[data-todo-scroll-key="' + key.replace(/"/g, '\\"') + '"]');
+
+    if (!element) {
+      return;
+    }
+
+    element.scrollTop = Number(state.top) || 0;
+    element.scrollLeft = Number(state.left) || 0;
+  });
+
+  todoViewScrollState = null;
+}
+
 function getClassDisplayName(schoolClass) {
   if (!schoolClass) {
     return "Keine Lerngruppe";
@@ -3255,6 +3312,263 @@ function formatDateLabel(dateValue) {
   }
 
   return parts[2] + "." + parts[1] + "." + parts[0];
+}
+
+function getStudentDisplayName(student) {
+  const firstName = String(student && student.firstName || "").trim();
+  const lastName = String(student && student.lastName || "").trim();
+  const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+
+  return fullName || String(student && student.className || "").trim() || "Unbekannt";
+}
+
+function getStudentFirstNameSortValue(student) {
+  return String(student && student.firstName || "").trim().toLowerCase();
+}
+
+function getStudentLastNameSortValue(student) {
+  return String(student && student.lastName || "").trim().toLowerCase();
+}
+
+function getStudentCompactDisplayName(student, classStudents) {
+  const firstName = String(student && student.firstName || "").trim();
+  const lastName = String(student && student.lastName || "").trim();
+  const normalizedFirstName = firstName.toLowerCase();
+  const studentsInClass = Array.isArray(classStudents) ? classStudents : [];
+  const hasDuplicateFirstName = Boolean(normalizedFirstName) && studentsInClass.some(function (entry) {
+    return entry !== student
+      && String(entry && entry.firstName || "").trim().toLowerCase() === normalizedFirstName;
+  });
+
+  if (firstName) {
+    return hasDuplicateFirstName && lastName
+      ? firstName + " " + lastName.charAt(0).toUpperCase() + "."
+      : firstName;
+  }
+
+  return lastName || "Unbekannt";
+}
+
+function getTodoCategoryClassInfo(rawSnapshot, categoryName) {
+  const snapshot = rawSnapshot || {};
+  const normalizedCategory = String(categoryName || "").trim().toLowerCase();
+  const classes = Array.isArray(snapshot.classes) ? snapshot.classes : [];
+  const students = Array.isArray(snapshot.students) ? snapshot.students : [];
+  const classEntry = classes.find(function (entry) {
+    return [String(entry && entry.name || "").trim(), String(entry && entry.subject || "").trim()]
+      .filter(Boolean)
+      .join(" ")
+      .trim()
+      .toLowerCase() === normalizedCategory;
+  }) || null;
+  const studentIds = classEntry && Array.isArray(classEntry.studentIds)
+    ? classEntry.studentIds.map(function (studentId) {
+        return String(studentId || "").trim();
+      }).filter(Boolean)
+    : [];
+  const classStudents = studentIds.map(function (studentId) {
+    return students.find(function (student) {
+      return String(student && student.id || "").trim() === studentId;
+    }) || null;
+  }).filter(Boolean).sort(function (left, right) {
+    const firstNameComparison = getStudentFirstNameSortValue(left).localeCompare(getStudentFirstNameSortValue(right), "de", { sensitivity: "base" });
+
+    if (firstNameComparison !== 0) {
+      return firstNameComparison;
+    }
+
+    return getStudentLastNameSortValue(left).localeCompare(getStudentLastNameSortValue(right), "de", { sensitivity: "base" });
+  });
+
+  return {
+    isClassCategory: Boolean(classEntry),
+    classEntry: classEntry,
+    classId: String(classEntry && classEntry.id || "").trim(),
+    students: classStudents
+  };
+}
+
+function normalizeTodoDraftAssignments(rawSnapshot) {
+  const classInfo = getTodoCategoryClassInfo(rawSnapshot, activeTodoDraft && activeTodoDraft.category);
+  const availableStudentIds = classInfo.students.map(function (student) {
+    return String(student && student.id || "").trim();
+  });
+
+  if (!activeTodoDraft) {
+    return classInfo;
+  }
+
+  activeTodoDraft.relatedClassId = classInfo.classId;
+  activeTodoDraft.assignedStudentIds = Array.isArray(activeTodoDraft.assignedStudentIds)
+    ? activeTodoDraft.assignedStudentIds.map(function (studentId) {
+        return String(studentId || "").trim();
+      }).filter(function (studentId, index, entries) {
+        return Boolean(studentId)
+          && availableStudentIds.indexOf(studentId) >= 0
+          && entries.indexOf(studentId) === index;
+      })
+    : [];
+
+  if (!classInfo.isClassCategory) {
+    activeTodoDraft.assignedStudentIds = [];
+  }
+
+  activeTodoDraft.assignedStudentStatuses = activeTodoDraft.assignedStudentIds.map(function (studentId) {
+    const existingEntry = Array.isArray(activeTodoDraft.assignedStudentStatuses)
+      ? activeTodoDraft.assignedStudentStatuses.find(function (entry) {
+          return String(entry && entry.studentId || "").trim() === studentId;
+        }) || null
+      : null;
+
+    return {
+      studentId: studentId,
+      done: Boolean(existingEntry && existingEntry.done),
+      completedAt: Boolean(existingEntry && existingEntry.done)
+        ? (String(existingEntry && existingEntry.completedAt || "").trim() || getActiveDateTimeTimestamp())
+        : "",
+      checklistItems: cloneTodoChecklistItems(existingEntry && existingEntry.checklistItems)
+    };
+  });
+
+  return classInfo;
+}
+
+function syncTodoAssignedStudentStatuses(todo, completedAtTimestamp) {
+  const assignedStudentIds = Array.isArray(todo && todo.assignedStudentIds)
+    ? todo.assignedStudentIds.map(function (studentId) {
+        return String(studentId || "").trim();
+      }).filter(Boolean)
+    : [];
+  const existingStatuses = Array.isArray(todo && todo.assignedStudentStatuses) ? todo.assignedStudentStatuses : [];
+  const nextStatuses = assignedStudentIds.map(function (studentId) {
+    const existingEntry = existingStatuses.find(function (entry) {
+      return String(entry && entry.studentId || "").trim() === studentId;
+    }) || null;
+
+      return {
+        studentId: studentId,
+        done: Boolean(existingEntry && existingEntry.done),
+        completedAt: Boolean(existingEntry && existingEntry.done)
+          ? (String(existingEntry && existingEntry.completedAt || "").trim() || String(completedAtTimestamp || "").trim() || getActiveDateTimeTimestamp())
+          : "",
+        checklistItems: cloneTodoChecklistItems(existingEntry && existingEntry.checklistItems)
+      };
+    });
+  const isDone = assignedStudentIds.length > 0
+    ? nextStatuses.every(function (entry) {
+        return Boolean(entry && entry.done);
+      })
+    : Boolean(todo && todo.done);
+
+  if (!todo) {
+    return false;
+  }
+
+  todo.assignedStudentStatuses = nextStatuses;
+  todo.done = isDone;
+  todo.completedAt = isDone
+    ? (String(todo.completedAt || "").trim() || String(completedAtTimestamp || "").trim() || getActiveDateTimeTimestamp())
+    : "";
+
+  return isDone;
+}
+
+function cloneTodoChecklistItems(items) {
+  return Array.isArray(items)
+    ? items.map(function (entry) {
+        return entry && typeof entry === "object"
+          ? Object.assign({}, entry, {
+              followUpSteps: Array.isArray(entry.followUpSteps)
+                ? entry.followUpSteps.map(function (step) {
+                    return step && typeof step === "object" ? Object.assign({}, step) : step;
+                  })
+                : []
+            })
+          : entry;
+      })
+    : [];
+}
+
+function syncChecklistCompletionForItems(checklistItems, completedAtTimestamp) {
+  const completionTimestamp = String(completedAtTimestamp || "").trim() || getActiveDateTimeTimestamp();
+
+  function getNodeSelfDone(nodeId) {
+    const selectedNode = getTodoChecklistNodeById(checklistItems, nodeId);
+
+    return Boolean(selectedNode && selectedNode.entry && selectedNode.entry.done);
+  }
+
+  function getNodeDisplayDone(nodeId) {
+    const selectedNode = getTodoChecklistNodeById(checklistItems, nodeId);
+    const childItems = getTodoChecklistChildItems(checklistItems, nodeId);
+
+    if (!selectedNode) {
+      return false;
+    }
+
+    if (childItems.length > 0) {
+      return childItems.every(function (childItem) {
+        return getAggregateDone(childItem && childItem.id);
+      });
+    }
+
+    return getNodeSelfDone(nodeId);
+  }
+
+  function getAggregateDone(nodeId) {
+    const selectedNode = getTodoChecklistNodeById(checklistItems, nodeId);
+    const followUpSteps = selectedNode && selectedNode.type === "item" && Array.isArray(selectedNode.entry && selectedNode.entry.followUpSteps)
+      ? selectedNode.entry.followUpSteps
+      : [];
+
+    if (!selectedNode) {
+      return false;
+    }
+
+    return getNodeDisplayDone(nodeId) && followUpSteps.every(function (step) {
+      return getAggregateDone(step && step.id);
+    });
+  }
+
+  function syncNode(nodeId) {
+    const selectedNode = getTodoChecklistNodeById(checklistItems, nodeId);
+    const childItems = getTodoChecklistChildItems(checklistItems, nodeId);
+    const followUpSteps = selectedNode && selectedNode.type === "item" && Array.isArray(selectedNode.entry && selectedNode.entry.followUpSteps)
+      ? selectedNode.entry.followUpSteps
+      : [];
+    let childItemsDone = true;
+
+    if (!selectedNode) {
+      return false;
+    }
+
+    childItemsDone = childItems.every(function (childItem) {
+      return syncNode(childItem && childItem.id);
+    });
+    followUpSteps.forEach(function (step) {
+      syncNode(step && step.id);
+    });
+
+    if (childItems.length > 0) {
+      selectedNode.entry.done = childItemsDone;
+    } else {
+      selectedNode.entry.done = Boolean(selectedNode.entry.done);
+    }
+
+    selectedNode.entry.completedAt = selectedNode.entry.done
+      ? (String(selectedNode.entry.completedAt || "").trim() || completionTimestamp)
+      : "";
+
+    return getAggregateDone(nodeId);
+  }
+
+  const topLevelItems = getTodoChecklistChildItems(checklistItems, "");
+
+  return topLevelItems.length > 0
+    ? topLevelItems.every(function (item) {
+        return syncNode(item && item.id);
+      })
+    : false;
 }
 
 function formatDateTimeLabel(dateTimeValue) {
@@ -4096,6 +4410,8 @@ function initializePlanningCurriculumInteractions() {
 
 function setActiveView(viewId) {
   const previousViewId = activeViewId;
+  const shouldPreserveTodoScroll = viewId === "todos";
+  todoViewScrollState = shouldPreserveTodoScroll ? captureTodoViewScrollState() : null;
   activeViewId = viewId;
   const config = registeredViews[viewId];
 
@@ -4163,14 +4479,18 @@ function setActiveView(viewId) {
     view.classList.toggle("is-active", isActive);
     view.hidden = !isActive;
 
-    if (isActive && config && schoolService) {
-      if (typeof config.render === "function" && typeof renderCustomMarkupFn === "function") {
-        renderCustomMarkupFn(view, config.render(schoolService));
-      } else if (typeof renderPanelsFn === "function" && typeof config.buildPanels === "function") {
-        renderPanelsFn(view, config.buildPanels(schoolService));
+      if (isActive && config && schoolService) {
+        if (typeof config.render === "function" && typeof renderCustomMarkupFn === "function") {
+          renderCustomMarkupFn(view, config.render(schoolService));
+        } else if (typeof renderPanelsFn === "function" && typeof config.buildPanels === "function") {
+          renderPanelsFn(view, config.buildPanels(schoolService));
+        }
+
+        if (isActive && viewId === "todos") {
+          restoreTodoViewScrollState();
+        }
       }
-    }
-  });
+    });
 
   if (!config || !schoolService) {
     return;
@@ -4633,6 +4953,260 @@ function getMutableTodosCollection(rawSnapshot) {
 
 function createTodoId() {
   return "todo-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+}
+
+function createTodoChecklistItemId() {
+  return "todo-check-" + Date.now() + "-" + Math.floor(Math.random() * 100000);
+}
+
+function createTodoChecklistStepId() {
+  return "todo-step-" + Date.now() + "-" + Math.floor(Math.random() * 100000);
+}
+
+function formatTodoChecklistText(items) {
+  if (!Array.isArray(items)) {
+    return "";
+  }
+
+  return items.map(function (entry) {
+    if (entry && typeof entry === "object") {
+      const levelValue = Number(entry.level);
+      const normalizedLevel = Number.isFinite(levelValue) && levelValue > 0 ? Math.floor(levelValue) : 1;
+      const titleValue = String(entry.title || "").trim();
+      const followUpLines = Array.isArray(entry.followUpSteps)
+        ? entry.followUpSteps.map(function (step) {
+            const stepObject = step && typeof step === "object"
+              ? step
+              : { title: String(step || "").trim(), done: false, level: normalizedLevel, previousStepId: "" };
+            const stepValue = String(stepObject.title || "").trim();
+            const stepLevel = Number.isFinite(Number(stepObject.level)) && Number(stepObject.level) > 0
+              ? Math.floor(Number(stepObject.level))
+              : normalizedLevel;
+            const stepPrefix = Boolean(stepObject.done)
+              ? "(" + "#".repeat(stepLevel) + ">)"
+              : "#".repeat(stepLevel) + ">";
+            return stepValue ? stepPrefix + " " + stepValue : "";
+          }).filter(Boolean)
+        : [];
+      const itemPrefix = Boolean(entry.done)
+        ? "(" + "#".repeat(normalizedLevel) + ")"
+        : "#".repeat(normalizedLevel);
+
+      if (!titleValue) {
+        return "";
+      }
+
+      return [itemPrefix + " " + titleValue].concat(followUpLines).join("\n");
+    }
+
+    const flatTitle = String(entry || "").trim();
+
+    return flatTitle ? "# " + flatTitle : "";
+  }).filter(Boolean).join("\n");
+}
+
+function parseTodoChecklistText(value) {
+  const sourceText = String(value || "").replace(/\r/g, "");
+  const items = [];
+  const lastItemIdByLevel = {};
+  const lastNodeIdByLevel = {};
+  const lastFollowUpStepIdByLevel = {};
+
+  sourceText.split("\n").forEach(function (rawLine) {
+    const trimmedLine = String(rawLine || "").trim();
+    let match = null;
+
+    if (!trimmedLine) {
+      return;
+    }
+
+    match = trimmedLine.match(/^(?:\((#+)>\)|(#+)>)\s*(.+)$/);
+
+    if (match) {
+      const hashToken = String(match[1] || match[2] || "");
+      const followUpValue = String(match[3] || "").trim();
+      const isDone = Boolean(match[1]);
+      const targetLevel = Math.max(1, hashToken.length);
+      const targetItemId = String(lastItemIdByLevel[targetLevel] || "").trim();
+      const targetItem = items.find(function (entry) {
+        return String(entry && entry.id || "").trim() === targetItemId;
+      }) || null;
+      const previousStepId = String(lastFollowUpStepIdByLevel[targetLevel] || "").trim();
+      let createdStep = null;
+
+      if (followUpValue && targetItem) {
+        createdStep = {
+          id: createTodoChecklistStepId(),
+          title: followUpValue,
+          done: isDone,
+          level: targetLevel,
+          previousStepId: previousStepId
+        };
+        targetItem.followUpSteps.push(createdStep);
+        lastNodeIdByLevel[targetLevel] = createdStep.id;
+        lastFollowUpStepIdByLevel[targetLevel] = createdStep.id;
+      }
+
+      return;
+    }
+
+    match = trimmedLine.match(/^(?:\((#+)\)|(#+))\s*(.+)$/);
+
+    if (match) {
+      const hashToken = String(match[1] || match[2] || "");
+      const titleValue = String(match[3] || "").trim();
+      const level = Math.max(1, hashToken.length);
+      const isDone = Boolean(match[1]);
+      let parentId = "";
+      let parentLevel = level - 1;
+
+      if (!titleValue) {
+        return;
+      }
+
+      while (parentLevel > 0 && !parentId) {
+        parentId = String(lastNodeIdByLevel[parentLevel] || "").trim();
+        parentLevel -= 1;
+      }
+
+      const createdItem = {
+        id: createTodoChecklistItemId(),
+        title: titleValue,
+        level: level,
+        parentId: parentId,
+        done: isDone,
+        followUpSteps: []
+      };
+      items.push(createdItem);
+      lastItemIdByLevel[level] = createdItem.id;
+      lastNodeIdByLevel[level] = createdItem.id;
+      lastFollowUpStepIdByLevel[level] = "";
+
+      Object.keys(lastItemIdByLevel).forEach(function (key) {
+        if (Number(key) > level) {
+          delete lastItemIdByLevel[key];
+        }
+      });
+      Object.keys(lastNodeIdByLevel).forEach(function (key) {
+        if (Number(key) > level) {
+          delete lastNodeIdByLevel[key];
+        }
+      });
+      Object.keys(lastFollowUpStepIdByLevel).forEach(function (key) {
+        if (Number(key) > level) {
+          delete lastFollowUpStepIdByLevel[key];
+        }
+      });
+      return;
+    }
+  });
+
+  return items;
+}
+
+function getTodoChecklistChildItems(items, parentId) {
+  return (items || []).filter(function (entry) {
+    return String(entry && entry.parentId || "").trim() === String(parentId || "").trim();
+  });
+}
+
+function getTodoChecklistNodeById(items, nodeId) {
+  const normalizedNodeId = String(nodeId || "").trim();
+
+  if (!normalizedNodeId) {
+    return null;
+  }
+
+  return (items || []).reduce(function (foundEntry, entry) {
+    if (foundEntry) {
+      return foundEntry;
+    }
+
+    if (String(entry && entry.id || "").trim() === normalizedNodeId) {
+      return {
+        type: "item",
+        entry: entry,
+        ownerItem: entry
+      };
+    }
+
+    if (Array.isArray(entry && entry.followUpSteps)) {
+      const foundStep = entry.followUpSteps.find(function (step) {
+        return String(step && step.id || "").trim() === normalizedNodeId;
+      }) || null;
+
+      if (foundStep) {
+        return {
+          type: "step",
+          entry: foundStep,
+          ownerItem: entry
+        };
+      }
+    }
+
+    return null;
+  }, null);
+}
+
+function isTodoChecklistItemManuallyToggleable(items, itemId) {
+  const selectedNode = getTodoChecklistNodeById(items, itemId);
+  const childItems = getTodoChecklistChildItems(items, itemId);
+
+  return Boolean(selectedNode) && childItems.length === 0;
+}
+
+function syncChecklistTodoCompletion(todo, completedAtTimestamp) {
+  const checklistItems = Array.isArray(todo && todo.checklistItems) ? todo.checklistItems : [];
+  const completionTimestamp = String(completedAtTimestamp || "").trim();
+  const assignedStudentIds = Array.isArray(todo && todo.assignedStudentIds)
+    ? todo.assignedStudentIds.map(function (studentId) {
+        return String(studentId || "").trim();
+      }).filter(Boolean)
+    : [];
+
+  if (!todo || String(todo.type || "").trim().toLowerCase() !== "checkliste") {
+    return false;
+  }
+
+  if (assignedStudentIds.length > 0) {
+    const existingStatuses = Array.isArray(todo.assignedStudentStatuses) ? todo.assignedStudentStatuses : [];
+    const nextStatuses = assignedStudentIds.map(function (studentId) {
+      const existingEntry = existingStatuses.find(function (entry) {
+        return String(entry && entry.studentId || "").trim() === studentId;
+      }) || null;
+      const studentChecklistItems = cloneTodoChecklistItems(existingEntry && existingEntry.checklistItems);
+      const studentDone = syncChecklistCompletionForItems(studentChecklistItems, completionTimestamp);
+
+      return {
+        studentId: studentId,
+        done: studentDone,
+        completedAt: studentDone
+          ? (String(existingEntry && existingEntry.completedAt || "").trim() || completionTimestamp)
+          : "",
+        checklistItems: studentChecklistItems
+      };
+    });
+    const isTodoDone = nextStatuses.length > 0 && nextStatuses.every(function (entry) {
+      return Boolean(entry && entry.done);
+    });
+
+    todo.assignedStudentStatuses = nextStatuses;
+    todo.done = isTodoDone;
+    todo.completedAt = isTodoDone
+      ? (String(todo.completedAt || "").trim() || completionTimestamp)
+      : "";
+
+    return isTodoDone;
+  }
+
+  const isTodoDone = syncChecklistCompletionForItems(checklistItems, completionTimestamp);
+
+  todo.done = isTodoDone;
+  todo.completedAt = isTodoDone
+    ? (String(todo.completedAt || "").trim() || completionTimestamp)
+    : "";
+
+  return isTodoDone;
 }
 
 function getRelevantUnterrichtLesson(activeClass, referenceDate) {
@@ -9040,6 +9614,9 @@ window.UnterrichtsassistentApp.getTodoViewMode = function () {
 window.UnterrichtsassistentApp.getTodoSortMode = function () {
   return todoSortMode;
 };
+window.UnterrichtsassistentApp.isTodoStudentAssignmentOpen = function () {
+  return todoStudentAssignmentOpen;
+};
 window.UnterrichtsassistentApp.getActiveDateTimeParts = function () {
   return Object.assign({}, getActiveDateTimeParts());
 };
@@ -9906,6 +10483,9 @@ window.UnterrichtsassistentApp.selectPlanningCategorySuggestion = function (valu
   }
 
   input.value = String(value || "");
+  if (inputId === "todoCategoryInput" && window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.updateTodoDraftCategory === "function") {
+    window.UnterrichtsassistentApp.updateTodoDraftCategory(input.value);
+  }
   closePlanningCategorySuggestions();
   window.setTimeout(function () {
     if (typeof input.focus === "function") {
@@ -10185,37 +10765,187 @@ window.UnterrichtsassistentApp.openTodoModal = function (todoId, presetCategory,
         return String(todoItem && todoItem.id || "").trim() === normalizedTodoId;
       }) || null
     : null;
+  const existingChecklistItems = existingTodo && Array.isArray(existingTodo.checklistItems)
+    ? existingTodo.checklistItems.map(function (entry) {
+          if (entry && typeof entry === "object") {
+            return {
+              id: String(entry.id || "").trim(),
+              title: String(entry.title || "").trim(),
+              level: Number(entry.level) > 0 ? Math.floor(Number(entry.level)) : 1,
+              parentId: String(entry.parentId || "").trim(),
+              done: Boolean(entry.done),
+              completedAt: Boolean(entry.done) ? String(entry.completedAt || "").trim() : "",
+              followUpSteps: Array.isArray(entry.followUpSteps)
+                ? entry.followUpSteps.map(function (step) {
+                    if (step && typeof step === "object") {
+                      return {
+                        id: String(step.id || "").trim(),
+                        title: String(step.title || "").trim(),
+                        done: Boolean(step.done),
+                        completedAt: Boolean(step.done) ? String(step.completedAt || "").trim() : "",
+                        level: Number(step.level) > 0 ? Math.floor(Number(step.level)) : 1,
+                        previousStepId: String(step.previousStepId || "").trim()
+                      };
+                    }
 
-  activeTodoDraft = existingTodo
-    ? {
-        id: String(existingTodo.id || "").trim(),
-        title: String(existingTodo.title || "").trim(),
-        description: String(existingTodo.description || "").trim(),
-        category: String(existingTodo.category || "").trim(),
-        dueDate: String(existingTodo.dueDate || "").slice(0, 10),
-        priority: ["niedrig", "standard", "hoch"].indexOf(String(existingTodo.priority || "").trim().toLowerCase()) >= 0
-          ? String(existingTodo.priority || "").trim().toLowerCase()
-          : "niedrig",
+                    return {
+                      id: "",
+                      title: String(step || "").trim(),
+                      done: false,
+                      completedAt: "",
+                      level: 1,
+                      previousStepId: ""
+                    };
+                }).filter(function (step) {
+                  return Boolean(step && step.title);
+                })
+              : []
+          };
+        }
+
+          return {
+            id: "",
+            title: String(entry || "").trim(),
+            level: 1,
+            parentId: "",
+            done: false,
+            completedAt: "",
+            followUpSteps: []
+          };
+      }).filter(function (entry) {
+        return Boolean(entry.title);
+      })
+    : [];
+
+    activeTodoDraft = existingTodo
+      ? {
+          id: String(existingTodo.id || "").trim(),
+          title: String(existingTodo.title || "").trim(),
+          description: String(existingTodo.description || "").trim(),
+          category: String(existingTodo.category || "").trim(),
+          dueDate: String(existingTodo.dueDate || "").slice(0, 10),
+          relatedClassId: String(existingTodo.relatedClassId || "").trim(),
+          assignedStudentIds: Array.isArray(existingTodo.assignedStudentIds)
+            ? existingTodo.assignedStudentIds.map(function (studentId) {
+                return String(studentId || "").trim();
+              }).filter(Boolean)
+            : [],
+          assignedStudentStatuses: Array.isArray(existingTodo.assignedStudentStatuses)
+            ? existingTodo.assignedStudentStatuses.map(function (entry) {
+                return entry && typeof entry === "object"
+                    ? {
+                        studentId: String(entry.studentId || "").trim(),
+                        done: Boolean(entry.done),
+                        completedAt: Boolean(entry.done) ? String(entry.completedAt || "").trim() : "",
+                        checklistItems: cloneTodoChecklistItems(entry.checklistItems)
+                      }
+                  : null;
+              }).filter(Boolean)
+            : [],
+          priority: ["niedrig", "standard", "hoch"].indexOf(String(existingTodo.priority || "").trim().toLowerCase()) >= 0
+            ? String(existingTodo.priority || "").trim().toLowerCase()
+            : "niedrig",
+        type: ["standard", "checkliste", "step-checkliste"].indexOf(String(existingTodo.type || "").trim().toLowerCase()) >= 0
+          ? String(existingTodo.type || "").trim().toLowerCase()
+          : "standard",
+        checklistItems: existingChecklistItems.slice(),
+        checklistText: formatTodoChecklistText(existingChecklistItems),
         done: Boolean(existingTodo.done),
         completedAt: Boolean(existingTodo.done) ? String(existingTodo.completedAt || "").trim() : ""
       }
-    : {
-        id: "",
-        title: "",
-        description: "",
-        category: normalizedPresetCategory,
-        dueDate: "",
-        priority: normalizedPresetPriority,
+      : {
+          id: "",
+          title: "",
+          description: "",
+          category: normalizedPresetCategory,
+          dueDate: "",
+          relatedClassId: "",
+          assignedStudentIds: [],
+          assignedStudentStatuses: [],
+          priority: normalizedPresetPriority,
+          type: "standard",
+          checklistItems: [],
+        checklistText: "",
         done: false,
         completedAt: ""
-      };
+        };
 
-  closePlanningCategorySuggestions();
-  setActiveView("todos");
+    todoStudentAssignmentOpen = false;
+    normalizeTodoDraftAssignments(currentRawSnapshot);
+    closePlanningCategorySuggestions();
+    setActiveView("todos");
+    return false;
+  };
+window.UnterrichtsassistentApp.setTodoDraftType = function (nextType) {
+  if (!activeTodoDraft) {
+    return false;
+  }
+
+  const titleInput = document.getElementById("todoTitleInput");
+  const descriptionInput = document.getElementById("todoDescriptionInput");
+  const categoryInput = document.getElementById("todoCategoryInput");
+  const dueDateInput = document.getElementById("todoDueDateInput");
+  const priorityInput = document.getElementById("todoPriorityInput");
+  const checklistInput = document.getElementById("todoChecklistInput");
+  const doneInput = document.getElementById("todoDoneInput");
+
+  activeTodoDraft.title = String(titleInput && titleInput.value || activeTodoDraft.title || "").trim();
+  activeTodoDraft.description = String(descriptionInput && descriptionInput.value || activeTodoDraft.description || "").trim();
+  activeTodoDraft.category = normalizePlanningEventCategoryValue(categoryInput && categoryInput.value || activeTodoDraft.category || "");
+  normalizeTodoDraftAssignments(schoolService ? serializeSnapshot(schoolService.snapshot) : null);
+  activeTodoDraft.dueDate = String(dueDateInput && dueDateInput.value || activeTodoDraft.dueDate || "").slice(0, 10);
+  activeTodoDraft.priority = ["niedrig", "standard", "hoch"].indexOf(String(priorityInput && priorityInput.value || activeTodoDraft.priority || "").trim().toLowerCase()) >= 0
+    ? String(priorityInput && priorityInput.value || activeTodoDraft.priority || "").trim().toLowerCase()
+    : "niedrig";
+  activeTodoDraft.done = Boolean(doneInput && doneInput.checked || activeTodoDraft.done);
+  activeTodoDraft.checklistText = String(checklistInput && checklistInput.value || activeTodoDraft.checklistText || "");
+
+  activeTodoDraft.type = ["standard", "checkliste", "step-checkliste"].indexOf(String(nextType || "").trim().toLowerCase()) >= 0
+    ? String(nextType || "").trim().toLowerCase()
+    : "standard";
+
+  if (activeViewId === "todos") {
+    setActiveView("todos");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.updateTodoDraftCategory = function (nextValue, shouldRefreshView) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const previousClassId = String(activeTodoDraft && activeTodoDraft.relatedClassId || "").trim();
+  const previousCategory = String(activeTodoDraft && activeTodoDraft.category || "").trim();
+
+  if (!activeTodoDraft) {
+    return false;
+  }
+
+  activeTodoDraft.category = normalizePlanningEventCategoryValue(nextValue || activeTodoDraft.category || "");
+  normalizeTodoDraftAssignments(currentRawSnapshot);
+
+  if (!String(activeTodoDraft.relatedClassId || "").trim()) {
+    todoStudentAssignmentOpen = false;
+  }
+
+  if (shouldRefreshView !== false && activeViewId === "todos" && (
+    previousClassId !== String(activeTodoDraft.relatedClassId || "").trim()
+    || previousCategory !== String(activeTodoDraft.category || "").trim()
+  )) {
+    setActiveView("todos");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.updateTodoChecklistText = function (nextValue) {
+  if (!activeTodoDraft) {
+    return false;
+  }
+
+  activeTodoDraft.checklistText = String(nextValue || "");
   return false;
 };
 window.UnterrichtsassistentApp.closeTodoModal = function () {
   activeTodoDraft = null;
+  todoStudentAssignmentOpen = false;
   closePlanningCategorySuggestions();
 
   if (activeViewId === "todos") {
@@ -10265,6 +10995,77 @@ window.UnterrichtsassistentApp.setTodoSortMode = function (nextMode) {
 };
 window.UnterrichtsassistentApp.toggleTodoCategoryFilterOpen = function () {
   todoCategoryFilterOpen = !todoCategoryFilterOpen;
+
+  if (activeViewId === "todos") {
+    setActiveView("todos");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.toggleTodoStudentAssignmentOpen = function () {
+  if (!activeTodoDraft || !String(activeTodoDraft.relatedClassId || "").trim()) {
+    return false;
+  }
+
+  todoStudentAssignmentOpen = !todoStudentAssignmentOpen;
+
+  if (activeViewId === "todos") {
+    setActiveView("todos");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.selectAllTodoAssignedStudents = function () {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const classInfo = normalizeTodoDraftAssignments(currentRawSnapshot);
+
+  if (!activeTodoDraft || !classInfo.isClassCategory) {
+    return false;
+  }
+
+  activeTodoDraft.assignedStudentIds = classInfo.students.map(function (student) {
+    return String(student && student.id || "").trim();
+  }).filter(Boolean);
+  normalizeTodoDraftAssignments(currentRawSnapshot);
+
+  if (activeViewId === "todos") {
+    setActiveView("todos");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.clearAllTodoAssignedStudents = function () {
+  if (!activeTodoDraft) {
+    return false;
+  }
+
+  activeTodoDraft.assignedStudentIds = [];
+
+  if (activeViewId === "todos") {
+    setActiveView("todos");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.toggleTodoAssignedStudent = function (studentId) {
+  const normalizedStudentId = String(studentId || "").trim();
+  const selectedIds = Array.isArray(activeTodoDraft && activeTodoDraft.assignedStudentIds)
+    ? activeTodoDraft.assignedStudentIds.slice()
+    : [];
+  const existingIndex = selectedIds.indexOf(normalizedStudentId);
+
+  if (!activeTodoDraft || !normalizedStudentId || !String(activeTodoDraft.relatedClassId || "").trim()) {
+    return false;
+  }
+
+  if (existingIndex >= 0) {
+    selectedIds.splice(existingIndex, 1);
+  } else {
+    selectedIds.push(normalizedStudentId);
+  }
+
+  activeTodoDraft.assignedStudentIds = selectedIds;
+  normalizeTodoDraftAssignments(schoolService ? serializeSnapshot(schoolService.snapshot) : null);
 
   if (activeViewId === "todos") {
     setActiveView("todos");
@@ -10384,6 +11185,41 @@ window.UnterrichtsassistentApp.toggleTodoDone = function (todoId, isDone) {
     return false;
   }
 
+  if (String(selectedTodo.type || "").trim().toLowerCase() === "checkliste") {
+    syncChecklistTodoCompletion(selectedTodo, getActiveDateTimeTimestamp());
+
+    if (activeTodoDraft && String(activeTodoDraft.id || "").trim() === normalizedTodoId) {
+      activeTodoDraft.done = Boolean(selectedTodo.done);
+      activeTodoDraft.completedAt = String(selectedTodo.completedAt || "").trim();
+    }
+
+    if (activeViewId === "todos") {
+      setActiveView("todos");
+    }
+
+    return false;
+  }
+
+  if (Array.isArray(selectedTodo.assignedStudentIds) && selectedTodo.assignedStudentIds.length > 0) {
+    syncTodoAssignedStudentStatuses(selectedTodo, getActiveDateTimeTimestamp());
+
+    if (activeTodoDraft && String(activeTodoDraft.id || "").trim() === normalizedTodoId) {
+      activeTodoDraft.done = Boolean(selectedTodo.done);
+      activeTodoDraft.completedAt = String(selectedTodo.completedAt || "").trim();
+      activeTodoDraft.assignedStudentStatuses = Array.isArray(selectedTodo.assignedStudentStatuses)
+        ? selectedTodo.assignedStudentStatuses.map(function (entry) {
+            return entry && typeof entry === "object" ? Object.assign({}, entry) : entry;
+          })
+        : [];
+    }
+
+    if (activeViewId === "todos") {
+      setActiveView("todos");
+    }
+
+    return false;
+  }
+
   selectedTodo.done = Boolean(isDone);
   selectedTodo.completedAt = selectedTodo.done
     ? (String(selectedTodo.completedAt || "").trim() || getActiveDateTimeTimestamp())
@@ -10397,6 +11233,215 @@ window.UnterrichtsassistentApp.toggleTodoDone = function (todoId, isDone) {
   saveAndRefreshSnapshot(currentRawSnapshot, "todos");
   return false;
 };
+window.UnterrichtsassistentApp.toggleTodoAssignedStudentDone = function (todoId, studentId, isDone) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const normalizedTodoId = String(todoId || "").trim();
+  const normalizedStudentId = String(studentId || "").trim();
+  const todos = getMutableTodosCollection(currentRawSnapshot);
+  let selectedTodo = todos.find(function (todoItem) {
+    return String(todoItem && todoItem.id || "").trim() === normalizedTodoId;
+  }) || null;
+  let assignedStudentStatuses = [];
+  let selectedStatus = null;
+
+  if (!currentRawSnapshot || !selectedTodo || !normalizedStudentId) {
+    return false;
+  }
+
+  syncTodoAssignedStudentStatuses(selectedTodo, getActiveDateTimeTimestamp());
+  assignedStudentStatuses = Array.isArray(selectedTodo.assignedStudentStatuses)
+    ? selectedTodo.assignedStudentStatuses
+    : [];
+  selectedStatus = assignedStudentStatuses.find(function (entry) {
+    return String(entry && entry.studentId || "").trim() === normalizedStudentId;
+  }) || null;
+
+  if (!selectedStatus) {
+    return false;
+  }
+
+  selectedStatus.done = Boolean(isDone);
+  syncTodoAssignedStudentStatuses(selectedTodo, getActiveDateTimeTimestamp());
+
+  if (activeTodoDraft && String(activeTodoDraft.id || "").trim() === normalizedTodoId) {
+    activeTodoDraft.done = Boolean(selectedTodo.done);
+    activeTodoDraft.completedAt = String(selectedTodo.completedAt || "").trim();
+    activeTodoDraft.assignedStudentStatuses = assignedStudentStatuses.map(function (entry) {
+      return entry && typeof entry === "object" ? Object.assign({}, entry) : entry;
+    });
+  }
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "todos");
+  return false;
+};
+window.UnterrichtsassistentApp.toggleTodoChecklistItemDone = function (todoId, checklistItemId, isDone) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const normalizedTodoId = String(todoId || "").trim();
+  const normalizedChecklistItemId = String(checklistItemId || "").trim();
+  const normalizedStudentId = String(arguments.length > 3 ? arguments[3] || "" : "").trim();
+  const todos = getMutableTodosCollection(currentRawSnapshot);
+  const selectedTodo = todos.find(function (todoItem) {
+    return String(todoItem && todoItem.id || "").trim() === normalizedTodoId;
+  }) || null;
+  const studentStatus = normalizedStudentId && Array.isArray(selectedTodo && selectedTodo.assignedStudentStatuses)
+    ? selectedTodo.assignedStudentStatuses.find(function (entry) {
+        return String(entry && entry.studentId || "").trim() === normalizedStudentId;
+      }) || null
+    : null;
+  const checklistItems = studentStatus && Array.isArray(studentStatus.checklistItems)
+    ? studentStatus.checklistItems
+    : (Array.isArray(selectedTodo && selectedTodo.checklistItems) ? selectedTodo.checklistItems : []);
+  const selectedItem = checklistItems.find(function (entry) {
+    return String(entry && entry.id || "").trim() === normalizedChecklistItemId;
+  }) || null;
+  const completionTimestamp = getActiveDateTimeTimestamp();
+
+  if (!currentRawSnapshot || !selectedTodo || !selectedItem) {
+    return false;
+  }
+
+  if (!isTodoChecklistItemManuallyToggleable(checklistItems, normalizedChecklistItemId)) {
+    syncChecklistTodoCompletion(selectedTodo, completionTimestamp);
+
+    if (activeTodoDraft && String(activeTodoDraft.id || "").trim() === normalizedTodoId) {
+      activeTodoDraft.checklistItems = checklistItems.map(function (entry) {
+        return Object.assign({}, entry, {
+          followUpSteps: Array.isArray(entry.followUpSteps) ? entry.followUpSteps.map(function (step) {
+            return step && typeof step === "object" ? Object.assign({}, step) : step;
+          }) : []
+        });
+      });
+      activeTodoDraft.assignedStudentStatuses = Array.isArray(selectedTodo.assignedStudentStatuses)
+        ? selectedTodo.assignedStudentStatuses.map(function (entry) {
+            return entry && typeof entry === "object"
+              ? Object.assign({}, entry, { checklistItems: cloneTodoChecklistItems(entry.checklistItems) })
+              : entry;
+          })
+        : [];
+      activeTodoDraft.checklistText = formatTodoChecklistText(activeTodoDraft.checklistItems);
+      activeTodoDraft.done = Boolean(selectedTodo.done);
+      activeTodoDraft.completedAt = String(selectedTodo.completedAt || "").trim();
+    }
+
+    if (activeViewId === "todos") {
+      setActiveView("todos");
+    }
+
+    return false;
+  }
+
+  selectedItem.done = Boolean(isDone);
+  syncChecklistTodoCompletion(selectedTodo, completionTimestamp);
+
+  if (activeTodoDraft && String(activeTodoDraft.id || "").trim() === normalizedTodoId) {
+    activeTodoDraft.checklistItems = checklistItems.map(function (entry) {
+      return Object.assign({}, entry, {
+        followUpSteps: Array.isArray(entry.followUpSteps) ? entry.followUpSteps.map(function (step) {
+          return step && typeof step === "object" ? Object.assign({}, step) : step;
+        }) : []
+      });
+    });
+    activeTodoDraft.assignedStudentStatuses = Array.isArray(selectedTodo.assignedStudentStatuses)
+      ? selectedTodo.assignedStudentStatuses.map(function (entry) {
+          return entry && typeof entry === "object"
+            ? Object.assign({}, entry, { checklistItems: cloneTodoChecklistItems(entry.checklistItems) })
+            : entry;
+        })
+      : [];
+    activeTodoDraft.checklistText = formatTodoChecklistText(activeTodoDraft.checklistItems);
+    activeTodoDraft.done = Boolean(selectedTodo.done);
+    activeTodoDraft.completedAt = String(selectedTodo.completedAt || "").trim();
+  }
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "todos");
+  return false;
+};
+window.UnterrichtsassistentApp.toggleTodoChecklistFollowUpDone = function (todoId, checklistItemId, followUpIndex, isDone) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const normalizedTodoId = String(todoId || "").trim();
+  const normalizedChecklistItemId = String(checklistItemId || "").trim();
+  const normalizedStudentId = String(arguments.length > 4 ? arguments[4] || "" : "").trim();
+  const followUpPosition = Number(followUpIndex);
+  const todos = getMutableTodosCollection(currentRawSnapshot);
+  const selectedTodo = todos.find(function (todoItem) {
+    return String(todoItem && todoItem.id || "").trim() === normalizedTodoId;
+  }) || null;
+  const studentStatus = normalizedStudentId && Array.isArray(selectedTodo && selectedTodo.assignedStudentStatuses)
+    ? selectedTodo.assignedStudentStatuses.find(function (entry) {
+        return String(entry && entry.studentId || "").trim() === normalizedStudentId;
+      }) || null
+    : null;
+  const checklistItems = studentStatus && Array.isArray(studentStatus.checklistItems)
+    ? studentStatus.checklistItems
+    : (Array.isArray(selectedTodo && selectedTodo.checklistItems) ? selectedTodo.checklistItems : []);
+  const selectedItem = checklistItems.find(function (entry) {
+    return String(entry && entry.id || "").trim() === normalizedChecklistItemId;
+  }) || null;
+  const followUpSteps = Array.isArray(selectedItem && selectedItem.followUpSteps) ? selectedItem.followUpSteps : [];
+  const selectedStep = Number.isInteger(followUpPosition) && followUpPosition >= 0
+    ? followUpSteps[followUpPosition] || null
+    : null;
+
+  if (!currentRawSnapshot || !selectedTodo || !selectedItem || !selectedStep || typeof selectedStep !== "object") {
+    return false;
+  }
+
+  if (!isTodoChecklistItemManuallyToggleable(checklistItems, String(selectedStep.id || "").trim())) {
+    syncChecklistTodoCompletion(selectedTodo, getActiveDateTimeTimestamp());
+
+    if (activeTodoDraft && String(activeTodoDraft.id || "").trim() === normalizedTodoId) {
+      activeTodoDraft.checklistItems = checklistItems.map(function (entry) {
+        return Object.assign({}, entry, {
+          followUpSteps: Array.isArray(entry.followUpSteps) ? entry.followUpSteps.map(function (step) {
+            return step && typeof step === "object" ? Object.assign({}, step) : step;
+          }) : []
+        });
+      });
+      activeTodoDraft.assignedStudentStatuses = Array.isArray(selectedTodo.assignedStudentStatuses)
+        ? selectedTodo.assignedStudentStatuses.map(function (entry) {
+            return entry && typeof entry === "object"
+              ? Object.assign({}, entry, { checklistItems: cloneTodoChecklistItems(entry.checklistItems) })
+              : entry;
+          })
+        : [];
+      activeTodoDraft.checklistText = formatTodoChecklistText(activeTodoDraft.checklistItems);
+      activeTodoDraft.done = Boolean(selectedTodo.done);
+      activeTodoDraft.completedAt = String(selectedTodo.completedAt || "").trim();
+    }
+
+    if (activeViewId === "todos") {
+      setActiveView("todos");
+    }
+
+    return false;
+  }
+
+  selectedStep.done = Boolean(isDone);
+  syncChecklistTodoCompletion(selectedTodo, getActiveDateTimeTimestamp());
+
+  if (activeTodoDraft && String(activeTodoDraft.id || "").trim() === normalizedTodoId) {
+    activeTodoDraft.checklistItems = checklistItems.map(function (entry) {
+      return Object.assign({}, entry, {
+        followUpSteps: Array.isArray(entry.followUpSteps) ? entry.followUpSteps.map(function (step) {
+          return step && typeof step === "object" ? Object.assign({}, step) : step;
+        }) : []
+      });
+    });
+    activeTodoDraft.assignedStudentStatuses = Array.isArray(selectedTodo.assignedStudentStatuses)
+      ? selectedTodo.assignedStudentStatuses.map(function (entry) {
+          return entry && typeof entry === "object"
+            ? Object.assign({}, entry, { checklistItems: cloneTodoChecklistItems(entry.checklistItems) })
+            : entry;
+        })
+      : [];
+    activeTodoDraft.checklistText = formatTodoChecklistText(activeTodoDraft.checklistItems);
+    activeTodoDraft.done = Boolean(selectedTodo.done);
+    activeTodoDraft.completedAt = String(selectedTodo.completedAt || "").trim();
+  }
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "todos");
+  return false;
+};
 window.UnterrichtsassistentApp.submitTodoModal = function (event) {
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
   const todos = getMutableTodosCollection(currentRawSnapshot);
@@ -10405,14 +11450,56 @@ window.UnterrichtsassistentApp.submitTodoModal = function (event) {
   const categoryInput = document.getElementById("todoCategoryInput");
   const dueDateInput = document.getElementById("todoDueDateInput");
   const priorityInput = document.getElementById("todoPriorityInput");
+  const typeInput = document.getElementById("todoTypeInput");
+  const checklistInput = document.getElementById("todoChecklistInput");
   const doneInput = document.getElementById("todoDoneInput");
   const titleValue = String(titleInput && titleInput.value || "").trim();
   const descriptionValue = String(descriptionInput && descriptionInput.value || "").trim();
   const categoryValue = normalizePlanningEventCategoryValue(categoryInput && categoryInput.value);
+  const classInfo = getTodoCategoryClassInfo(currentRawSnapshot, categoryValue);
+  const relatedClassIdValue = String(classInfo.classId || "").trim();
+  const assignedStudentIdsValue = Array.isArray(activeTodoDraft && activeTodoDraft.assignedStudentIds)
+    ? activeTodoDraft.assignedStudentIds.map(function (studentId) {
+        return String(studentId || "").trim();
+      }).filter(function (studentId, index, entries) {
+        return Boolean(studentId)
+          && classInfo.students.some(function (student) {
+            return String(student && student.id || "").trim() === studentId;
+          })
+          && entries.indexOf(studentId) === index;
+      })
+    : [];
   const dueDateValue = String(dueDateInput && dueDateInput.value || "").slice(0, 10);
   const priorityValue = ["niedrig", "standard", "hoch"].indexOf(String(priorityInput && priorityInput.value || "").trim().toLowerCase()) >= 0
     ? String(priorityInput.value || "").trim().toLowerCase()
     : "niedrig";
+  const typeValue = ["standard", "checkliste", "step-checkliste"].indexOf(String(typeInput && typeInput.value || "").trim().toLowerCase()) >= 0
+    ? String(typeInput.value || "").trim().toLowerCase()
+    : "standard";
+  const checklistTextValue = String(checklistInput && checklistInput.value || activeTodoDraft && activeTodoDraft.checklistText || "");
+  const checklistItemsValue = typeValue === "checkliste"
+    ? parseTodoChecklistText(checklistTextValue)
+    : [];
+  const assignedStudentStatusesValue = assignedStudentIdsValue.map(function (studentId) {
+    const existingEntry = Array.isArray(activeTodoDraft && activeTodoDraft.assignedStudentStatuses)
+      ? activeTodoDraft.assignedStudentStatuses.find(function (entry) {
+          return String(entry && entry.studentId || "").trim() === studentId;
+        }) || null
+      : null;
+
+    return {
+      studentId: studentId,
+      done: Boolean(existingEntry && existingEntry.done),
+      completedAt: Boolean(existingEntry && existingEntry.done)
+        ? (String(existingEntry && existingEntry.completedAt || "").trim() || getActiveDateTimeTimestamp())
+        : "",
+      checklistItems: typeValue === "checkliste"
+        ? cloneTodoChecklistItems(existingEntry && Array.isArray(existingEntry.checklistItems) && existingEntry.checklistItems.length
+          ? existingEntry.checklistItems
+          : checklistItemsValue)
+        : []
+    };
+  });
   const doneValue = Boolean(doneInput && doneInput.checked);
   const completedAtValue = doneValue
     ? String(activeTodoDraft && activeTodoDraft.completedAt || "").trim() || getActiveDateTimeTimestamp()
@@ -10437,10 +11524,20 @@ window.UnterrichtsassistentApp.submitTodoModal = function (event) {
     existingTodo.title = titleValue;
     existingTodo.description = descriptionValue;
     existingTodo.category = categoryValue;
+    existingTodo.relatedClassId = relatedClassIdValue;
+    existingTodo.assignedStudentIds = assignedStudentIdsValue.slice();
+    existingTodo.assignedStudentStatuses = assignedStudentStatusesValue.slice();
     existingTodo.dueDate = dueDateValue;
     existingTodo.priority = priorityValue;
+    existingTodo.type = typeValue;
+    existingTodo.checklistItems = checklistItemsValue.slice();
     existingTodo.done = doneValue;
     existingTodo.completedAt = completedAtValue;
+    if (typeValue === "checkliste") {
+      syncChecklistTodoCompletion(existingTodo, getActiveDateTimeTimestamp());
+    } else if (assignedStudentIdsValue.length > 0) {
+      syncTodoAssignedStudentStatuses(existingTodo, getActiveDateTimeTimestamp());
+    }
   } else {
     todos.push({
       id: createTodoId(),
@@ -10448,11 +11545,20 @@ window.UnterrichtsassistentApp.submitTodoModal = function (event) {
       description: descriptionValue,
       category: categoryValue,
       dueDate: dueDateValue,
-      relatedClassId: "",
+      relatedClassId: relatedClassIdValue,
+      assignedStudentIds: assignedStudentIdsValue.slice(),
+      assignedStudentStatuses: assignedStudentStatusesValue.slice(),
       priority: priorityValue,
+      type: typeValue,
+      checklistItems: checklistItemsValue.slice(),
       done: doneValue,
       completedAt: completedAtValue
     });
+    if (typeValue === "checkliste") {
+      syncChecklistTodoCompletion(todos[todos.length - 1], getActiveDateTimeTimestamp());
+    } else if (assignedStudentIdsValue.length > 0) {
+      syncTodoAssignedStudentStatuses(todos[todos.length - 1], getActiveDateTimeTimestamp());
+    }
   }
 
   if (categoryValue) {

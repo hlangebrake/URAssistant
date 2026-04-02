@@ -278,16 +278,118 @@ class WarningRecord {
 }
 
 class TodoItem {
-  constructor({ id, title = "", description = "", category = "", dueDate = "", relatedClassId = "", priority = "niedrig", done = false, completedAt = "" }) {
+  constructor({ id, title = "", description = "", category = "", dueDate = "", relatedClassId = "", assignedStudentIds = [], assignedStudentStatuses = [], priority = "niedrig", type = "standard", checklistItems = [], done = false, completedAt = "" }) {
     this.id = id;
     this.title = String(title || "").trim();
     this.description = String(description || "").trim();
     this.category = String(category || "").trim();
     this.dueDate = String(dueDate || "").slice(0, 10);
     this.relatedClassId = String(relatedClassId || "").trim();
+    this.assignedStudentIds = Array.isArray(assignedStudentIds)
+      ? assignedStudentIds.map(function (studentId) {
+          return String(studentId || "").trim();
+        }).filter(Boolean)
+      : [];
+    this.assignedStudentStatuses = Array.isArray(assignedStudentStatuses)
+        ? assignedStudentStatuses.map(function (entry) {
+            const source = entry && typeof entry === "object" ? entry : {};
+              return {
+                studentId: String(source.studentId || "").trim(),
+                done: Boolean(source.done),
+                completedAt: Boolean(source.done) ? String(source.completedAt || "").trim() : "",
+                checklistItems: Array.isArray(source.checklistItems)
+                  ? source.checklistItems.map(function (itemEntry) {
+                      const levelValue = Number(itemEntry && itemEntry.level);
+                      return {
+                        id: String(itemEntry && itemEntry.id || "").trim(),
+                        title: String(itemEntry && itemEntry.title || "").trim(),
+                        level: Number.isFinite(levelValue) && levelValue > 0 ? Math.floor(levelValue) : 1,
+                        parentId: String(itemEntry && itemEntry.parentId || "").trim(),
+                        done: Boolean(itemEntry && itemEntry.done),
+                        completedAt: Boolean(itemEntry && itemEntry.done) ? String(itemEntry && itemEntry.completedAt || "").trim() : "",
+                        followUpSteps: Array.isArray(itemEntry && itemEntry.followUpSteps)
+                          ? itemEntry.followUpSteps.map(function (step) {
+                              return {
+                                id: String(step && step.id || "").trim(),
+                                title: String(step && step.title || "").trim(),
+                                done: Boolean(step && step.done),
+                                completedAt: Boolean(step && step.done) ? String(step && step.completedAt || "").trim() : "",
+                                level: Number.isFinite(Number(step && step.level)) && Number(step && step.level) > 0 ? Math.floor(Number(step.level)) : 1,
+                                previousStepId: String(step && step.previousStepId || "").trim()
+                              };
+                          }).filter(function (step) {
+                            return Boolean(step && step.title);
+                          })
+                        : []
+                    };
+                  }).filter(function (itemEntry) {
+                    return Boolean(itemEntry && itemEntry.title);
+                  })
+                : []
+            };
+          }).filter(function (entry) {
+            return Boolean(entry.studentId);
+          })
+      : [];
     this.priority = ["niedrig", "standard", "hoch"].indexOf(String(priority || "").trim().toLowerCase()) >= 0
       ? String(priority || "").trim().toLowerCase()
       : "niedrig";
+    this.type = ["standard", "checkliste", "step-checkliste"].indexOf(String(type || "").trim().toLowerCase()) >= 0
+      ? String(type || "").trim().toLowerCase()
+      : "standard";
+    this.checklistItems = Array.isArray(checklistItems)
+      ? checklistItems.map(function (entry) {
+          if (entry && typeof entry === "object") {
+            const levelValue = Number(entry.level);
+
+              return {
+                id: String(entry.id || "").trim(),
+                title: String(entry.title || "").trim(),
+                level: Number.isFinite(levelValue) && levelValue > 0 ? Math.floor(levelValue) : 1,
+                parentId: String(entry.parentId || "").trim(),
+                done: Boolean(entry.done),
+                completedAt: Boolean(entry.done) ? String(entry.completedAt || "").trim() : "",
+                followUpSteps: Array.isArray(entry.followUpSteps)
+                  ? entry.followUpSteps.map(function (step) {
+                      if (step && typeof step === "object") {
+                        return {
+                          id: String(step.id || "").trim(),
+                          title: String(step.title || "").trim(),
+                          done: Boolean(step.done),
+                          completedAt: Boolean(step.done) ? String(step.completedAt || "").trim() : "",
+                          level: Number.isFinite(Number(step.level)) && Number(step.level) > 0 ? Math.floor(Number(step.level)) : 1,
+                          previousStepId: String(step.previousStepId || "").trim()
+                        };
+                    }
+
+                      return {
+                        id: "",
+                        title: String(step || "").trim(),
+                        done: false,
+                        completedAt: "",
+                        level: 1,
+                        previousStepId: ""
+                      };
+                  }).filter(function (step) {
+                    return Boolean(step && step.title);
+                  })
+                : []
+            };
+          }
+
+            return {
+              id: "",
+              title: String(entry || "").trim(),
+              level: 1,
+              parentId: "",
+              done: false,
+              completedAt: "",
+              followUpSteps: []
+            };
+        }).filter(function (entry) {
+          return Boolean(entry && entry.title);
+        })
+      : [];
     this.done = Boolean(done);
     this.completedAt = this.done ? String(completedAt || "").trim() : "";
   }

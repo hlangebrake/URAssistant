@@ -203,7 +203,47 @@ function serializeDomainSnapshot(snapshot) {
     attendanceRecords: cloneItems(snapshot.attendanceRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "status", "recordedAt", "effectiveAt"]),
     homeworkRecords: cloneItems(snapshot.homeworkRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "quality"]),
     warningRecords: cloneItems(snapshot.warningRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "category", "note"]),
-    todos: cloneItems(snapshot.todos, ["id", "title", "description", "category", "dueDate", "relatedClassId", "priority", "done", "completedAt"]),
+    todos: cloneItems(snapshot.todos, ["id", "title", "description", "category", "dueDate", "relatedClassId", "assignedStudentIds", "assignedStudentStatuses", "priority", "type", "checklistItems", "done", "completedAt"]).map(function (item) {
+      return Object.assign({}, item, {
+        assignedStudentIds: Array.isArray(item.assignedStudentIds) ? item.assignedStudentIds.slice() : [],
+        assignedStudentStatuses: Array.isArray(item.assignedStudentStatuses)
+          ? item.assignedStudentStatuses.map(function (entry) {
+              return entry && typeof entry === "object"
+                ? Object.assign({}, entry, {
+                    checklistItems: Array.isArray(entry.checklistItems)
+                      ? entry.checklistItems.map(function (checklistEntry) {
+                          return checklistEntry && typeof checklistEntry === "object"
+                            ? Object.assign({}, checklistEntry, {
+                                followUpSteps: Array.isArray(checklistEntry.followUpSteps)
+                                  ? checklistEntry.followUpSteps.map(function (step) {
+                                      return step && typeof step === "object" ? Object.assign({}, step) : step;
+                                    })
+                                  : []
+                              })
+                            : checklistEntry;
+                        })
+                      : []
+                  })
+                : entry;
+            })
+          : [],
+        checklistItems: Array.isArray(item.checklistItems)
+          ? item.checklistItems.map(function (entry) {
+              return entry && typeof entry === "object"
+                ? Object.assign({}, entry, {
+                  followUpSteps: Array.isArray(entry.followUpSteps)
+                      ? entry.followUpSteps.map(function (step) {
+                          return step && typeof step === "object"
+                            ? Object.assign({}, step)
+                            : step;
+                        })
+                      : []
+                  })
+                : entry;
+            })
+          : []
+      });
+    }),
     seatPlans: cloneItems(snapshot.seatPlans, ["id", "classId", "room", "validFrom", "validTo", "updatedAt", "seats", "deskLayoutItems", "deskLayoutLinks", "roomWindowSide", "roomWidth", "roomHeight"]),
     planningEvents: cloneItems(snapshot.planningEvents || [], ["id", "title", "startDate", "endDate", "startTime", "endTime", "category", "description", "priority", "showInTimetable", "isRecurring", "recurrenceInterval", "recurrenceUnit", "recurrenceUntilDate", "recurrenceMonthlyWeekday", "isExternallyControlled", "controlledByView", "controlledById"]),
     planningCategories: cloneItems(snapshot.planningCategories || [], ["id", "name", "color"]),
