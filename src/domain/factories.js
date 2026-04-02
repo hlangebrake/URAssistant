@@ -203,7 +203,7 @@ function serializeDomainSnapshot(snapshot) {
     attendanceRecords: cloneItems(snapshot.attendanceRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "status", "recordedAt", "effectiveAt"]),
     homeworkRecords: cloneItems(snapshot.homeworkRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "quality"]),
     warningRecords: cloneItems(snapshot.warningRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "category", "note"]),
-    todos: cloneItems(snapshot.todos, ["id", "title", "dueDate", "relatedClassId", "done"]),
+    todos: cloneItems(snapshot.todos, ["id", "title", "description", "category", "dueDate", "relatedClassId", "priority", "done", "completedAt"]),
     seatPlans: cloneItems(snapshot.seatPlans, ["id", "classId", "room", "validFrom", "validTo", "updatedAt", "seats", "deskLayoutItems", "deskLayoutLinks", "roomWindowSide", "roomWidth", "roomHeight"]),
     planningEvents: cloneItems(snapshot.planningEvents || [], ["id", "title", "startDate", "endDate", "startTime", "endTime", "category", "description", "priority", "showInTimetable", "isRecurring", "recurrenceInterval", "recurrenceUnit", "recurrenceUntilDate", "recurrenceMonthlyWeekday", "isExternallyControlled", "controlledByView", "controlledById"]),
     planningCategories: cloneItems(snapshot.planningCategories || [], ["id", "name", "color"]),

@@ -278,12 +278,18 @@ class WarningRecord {
 }
 
 class TodoItem {
-  constructor({ id, title, dueDate, relatedClassId, done = false }) {
+  constructor({ id, title = "", description = "", category = "", dueDate = "", relatedClassId = "", priority = "niedrig", done = false, completedAt = "" }) {
     this.id = id;
-    this.title = title;
-    this.dueDate = dueDate;
-    this.relatedClassId = relatedClassId;
-    this.done = done;
+    this.title = String(title || "").trim();
+    this.description = String(description || "").trim();
+    this.category = String(category || "").trim();
+    this.dueDate = String(dueDate || "").slice(0, 10);
+    this.relatedClassId = String(relatedClassId || "").trim();
+    this.priority = ["niedrig", "standard", "hoch"].indexOf(String(priority || "").trim().toLowerCase()) >= 0
+      ? String(priority || "").trim().toLowerCase()
+      : "niedrig";
+    this.done = Boolean(done);
+    this.completedAt = this.done ? String(completedAt || "").trim() : "";
   }
 }
 

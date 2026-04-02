@@ -89,6 +89,14 @@ let planningAdminMode = false;
 let activeEvaluationSheetDraft = null;
 let activePlannedEvaluationDraft = null;
 let activePlanningEventDraft = null;
+let activeTodoDraft = null;
+let expandedTodoIds = [];
+let todoStatusFilter = "offen";
+let todoViewMode = "liste";
+let todoSortMode = "dringlichkeit";
+let todoCategoryFilterOpen = false;
+let todoCategoryFilters = [];
+let todoCategoryFilterAllOff = false;
 let activePlanningInstructionLessonDraft = null;
 let activeTimetablePlanningEventDetail = null;
 let activeCurriculumSeriesDraft = null;
@@ -2395,6 +2403,14 @@ function getDefaultPlanningSidebarFilters(snapshot) {
     .filter(Boolean);
 }
 
+function getDefaultTodoCategoryFilters(snapshot) {
+  return getPlanningCategoryDefinitions(snapshot)
+    .map(function (entry) {
+      return String(entry && entry.name || "").trim();
+    })
+    .filter(Boolean);
+}
+
 function getClassSubjectById(rawSnapshot, classId) {
   const classes = rawSnapshot && Array.isArray(rawSnapshot.classes)
     ? rawSnapshot.classes
@@ -4536,6 +4552,21 @@ function getCurrentTimestamp() {
   return new Date().toISOString();
 }
 
+function getActiveDateTimeTimestamp() {
+  const activeParts = getActiveDateTimeParts();
+  const normalizedDate = String(activeParts && activeParts.date || "").trim();
+  const normalizedTime = String(activeParts && activeParts.time || "00:00").trim() || "00:00";
+  const parsed = normalizedDate
+    ? new Date(normalizedDate + "T" + normalizedTime)
+    : null;
+
+  if (!parsed || Number.isNaN(parsed.getTime())) {
+    return getCurrentTimestamp();
+  }
+
+  return parsed.toISOString();
+}
+
 function getAttendanceRecordsCollection(rawSnapshot) {
   return Array.isArray(rawSnapshot && rawSnapshot.attendanceRecords) ? rawSnapshot.attendanceRecords : [];
 }
@@ -4582,6 +4613,26 @@ function getMutableWarningRecordsCollection(rawSnapshot) {
   }
 
   return rawSnapshot.warningRecords;
+}
+
+function getTodosCollection(rawSnapshot) {
+  return Array.isArray(rawSnapshot && rawSnapshot.todos) ? rawSnapshot.todos : [];
+}
+
+function getMutableTodosCollection(rawSnapshot) {
+  if (!rawSnapshot) {
+    return [];
+  }
+
+  if (!Array.isArray(rawSnapshot.todos)) {
+    rawSnapshot.todos = [];
+  }
+
+  return rawSnapshot.todos;
+}
+
+function createTodoId() {
+  return "todo-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
 }
 
 function getRelevantUnterrichtLesson(activeClass, referenceDate) {
@@ -8974,6 +9025,33 @@ window.UnterrichtsassistentApp.getPlanningCategoryDefinitions = function () {
 window.UnterrichtsassistentApp.getPlanningEventsForDisplay = function (snapshot, options) {
   return getPlanningEventsForDisplay(snapshot || getMutableRawSnapshot(), options);
 };
+window.UnterrichtsassistentApp.getActiveTodoDraft = function () {
+  return activeTodoDraft;
+};
+window.UnterrichtsassistentApp.getExpandedTodoIds = function () {
+  return expandedTodoIds.slice();
+};
+window.UnterrichtsassistentApp.getTodoStatusFilter = function () {
+  return todoStatusFilter;
+};
+window.UnterrichtsassistentApp.getTodoViewMode = function () {
+  return todoViewMode;
+};
+window.UnterrichtsassistentApp.getTodoSortMode = function () {
+  return todoSortMode;
+};
+window.UnterrichtsassistentApp.getActiveDateTimeParts = function () {
+  return Object.assign({}, getActiveDateTimeParts());
+};
+window.UnterrichtsassistentApp.isTodoCategoryFilterOpen = function () {
+  return todoCategoryFilterOpen === true;
+};
+window.UnterrichtsassistentApp.getTodoCategoryFilters = function () {
+  return todoCategoryFilters.slice();
+};
+window.UnterrichtsassistentApp.isTodoCategoryFilterAllOff = function () {
+  return todoCategoryFilterAllOff === true;
+};
 window.UnterrichtsassistentApp.getActiveTimetablePlanningEventDetail = function () {
   return activeTimetablePlanningEventDetail;
 };
@@ -10093,6 +10171,339 @@ window.UnterrichtsassistentApp.openPlanningInstructionLessonModal = function (le
       };
 
   setActiveView(activeViewId);
+  return false;
+};
+window.UnterrichtsassistentApp.openTodoModal = function (todoId, presetCategory, presetPriority) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const normalizedTodoId = String(todoId || "").trim();
+  const normalizedPresetCategory = normalizePlanningEventCategoryValue(presetCategory);
+  const normalizedPresetPriority = ["niedrig", "standard", "hoch"].indexOf(String(presetPriority || "").trim().toLowerCase()) >= 0
+    ? String(presetPriority || "").trim().toLowerCase()
+    : "niedrig";
+  const existingTodo = normalizedTodoId
+    ? getTodosCollection(currentRawSnapshot).find(function (todoItem) {
+        return String(todoItem && todoItem.id || "").trim() === normalizedTodoId;
+      }) || null
+    : null;
+
+  activeTodoDraft = existingTodo
+    ? {
+        id: String(existingTodo.id || "").trim(),
+        title: String(existingTodo.title || "").trim(),
+        description: String(existingTodo.description || "").trim(),
+        category: String(existingTodo.category || "").trim(),
+        dueDate: String(existingTodo.dueDate || "").slice(0, 10),
+        priority: ["niedrig", "standard", "hoch"].indexOf(String(existingTodo.priority || "").trim().toLowerCase()) >= 0
+          ? String(existingTodo.priority || "").trim().toLowerCase()
+          : "niedrig",
+        done: Boolean(existingTodo.done),
+        completedAt: Boolean(existingTodo.done) ? String(existingTodo.completedAt || "").trim() : ""
+      }
+    : {
+        id: "",
+        title: "",
+        description: "",
+        category: normalizedPresetCategory,
+        dueDate: "",
+        priority: normalizedPresetPriority,
+        done: false,
+        completedAt: ""
+      };
+
+  closePlanningCategorySuggestions();
+  setActiveView("todos");
+  return false;
+};
+window.UnterrichtsassistentApp.closeTodoModal = function () {
+  activeTodoDraft = null;
+  closePlanningCategorySuggestions();
+
+  if (activeViewId === "todos") {
+    setActiveView("todos");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.setTodoStatusFilter = function (nextFilter) {
+  const normalizedFilter = ["alle", "offen", "erledigt"].indexOf(String(nextFilter || "").trim().toLowerCase()) >= 0
+    ? String(nextFilter || "").trim().toLowerCase()
+    : "alle";
+
+  todoStatusFilter = normalizedFilter;
+
+  if (activeViewId === "todos") {
+    setActiveView("todos");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.setTodoViewMode = function (nextMode) {
+  const normalizedMode = ["liste", "prioritaet", "kategorie"].indexOf(String(nextMode || "").trim().toLowerCase()) >= 0
+    ? String(nextMode || "").trim().toLowerCase()
+    : "liste";
+
+  todoViewMode = normalizedMode;
+
+  if (activeViewId === "todos") {
+    setActiveView("todos");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.setTodoSortMode = function (nextMode) {
+  const normalizedMode = ["dringlichkeit", "prioritaet", "deadline"].indexOf(String(nextMode || "").trim().toLowerCase()) >= 0
+    ? String(nextMode || "").trim().toLowerCase()
+    : "dringlichkeit";
+
+  todoSortMode = normalizedMode;
+
+  if (activeViewId === "todos") {
+    setActiveView("todos");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.toggleTodoCategoryFilterOpen = function () {
+  todoCategoryFilterOpen = !todoCategoryFilterOpen;
+
+  if (activeViewId === "todos") {
+    setActiveView("todos");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.selectAllTodoCategoryFilters = function () {
+  todoCategoryFilters = [];
+  todoCategoryFilterAllOff = false;
+
+  if (activeViewId === "todos") {
+    setActiveView("todos");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.clearAllTodoCategoryFilters = function () {
+  todoCategoryFilters = [];
+  todoCategoryFilterAllOff = true;
+
+  if (activeViewId === "todos") {
+    setActiveView("todos");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.selectTodoClassCategoryFilters = function () {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+
+  todoCategoryFilters = getPlanningCategoryDefinitions(currentRawSnapshot).filter(function (entry) {
+    return Boolean(entry && entry.isClassCategory);
+  }).map(function (entry) {
+    return String(entry && entry.name || "").trim();
+  }).filter(Boolean);
+  todoCategoryFilterAllOff = todoCategoryFilters.length === 0;
+
+  if (activeViewId === "todos") {
+    setActiveView("todos");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.toggleTodoCategoryFilter = function (categoryName) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const normalizedName = String(categoryName || "").trim();
+  const normalizedLowerName = normalizedName.toLowerCase();
+  const allCategories = getDefaultTodoCategoryFilters(currentRawSnapshot);
+  const normalizedAllCategories = allCategories.map(function (entry) {
+    return String(entry || "").trim();
+  }).filter(Boolean);
+  let nextFilters = todoCategoryFilters.slice();
+  let selectedIndex = nextFilters.findIndex(function (entry) {
+    return String(entry || "").trim().toLowerCase() === normalizedLowerName;
+  });
+
+  if (!normalizedName) {
+    return false;
+  }
+
+  if (!nextFilters.length && !todoCategoryFilterAllOff) {
+    nextFilters = normalizedAllCategories.slice();
+    selectedIndex = nextFilters.findIndex(function (entry) {
+      return String(entry || "").trim().toLowerCase() === normalizedLowerName;
+    });
+  }
+
+  if (selectedIndex >= 0) {
+    nextFilters.splice(selectedIndex, 1);
+  } else {
+    nextFilters.push(normalizedName);
+  }
+
+  todoCategoryFilters = nextFilters.filter(function (entry, index, array) {
+    return array.findIndex(function (candidate) {
+      return String(candidate || "").trim().toLowerCase() === String(entry || "").trim().toLowerCase();
+    }) === index;
+  });
+  todoCategoryFilterAllOff = todoCategoryFilters.length === 0;
+
+  if (activeViewId === "todos") {
+    setActiveView("todos");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.toggleTodoExpanded = function (todoId) {
+  const normalizedTodoId = String(todoId || "").trim();
+
+  if (!normalizedTodoId) {
+    return false;
+  }
+
+  if (expandedTodoIds.indexOf(normalizedTodoId) >= 0) {
+    expandedTodoIds = expandedTodoIds.filter(function (entry) {
+      return entry !== normalizedTodoId;
+    });
+  } else {
+    expandedTodoIds = expandedTodoIds.concat([normalizedTodoId]);
+  }
+
+  if (activeViewId === "todos") {
+    setActiveView("todos");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.toggleTodoDone = function (todoId, isDone) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const normalizedTodoId = String(todoId || "").trim();
+  const todos = getMutableTodosCollection(currentRawSnapshot);
+  const selectedTodo = todos.find(function (todoItem) {
+    return String(todoItem && todoItem.id || "").trim() === normalizedTodoId;
+  }) || null;
+
+  if (!currentRawSnapshot || !normalizedTodoId || !selectedTodo) {
+    return false;
+  }
+
+  selectedTodo.done = Boolean(isDone);
+  selectedTodo.completedAt = selectedTodo.done
+    ? (String(selectedTodo.completedAt || "").trim() || getActiveDateTimeTimestamp())
+    : "";
+
+  if (activeTodoDraft && String(activeTodoDraft.id || "").trim() === normalizedTodoId) {
+    activeTodoDraft.done = Boolean(isDone);
+    activeTodoDraft.completedAt = selectedTodo.completedAt;
+  }
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "todos");
+  return false;
+};
+window.UnterrichtsassistentApp.submitTodoModal = function (event) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const todos = getMutableTodosCollection(currentRawSnapshot);
+  const titleInput = document.getElementById("todoTitleInput");
+  const descriptionInput = document.getElementById("todoDescriptionInput");
+  const categoryInput = document.getElementById("todoCategoryInput");
+  const dueDateInput = document.getElementById("todoDueDateInput");
+  const priorityInput = document.getElementById("todoPriorityInput");
+  const doneInput = document.getElementById("todoDoneInput");
+  const titleValue = String(titleInput && titleInput.value || "").trim();
+  const descriptionValue = String(descriptionInput && descriptionInput.value || "").trim();
+  const categoryValue = normalizePlanningEventCategoryValue(categoryInput && categoryInput.value);
+  const dueDateValue = String(dueDateInput && dueDateInput.value || "").slice(0, 10);
+  const priorityValue = ["niedrig", "standard", "hoch"].indexOf(String(priorityInput && priorityInput.value || "").trim().toLowerCase()) >= 0
+    ? String(priorityInput.value || "").trim().toLowerCase()
+    : "niedrig";
+  const doneValue = Boolean(doneInput && doneInput.checked);
+  const completedAtValue = doneValue
+    ? String(activeTodoDraft && activeTodoDraft.completedAt || "").trim() || getActiveDateTimeTimestamp()
+    : "";
+  let existingTodo = null;
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  if (!currentRawSnapshot || !activeTodoDraft || !titleValue) {
+    return false;
+  }
+
+  if (activeTodoDraft.id) {
+    existingTodo = todos.find(function (todoItem) {
+      return String(todoItem && todoItem.id || "").trim() === String(activeTodoDraft.id || "").trim();
+    }) || null;
+  }
+
+  if (existingTodo) {
+    existingTodo.title = titleValue;
+    existingTodo.description = descriptionValue;
+    existingTodo.category = categoryValue;
+    existingTodo.dueDate = dueDateValue;
+    existingTodo.priority = priorityValue;
+    existingTodo.done = doneValue;
+    existingTodo.completedAt = completedAtValue;
+  } else {
+    todos.push({
+      id: createTodoId(),
+      title: titleValue,
+      description: descriptionValue,
+      category: categoryValue,
+      dueDate: dueDateValue,
+      relatedClassId: "",
+      priority: priorityValue,
+      done: doneValue,
+      completedAt: completedAtValue
+    });
+  }
+
+  if (categoryValue) {
+    const collections = getPlanningCollections(currentRawSnapshot);
+    const normalizedCategory = categoryValue.toLowerCase();
+    const exists = collections.categories.some(function (entry) {
+      return String(entry && entry.name || "").trim().toLowerCase() === normalizedCategory;
+    });
+
+    if (!exists) {
+      collections.categories.push({
+        id: createPlanningCategoryId(),
+        name: categoryValue,
+        color: ""
+      });
+    }
+  }
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "todos");
+  return window.UnterrichtsassistentApp.closeTodoModal();
+};
+window.UnterrichtsassistentApp.deleteTodo = function (todoId) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const normalizedTodoId = String(todoId || "").trim();
+  const nextTodos = getTodosCollection(currentRawSnapshot).filter(function (todoItem) {
+    return String(todoItem && todoItem.id || "").trim() !== normalizedTodoId;
+  });
+
+  if (!currentRawSnapshot || !normalizedTodoId) {
+    return false;
+  }
+
+  if (nextTodos.length === getTodosCollection(currentRawSnapshot).length) {
+    return false;
+  }
+
+  if (!window.confirm("Soll dieses TODO wirklich geloescht werden?")) {
+    return false;
+  }
+
+  currentRawSnapshot.todos = nextTodos;
+  expandedTodoIds = expandedTodoIds.filter(function (entry) {
+    return entry !== normalizedTodoId;
+  });
+
+  if (activeTodoDraft && String(activeTodoDraft.id || "").trim() === normalizedTodoId) {
+    activeTodoDraft = null;
+    closePlanningCategorySuggestions();
+  }
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "todos");
   return false;
 };
 window.UnterrichtsassistentApp.closePlanningInstructionLessonModal = function () {
@@ -12358,7 +12769,7 @@ window.UnterrichtsassistentApp.deletePlanningCategory = function (categoryName) 
     return false;
   }
 
-  if (!window.confirm("Soll die Kategorie wirklich geloescht werden? Betroffene Termine werden auf 'Sonstiges' gesetzt.")) {
+  if (!window.confirm("Soll die Kategorie wirklich geloescht werden? Betroffene Termine und TODOs werden auf 'Sonstiges' gesetzt.")) {
     return false;
   }
 
@@ -12368,6 +12779,11 @@ window.UnterrichtsassistentApp.deletePlanningCategory = function (categoryName) 
   currentRawSnapshot.planningCategories = collections.categories;
 
   collections.events.forEach(function (entry) {
+    if (String(entry && entry.category || "").trim().toLowerCase() === normalizedName.toLowerCase()) {
+      entry.category = fallbackCategory;
+    }
+  });
+  getTodosCollection(currentRawSnapshot).forEach(function (entry) {
     if (String(entry && entry.category || "").trim().toLowerCase() === normalizedName.toLowerCase()) {
       entry.category = fallbackCategory;
     }
@@ -12391,6 +12807,18 @@ window.UnterrichtsassistentApp.deletePlanningCategory = function (categoryName) 
       return String(candidate || "").trim().toLowerCase() === String(entry || "").trim().toLowerCase();
     }) === index;
   });
+  todoCategoryFilters = todoCategoryFilters.map(function (entry) {
+    return String(entry || "").trim().toLowerCase() === normalizedName.toLowerCase()
+      ? fallbackCategory
+      : entry;
+  }).filter(function (entry, index, array) {
+    return array.findIndex(function (candidate) {
+      return String(candidate || "").trim().toLowerCase() === String(entry || "").trim().toLowerCase();
+    }) === index;
+  });
+  if (todoCategoryFilterAllOff && todoCategoryFilters.length) {
+    todoCategoryFilterAllOff = false;
+  }
 
   saveAndRefreshSnapshot(currentRawSnapshot, "planung");
   return false;

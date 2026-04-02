@@ -8,5 +8,6 @@ window.Unterrichtsassistent.ui.viewConfig = {
   stundenplan: window.Unterrichtsassistent.ui.views.stundenplan,
   sitzplan: window.Unterrichtsassistent.ui.views.sitzplan,
   planung: window.Unterrichtsassistent.ui.views.planung,
-  bewertung: window.Unterrichtsassistent.ui.views.bewertung
+  bewertung: window.Unterrichtsassistent.ui.views.bewertung,
+  todos: window.Unterrichtsassistent.ui.views.todos
 };

@@ -72,6 +72,10 @@
           <span class="nav-link__icon" aria-hidden="true">B</span>
           <span class="nav-link__label">Bewertung</span>
         </button>
+        <button class="nav-link" type="button" data-view-target="todos" data-view-title="TODOs" onclick="window.UnterrichtsassistentApp.activateView('todos'); return false;">
+          <span class="nav-link__icon" aria-hidden="true">T</span>
+          <span class="nav-link__label">TODOs</span>
+        </button>
       </nav>
       <div class="sidebar__footer">
         <div class="sidebar__footer-actions">
@@ -124,6 +128,7 @@
       <section class="view" id="sitzplan" data-view hidden></section>
       <section class="view" id="planung" data-view hidden></section>
       <section class="view" id="bewertung" data-view hidden></section>
+      <section class="view" id="todos" data-view hidden></section>
     </main>
   </div>
 
@@ -262,6 +267,7 @@
   <script src="src/ui/views/sitzplanView.js?v=20260331b"></script>
   <script src="src/ui/views/planungView.js?v=20260331ap"></script>
   <script src="src/ui/views/bewertungView.js?v=20260401b"></script>
+  <script src="src/ui/views/todosView.js?v=20260402a"></script>
   <script src="src/ui/viewRegistry.js?v=20260401a"></script>
   <script src="src/ui/renderers.js?v=20260331a"></script>
     <script src="src/app.js?v=20260401b"></script>
