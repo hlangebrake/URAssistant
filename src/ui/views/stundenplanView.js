@@ -27,6 +27,9 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
     const planningInstructionLessonDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActivePlanningInstructionLessonDraft === "function"
       ? window.UnterrichtsassistentApp.getActivePlanningInstructionLessonDraft()
       : null;
+    const activeTimetablePlanningEventDetail = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveTimetablePlanningEventDetail === "function"
+      ? window.UnterrichtsassistentApp.getActiveTimetablePlanningEventDetail()
+      : null;
     const timetableWeekShiftAnimationDirection = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getTimetableWeekShiftAnimationDirection === "function"
       ? window.UnterrichtsassistentApp.getTimetableWeekShiftAnimationDirection()
       : "";
@@ -177,8 +180,11 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
         const category = eventItem && eventItem.category;
         const startDateValue = String(eventItem && eventItem.startDate || "").slice(0, 10);
         const endDateValue = String(eventItem && eventItem.endDate || startDateValue).slice(0, 10);
+        const showInTimetable = Boolean(eventItem && eventItem.showInTimetable);
+        const normalizedCategory = normalizePlanningCategoryKey(category);
 
-        return isInstructionOutageCategoryValue(category)
+        return ((normalizedCategory === "unterrichtsfrei") || showInTimetable)
+          && isInstructionOutageCategoryValue(category)
           && startDateValue
           && startDateValue <= isoDate
           && isoDate <= endDateValue;
@@ -192,6 +198,268 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
 
         return String(leftItem && leftItem.title || "").localeCompare(String(rightItem && rightItem.title || ""));
       })[0] || null;
+    }
+
+    function buildPlanningEventDateLabel(eventItem) {
+      const startDateValue = String(eventItem && eventItem.startDate || "").slice(0, 10);
+      const endDateValue = String(eventItem && eventItem.endDate || startDateValue).slice(0, 10);
+
+      if (!startDateValue) {
+        return "";
+      }
+
+      if (startDateValue === endDateValue) {
+        return formatShortDateLabel(startDateValue);
+      }
+
+      return formatShortDateLabel(startDateValue) + " - " + formatShortDateLabel(endDateValue);
+    }
+
+    function buildPlanningEventTimeLabel(eventItem) {
+      const startTimeValue = String(eventItem && eventItem.startTime || "").trim();
+      const endTimeValue = String(eventItem && eventItem.endTime || "").trim();
+
+      if (startTimeValue && endTimeValue) {
+        return startTimeValue + " - " + endTimeValue;
+      }
+
+      if (startTimeValue) {
+        return "ab " + startTimeValue;
+      }
+
+      if (endTimeValue) {
+        return "bis " + endTimeValue;
+      }
+
+      return "";
+    }
+
+    function getPlanningEventCompactSummary(eventItem) {
+      const title = String(eventItem && eventItem.title || "").trim();
+      const category = String(eventItem && eventItem.category || "").trim();
+
+      return title || category || "Termin";
+    }
+
+    function getLessonProgressForTime(lessonRows, timeValue) {
+      const normalizedTimeValue = String(timeValue || "").trim();
+      const targetMinutes = timeToMinutes(normalizedTimeValue);
+      let lessonIndex;
+
+      if (!lessonRows.length) {
+        return 0;
+      }
+
+      if (!normalizedTimeValue || targetMinutes <= timeToMinutes(lessonRows[0].startTime)) {
+        return 0;
+      }
+
+      for (lessonIndex = 0; lessonIndex < lessonRows.length; lessonIndex += 1) {
+        const currentRow = lessonRows[lessonIndex];
+        const nextRow = lessonRows[lessonIndex + 1] || null;
+        const startMinutes = timeToMinutes(currentRow.startTime);
+        const endMinutes = timeToMinutes(currentRow.endTime);
+        const nextStartMinutes = nextRow ? timeToMinutes(nextRow.startTime) : null;
+
+        if (targetMinutes >= startMinutes && targetMinutes <= endMinutes) {
+          return lessonIndex + ((targetMinutes - startMinutes) / Math.max(endMinutes - startMinutes, 1));
+        }
+
+        if (nextRow && targetMinutes > endMinutes && targetMinutes < nextStartMinutes) {
+          return lessonIndex + 1;
+        }
+      }
+
+      return lessonRows.length;
+    }
+
+    function buildWeekPlanningEventData(weekDates, lessonRows) {
+      const weekdayKeys = weekdays.map(function (weekday) {
+        return String(weekday && weekday.key || "").trim();
+      });
+      const allDayByWeekday = weekdayKeys.reduce(function (lookup, key) {
+        lookup[key] = [];
+        return lookup;
+      }, {});
+      const timedByWeekday = weekdayKeys.reduce(function (lookup, key) {
+        lookup[key] = [];
+        return lookup;
+      }, {});
+      const firstVisibleTime = lessonRows[0] ? String(lessonRows[0].startTime || "").trim() : "";
+      const lastVisibleTime = lessonRows.length ? String(lessonRows[lessonRows.length - 1].endTime || "").trim() : "";
+
+      planningEvents.forEach(function (eventItem) {
+        const category = String(eventItem && eventItem.category || "").trim();
+        const startDateValue = String(eventItem && eventItem.startDate || "").slice(0, 10);
+        const endDateValue = String(eventItem && eventItem.endDate || startDateValue).slice(0, 10);
+        const hasTime = Boolean(String(eventItem && eventItem.startTime || "").trim() || String(eventItem && eventItem.endTime || "").trim());
+        const showInTimetable = Boolean(eventItem && eventItem.showInTimetable);
+
+        if (!startDateValue || !showInTimetable || isInstructionOutageCategoryValue(category)) {
+          return;
+        }
+
+        weekdays.forEach(function (weekday, weekdayIndex) {
+          const weekdayKey = String(weekday && weekday.key || "").trim();
+          const weekDate = weekDates[weekdayKey] || null;
+          const isoDate = weekDate ? String(weekDate.isoDate || "").slice(0, 10) : "";
+          const isIntermediateDay = isoDate && startDateValue < isoDate && isoDate < endDateValue;
+          let startProgress;
+          let endProgress;
+
+          if (!isoDate || isoDate < startDateValue || isoDate > endDateValue) {
+            return;
+          }
+
+          if (!hasTime) {
+            allDayByWeekday[weekdayKey].push({
+              eventId: String(eventItem && (eventItem.sourceEventId || eventItem.id) || "").trim(),
+              occurrenceId: String(eventItem && eventItem.occurrenceId || "").trim(),
+              startDate: startDateValue,
+              endDate: endDateValue,
+              date: isoDate,
+              title: getPlanningEventCompactSummary(eventItem),
+              category: category,
+              color: getPlanningCategoryColorValue(category || "Termin")
+            });
+            return;
+          }
+
+          startProgress = getLessonProgressForTime(
+            lessonRows,
+            isoDate === startDateValue ? String(eventItem && eventItem.startTime || "").trim() : firstVisibleTime
+          );
+          endProgress = getLessonProgressForTime(
+            lessonRows,
+            isoDate === endDateValue ? String(eventItem && eventItem.endTime || "").trim() : lastVisibleTime
+          );
+
+          if (isIntermediateDay) {
+            startProgress = 0;
+            endProgress = lessonRows.length;
+          }
+
+          startProgress = Math.max(0, Math.min(lessonRows.length, Number(startProgress)));
+          endProgress = Math.max(0, Math.min(lessonRows.length, Number(endProgress)));
+
+          if (endProgress <= startProgress) {
+            return;
+          }
+
+          timedByWeekday[weekdayKey].push({
+            eventId: String(eventItem && (eventItem.sourceEventId || eventItem.id) || "").trim(),
+            occurrenceId: String(eventItem && eventItem.occurrenceId || "").trim(),
+            startDate: startDateValue,
+            endDate: endDateValue,
+            date: isoDate,
+            weekdayIndex: weekdayIndex,
+            startProgress: startProgress,
+            endProgress: endProgress,
+            topPercent: (startProgress / Math.max(lessonRows.length, 1)) * 100,
+            heightPercent: ((endProgress - startProgress) / Math.max(lessonRows.length, 1)) * 100,
+            title: getPlanningEventCompactSummary(eventItem),
+            category: category,
+            timeLabel: startDateValue === endDateValue
+              ? buildPlanningEventTimeLabel(eventItem)
+              : (
+                  isoDate === startDateValue && String(eventItem && eventItem.startTime || "").trim()
+                    ? "ab " + String(eventItem && eventItem.startTime || "").trim()
+                    : (
+                        isoDate === endDateValue && String(eventItem && eventItem.endTime || "").trim()
+                          ? "bis " + String(eventItem && eventItem.endTime || "").trim()
+                          : ""
+                      )
+                ),
+            color: getPlanningCategoryColorValue(category || "Termin")
+          });
+        });
+      });
+
+      Object.keys(timedByWeekday).forEach(function (weekdayKey) {
+        const items = timedByWeekday[weekdayKey].slice().sort(function (leftItem, rightItem) {
+          if (leftItem.startProgress !== rightItem.startProgress) {
+            return leftItem.startProgress - rightItem.startProgress;
+          }
+
+          return leftItem.endProgress - rightItem.endProgress;
+        });
+        const laneEndValues = [];
+        const laneCount = items.reduce(function (maxValue, item) {
+          let laneIndex = laneEndValues.findIndex(function (laneEndValue) {
+            return laneEndValue <= item.startProgress;
+          });
+
+          if (laneIndex < 0) {
+            laneIndex = laneEndValues.length;
+            laneEndValues.push(item.endProgress);
+          } else {
+            laneEndValues[laneIndex] = item.endProgress;
+          }
+
+          item.laneIndex = laneIndex;
+          return Math.max(maxValue, laneIndex + 1);
+        }, 0);
+
+        timedByWeekday[weekdayKey] = items.map(function (item) {
+          const overlapsLesson = lessonRows.some(function (row, rowIndex) {
+            const cell = row && row.cells ? row.cells[weekdayKey] || null : null;
+            const resolvedClassId = cell
+              ? String(cell.isBlocked ? cell.inheritedClassId : cell.classId || "").trim()
+              : "";
+
+            return Boolean(resolvedClassId) && item.endProgress > rowIndex && item.startProgress < (rowIndex + 1);
+          });
+
+          return Object.assign({}, item, {
+            laneCount: Math.max(1, laneCount),
+            overlapsLesson: overlapsLesson,
+            totalSlotCount: Math.max(1, laneCount + (overlapsLesson ? 1 : 0)),
+            visualLaneIndex: (item.laneIndex || 0) + (overlapsLesson ? 1 : 0)
+          });
+        });
+      });
+
+      return {
+        allDayByWeekday: allDayByWeekday,
+        timedByWeekday: timedByWeekday
+      };
+    }
+
+    function buildTimetablePlanningEventDetailModal() {
+      const detail = activeTimetablePlanningEventDetail;
+      const timeLabel = buildPlanningEventTimeLabel(detail);
+      const dateLabel = buildPlanningEventDateLabel(detail);
+      const categoryLabel = String(detail && detail.category || "").trim();
+      const descriptionLabel = String(detail && detail.description || "").trim();
+
+      if (!detail) {
+        return "";
+      }
+
+      return [
+        '<div class="import-modal is-open" id="timetablePlanningEventDetailModal">',
+        '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeTimetablePlanningEventDetail()"></div>',
+        '<div class="import-modal__dialog import-modal__dialog--planning import-modal__dialog--timetable-event" role="dialog" aria-modal="true" aria-labelledby="timetablePlanningEventDetailTitle">',
+        '<div class="import-modal__header">',
+        '<div><h3 id="timetablePlanningEventDetailTitle">', escapeValue(String(detail.title || "").trim() || "Termin"), '</h3>',
+        '<div class="import-modal__meta">', escapeValue([dateLabel, timeLabel].filter(Boolean).join(" · ")), '</div></div>',
+        '<div class="import-modal__icon-actions">',
+        '<button class="import-modal__icon-button import-modal__icon-button--cancel" type="button" aria-label="Zur Jahresplanung wechseln" onclick="return window.UnterrichtsassistentApp.openPlanningEventFromTimetableDetail()">&#8599;</button>',
+        '<button class="import-modal__icon-button import-modal__icon-button--cancel" type="button" aria-label="Popup schliessen" onclick="return window.UnterrichtsassistentApp.closeTimetablePlanningEventDetail()">&#10005;</button>',
+        '</div>',
+        '</div>',
+        '<div class="import-modal__form timetable-event-detail-modal">',
+        categoryLabel ? '<section class="timetable-event-detail-modal__section"><h4>Kategorie</h4><p>' + escapeValue(categoryLabel) + '</p></section>' : '',
+        '<section class="timetable-event-detail-modal__section"><h4>Termin</h4><p>' + escapeValue(dateLabel || "Kein Datum") + '</p>' + (timeLabel ? '<p>' + escapeValue(timeLabel) + '</p>' : '') + '</section>',
+        descriptionLabel ? '<section class="timetable-event-detail-modal__section"><h4>Beschreibung</h4><p>' + escapeValue(descriptionLabel).replace(/&#10;/g, '<br>') + '</p></section>' : '',
+        '<div class="import-modal__actions">',
+        '<button class="circle-action" type="button" onclick="return window.UnterrichtsassistentApp.openPlanningEventFromTimetableDetail()">Zur Jahresplanung</button>',
+        '<button class="circle-action circle-action--danger" type="button" onclick="return window.UnterrichtsassistentApp.closeTimetablePlanningEventDetail()">Schliessen</button>',
+        '</div>',
+        '</div>',
+        '</div>',
+        '</div>'
+      ].join("");
     }
 
     function getWeekDates() {
@@ -223,6 +491,16 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
       }
 
       return String(dateValue).slice(0, 10);
+    }
+
+    function isWithinSchoolYear(isoDate) {
+      const normalizedDate = String(isoDate || "").slice(0, 10);
+
+      if (!normalizedDate || !schoolYearStart || !schoolYearEnd) {
+        return true;
+      }
+
+      return normalizedDate >= schoolYearStart && normalizedDate <= schoolYearEnd;
     }
 
     function getClassDisplayName(schoolClass) {
@@ -875,12 +1153,23 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
       const lessonStatus = resolvedClass ? lessonStatusLookup[[String(resolvedClass.id || "").trim(), lessonDateValue].join("::")] || null : null;
       const lessonTopic = resolvedClass ? getInstructionDisplayTopicForClassAndDate(resolvedClass.id, lessonDateValue) : "";
       const rowspan = countCellRowspan(lessonRows, rowIndex, weekday.key);
+      const isWithinVisibleSchoolYear = isWithinSchoolYear(lessonDateValue);
+      const overlappingTimedEvents = (timeContext.weekPlanningEvents && timeContext.weekPlanningEvents.timedByWeekday
+        ? timeContext.weekPlanningEvents.timedByWeekday[String(weekday && weekday.key || "").trim()] || []
+        : []
+      ).filter(function (item) {
+        return item.endProgress > rowIndex && item.startProgress < (rowIndex + rowspan);
+      });
+      const parallelSlotCount = overlappingTimedEvents.reduce(function (maxValue, item) {
+        return Math.max(maxValue, Math.max(1, Number(item && item.totalSlotCount) || 1));
+      }, 1);
+      const hasParallelEvent = parallelSlotCount > 1;
       const boxStyle = rowspan > 1 ? "min-height:" + String((rowspan * 84) - 4) + "px;" : "";
       const isCurrentDay = timeContext.currentWeekdayKey === weekday.key;
       const currentDayClass = isCurrentDay ? " is-current-day" : "";
       const pastDayClass = timeContext.pastWeekdayKeys[weekday.key] ? " is-past-day" : "";
       const pastRowClass = isCurrentDay && timeContext.pastLessonRowIds[row.id] ? " is-past-slot" : "";
-      const currentCellClass = currentDayClass + pastDayClass + pastRowClass;
+      const currentCellClass = currentDayClass + pastDayClass + pastRowClass + (hasParallelEvent ? " has-parallel-event" : "");
       const timeBarHtml = timeContext.barSourceRowId === row.id && isCurrentDay
         ? '<span class="schedule-compact__time-bar" style="top:' + String(timeContext.barOffsetPercent) + '%"></span>'
         : "";
@@ -893,18 +1182,22 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
         return "";
       }
 
+      if (!isWithinVisibleSchoolYear) {
+        return '<td class="schedule-compact__lesson-cell schedule-compact__lesson-cell--empty"' + (rowspan > 1 ? ' rowspan="' + rowspan + '"' : "") + '><div class="schedule-compact__lesson-box schedule-compact__lesson-box--empty"></div></td>';
+      }
+
       if (!resolvedClass) {
         return '<td class="schedule-compact__lesson-cell schedule-compact__lesson-cell--empty' + currentCellClass + '"' + (rowspan > 1 ? ' rowspan="' + rowspan + '"' : "") + '><div class="schedule-compact__lesson-box schedule-compact__lesson-box--empty"></div>' + timeBarHtml + '</td>';
       }
 
       return [
-        '<td class="schedule-compact__lesson-cell', currentCellClass, '"', rowspan > 1 ? ' rowspan="' + rowspan + '"' : "", ">",
-        '<button class="schedule-compact__lesson-box', rowspan > 1 ? " is-double" : "", lessonStatus && lessonStatus.isCancelled ? ' is-cancelled' : '', '"' + actionAttributes + ' style="', buildLessonBoxStyle(resolvedClass), " ", boxStyle, '">',
+        '<td class="schedule-compact__lesson-cell', currentCellClass, '"', rowspan > 1 ? ' rowspan="' + rowspan + '"' : "", hasParallelEvent ? ' style="--schedule-parallel-slots:' + escapeValue(String(parallelSlotCount)) + ';"' : '', ">",
+        '<button class="schedule-compact__lesson-box', rowspan > 1 ? " is-double" : "", lessonStatus && lessonStatus.isCancelled ? ' is-cancelled' : '', hasParallelEvent ? ' has-parallel-event' : '', '"' + actionAttributes + ' style="', buildLessonBoxStyle(resolvedClass), " ", boxStyle, '">',
         '<div class="schedule-compact__lesson-title">', escapeValue(getClassDisplayName(resolvedClass)), "</div>",
         lessonTopic ? '<div class="schedule-compact__lesson-topic">' + escapeValue(lessonTopic) + '</div>' : '',
         '<div class="schedule-compact__lesson-room">', escapeValue(resolvedRoom || "Raum offen"), "</div>",
         "</button>",
-        '<button class="schedule-compact__info-button" type="button" aria-label="Informationen zur Unterrichtsstunde" onclick="return window.UnterrichtsassistentApp.openPlanningInstructionLessonModal(\'', escapeValue(lessonDateValue), '\', \'', escapeValue(resolvedClassId), '\')">&#9432;</button>',
+        '<button class="schedule-compact__info-button', hasParallelEvent ? ' has-parallel-event' : '', '" type="button" aria-label="Informationen zur Unterrichtsstunde" onclick="return window.UnterrichtsassistentApp.openPlanningInstructionLessonModal(\'', escapeValue(lessonDateValue), '\', \'', escapeValue(resolvedClassId), '\')">&#9432;</button>',
         timeBarHtml,
         "</td>"
       ].join("");
@@ -973,6 +1266,7 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
       const lessonRows = rows.filter(function (row) {
         return row.type === "lesson";
       });
+      const weekPlanningEvents = buildWeekPlanningEventData(weekDates, lessonRows);
       const now = new Date(referenceDate);
       const currentWeekdayIndex = now.getDay() === 0 ? 7 : now.getDay();
       const currentWeekdayKey = currentWeekdayIndex >= 1 && currentWeekdayIndex <= 5 ? String(currentWeekdayIndex) : "";
@@ -1033,7 +1327,8 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
         pastLessonRowIds: pastLessonRowIds,
         barSourceRowId: barSourceRowId,
         barOffsetPercent: barOffsetPercent,
-        weekDates: weekDates
+        weekDates: weekDates,
+        weekPlanningEvents: weekPlanningEvents
       };
 
       const compactRows = lessonRows.map(function (row, rowIndex) {
@@ -1053,6 +1348,36 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
           "</tr>"
         ].join("");
       }).join("");
+      const allDayEventRowMarkup = weekdays.some(function (weekday) {
+        return (weekPlanningEvents.allDayByWeekday[String(weekday.key || "").trim()] || []).length > 0;
+      })
+        ? [
+            '<tr class="schedule-compact__event-strip-row">',
+            '<th class="schedule-compact__event-strip-index-cell"></th>',
+            weekdays.map(function (weekday) {
+              const weekdayKey = String(weekday && weekday.key || "").trim();
+              const items = weekPlanningEvents.allDayByWeekday[weekdayKey] || [];
+
+              return [
+                '<th class="schedule-compact__event-strip-cell">',
+                items.length
+                  ? '<div class="schedule-compact__event-strip-list">' + items.map(function (item) {
+                      return [
+                        '<div class="schedule-compact__event-strip-item" style="--schedule-event-color:',
+                        escapeValue(item.color),
+                        ';">',
+                        '<span class="schedule-compact__event-strip-text">', escapeValue(item.title), '</span>',
+                        '<button class="schedule-compact__event-strip-info" type="button" aria-label="Informationen zum Termin" onclick="window.UnterrichtsassistentApp.stopEventPropagation(event); return window.UnterrichtsassistentApp.openTimetablePlanningEventDetail(\'', escapeValue(item.eventId), '\', \'', escapeValue(item.occurrenceId), '\', \'', escapeValue(item.startDate), '\', \'', escapeValue(item.endDate), '\')">&#9432;</button>',
+                        '</div>'
+                      ].join("");
+                    }).join("")
+                  : '<span class="schedule-compact__event-strip-placeholder"></span>',
+                '</th>'
+              ].join("");
+            }).join(""),
+            '</tr>'
+          ].join("")
+        : "";
       const outageOverlayMarkup = weekdays.map(function (weekday, weekdayIndex) {
         const weekDate = weekDates[weekday.key] || null;
         const outageEvent = weekDate ? getInstructionOutageEventForDate(weekDate.isoDate) : null;
@@ -1073,9 +1398,40 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
           '</div>'
         ].join("");
       }).join("");
+      const timedEventOverlayMarkup = weekdays.map(function (weekday) {
+        const weekdayKey = String(weekday && weekday.key || "").trim();
+        const items = weekPlanningEvents.timedByWeekday[weekdayKey] || [];
+
+        return items.map(function (item) {
+          return [
+            '<div class="schedule-compact__event-overlay" style="--schedule-day-index:',
+            escapeValue(String(item.weekdayIndex)),
+            ';--schedule-event-top:',
+            escapeValue(String(item.topPercent)),
+            '%;--schedule-event-height:',
+            escapeValue(String(Math.max(item.heightPercent, 8))),
+            '%;--schedule-event-lane:',
+            escapeValue(String(item.visualLaneIndex || 0)),
+            ';--schedule-event-lane-count:',
+            escapeValue(String(item.totalSlotCount || 1)),
+            ';--schedule-event-color:',
+            escapeValue(item.color),
+            ';">',
+            '<div class="schedule-compact__event-overlay-card">',
+            '<div class="schedule-compact__event-overlay-summary">',
+            '<span class="schedule-compact__event-overlay-title">', escapeValue(item.title), '</span>',
+            item.timeLabel ? '<span class="schedule-compact__event-overlay-time">' + escapeValue(item.timeLabel) + '</span>' : '',
+            '</div>',
+            '<button class="schedule-compact__event-overlay-info" type="button" aria-label="Informationen zum Termin" onclick="window.UnterrichtsassistentApp.stopEventPropagation(event); return window.UnterrichtsassistentApp.openTimetablePlanningEventDetail(\'', escapeValue(item.eventId), '\', \'', escapeValue(item.occurrenceId), '\', \'', escapeValue(item.startDate), '\', \'', escapeValue(item.endDate), '\')">&#9432;</button>',
+            '</div>',
+            '</div>'
+          ].join("");
+        }).join("");
+      }).join("");
 
       return [
         '<div class="student-table-wrap schedule-table-wrap schedule-table-wrap--compact',
+        allDayEventRowMarkup ? ' has-event-strip' : '',
         timetableWeekShiftAnimationDirection ? ' is-week-shifting-' + escapeValue(timetableWeekShiftAnimationDirection) : '',
         '" onpointerdown="return window.UnterrichtsassistentApp.startTimetableWeekSwipe(event)" onpointermove="return window.UnterrichtsassistentApp.handleTimetableWeekSwipeMove(event)" onpointerup="return window.UnterrichtsassistentApp.endTimetableWeekSwipe(event)" onpointercancel="return window.UnterrichtsassistentApp.endTimetableWeekSwipe(event)">',
         '<table class="schedule-compact-table">',
@@ -1094,12 +1450,14 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
 
           return '<th class="' + headerClasses + '"><div class="schedule-compact__weekday-header">' + previousWeekButton + '<span class="schedule-compact__weekday-wrap"><span class="schedule-compact__weekday">' + escapeValue(weekday.shortLabel) + '</span><span class="schedule-compact__weekday-date">' + escapeValue(weekDates[weekday.key].label) + '</span></span>' + nextWeekButton + "</div></th>";
         }).join(""),
-        "</tr></thead>",
+        "</tr>",
+        allDayEventRowMarkup,
+        "</thead>",
         "<tbody>",
         compactRows,
         "</tbody>",
         "</table>",
-        outageOverlayMarkup ? '<div class="schedule-compact__overlay-layer">' + outageOverlayMarkup + '</div>' : '',
+        (outageOverlayMarkup || timedEventOverlayMarkup) ? '<div class="schedule-compact__overlay-layer">' + outageOverlayMarkup + timedEventOverlayMarkup + '</div>' : '',
         "</div>"
       ].join("");
     }
@@ -1109,6 +1467,7 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
       '<article class="panel panel--full">',
       timetable ? (isManageMode ? renderManageTable() : (rows.length ? renderCompactTable() : '<p class="empty-message">Fuer den aktuell gueltigen Stundenplan ist noch kein Zeitraster hinterlegt.</p>')) : '<p class="empty-message">Noch kein Stundenplan vorhanden. Lege im Modus Verwalten ueber den Plus-Button den ersten Stundenplan an.</p>',
       !isManageMode ? buildPlanningInstructionLessonModalForClass() : '',
+      !isManageMode ? buildTimetablePlanningEventDetailModal() : '',
       "</article>",
       "</div>"
     ].join("");

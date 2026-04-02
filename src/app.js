@@ -90,6 +90,7 @@ let activeEvaluationSheetDraft = null;
 let activePlannedEvaluationDraft = null;
 let activePlanningEventDraft = null;
 let activePlanningInstructionLessonDraft = null;
+let activeTimetablePlanningEventDetail = null;
 let activeCurriculumSeriesDraft = null;
 let activeCurriculumSequenceDraft = null;
 let activeCurriculumLessonDraft = null;
@@ -8185,6 +8186,7 @@ function buildPlannedEvaluationPlanningEventPayload(currentRawSnapshot, plannedE
     category: categoryName || "Bewertung",
     description: [sheetTitle ? "Bewertungsbogen: " + sheetTitle : "", classLabel ? "Lerngruppe: " + classLabel : ""].filter(Boolean).join("\n"),
     priority: 2,
+    showInTimetable: false,
     isRecurring: false,
     recurrenceInterval: 1,
     recurrenceUnit: "weeks",
@@ -8222,6 +8224,7 @@ function repairPlannedEvaluationPlanningEvents(currentRawSnapshot) {
           category: String(previousPlanningEvent.category || "").trim(),
           description: String(previousPlanningEvent.description || "").trim(),
           priority: Number(previousPlanningEvent.priority) || 0,
+          showInTimetable: Boolean(previousPlanningEvent.showInTimetable),
           isRecurring: Boolean(previousPlanningEvent.isRecurring),
           recurrenceInterval: normalizePlanningEventRecurrenceInterval(previousPlanningEvent.recurrenceInterval),
           recurrenceUnit: normalizePlanningEventRecurrenceUnit(previousPlanningEvent.recurrenceUnit),
@@ -8262,6 +8265,7 @@ function repairPlannedEvaluationPlanningEvents(currentRawSnapshot) {
           category: String(nextPlanningEvent.category || "").trim(),
           description: String(nextPlanningEvent.description || "").trim(),
           priority: Number(nextPlanningEvent.priority) || 0,
+          showInTimetable: Boolean(nextPlanningEvent.showInTimetable),
           isRecurring: Boolean(nextPlanningEvent.isRecurring),
           recurrenceInterval: normalizePlanningEventRecurrenceInterval(nextPlanningEvent.recurrenceInterval),
           recurrenceUnit: normalizePlanningEventRecurrenceUnit(nextPlanningEvent.recurrenceUnit),
@@ -8338,6 +8342,7 @@ function syncPlanningEventForPlannedEvaluation(currentRawSnapshot, plannedEvalua
   planningEvent.category = payload.category;
   planningEvent.description = payload.description;
   planningEvent.priority = payload.priority;
+  planningEvent.showInTimetable = false;
   planningEvent.isRecurring = false;
   planningEvent.recurrenceInterval = 1;
   planningEvent.recurrenceUnit = "weeks";
@@ -8968,6 +8973,9 @@ window.UnterrichtsassistentApp.getPlanningCategoryDefinitions = function () {
 };
 window.UnterrichtsassistentApp.getPlanningEventsForDisplay = function (snapshot, options) {
   return getPlanningEventsForDisplay(snapshot || getMutableRawSnapshot(), options);
+};
+window.UnterrichtsassistentApp.getActiveTimetablePlanningEventDetail = function () {
+  return activeTimetablePlanningEventDetail;
 };
 window.UnterrichtsassistentApp.getPlanningSidebarCategoryFilters = function () {
   const sourceSnapshot = getMutableRawSnapshot();
@@ -9957,6 +9965,7 @@ window.UnterrichtsassistentApp.openPlanningEventModal = function (dateValue) {
       category: String(existingEvent.category || "").trim(),
       description: String(existingEvent.description || "").trim(),
       priority: [1, 2, 3].indexOf(Number(existingEvent.priority)) >= 0 ? Number(existingEvent.priority) : 3,
+      showInTimetable: Boolean(existingEvent.showInTimetable),
       isRecurring: Boolean(existingEvent.isRecurring),
       recurrenceInterval: normalizePlanningEventRecurrenceInterval(existingEvent.recurrenceInterval),
       recurrenceUnit: normalizePlanningEventRecurrenceUnit(existingEvent.recurrenceUnit),
@@ -9981,6 +9990,7 @@ window.UnterrichtsassistentApp.openPlanningEventModal = function (dateValue) {
       category: "",
       description: "",
       priority: 3,
+      showInTimetable: false,
       isRecurring: false,
       recurrenceInterval: 1,
       recurrenceUnit: "weeks",
@@ -10092,6 +10102,99 @@ window.UnterrichtsassistentApp.closePlanningInstructionLessonModal = function ()
     setActiveView(activeViewId);
   }
 
+  return false;
+};
+window.UnterrichtsassistentApp.openTimetablePlanningEventDetail = function (eventId, occurrenceId, startDateValue, endDateValue) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const normalizedEventId = String(eventId || "").trim();
+  const normalizedOccurrenceId = String(occurrenceId || "").trim();
+  const normalizedStartDate = String(startDateValue || "").slice(0, 10);
+  const normalizedEndDate = String(endDateValue || normalizedStartDate).slice(0, 10) || normalizedStartDate;
+  const displayEvents = currentRawSnapshot
+    ? getPlanningEventsForDisplay(currentRawSnapshot, {
+        rangeStart: normalizedStartDate,
+        rangeEnd: normalizedEndDate
+      })
+    : [];
+  const detailEvent = displayEvents.find(function (entry) {
+    if (normalizedOccurrenceId) {
+      return String(entry && entry.occurrenceId || "").trim() === normalizedOccurrenceId;
+    }
+
+    return String(entry && entry.id || "").trim() === normalizedEventId
+      && String(entry && entry.startDate || "").slice(0, 10) === normalizedStartDate
+      && String(entry && entry.endDate || "").slice(0, 10) === normalizedEndDate;
+  }) || null;
+
+  if (!detailEvent) {
+    return false;
+  }
+
+  activeTimetablePlanningEventDetail = {
+    id: String(detailEvent.id || "").trim(),
+    sourceEventId: String(detailEvent.sourceEventId || detailEvent.id || "").trim(),
+    occurrenceId: String(detailEvent.occurrenceId || "").trim(),
+    title: String(detailEvent.title || "").trim(),
+    startDate: String(detailEvent.startDate || "").slice(0, 10),
+    endDate: String(detailEvent.endDate || detailEvent.startDate || "").slice(0, 10),
+    startTime: String(detailEvent.startTime || "").trim(),
+    endTime: String(detailEvent.endTime || "").trim(),
+    category: String(detailEvent.category || "").trim(),
+    description: String(detailEvent.description || "").trim(),
+    priority: [1, 2, 3].indexOf(Number(detailEvent.priority)) >= 0 ? Number(detailEvent.priority) : 3,
+    isRecurringSeries: Boolean(detailEvent.isRecurringSeries),
+    isRecurringOccurrence: Boolean(detailEvent.isRecurringOccurrence),
+    originalStartDate: String(detailEvent.originalStartDate || detailEvent.startDate || "").slice(0, 10),
+    originalEndDate: String(detailEvent.originalEndDate || detailEvent.endDate || "").slice(0, 10)
+  };
+
+  if (activeViewId === "stundenplan") {
+    setActiveView("stundenplan");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.closeTimetablePlanningEventDetail = function () {
+  if (!activeTimetablePlanningEventDetail) {
+    return false;
+  }
+
+  activeTimetablePlanningEventDetail = null;
+
+  if (activeViewId === "stundenplan") {
+    setActiveView("stundenplan");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.openPlanningEventFromTimetableDetail = function () {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const detail = activeTimetablePlanningEventDetail;
+  const targetDate = String(detail && detail.startDate || "").slice(0, 10);
+  const targetTime = String(detail && detail.startTime || "12:00").trim() || "12:00";
+
+  if (!currentRawSnapshot || !detail || !targetDate) {
+    return false;
+  }
+
+  currentRawSnapshot.activeDateTime = targetDate + "T" + targetTime;
+  currentRawSnapshot.activeDateTimeMode = "manual";
+  planningViewMode = "jahresplanung";
+  planningAdminMode = false;
+  planningSidebarFilterOpen = false;
+  planningSidebarCategoryFilters = [];
+  planningSidebarCategoryFiltersInitialized = false;
+  activeTimetablePlanningEventDetail = null;
+  activePlanningEventDraft = null;
+  activePlanningRangeDraft = null;
+  selectedPlanningEventId = String(detail.sourceEventId || detail.id || "").trim();
+  selectedPlanningEventOccurrenceId = String(detail.occurrenceId || "").trim();
+  selectedPlanningEventOccurrenceRange = {
+    startDate: String(detail.startDate || "").slice(0, 10),
+    endDate: String(detail.endDate || detail.startDate || "").slice(0, 10)
+  };
+
+  refreshSnapshotInMemory(currentRawSnapshot, "planung");
   return false;
 };
 window.UnterrichtsassistentApp.handlePlanningInstructionLessonCancelledChange = function (isChecked) {
@@ -12019,6 +12122,7 @@ window.UnterrichtsassistentApp.submitPlanningEventModal = function (event) {
   const priorityInput = document.getElementById("planningEventPriority");
   const categoryInput = document.getElementById("planningEventCategory");
   const descriptionInput = document.getElementById("planningEventDescription");
+  const showInTimetableInput = document.getElementById("planningEventShowInTimetable");
   const recurringInput = document.getElementById("planningEventRecurringInput");
   const recurrenceIntervalInput = document.getElementById("planningEventRecurrenceInterval");
   const recurrenceUnitInput = document.getElementById("planningEventRecurrenceUnit");
@@ -12033,6 +12137,7 @@ window.UnterrichtsassistentApp.submitPlanningEventModal = function (event) {
   let priorityValue;
   let categoryValue;
   let descriptionValue;
+  let showInTimetableValue;
   let isRecurringValue;
   let recurrenceIntervalValue;
   let recurrenceUnitValue;
@@ -12059,6 +12164,7 @@ window.UnterrichtsassistentApp.submitPlanningEventModal = function (event) {
   priorityValue = [1, 2, 3].indexOf(Number(priorityInput && priorityInput.value)) >= 0 ? Number(priorityInput.value) : 3;
   categoryValue = normalizePlanningEventCategoryValue(categoryInput && categoryInput.value);
   descriptionValue = String(descriptionInput && descriptionInput.value || "").trim();
+  showInTimetableValue = Boolean(showInTimetableInput && showInTimetableInput.checked);
   isRecurringValue = Boolean(recurringInput && recurringInput.checked);
   recurrenceIntervalValue = normalizePlanningEventRecurrenceInterval(recurrenceIntervalInput && recurrenceIntervalInput.value);
   recurrenceUnitValue = normalizePlanningEventRecurrenceUnit(recurrenceUnitInput && recurrenceUnitInput.value);
@@ -12102,6 +12208,7 @@ window.UnterrichtsassistentApp.submitPlanningEventModal = function (event) {
       existingEvent.category = categoryValue;
       existingEvent.description = descriptionValue;
       existingEvent.priority = priorityValue;
+      existingEvent.showInTimetable = showInTimetableValue;
       existingEvent.isRecurring = isRecurringValue;
       existingEvent.recurrenceInterval = recurrenceIntervalValue;
       existingEvent.recurrenceUnit = recurrenceUnitValue;
@@ -12118,6 +12225,7 @@ window.UnterrichtsassistentApp.submitPlanningEventModal = function (event) {
         category: categoryValue,
         description: descriptionValue,
         priority: priorityValue,
+        showInTimetable: showInTimetableValue,
         isRecurring: isRecurringValue,
         recurrenceInterval: recurrenceIntervalValue,
         recurrenceUnit: recurrenceUnitValue,
@@ -12139,6 +12247,7 @@ window.UnterrichtsassistentApp.submitPlanningEventModal = function (event) {
       category: categoryValue,
       description: descriptionValue,
       priority: priorityValue,
+      showInTimetable: showInTimetableValue,
       isRecurring: isRecurringValue,
       recurrenceInterval: recurrenceIntervalValue,
       recurrenceUnit: recurrenceUnitValue,

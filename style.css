@@ -2961,6 +2961,10 @@ button {
   color: var(--text-soft);
 }
 
+.planning-event-form__toggle--inline {
+  padding: 0.15rem 0.1rem 0;
+}
+
 .planning-event-form__recurrence-rule {
   display: grid;
   grid-template-columns: auto minmax(78px, 100px) minmax(0, 1fr);
@@ -5144,11 +5148,16 @@ button {
 
 .schedule-table-wrap--compact {
   --schedule-compact-index-column-width: 104px;
+  --schedule-compact-overlay-top: 2.9rem;
   border: 0;
   background: transparent;
   position: relative;
   overflow: hidden;
   touch-action: pan-y;
+}
+
+.schedule-table-wrap--compact.has-event-strip {
+  --schedule-compact-overlay-top: 5.65rem;
 }
 
 .schedule-table-wrap--compact.is-week-shifting-forward .schedule-compact-table,
@@ -5244,6 +5253,70 @@ button {
   font-weight: 600;
 }
 
+.schedule-compact__event-strip-row th {
+  padding: 0.3rem 0.22rem 0.45rem;
+  background: rgba(255, 252, 247, 0.72);
+  vertical-align: top;
+}
+
+.schedule-compact__event-strip-index-cell {
+  width: var(--schedule-compact-index-column-width);
+  min-width: var(--schedule-compact-index-column-width);
+}
+
+.schedule-compact__event-strip-cell {
+  min-width: 0;
+}
+
+.schedule-compact__event-strip-list {
+  display: grid;
+  gap: 0.3rem;
+  max-height: 4.3rem;
+  overflow-y: auto;
+}
+
+.schedule-compact__event-strip-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 32px;
+  padding: 0.28rem 0.35rem 0.28rem 0.55rem;
+  border-left: 4px solid color-mix(in srgb, var(--schedule-event-color, #d9d4cb) 82%, #254c5d 18%);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--schedule-event-color, #d9d4cb) 22%, white 78%);
+}
+
+.schedule-compact__event-strip-text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: rgba(31, 36, 48, 0.86);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.schedule-compact__event-strip-info {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgba(23, 49, 62, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--sidebar);
+  font-size: 0.76rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.schedule-compact__event-strip-placeholder {
+  display: block;
+  min-height: 32px;
+}
+
 .schedule-compact__row td {
   border: 0;
   padding: 0.05rem 0.22rem;
@@ -5298,6 +5371,7 @@ button {
 }
 
 .schedule-compact__lesson-box {
+  display: block;
   width: 100%;
   height: 100%;
   min-height: 74px;
@@ -5317,6 +5391,12 @@ button {
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
+}
+
+.schedule-compact__lesson-box.has-parallel-event {
+  width: calc((100% - ((var(--schedule-parallel-slots, 2) - 1) * 0.36rem)) / var(--schedule-parallel-slots, 2));
+  padding-right: 0.74rem;
+  padding-left: 2rem;
 }
 
 .schedule-compact__lesson-box--empty {
@@ -5382,9 +5462,14 @@ button {
   line-height: 1;
 }
 
+.schedule-compact__info-button.has-parallel-event {
+  left: 0.78rem;
+  right: auto;
+}
+
 .schedule-compact__overlay-layer {
   position: absolute;
-  inset: 2.9rem 0 0;
+  inset: var(--schedule-compact-overlay-top, 2.9rem) 0 0;
   pointer-events: none;
   z-index: 4;
 }
@@ -5411,6 +5496,110 @@ button {
   font-size: 0.92rem;
   font-weight: 800;
   line-height: 1.28;
+}
+
+.schedule-compact__event-overlay {
+  box-sizing: border-box;
+  position: absolute;
+  top: var(--schedule-event-top, 0%);
+  left: calc(var(--schedule-compact-index-column-width) + (var(--schedule-day-index, 0) * ((100% - var(--schedule-compact-index-column-width)) / 5)) + (var(--schedule-event-lane, 0) * (((100% - var(--schedule-compact-index-column-width)) / 5) / var(--schedule-event-lane-count, 1))));
+  width: calc((((100% - var(--schedule-compact-index-column-width)) / 5) / var(--schedule-event-lane-count, 1)));
+  height: var(--schedule-event-height, 10%);
+  padding: 0.18rem;
+  pointer-events: none;
+}
+
+.schedule-compact__event-overlay-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.35rem;
+  align-items: start;
+  width: 100%;
+  height: 100%;
+  min-height: 34px;
+  padding: 0.38rem 0.42rem 0.38rem 0.55rem;
+  border-left: 4px solid color-mix(in srgb, var(--schedule-event-color, #d9d4cb) 76%, #254c5d 24%);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--schedule-event-color, #d9d4cb) 24%, white 76%);
+  box-shadow: 0 10px 22px rgba(23, 49, 62, 0.12);
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.schedule-compact__event-overlay-summary {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.schedule-compact__event-overlay-title {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: rgba(31, 36, 48, 0.88);
+  font-size: 0.76rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.schedule-compact__event-overlay-time {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: rgba(31, 36, 48, 0.68);
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.schedule-compact__event-overlay-info {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgba(23, 49, 62, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--sidebar);
+  font-size: 0.76rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.import-modal__dialog--timetable-event {
+  width: min(560px, calc(100% - 2rem));
+  max-width: 560px;
+}
+
+.timetable-event-detail-modal {
+  display: grid;
+  gap: 0.95rem;
+}
+
+.timetable-event-detail-modal__section {
+  display: grid;
+  gap: 0.28rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid rgba(23, 49, 62, 0.1);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.timetable-event-detail-modal__section h4 {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.timetable-event-detail-modal__section p {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.45;
 }
 
 @keyframes scheduleCompactWeekShiftForward {
