@@ -16,9 +16,14 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
     const weekdays = service.getWeekdays();
     const classes = service.getAllClasses();
     const snapshot = service && service.snapshot ? service.snapshot : {};
-    const planningEvents = Array.isArray(snapshot.planningEvents) ? snapshot.planningEvents : [];
     const schoolYearStart = String(snapshot.schoolYearStart || "").slice(0, 10);
     const schoolYearEnd = String(snapshot.schoolYearEnd || "").slice(0, 10);
+    const planningEvents = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningEventsForDisplay === "function"
+      ? window.UnterrichtsassistentApp.getPlanningEventsForDisplay(snapshot, {
+          rangeStart: schoolYearStart,
+          rangeEnd: schoolYearEnd
+        })
+      : (Array.isArray(snapshot.planningEvents) ? snapshot.planningEvents : []);
     const planningInstructionLessonDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActivePlanningInstructionLessonDraft === "function"
       ? window.UnterrichtsassistentApp.getActivePlanningInstructionLessonDraft()
       : null;

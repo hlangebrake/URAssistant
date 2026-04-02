@@ -110,6 +110,8 @@ let planningSidebarFilterOpen = false;
 let planningSidebarCategoryFilters = [];
 let planningSidebarCategoryFiltersInitialized = false;
 let selectedPlanningEventId = "";
+let selectedPlanningEventOccurrenceId = "";
+let selectedPlanningEventOccurrenceRange = null;
 let seatPlanManageMode = "sitzordnung";
 let seatPlanDeskToolMode = "move";
 let seatPlanMoveLinkMode = true;
@@ -1006,6 +1008,258 @@ function getPlanningCollections(snapshot) {
     categories: source.planningCategories,
     lessonStatuses: source.planningInstructionLessonStatuses
   };
+}
+
+function parsePlanningEventDate(dateValue) {
+  const normalizedDate = String(dateValue || "").slice(0, 10);
+  const parts = normalizedDate.split("-");
+  const year = Number(parts[0]);
+  const month = Number(parts[1]);
+  const day = Number(parts[2]);
+  const parsedDate = parts.length === 3
+    ? new Date(year, month - 1, day)
+    : null;
+
+  if (!parsedDate || Number.isNaN(parsedDate.getTime())) {
+    return null;
+  }
+
+  if (parsedDate.getFullYear() !== year || parsedDate.getMonth() !== month - 1 || parsedDate.getDate() !== day) {
+    return null;
+  }
+
+  return parsedDate;
+}
+
+function toPlanningEventIsoDate(dateValue) {
+  if (!(dateValue instanceof Date) || Number.isNaN(dateValue.getTime())) {
+    return "";
+  }
+
+  return [
+    String(dateValue.getFullYear()).padStart(4, "0"),
+    String(dateValue.getMonth() + 1).padStart(2, "0"),
+    String(dateValue.getDate()).padStart(2, "0")
+  ].join("-");
+}
+
+function getPlanningEventDayDifference(startDateValue, endDateValue) {
+  const startDate = parsePlanningEventDate(startDateValue);
+  const endDate = parsePlanningEventDate(endDateValue);
+
+  if (!startDate || !endDate) {
+    return 0;
+  }
+
+  return Math.max(0, Math.round((Date.UTC(endDate.getFullYear(), endDate.getMonth(), endDate.getDate()) - Date.UTC(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())) / 86400000));
+}
+
+function addPlanningEventDays(dateValue, dayCount) {
+  const parsedDate = parsePlanningEventDate(dateValue);
+  const nextDate = parsedDate
+    ? new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate())
+    : null;
+
+  if (!nextDate) {
+    return "";
+  }
+
+  nextDate.setDate(nextDate.getDate() + (Number(dayCount) || 0));
+  return toPlanningEventIsoDate(nextDate);
+}
+
+function addPlanningEventMonths(dateValue, monthCount) {
+  const parsedDate = parsePlanningEventDate(dateValue);
+  const normalizedMonthCount = Math.round(Number(monthCount) || 0);
+  let targetYear;
+  let targetMonthIndex;
+  let lastDayOfTargetMonth;
+
+  if (!parsedDate) {
+    return "";
+  }
+
+  targetYear = parsedDate.getFullYear();
+  targetMonthIndex = parsedDate.getMonth() + normalizedMonthCount;
+  targetYear += Math.floor(targetMonthIndex / 12);
+  targetMonthIndex = ((targetMonthIndex % 12) + 12) % 12;
+  lastDayOfTargetMonth = new Date(targetYear, targetMonthIndex + 1, 0).getDate();
+
+  return toPlanningEventIsoDate(new Date(
+    targetYear,
+    targetMonthIndex,
+    Math.min(parsedDate.getDate(), lastDayOfTargetMonth)
+  ));
+}
+
+function getPlanningEventMonthlyWeekdayOccurrenceDate(dateValue, monthCount) {
+  const parsedDate = parsePlanningEventDate(dateValue);
+  const normalizedMonthCount = Math.round(Number(monthCount) || 0);
+  let targetYear;
+  let targetMonthIndex;
+  let firstOfMonth;
+  let lastOfMonth;
+  let weekday;
+  let ordinal;
+  let isLast;
+  let firstMatchDay;
+  let candidateDay;
+
+  if (!parsedDate) {
+    return "";
+  }
+
+  targetYear = parsedDate.getFullYear();
+  targetMonthIndex = parsedDate.getMonth() + normalizedMonthCount;
+  targetYear += Math.floor(targetMonthIndex / 12);
+  targetMonthIndex = ((targetMonthIndex % 12) + 12) % 12;
+  firstOfMonth = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), 1);
+  lastOfMonth = new Date(parsedDate.getFullYear(), parsedDate.getMonth() + 1, 0);
+  weekday = parsedDate.getDay();
+  ordinal = Math.floor((parsedDate.getDate() - 1) / 7) + 1;
+  isLast = parsedDate.getDate() + 7 > lastOfMonth.getDate();
+  firstOfMonth = new Date(targetYear, targetMonthIndex, 1);
+  lastOfMonth = new Date(targetYear, targetMonthIndex + 1, 0);
+  firstMatchDay = 1 + ((weekday - firstOfMonth.getDay() + 7) % 7);
+  candidateDay = firstMatchDay + ((ordinal - 1) * 7);
+
+  if (isLast || candidateDay > lastOfMonth.getDate()) {
+    candidateDay = lastOfMonth.getDate();
+    while (candidateDay > 1 && new Date(targetYear, targetMonthIndex, candidateDay).getDay() !== weekday) {
+      candidateDay -= 1;
+    }
+  }
+
+  return toPlanningEventIsoDate(new Date(targetYear, targetMonthIndex, candidateDay));
+}
+
+function normalizePlanningEventRecurrenceInterval(value) {
+  return Math.max(1, Math.round(Number(value) || 1));
+}
+
+function normalizePlanningEventRecurrenceUnit(value) {
+  const normalizedValue = String(value || "").trim().toLowerCase();
+
+  return ["days", "weeks", "months"].indexOf(normalizedValue) >= 0
+    ? normalizedValue
+    : "weeks";
+}
+
+function normalizePlanningEventRecurrenceUntilDate(value) {
+  return String(value || "").slice(0, 10);
+}
+
+function buildPlanningEventDisplayOccurrence(eventItem, occurrenceIndex) {
+  const baseStartDate = String(eventItem && eventItem.startDate || "").slice(0, 10);
+  const baseEndDate = String(eventItem && eventItem.endDate || baseStartDate).slice(0, 10) || baseStartDate;
+  const isRecurring = Boolean(eventItem && eventItem.isRecurring);
+  const recurrenceInterval = normalizePlanningEventRecurrenceInterval(eventItem && eventItem.recurrenceInterval);
+  const recurrenceUnit = normalizePlanningEventRecurrenceUnit(eventItem && eventItem.recurrenceUnit);
+  const monthOffset = recurrenceInterval * occurrenceIndex;
+  const startDateValue = occurrenceIndex === 0
+    ? baseStartDate
+    : (function () {
+        if (recurrenceUnit === "days") {
+          return addPlanningEventDays(baseStartDate, recurrenceInterval * occurrenceIndex);
+        }
+
+        if (recurrenceUnit === "weeks") {
+          return addPlanningEventDays(baseStartDate, recurrenceInterval * occurrenceIndex * 7);
+        }
+
+        if (eventItem && eventItem.recurrenceMonthlyWeekday) {
+          return getPlanningEventMonthlyWeekdayOccurrenceDate(baseStartDate, monthOffset);
+        }
+
+        return addPlanningEventMonths(baseStartDate, monthOffset);
+      }());
+  const endDateValue = addPlanningEventDays(startDateValue, getPlanningEventDayDifference(baseStartDate, baseEndDate));
+
+  if (!startDateValue) {
+    return null;
+  }
+
+  return Object.assign({}, eventItem, {
+    id: String(eventItem && eventItem.id || "").trim(),
+    sourceEventId: String(eventItem && eventItem.id || "").trim(),
+    occurrenceId: [String(eventItem && eventItem.id || "").trim(), startDateValue, endDateValue].join("::"),
+    occurrenceIndex: occurrenceIndex,
+    isRecurringSeries: isRecurring,
+    isRecurringOccurrence: isRecurring && occurrenceIndex > 0,
+    originalStartDate: baseStartDate,
+    originalEndDate: baseEndDate,
+    startDate: startDateValue,
+    endDate: endDateValue
+  });
+}
+
+function doesPlanningEventOccurrenceOverlapRange(eventItem, rangeStartDate, rangeEndDate) {
+  const startDateValue = String(eventItem && eventItem.startDate || "").slice(0, 10);
+  const endDateValue = String(eventItem && eventItem.endDate || startDateValue).slice(0, 10);
+
+  if (!startDateValue) {
+    return false;
+  }
+
+  if (rangeStartDate && endDateValue < rangeStartDate) {
+    return false;
+  }
+
+  if (rangeEndDate && startDateValue > rangeEndDate) {
+    return false;
+  }
+
+  return true;
+}
+
+function getPlanningEventsForDisplay(snapshot, options) {
+  const sourceSnapshot = snapshot || {};
+  const sourceEvents = getPlanningCollections(sourceSnapshot).events;
+  const rangeOptions = options && typeof options === "object"
+    ? options
+    : {};
+  const rangeStartDate = String(rangeOptions.rangeStart || "").slice(0, 10);
+  const rangeEndDate = String(rangeOptions.rangeEnd || "").slice(0, 10);
+  const renderedEvents = [];
+
+  sourceEvents.forEach(function (eventItem) {
+    const normalizedStartDate = String(eventItem && eventItem.startDate || "").slice(0, 10);
+    const normalizedUntilDate = normalizePlanningEventRecurrenceUntilDate(eventItem && eventItem.recurrenceUntilDate);
+    const isRecurring = Boolean(eventItem && eventItem.isRecurring) && Boolean(normalizedStartDate) && Boolean(normalizedUntilDate);
+    let occurrenceIndex = 0;
+    let occurrence = buildPlanningEventDisplayOccurrence(eventItem, occurrenceIndex);
+
+    if (!occurrence) {
+      return;
+    }
+
+    while (occurrence) {
+      if (occurrenceIndex === 0 || (isRecurring && String(occurrence.startDate || "").slice(0, 10) <= normalizedUntilDate)) {
+        if (doesPlanningEventOccurrenceOverlapRange(occurrence, rangeStartDate, rangeEndDate)) {
+          renderedEvents.push(occurrence);
+        }
+      } else {
+        break;
+      }
+
+      if (!isRecurring) {
+        break;
+      }
+
+      occurrenceIndex += 1;
+      occurrence = buildPlanningEventDisplayOccurrence(eventItem, occurrenceIndex);
+
+      if (!occurrence || occurrenceIndex > 5000) {
+        break;
+      }
+
+      if (rangeEndDate && String(occurrence.startDate || "").slice(0, 10) > rangeEndDate && String(occurrence.startDate || "").slice(0, 10) > normalizedUntilDate) {
+        break;
+      }
+    }
+  });
+
+  return renderedEvents;
 }
 
 function getCurriculumCollections(snapshot) {
@@ -7931,6 +8185,11 @@ function buildPlannedEvaluationPlanningEventPayload(currentRawSnapshot, plannedE
     category: categoryName || "Bewertung",
     description: [sheetTitle ? "Bewertungsbogen: " + sheetTitle : "", classLabel ? "Lerngruppe: " + classLabel : ""].filter(Boolean).join("\n"),
     priority: 2,
+    isRecurring: false,
+    recurrenceInterval: 1,
+    recurrenceUnit: "weeks",
+    recurrenceUntilDate: "",
+    recurrenceMonthlyWeekday: false,
     isExternallyControlled: true,
     controlledByView: "Bewertung",
     controlledById: String(plannedEvaluation && plannedEvaluation.id || "").trim()
@@ -7963,6 +8222,11 @@ function repairPlannedEvaluationPlanningEvents(currentRawSnapshot) {
           category: String(previousPlanningEvent.category || "").trim(),
           description: String(previousPlanningEvent.description || "").trim(),
           priority: Number(previousPlanningEvent.priority) || 0,
+          isRecurring: Boolean(previousPlanningEvent.isRecurring),
+          recurrenceInterval: normalizePlanningEventRecurrenceInterval(previousPlanningEvent.recurrenceInterval),
+          recurrenceUnit: normalizePlanningEventRecurrenceUnit(previousPlanningEvent.recurrenceUnit),
+          recurrenceUntilDate: normalizePlanningEventRecurrenceUntilDate(previousPlanningEvent.recurrenceUntilDate),
+          recurrenceMonthlyWeekday: Boolean(previousPlanningEvent.recurrenceMonthlyWeekday),
           isExternallyControlled: Boolean(previousPlanningEvent.isExternallyControlled),
           controlledByView: String(previousPlanningEvent.controlledByView || "").trim(),
           controlledById: String(previousPlanningEvent.controlledById || "").trim()
@@ -7998,6 +8262,11 @@ function repairPlannedEvaluationPlanningEvents(currentRawSnapshot) {
           category: String(nextPlanningEvent.category || "").trim(),
           description: String(nextPlanningEvent.description || "").trim(),
           priority: Number(nextPlanningEvent.priority) || 0,
+          isRecurring: Boolean(nextPlanningEvent.isRecurring),
+          recurrenceInterval: normalizePlanningEventRecurrenceInterval(nextPlanningEvent.recurrenceInterval),
+          recurrenceUnit: normalizePlanningEventRecurrenceUnit(nextPlanningEvent.recurrenceUnit),
+          recurrenceUntilDate: normalizePlanningEventRecurrenceUntilDate(nextPlanningEvent.recurrenceUntilDate),
+          recurrenceMonthlyWeekday: Boolean(nextPlanningEvent.recurrenceMonthlyWeekday),
           isExternallyControlled: Boolean(nextPlanningEvent.isExternallyControlled),
           controlledByView: String(nextPlanningEvent.controlledByView || "").trim(),
           controlledById: String(nextPlanningEvent.controlledById || "").trim()
@@ -8032,6 +8301,8 @@ function syncPlanningEventForPlannedEvaluation(currentRawSnapshot, plannedEvalua
 
       if (String(selectedPlanningEventId || "").trim() === normalizedPlanningEventId) {
         selectedPlanningEventId = "";
+        selectedPlanningEventOccurrenceId = "";
+        selectedPlanningEventOccurrenceRange = null;
       }
       if (activePlanningEventDraft && String(activePlanningEventDraft.id || "").trim() === normalizedPlanningEventId) {
         activePlanningEventDraft = null;
@@ -8067,6 +8338,11 @@ function syncPlanningEventForPlannedEvaluation(currentRawSnapshot, plannedEvalua
   planningEvent.category = payload.category;
   planningEvent.description = payload.description;
   planningEvent.priority = payload.priority;
+  planningEvent.isRecurring = false;
+  planningEvent.recurrenceInterval = 1;
+  planningEvent.recurrenceUnit = "weeks";
+  planningEvent.recurrenceUntilDate = "";
+  planningEvent.recurrenceMonthlyWeekday = false;
   planningEvent.isExternallyControlled = true;
   planningEvent.controlledByView = payload.controlledByView;
   planningEvent.controlledById = payload.controlledById;
@@ -8690,6 +8966,9 @@ window.UnterrichtsassistentApp.getPlanningCategoryColor = function (categoryName
 window.UnterrichtsassistentApp.getPlanningCategoryDefinitions = function () {
   return getPlanningCategoryDefinitions(getMutableRawSnapshot());
 };
+window.UnterrichtsassistentApp.getPlanningEventsForDisplay = function (snapshot, options) {
+  return getPlanningEventsForDisplay(snapshot || getMutableRawSnapshot(), options);
+};
 window.UnterrichtsassistentApp.getPlanningSidebarCategoryFilters = function () {
   const sourceSnapshot = getMutableRawSnapshot();
 
@@ -8761,8 +9040,27 @@ window.UnterrichtsassistentApp.clearAllPlanningSidebarCategoryFilters = function
 window.UnterrichtsassistentApp.getSelectedPlanningEventId = function () {
   return String(selectedPlanningEventId || "").trim();
 };
+window.UnterrichtsassistentApp.getSelectedPlanningEventState = function () {
+  return {
+    eventId: String(selectedPlanningEventId || "").trim(),
+    occurrenceId: String(selectedPlanningEventOccurrenceId || "").trim(),
+    startDate: selectedPlanningEventOccurrenceRange ? String(selectedPlanningEventOccurrenceRange.startDate || "").slice(0, 10) : "",
+    endDate: selectedPlanningEventOccurrenceRange ? String(selectedPlanningEventOccurrenceRange.endDate || "").slice(0, 10) : ""
+  };
+};
 window.UnterrichtsassistentApp.selectPlanningEvent = function (eventId) {
+  const occurrenceId = arguments.length > 1 ? String(arguments[1] || "").trim() : "";
+  const occurrenceStartDate = arguments.length > 2 ? String(arguments[2] || "").slice(0, 10) : "";
+  const occurrenceEndDate = arguments.length > 3 ? String(arguments[3] || "").slice(0, 10) : "";
+
   selectedPlanningEventId = String(eventId || "").trim();
+  selectedPlanningEventOccurrenceId = occurrenceId;
+  selectedPlanningEventOccurrenceRange = occurrenceStartDate
+    ? {
+        startDate: occurrenceStartDate,
+        endDate: occurrenceEndDate || occurrenceStartDate
+      }
+    : null;
 
   if (activeViewId === "planung") {
     setActiveView("planung");
@@ -8776,6 +9074,8 @@ window.UnterrichtsassistentApp.clearSelectedPlanningEvent = function () {
   }
 
   selectedPlanningEventId = "";
+  selectedPlanningEventOccurrenceId = "";
+  selectedPlanningEventOccurrenceRange = null;
 
   if (activeViewId === "planung") {
     setActiveView("planung");
@@ -9642,6 +9942,11 @@ window.UnterrichtsassistentApp.openPlanningEventModal = function (dateValue) {
 
   if (existingEvent) {
     selectedPlanningEventId = String(existingEvent.id || "").trim();
+    selectedPlanningEventOccurrenceId = "";
+    selectedPlanningEventOccurrenceRange = {
+      startDate: String(existingEvent.startDate || "").slice(0, 10),
+      endDate: String(existingEvent.endDate || existingEvent.startDate || "").slice(0, 10)
+    };
     activePlanningEventDraft = {
       id: String(existingEvent.id || "").trim(),
       title: String(existingEvent.title || "").trim(),
@@ -9652,6 +9957,11 @@ window.UnterrichtsassistentApp.openPlanningEventModal = function (dateValue) {
       category: String(existingEvent.category || "").trim(),
       description: String(existingEvent.description || "").trim(),
       priority: [1, 2, 3].indexOf(Number(existingEvent.priority)) >= 0 ? Number(existingEvent.priority) : 3,
+      isRecurring: Boolean(existingEvent.isRecurring),
+      recurrenceInterval: normalizePlanningEventRecurrenceInterval(existingEvent.recurrenceInterval),
+      recurrenceUnit: normalizePlanningEventRecurrenceUnit(existingEvent.recurrenceUnit),
+      recurrenceUntilDate: normalizePlanningEventRecurrenceUntilDate(existingEvent.recurrenceUntilDate),
+      recurrenceMonthlyWeekday: Boolean(existingEvent.recurrenceMonthlyWeekday),
       isExternallyControlled: Boolean(existingEvent.isExternallyControlled),
       controlledByView: String(existingEvent.controlledByView || "").trim(),
       controlledById: String(existingEvent.controlledById || "").trim()
@@ -9671,6 +9981,11 @@ window.UnterrichtsassistentApp.openPlanningEventModal = function (dateValue) {
       category: "",
       description: "",
       priority: 3,
+      isRecurring: false,
+      recurrenceInterval: 1,
+      recurrenceUnit: "weeks",
+      recurrenceUntilDate: "",
+      recurrenceMonthlyWeekday: false,
       isExternallyControlled: false,
       controlledByView: "",
       controlledById: ""
@@ -9685,6 +10000,47 @@ window.UnterrichtsassistentApp.closePlanningEventModal = function () {
   activePlanningEventDraft = null;
   closePlanningCategorySuggestions();
   closePlanningRangeSelection();
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.handlePlanningEventRecurringChange = function (isRecurring) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+
+  if (!activePlanningEventDraft || activePlanningEventDraft.isExternallyControlled) {
+    return false;
+  }
+
+  activePlanningEventDraft.isRecurring = Boolean(isRecurring);
+
+  if (activePlanningEventDraft.isRecurring && !String(activePlanningEventDraft.recurrenceUntilDate || "").slice(0, 10)) {
+    activePlanningEventDraft.recurrenceUntilDate = String(
+      currentRawSnapshot && currentRawSnapshot.schoolYearEnd
+      || activePlanningEventDraft.endDate
+      || activePlanningEventDraft.startDate
+      || ""
+    ).slice(0, 10);
+  }
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.handlePlanningEventRecurrenceUnitChange = function (value) {
+  if (!activePlanningEventDraft || activePlanningEventDraft.isExternallyControlled) {
+    return false;
+  }
+
+  activePlanningEventDraft.recurrenceUnit = normalizePlanningEventRecurrenceUnit(value);
+
+  if (activePlanningEventDraft.recurrenceUnit !== "months") {
+    activePlanningEventDraft.recurrenceMonthlyWeekday = false;
+  }
 
   if (activeViewId === "planung") {
     setActiveView("planung");
@@ -11663,6 +12019,11 @@ window.UnterrichtsassistentApp.submitPlanningEventModal = function (event) {
   const priorityInput = document.getElementById("planningEventPriority");
   const categoryInput = document.getElementById("planningEventCategory");
   const descriptionInput = document.getElementById("planningEventDescription");
+  const recurringInput = document.getElementById("planningEventRecurringInput");
+  const recurrenceIntervalInput = document.getElementById("planningEventRecurrenceInterval");
+  const recurrenceUnitInput = document.getElementById("planningEventRecurrenceUnit");
+  const recurrenceUntilDateInput = document.getElementById("planningEventRecurrenceUntilDate");
+  const recurrenceMonthlyWeekdayInput = document.getElementById("planningEventRecurrenceMonthlyWeekday");
   const collections = currentRawSnapshot ? getPlanningCollections(currentRawSnapshot) : null;
   let startDateValue;
   let endDateValue;
@@ -11672,6 +12033,11 @@ window.UnterrichtsassistentApp.submitPlanningEventModal = function (event) {
   let priorityValue;
   let categoryValue;
   let descriptionValue;
+  let isRecurringValue;
+  let recurrenceIntervalValue;
+  let recurrenceUnitValue;
+  let recurrenceUntilDateValue;
+  let recurrenceMonthlyWeekdayValue;
 
   if (event && typeof event.preventDefault === "function") {
     event.preventDefault();
@@ -11693,6 +12059,11 @@ window.UnterrichtsassistentApp.submitPlanningEventModal = function (event) {
   priorityValue = [1, 2, 3].indexOf(Number(priorityInput && priorityInput.value)) >= 0 ? Number(priorityInput.value) : 3;
   categoryValue = normalizePlanningEventCategoryValue(categoryInput && categoryInput.value);
   descriptionValue = String(descriptionInput && descriptionInput.value || "").trim();
+  isRecurringValue = Boolean(recurringInput && recurringInput.checked);
+  recurrenceIntervalValue = normalizePlanningEventRecurrenceInterval(recurrenceIntervalInput && recurrenceIntervalInput.value);
+  recurrenceUnitValue = normalizePlanningEventRecurrenceUnit(recurrenceUnitInput && recurrenceUnitInput.value);
+  recurrenceUntilDateValue = normalizePlanningEventRecurrenceUntilDate(recurrenceUntilDateInput && recurrenceUntilDateInput.value);
+  recurrenceMonthlyWeekdayValue = recurrenceUnitValue === "months" && Boolean(recurrenceMonthlyWeekdayInput && recurrenceMonthlyWeekdayInput.checked);
 
   if (!startDateValue) {
     return false;
@@ -11700,6 +12071,21 @@ window.UnterrichtsassistentApp.submitPlanningEventModal = function (event) {
 
   if (!endDateValue || endDateValue < startDateValue) {
     endDateValue = startDateValue;
+  }
+
+  if (isRecurringValue) {
+    if (!recurrenceUntilDateValue) {
+      return false;
+    }
+
+    if (recurrenceUntilDateValue < startDateValue) {
+      recurrenceUntilDateValue = startDateValue;
+    }
+  } else {
+    recurrenceIntervalValue = 1;
+    recurrenceUnitValue = "weeks";
+    recurrenceUntilDateValue = "";
+    recurrenceMonthlyWeekdayValue = false;
   }
 
   if (activePlanningEventDraft.id) {
@@ -11716,6 +12102,11 @@ window.UnterrichtsassistentApp.submitPlanningEventModal = function (event) {
       existingEvent.category = categoryValue;
       existingEvent.description = descriptionValue;
       existingEvent.priority = priorityValue;
+      existingEvent.isRecurring = isRecurringValue;
+      existingEvent.recurrenceInterval = recurrenceIntervalValue;
+      existingEvent.recurrenceUnit = recurrenceUnitValue;
+      existingEvent.recurrenceUntilDate = recurrenceUntilDateValue;
+      existingEvent.recurrenceMonthlyWeekday = recurrenceMonthlyWeekdayValue;
     } else {
       collections.events.push({
         id: String(activePlanningEventDraft.id || createPlanningEventId()).trim(),
@@ -11727,6 +12118,11 @@ window.UnterrichtsassistentApp.submitPlanningEventModal = function (event) {
         category: categoryValue,
         description: descriptionValue,
         priority: priorityValue,
+        isRecurring: isRecurringValue,
+        recurrenceInterval: recurrenceIntervalValue,
+        recurrenceUnit: recurrenceUnitValue,
+        recurrenceUntilDate: recurrenceUntilDateValue,
+        recurrenceMonthlyWeekday: recurrenceMonthlyWeekdayValue,
         isExternallyControlled: false,
         controlledByView: "",
         controlledById: ""
@@ -11743,6 +12139,11 @@ window.UnterrichtsassistentApp.submitPlanningEventModal = function (event) {
       category: categoryValue,
       description: descriptionValue,
       priority: priorityValue,
+      isRecurring: isRecurringValue,
+      recurrenceInterval: recurrenceIntervalValue,
+      recurrenceUnit: recurrenceUnitValue,
+      recurrenceUntilDate: recurrenceUntilDateValue,
+      recurrenceMonthlyWeekday: recurrenceMonthlyWeekdayValue,
       isExternallyControlled: false,
       controlledByView: "",
       controlledById: ""
@@ -11918,6 +12319,8 @@ window.UnterrichtsassistentApp.deletePlanningEvent = function (eventId) {
 
   if (String(selectedPlanningEventId || "").trim() === normalizedEventId) {
     selectedPlanningEventId = "";
+    selectedPlanningEventOccurrenceId = "";
+    selectedPlanningEventOccurrenceRange = null;
   }
 
   collections.events = nextEvents;
@@ -13575,6 +13978,8 @@ window.UnterrichtsassistentApp.deleteActivePlannedEvaluation = function () {
   });
   if (String(selectedPlanningEventId || "").trim() === String(activePlannedEvaluationDraft && activePlannedEvaluationDraft.planningEventId || "").trim()) {
     selectedPlanningEventId = "";
+    selectedPlanningEventOccurrenceId = "";
+    selectedPlanningEventOccurrenceRange = null;
   }
   if (activePlanningEventDraft && String(activePlanningEventDraft.id || "").trim() === String(activePlannedEvaluationDraft && activePlannedEvaluationDraft.planningEventId || "").trim()) {
     activePlanningEventDraft = null;

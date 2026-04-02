@@ -317,16 +317,52 @@ class SeatOrder {
 }
 
 class PlanningEvent {
-    constructor({ id, title = "", startDate = "", endDate = "", startTime = "", endTime = "", category = "", description = "", priority = 3, isExternallyControlled = false, controlledByView = "", controlledById = "" }) {
+    constructor({
+      id,
+      title = "",
+      startDate = "",
+      endDate = "",
+      startTime = "",
+      endTime = "",
+      category = "",
+      description = "",
+      priority = 3,
+      isRecurring = false,
+      recurrenceInterval = 1,
+      recurrenceUnit = "weeks",
+      recurrenceUntilDate = "",
+      recurrenceMonthlyWeekday = false,
+      isExternallyControlled = false,
+      controlledByView = "",
+      controlledById = ""
+    }) {
+      const normalizedStartDate = String(startDate || "").slice(0, 10);
+      const normalizedEndDate = String(endDate || normalizedStartDate).slice(0, 10) || normalizedStartDate;
+      const normalizedRecurrenceUnit = ["days", "weeks", "months"].indexOf(String(recurrenceUnit || "").trim().toLowerCase()) >= 0
+        ? String(recurrenceUnit || "").trim().toLowerCase()
+        : "weeks";
+      const normalizedRecurrenceInterval = Math.max(1, Math.round(Number(recurrenceInterval) || 1));
+      const normalizedRecurrenceUntilDate = String(recurrenceUntilDate || "").slice(0, 10);
+
       this.id = id;
       this.title = title;
-      this.startDate = startDate;
-      this.endDate = endDate;
+      this.startDate = normalizedStartDate;
+      this.endDate = normalizedEndDate && normalizedEndDate >= normalizedStartDate
+        ? normalizedEndDate
+        : normalizedStartDate;
       this.startTime = startTime;
       this.endTime = endTime;
       this.category = category;
       this.description = description;
       this.priority = [1, 2, 3].indexOf(Number(priority)) >= 0 ? Number(priority) : 3;
+      this.isRecurring = Boolean(isRecurring)
+        && Boolean(normalizedStartDate)
+        && Boolean(normalizedRecurrenceUntilDate)
+        && normalizedRecurrenceUntilDate >= normalizedStartDate;
+      this.recurrenceInterval = this.isRecurring ? normalizedRecurrenceInterval : 1;
+      this.recurrenceUnit = this.isRecurring ? normalizedRecurrenceUnit : "weeks";
+      this.recurrenceUntilDate = this.isRecurring ? normalizedRecurrenceUntilDate : "";
+      this.recurrenceMonthlyWeekday = this.isRecurring && this.recurrenceUnit === "months" && Boolean(recurrenceMonthlyWeekday);
       this.isExternallyControlled = Boolean(isExternallyControlled);
       this.controlledByView = this.isExternallyControlled ? String(controlledByView || "").trim() : "";
       this.controlledById = this.isExternallyControlled ? String(controlledById || "").trim() : "";

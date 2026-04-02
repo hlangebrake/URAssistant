@@ -31,9 +31,14 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       ? service.getCurrentSeatPlan(activeClass.id, activeRoom, referenceDate)
       : null;
     const students = activeClass ? service.getStudentsForClass(activeClass.id) : [];
-    const planningEvents = Array.isArray(snapshot.planningEvents) ? snapshot.planningEvents : [];
     const schoolYearStart = String(snapshot.schoolYearStart || "").slice(0, 10);
     const schoolYearEnd = String(snapshot.schoolYearEnd || "").slice(0, 10);
+    const planningEvents = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningEventsForDisplay === "function"
+      ? window.UnterrichtsassistentApp.getPlanningEventsForDisplay(snapshot, {
+          rangeStart: schoolYearStart,
+          rangeEnd: schoolYearEnd
+        })
+      : (Array.isArray(snapshot.planningEvents) ? snapshot.planningEvents : []);
     const lessonStatusLookup = (Array.isArray(snapshot.planningInstructionLessonStatuses) ? snapshot.planningInstructionLessonStatuses : []).reduce(function (lookup, statusItem) {
       const classId = String(statusItem && statusItem.classId || "").trim();
       const lessonDate = String(statusItem && statusItem.lessonDate || "").slice(0, 10);

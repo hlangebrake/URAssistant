@@ -19,9 +19,14 @@ window.Unterrichtsassistent.ui.views.bewertung = {
       ? window.UnterrichtsassistentApp.getActivePlannedEvaluationDraft()
       : null;
     const snapshot = service && service.snapshot ? service.snapshot : {};
-    const planningEvents = Array.isArray(snapshot.planningEvents) ? snapshot.planningEvents : [];
     const schoolYearStart = String(snapshot.schoolYearStart || "").slice(0, 10);
     const schoolYearEnd = String(snapshot.schoolYearEnd || "").slice(0, 10);
+    const planningEvents = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningEventsForDisplay === "function"
+      ? window.UnterrichtsassistentApp.getPlanningEventsForDisplay(snapshot, {
+          rangeStart: schoolYearStart,
+          rangeEnd: schoolYearEnd
+        })
+      : (Array.isArray(snapshot.planningEvents) ? snapshot.planningEvents : []);
     const referenceDate = service && typeof service.getReferenceDate === "function"
       ? service.getReferenceDate()
       : null;

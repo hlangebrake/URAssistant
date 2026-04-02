@@ -2764,8 +2764,8 @@ button {
 }
 
 .import-modal__dialog--planning {
-  width: min(1240px, calc(100% - 2rem));
-  max-width: 1240px;
+  width: min(1380px, calc(100% - 2rem));
+  max-width: 1380px;
   max-height: min(86vh, 920px);
   display: flex;
   flex-direction: column;
@@ -2783,15 +2783,27 @@ button {
 .planning-event-form__section--meta {
   display: grid;
   align-content: start;
+  grid-column: 1;
+  grid-row: 1;
 }
 
 .planning-event-form__section--description {
   display: grid;
   align-content: start;
+  grid-column: 1;
+  grid-row: 2;
 }
 
 .planning-event-form__section--schedule {
-  grid-column: 1 / -1;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-content: start;
+}
+
+.planning-event-form__schedule-block {
+  display: grid;
+  gap: 0.9rem;
+  min-width: 0;
 }
 
 .planning-event-form__field--title input {
@@ -2820,18 +2832,11 @@ button {
   min-width: 0;
 }
 
-.planning-event-form__grid--dates {
-  grid-template-columns: repeat(2, minmax(240px, 300px));
-  gap: 1rem;
-  align-items: start;
-  justify-content: space-between;
-}
-
-.planning-event-form__schedule-column {
-  display: grid;
+.planning-event-form__grid--dates,
+.planning-event-form__grid--schedule-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.8rem;
-  min-width: 0;
-  width: min(100%, 300px);
+  align-items: start;
 }
 
 .planning-event-form__field--schedule input {
@@ -2920,6 +2925,79 @@ button {
   background: linear-gradient(180deg, rgba(244, 241, 236, 0.98), rgba(238, 234, 227, 0.96));
   border-color: rgba(23, 49, 62, 0.1);
   box-shadow: none;
+}
+
+.planning-event-form__recurrence-card {
+  display: grid;
+  gap: 0.9rem;
+  padding: 0.95rem 1rem;
+  border: 1px solid rgba(23, 49, 62, 0.12);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 242, 235, 0.96));
+  box-shadow: 0 8px 18px rgba(23, 49, 62, 0.06);
+}
+
+.planning-event-form__recurrence-card.is-disabled {
+  background: linear-gradient(180deg, rgba(244, 241, 236, 0.98), rgba(238, 234, 227, 0.96));
+  border-color: rgba(23, 49, 62, 0.1);
+  box-shadow: none;
+}
+
+.planning-event-form__toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.planning-event-form__toggle input {
+  margin-top: 0.2rem;
+}
+
+.planning-event-form__toggle--secondary {
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--text-soft);
+}
+
+.planning-event-form__recurrence-rule {
+  display: grid;
+  grid-template-columns: auto minmax(78px, 100px) minmax(0, 1fr);
+  gap: 0.7rem;
+  align-items: center;
+}
+
+.planning-event-form__recurrence-prefix {
+  color: var(--text-soft);
+  font-weight: 700;
+}
+
+.planning-event-form__recurrence-number {
+  min-height: 48px;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(23, 49, 62, 0.14);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+}
+
+.planning-event-form__field--recurrence {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.planning-event-form__field--recurrence input {
+  min-height: 48px;
+}
+
+.planning-event-form__recurrence-hint {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.92rem;
+  line-height: 1.45;
 }
 
 .planning-event-form__control-note {
@@ -8070,9 +8148,9 @@ body.is-desk-dragging {
     min-height: 220px;
   }
 
-  .planning-event-form__grid--dates {
-    grid-template-columns: repeat(2, minmax(220px, 280px));
-    justify-content: space-between;
+  .planning-event-form__grid--dates,
+  .planning-event-form__grid--schedule-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .schedule-table {
@@ -8152,9 +8230,9 @@ body.is-desk-dragging {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .planning-event-form__grid--dates {
-    grid-template-columns: repeat(2, minmax(200px, 240px));
-    justify-content: space-between;
+  .planning-event-form__grid--dates,
+  .planning-event-form__grid--schedule-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .planning-event-form__field--title input,
@@ -8196,7 +8274,19 @@ body.is-desk-dragging {
     grid-template-columns: 1fr;
   }
 
-  .planning-event-form__grid--dates {
+  .planning-event-form__section--meta,
+  .planning-event-form__section--description,
+  .planning-event-form__section--schedule {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .planning-event-form__grid--dates,
+  .planning-event-form__grid--schedule-row {
+    grid-template-columns: 1fr;
+  }
+
+  .planning-event-form__recurrence-rule {
     grid-template-columns: 1fr;
   }
 

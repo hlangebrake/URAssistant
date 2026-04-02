@@ -68,7 +68,12 @@ window.Unterrichtsassistent.ui.views.planung = {
     const schoolHalfYearStart = String(snapshot.schoolHalfYearStart || "").slice(0, 10);
     const schoolYearEnd = String(snapshot.schoolYearEnd || "").slice(0, 10);
     const hidePastPlanningMonths = snapshot.hidePastPlanningMonths !== false;
-    const planningEvents = Array.isArray(snapshot.planningEvents) ? snapshot.planningEvents : [];
+    const planningEvents = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningEventsForDisplay === "function"
+      ? window.UnterrichtsassistentApp.getPlanningEventsForDisplay(snapshot, {
+          rangeStart: schoolYearStart,
+          rangeEnd: schoolYearEnd
+        })
+      : (Array.isArray(snapshot.planningEvents) ? snapshot.planningEvents : []);
     const selectedSidebarFilters = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningSidebarCategoryFilters === "function"
       ? window.UnterrichtsassistentApp.getPlanningSidebarCategoryFilters()
       : [];
@@ -81,9 +86,23 @@ window.Unterrichtsassistent.ui.views.planung = {
     const normalizedSelectedSidebarFilters = selectedSidebarFilters.map(function (entry) {
       return String(entry || "").trim().toLowerCase();
     });
-    const selectedPlanningEventId = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getSelectedPlanningEventId === "function"
-      ? window.UnterrichtsassistentApp.getSelectedPlanningEventId()
+    const selectedPlanningEventState = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getSelectedPlanningEventState === "function"
+      ? window.UnterrichtsassistentApp.getSelectedPlanningEventState()
+      : {
+          eventId: window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getSelectedPlanningEventId === "function"
+            ? window.UnterrichtsassistentApp.getSelectedPlanningEventId()
+            : "",
+          occurrenceId: "",
+          startDate: "",
+          endDate: ""
+        };
+    const selectedPlanningEventId = String(selectedPlanningEventState && selectedPlanningEventState.eventId || "").trim();
+    const selectedPlanningEventOccurrenceId = String(selectedPlanningEventState && selectedPlanningEventState.occurrenceId || "").trim();
+    const planningEventRecurrenceUnit = planningEventDraft
+      ? String(planningEventDraft.recurrenceUnit || "weeks").trim().toLowerCase()
       : "";
+    const isPlanningEventRecurring = Boolean(planningEventDraft && planningEventDraft.isRecurring);
+    const showMonthlyWeekdayOption = planningEventRecurrenceUnit === "months";
 
     function escapeValue(value) {
       return String(value || "")
@@ -354,12 +373,14 @@ window.Unterrichtsassistent.ui.views.planung = {
                 const category = getEventCategoryName(eventItem);
                 const timeLabel = formatTimeRange(eventItem);
                 const summary = title || "Termin";
-                const isSelected = String(eventItem.id || "").trim() === selectedPlanningEventId;
+                const isSelected = selectedPlanningEventOccurrenceId
+                  ? String(eventItem.occurrenceId || "").trim() === selectedPlanningEventOccurrenceId
+                  : String(eventItem.id || "").trim() === selectedPlanningEventId;
                 const isExternallyControlled = Boolean(eventItem && eventItem.isExternallyControlled);
 
                 return [
                   '<div class="planning-sidebar__event-row">',
-                  '<button class="planning-sidebar__event', isSelected ? ' is-selected' : '', '" type="button" onclick="return window.UnterrichtsassistentApp.selectPlanningEvent(\'', escapeValue(String(eventItem.id || "")), '\')">',
+                  '<button class="planning-sidebar__event', isSelected ? ' is-selected' : '', '" type="button" onclick="return window.UnterrichtsassistentApp.selectPlanningEvent(\'', escapeValue(String(eventItem.id || "")), '\', \'', escapeValue(String(eventItem.occurrenceId || "")), '\', \'', escapeValue(String(eventItem.startDate || "")), '\', \'', escapeValue(String(eventItem.endDate || "")), '\')">',
                   '<span class="planning-sidebar__event-date">', escapeValue(buildEventDateLabel(eventItem)), '</span>',
                   '<span class="planning-sidebar__event-main"><span class="planning-sidebar__event-marker">', buildEventMarker(eventItem), '</span><span class="planning-sidebar__event-title">', escapeValue(summary), '</span></span>',
                   category ? '<span class="planning-sidebar__event-category">' + escapeValue(category) + '</span>' : '',
@@ -450,18 +471,21 @@ window.Unterrichtsassistent.ui.views.planung = {
       const lastMonthDate = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
       const weekdayLabels = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
       const activeDateIso = activeDate ? toIsoDate(activeDate) : "";
-      const selectedPlanningEvent = selectedPlanningEventId
+      const selectedPlanningEvent = selectedPlanningEventOccurrenceId
         ? planningEvents.find(function (eventItem) {
-            return String(eventItem && eventItem.id || "").trim() === selectedPlanningEventId;
+            return String(eventItem && eventItem.occurrenceId || "").trim() === selectedPlanningEventOccurrenceId;
           }) || null
-        : null;
+        : (selectedPlanningEventId
+          ? planningEvents.find(function (eventItem) {
+              return String(eventItem && eventItem.id || "").trim() === selectedPlanningEventId;
+            }) || null
+          : null);
       const selectedEventStart = selectedPlanningEvent
         ? String(selectedPlanningEvent.startDate || "").slice(0, 10)
-        : "";
+        : String(selectedPlanningEventState && selectedPlanningEventState.startDate || "").slice(0, 10);
       const selectedEventEnd = selectedPlanningEvent
         ? String(selectedPlanningEvent.endDate || selectedEventStart).slice(0, 10)
-        : "";
-
+        : String(selectedPlanningEventState && selectedPlanningEventState.endDate || selectedEventStart).slice(0, 10);
       while (cursor <= lastMonthDate) {
         const monthStart = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
         const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
@@ -2493,14 +2517,42 @@ window.Unterrichtsassistent.ui.views.planung = {
         '<label class="import-modal__field planning-event-form__field planning-event-form__field--description"><span>Beschreibung</span><textarea id="planningEventDescription" rows="10" placeholder="Beschreibung des Termins"', planningEventDraft.isExternallyControlled ? ' disabled' : '', '>', escapeValue(planningEventDraft.description || ""), '</textarea></label>',
         '</section>',
         '<section class="planning-event-form__section planning-event-form__section--schedule">',
-        '<div class="planning-event-form__grid planning-event-form__grid--dates">',
-        '<div class="planning-event-form__schedule-column">',
+        '<div class="planning-event-form__schedule-block">',
+        '<div class="planning-event-form__grid planning-event-form__grid--schedule-row">',
         '<label class="import-modal__field planning-event-form__field planning-event-form__field--schedule', planningEventDraft.isExternallyControlled ? ' is-disabled' : '', '"><span>Start Datum</span><input id="planningEventStartDate" type="date" value="', escapeValue(planningEventDraft.startDate || planningEventDraft.date || ""), '" required', planningEventDraft.isExternallyControlled ? ' disabled' : '', '></label>',
         '<label class="import-modal__field planning-event-form__field planning-event-form__field--schedule', planningEventDraft.isExternallyControlled ? ' is-disabled' : '', '"><span>Start Zeit</span><input id="planningEventStartTime" type="time" value="', escapeValue(planningEventDraft.startTime || ""), '"', planningEventDraft.isExternallyControlled ? ' disabled' : '', '></label>',
         '</div>',
-        '<div class="planning-event-form__schedule-column">',
+        '<div class="planning-event-form__grid planning-event-form__grid--schedule-row">',
         '<label class="import-modal__field planning-event-form__field planning-event-form__field--schedule', planningEventDraft.isExternallyControlled ? ' is-disabled' : '', '"><span>Ende Datum</span><input id="planningEventEndDate" type="date" value="', escapeValue(planningEventDraft.endDate || planningEventDraft.date || ""), '" required', planningEventDraft.isExternallyControlled ? ' disabled' : '', '></label>',
         '<label class="import-modal__field planning-event-form__field planning-event-form__field--schedule', planningEventDraft.isExternallyControlled ? ' is-disabled' : '', '"><span>Ende Zeit</span><input id="planningEventEndTime" type="time" value="', escapeValue(planningEventDraft.endTime || ""), '"', planningEventDraft.isExternallyControlled ? ' disabled' : '', '></label>',
+        '</div>',
+        '<div class="planning-event-form__recurrence-card', planningEventDraft.isExternallyControlled ? ' is-disabled' : '', '">',
+        '<label class="planning-event-form__toggle">',
+        '<input id="planningEventRecurringInput" type="checkbox"', isPlanningEventRecurring ? ' checked' : '', planningEventDraft.isExternallyControlled ? ' disabled' : ' onchange="return window.UnterrichtsassistentApp.handlePlanningEventRecurringChange(this.checked)"', '>',
+        '<span>Wiederkehrend</span>',
+        '</label>',
+        isPlanningEventRecurring ? [
+          '<div class="planning-event-form__recurrence-rule">',
+          '<span class="planning-event-form__recurrence-prefix">Alle</span>',
+          '<input id="planningEventRecurrenceInterval" class="planning-event-form__recurrence-number" type="number" min="1" step="1" value="', escapeValue(String(planningEventDraft.recurrenceInterval || 1)), '"', planningEventDraft.isExternallyControlled ? ' disabled' : '', '>',
+          '<select id="planningEventRecurrenceUnit"', planningEventDraft.isExternallyControlled ? ' disabled' : ' onchange="return window.UnterrichtsassistentApp.handlePlanningEventRecurrenceUnitChange(this.value)"', '>',
+          '<option value="days"', planningEventRecurrenceUnit === 'days' ? ' selected' : '', '>Tage</option>',
+          '<option value="weeks"', planningEventRecurrenceUnit === 'weeks' ? ' selected' : '', '>Wochen</option>',
+          '<option value="months"', planningEventRecurrenceUnit === 'months' ? ' selected' : '', '>Monate</option>',
+          '</select>',
+          '</div>',
+          showMonthlyWeekdayOption
+            ? '<label class="planning-event-form__toggle planning-event-form__toggle--secondary"><input id="planningEventRecurrenceMonthlyWeekday" type="checkbox"' + (planningEventDraft.recurrenceMonthlyWeekday ? ' checked' : '') + (planningEventDraft.isExternallyControlled ? ' disabled' : '') + '><span>Monatsposition und Wochentag beibehalten (z. B. erster Montag)</span></label>'
+            : '<input id="planningEventRecurrenceMonthlyWeekday" type="checkbox" hidden' + (planningEventDraft.recurrenceMonthlyWeekday ? ' checked' : '') + '>',
+          '<label class="import-modal__field planning-event-form__field planning-event-form__field--recurrence"><span>Ende der Wiederholung</span><input id="planningEventRecurrenceUntilDate" type="date" value="', escapeValue(planningEventDraft.recurrenceUntilDate || ""), '" required', planningEventDraft.isExternallyControlled ? ' disabled' : '', '></label>'
+        ].join("")
+          : [
+              '<input id="planningEventRecurrenceInterval" type="number" value="', escapeValue(String(planningEventDraft.recurrenceInterval || 1)), '" hidden>',
+              '<input id="planningEventRecurrenceUnit" type="hidden" value="', escapeValue(planningEventRecurrenceUnit || "weeks"), '">',
+              '<input id="planningEventRecurrenceMonthlyWeekday" type="checkbox" hidden', planningEventDraft.recurrenceMonthlyWeekday ? ' checked' : '', '>',
+              '<input id="planningEventRecurrenceUntilDate" type="date" value="', escapeValue(planningEventDraft.recurrenceUntilDate || ""), '" hidden>',
+              '<p class="planning-event-form__recurrence-hint">Der Termin bleibt einmalig. Mit der Wiederholung werden Datumsspanne und Uhrzeiten fuer alle Folgetermine uebernommen.</p>'
+            ].join(""),
         '</div>',
         '</div>',
         '</section>',
