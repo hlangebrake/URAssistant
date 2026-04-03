@@ -4412,6 +4412,11 @@ function setActiveView(viewId) {
   const previousViewId = activeViewId;
   const shouldPreserveTodoScroll = viewId === "todos";
   todoViewScrollState = shouldPreserveTodoScroll ? captureTodoViewScrollState() : null;
+
+  if (previousViewId !== viewId) {
+    expandedTodoIds = [];
+  }
+
   activeViewId = viewId;
   const config = registeredViews[viewId];
 
@@ -5153,6 +5158,54 @@ function isTodoChecklistItemManuallyToggleable(items, itemId) {
   const childItems = getTodoChecklistChildItems(items, itemId);
 
   return Boolean(selectedNode) && childItems.length === 0;
+}
+
+function isTodoChecklistNodeDisplayDone(items, nodeId) {
+  const selectedNode = getTodoChecklistNodeById(items, nodeId);
+  const childItems = getTodoChecklistChildItems(items, nodeId);
+
+  if (!selectedNode) {
+    return false;
+  }
+
+  if (childItems.length > 0) {
+    return childItems.every(function (childItem) {
+      return isTodoChecklistNodeAggregateDone(items, childItem && childItem.id);
+    });
+  }
+
+  return Boolean(selectedNode.entry && selectedNode.entry.done);
+}
+
+function isTodoChecklistNodeAggregateDone(items, nodeId) {
+  const selectedNode = getTodoChecklistNodeById(items, nodeId);
+  const followUpSteps = selectedNode && selectedNode.type === "item" && Array.isArray(selectedNode.entry && selectedNode.entry.followUpSteps)
+    ? selectedNode.entry.followUpSteps
+    : [];
+
+  if (!selectedNode) {
+    return false;
+  }
+
+  return isTodoChecklistNodeDisplayDone(items, nodeId) && followUpSteps.every(function (step) {
+    return isTodoChecklistNodeAggregateDone(items, step && step.id);
+  });
+}
+
+function hasTodoChecklistCompletedFollowUpSuccessor(items, nodeId) {
+  const selectedNode = getTodoChecklistNodeById(items, nodeId);
+  const followUpSteps = selectedNode && selectedNode.type === "item" && Array.isArray(selectedNode.entry && selectedNode.entry.followUpSteps)
+    ? selectedNode.entry.followUpSteps
+    : [];
+
+  if (!selectedNode || !followUpSteps.length) {
+    return false;
+  }
+
+  return followUpSteps.some(function (step) {
+    return isTodoChecklistNodeAggregateDone(items, step && step.id)
+      || hasTodoChecklistCompletedFollowUpSuccessor(items, step && step.id);
+  });
 }
 
 function syncChecklistTodoCompletion(todo, completedAtTimestamp) {
@@ -10873,7 +10926,7 @@ window.UnterrichtsassistentApp.openTodoModal = function (todoId, presetCategory,
     todoStudentAssignmentOpen = false;
     normalizeTodoDraftAssignments(currentRawSnapshot);
     closePlanningCategorySuggestions();
-    setActiveView("todos");
+    setActiveView(activeViewId === "unterricht" ? "unterricht" : "todos");
     return false;
   };
 window.UnterrichtsassistentApp.setTodoDraftType = function (nextType) {
@@ -10904,8 +10957,8 @@ window.UnterrichtsassistentApp.setTodoDraftType = function (nextType) {
     ? String(nextType || "").trim().toLowerCase()
     : "standard";
 
-  if (activeViewId === "todos") {
-    setActiveView("todos");
+  if (activeViewId === "todos" || activeViewId === "unterricht") {
+    setActiveView(activeViewId);
   }
 
   return false;
@@ -11167,12 +11220,19 @@ window.UnterrichtsassistentApp.toggleTodoExpanded = function (todoId) {
     expandedTodoIds = expandedTodoIds.concat([normalizedTodoId]);
   }
 
-  if (activeViewId === "todos") {
-    setActiveView("todos");
+  if (activeViewId === "todos" || activeViewId === "unterricht") {
+    setActiveView(activeViewId);
   }
 
   return false;
 };
+
+function refreshTodoInteractionView() {
+  if (activeViewId === "todos" || activeViewId === "unterricht") {
+    setActiveView(activeViewId);
+  }
+}
+
 window.UnterrichtsassistentApp.toggleTodoDone = function (todoId, isDone) {
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
   const normalizedTodoId = String(todoId || "").trim();
@@ -11193,9 +11253,7 @@ window.UnterrichtsassistentApp.toggleTodoDone = function (todoId, isDone) {
       activeTodoDraft.completedAt = String(selectedTodo.completedAt || "").trim();
     }
 
-    if (activeViewId === "todos") {
-      setActiveView("todos");
-    }
+    refreshTodoInteractionView();
 
     return false;
   }
@@ -11213,9 +11271,7 @@ window.UnterrichtsassistentApp.toggleTodoDone = function (todoId, isDone) {
         : [];
     }
 
-    if (activeViewId === "todos") {
-      setActiveView("todos");
-    }
+    refreshTodoInteractionView();
 
     return false;
   }
@@ -11230,7 +11286,7 @@ window.UnterrichtsassistentApp.toggleTodoDone = function (todoId, isDone) {
     activeTodoDraft.completedAt = selectedTodo.completedAt;
   }
 
-  saveAndRefreshSnapshot(currentRawSnapshot, "todos");
+  saveAndRefreshSnapshot(currentRawSnapshot, activeViewId === "unterricht" ? "unterricht" : "todos");
   return false;
 };
 window.UnterrichtsassistentApp.toggleTodoAssignedStudentDone = function (todoId, studentId, isDone) {
@@ -11271,7 +11327,7 @@ window.UnterrichtsassistentApp.toggleTodoAssignedStudentDone = function (todoId,
     });
   }
 
-  saveAndRefreshSnapshot(currentRawSnapshot, "todos");
+  saveAndRefreshSnapshot(currentRawSnapshot, activeViewId === "unterricht" ? "unterricht" : "todos");
   return false;
 };
 window.UnterrichtsassistentApp.toggleTodoChecklistItemDone = function (todoId, checklistItemId, isDone) {
@@ -11323,9 +11379,35 @@ window.UnterrichtsassistentApp.toggleTodoChecklistItemDone = function (todoId, c
       activeTodoDraft.completedAt = String(selectedTodo.completedAt || "").trim();
     }
 
-    if (activeViewId === "todos") {
-      setActiveView("todos");
+    refreshTodoInteractionView();
+
+    return false;
+  }
+
+  if (!Boolean(isDone) && hasTodoChecklistCompletedFollowUpSuccessor(checklistItems, normalizedChecklistItemId)) {
+    syncChecklistTodoCompletion(selectedTodo, completionTimestamp);
+
+    if (activeTodoDraft && String(activeTodoDraft.id || "").trim() === normalizedTodoId) {
+      activeTodoDraft.checklistItems = checklistItems.map(function (entry) {
+        return Object.assign({}, entry, {
+          followUpSteps: Array.isArray(entry.followUpSteps) ? entry.followUpSteps.map(function (step) {
+            return step && typeof step === "object" ? Object.assign({}, step) : step;
+          }) : []
+        });
+      });
+      activeTodoDraft.assignedStudentStatuses = Array.isArray(selectedTodo.assignedStudentStatuses)
+        ? selectedTodo.assignedStudentStatuses.map(function (entry) {
+            return entry && typeof entry === "object"
+              ? Object.assign({}, entry, { checklistItems: cloneTodoChecklistItems(entry.checklistItems) })
+              : entry;
+          })
+        : [];
+      activeTodoDraft.checklistText = formatTodoChecklistText(activeTodoDraft.checklistItems);
+      activeTodoDraft.done = Boolean(selectedTodo.done);
+      activeTodoDraft.completedAt = String(selectedTodo.completedAt || "").trim();
     }
+
+    refreshTodoInteractionView();
 
     return false;
   }
@@ -11353,7 +11435,7 @@ window.UnterrichtsassistentApp.toggleTodoChecklistItemDone = function (todoId, c
     activeTodoDraft.completedAt = String(selectedTodo.completedAt || "").trim();
   }
 
-  saveAndRefreshSnapshot(currentRawSnapshot, "todos");
+  saveAndRefreshSnapshot(currentRawSnapshot, activeViewId === "unterricht" ? "unterricht" : "todos");
   return false;
 };
 window.UnterrichtsassistentApp.toggleTodoChecklistFollowUpDone = function (todoId, checklistItemId, followUpIndex, isDone) {
@@ -11409,9 +11491,35 @@ window.UnterrichtsassistentApp.toggleTodoChecklistFollowUpDone = function (todoI
       activeTodoDraft.completedAt = String(selectedTodo.completedAt || "").trim();
     }
 
-    if (activeViewId === "todos") {
-      setActiveView("todos");
+    refreshTodoInteractionView();
+
+    return false;
+  }
+
+  if (!Boolean(isDone) && hasTodoChecklistCompletedFollowUpSuccessor(checklistItems, String(selectedStep.id || "").trim())) {
+    syncChecklistTodoCompletion(selectedTodo, getActiveDateTimeTimestamp());
+
+    if (activeTodoDraft && String(activeTodoDraft.id || "").trim() === normalizedTodoId) {
+      activeTodoDraft.checklistItems = checklistItems.map(function (entry) {
+        return Object.assign({}, entry, {
+          followUpSteps: Array.isArray(entry.followUpSteps) ? entry.followUpSteps.map(function (step) {
+            return step && typeof step === "object" ? Object.assign({}, step) : step;
+          }) : []
+        });
+      });
+      activeTodoDraft.assignedStudentStatuses = Array.isArray(selectedTodo.assignedStudentStatuses)
+        ? selectedTodo.assignedStudentStatuses.map(function (entry) {
+            return entry && typeof entry === "object"
+              ? Object.assign({}, entry, { checklistItems: cloneTodoChecklistItems(entry.checklistItems) })
+              : entry;
+          })
+        : [];
+      activeTodoDraft.checklistText = formatTodoChecklistText(activeTodoDraft.checklistItems);
+      activeTodoDraft.done = Boolean(selectedTodo.done);
+      activeTodoDraft.completedAt = String(selectedTodo.completedAt || "").trim();
     }
+
+    refreshTodoInteractionView();
 
     return false;
   }
@@ -11439,7 +11547,7 @@ window.UnterrichtsassistentApp.toggleTodoChecklistFollowUpDone = function (todoI
     activeTodoDraft.completedAt = String(selectedTodo.completedAt || "").trim();
   }
 
-  saveAndRefreshSnapshot(currentRawSnapshot, "todos");
+  saveAndRefreshSnapshot(currentRawSnapshot, activeViewId === "unterricht" ? "unterricht" : "todos");
   return false;
 };
 window.UnterrichtsassistentApp.submitTodoModal = function (event) {
@@ -11577,7 +11685,7 @@ window.UnterrichtsassistentApp.submitTodoModal = function (event) {
     }
   }
 
-  saveAndRefreshSnapshot(currentRawSnapshot, "todos");
+  saveAndRefreshSnapshot(currentRawSnapshot, activeViewId === "unterricht" ? "unterricht" : "todos");
   return window.UnterrichtsassistentApp.closeTodoModal();
 };
 window.UnterrichtsassistentApp.deleteTodo = function (todoId) {
@@ -11609,7 +11717,7 @@ window.UnterrichtsassistentApp.deleteTodo = function (todoId) {
     closePlanningCategorySuggestions();
   }
 
-  saveAndRefreshSnapshot(currentRawSnapshot, "todos");
+  saveAndRefreshSnapshot(currentRawSnapshot, activeViewId === "unterricht" ? "unterricht" : "todos");
   return false;
 };
 window.UnterrichtsassistentApp.closePlanningInstructionLessonModal = function () {

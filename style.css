@@ -3802,6 +3802,44 @@ button {
   grid-column: 1 / -1;
 }
 
+.unterricht-layout__live-todos {
+  min-width: 0;
+  width: 100%;
+  align-self: start;
+  margin-top: -2.2rem;
+}
+
+.unterricht-layout--live.has-live-flow .unterricht-layout__live-todos {
+  grid-column: 1 / 2;
+}
+
+.unterricht-live-todos__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+}
+
+.unterricht-live-todos__title {
+  margin: 0;
+  font-size: 1.02rem;
+}
+
+.unterricht-live-todos__subtitle {
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.unterricht-live-todos__rows {
+  gap: 0.85rem;
+}
+
+.unterricht-live-todos__section {
+  min-height: 0;
+}
+
 .unterricht-live-controls {
   display: flex;
   align-items: center;

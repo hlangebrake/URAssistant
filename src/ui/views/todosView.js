@@ -628,6 +628,22 @@ window.Unterrichtsassistent.ui.views.todos = {
         });
       }
 
+      function hasCompletedFollowUpSuccessor(items, itemId) {
+        const selectedNode = getChecklistNodeById(items, itemId);
+        const followUpSteps = selectedNode && selectedNode.kind === "item"
+          ? getChecklistFollowUpSteps(items, itemId)
+          : [];
+
+        if (!selectedNode || !followUpSteps.length) {
+          return false;
+        }
+
+        return followUpSteps.some(function (step) {
+          return getAggregatedChecklistItemDone(items, step && step.id)
+            || hasCompletedFollowUpSuccessor(items, step && step.id);
+        });
+      }
+
       function getChecklistNodeSelfDone(items, itemId) {
         const selectedNode = getChecklistNodeById(items, itemId);
 
@@ -689,6 +705,7 @@ window.Unterrichtsassistent.ui.views.todos = {
             ? getChecklistNodeSelfDone(items, itemId)
             : getDerivedChecklistItemDone(items, itemId);
           const isItemUnlocked = isChecklistNodeUnlocked(items, itemId);
+          const isItemBlockedByFollowUp = isItemDone && hasCompletedFollowUpSuccessor(items, itemId);
           const hasFollowUpSequence = followUpSteps.length > 0;
           const childItemsMarkup = buildChecklistTree(items, itemId, depth + 1, studentId);
           const followUpMarkup = followUpSteps.map(function (step, index) {
@@ -702,6 +719,7 @@ window.Unterrichtsassistent.ui.views.todos = {
               ? getChecklistNodeSelfDone(items, stepId)
               : getDerivedChecklistItemDone(items, stepId);
             const stepUnlocked = isChecklistNodeUnlocked(items, stepId);
+            const stepBlockedByFollowUp = stepDone && hasCompletedFollowUpSuccessor(items, stepId);
             const stepChildMarkup = buildChecklistTree(items, stepId, depth + 1, studentId);
 
             if (!stepTitle) {
@@ -711,7 +729,7 @@ window.Unterrichtsassistent.ui.views.todos = {
             return [
               '<div class="todos-view__checklist-group">',
               '<label class="todos-view__checklist-entry todos-view__checklist-entry--follow-up', stepUnlocked ? '' : ' is-locked', '" style="--todo-checklist-depth:', escapeValue(String(depth)), ';">',
-              '<span class="todos-view__checkbox todos-view__checkbox--compact todos-view__checkbox--sequence', stepToggleable && stepUnlocked ? '' : ' is-readonly', '" aria-label="Folgeschritt-Status umschalten"><input type="checkbox"', stepDone ? ' checked' : '', stepToggleable && stepUnlocked ? '' : ' disabled', ' onchange="return window.UnterrichtsassistentApp.toggleTodoChecklistFollowUpDone(\'', escapeValue(normalizedTodoId), '\', \'', escapeValue(itemId), '\', ', escapeValue(String(index)), ', this.checked, \'', escapeValue(studentId || ""), '\')"><span>', escapeValue(String(index + 2)), '</span></span>',
+              '<span class="todos-view__checkbox todos-view__checkbox--compact todos-view__checkbox--sequence', stepToggleable && stepUnlocked && !stepBlockedByFollowUp ? '' : ' is-readonly', '" aria-label="Folgeschritt-Status umschalten"><input type="checkbox"', stepDone ? ' checked' : '', stepToggleable && stepUnlocked && !stepBlockedByFollowUp ? '' : ' disabled', ' onchange="return window.UnterrichtsassistentApp.toggleTodoChecklistFollowUpDone(\'', escapeValue(normalizedTodoId), '\', \'', escapeValue(itemId), '\', ', escapeValue(String(index)), ', this.checked, \'', escapeValue(studentId || ""), '\')"><span>', escapeValue(String(index + 2)), '</span></span>',
               '<span class="todos-view__checklist-text', stepDone ? ' is-done' : '', '">', escapeValue(stepTitle), '</span>',
               '</label>',
               stepChildMarkup,
@@ -726,7 +744,7 @@ window.Unterrichtsassistent.ui.views.todos = {
           return [
             '<div class="todos-view__checklist-group">',
             '<label class="todos-view__checklist-entry', isItemUnlocked ? '' : ' is-locked', '" style="--todo-checklist-depth:', escapeValue(String(depth)), ';">',
-            '<span class="todos-view__checkbox todos-view__checkbox--compact', hasFollowUpSequence ? ' todos-view__checkbox--sequence' : '', isItemToggleable && isItemUnlocked ? '' : ' is-readonly', '" aria-label="Listenpunkt-Status umschalten"><input type="checkbox"', isItemDone ? ' checked' : '', isItemToggleable && isItemUnlocked ? '' : ' disabled', ' onchange="return window.UnterrichtsassistentApp.toggleTodoChecklistItemDone(\'', escapeValue(normalizedTodoId), '\', \'', escapeValue(itemId), '\', this.checked, \'', escapeValue(studentId || ""), '\')"><span>', hasFollowUpSequence ? '1' : '', '</span></span>',
+            '<span class="todos-view__checkbox todos-view__checkbox--compact', hasFollowUpSequence ? ' todos-view__checkbox--sequence' : '', isItemToggleable && isItemUnlocked && !isItemBlockedByFollowUp ? '' : ' is-readonly', '" aria-label="Listenpunkt-Status umschalten"><input type="checkbox"', isItemDone ? ' checked' : '', isItemToggleable && isItemUnlocked && !isItemBlockedByFollowUp ? '' : ' disabled', ' onchange="return window.UnterrichtsassistentApp.toggleTodoChecklistItemDone(\'', escapeValue(normalizedTodoId), '\', \'', escapeValue(itemId), '\', this.checked, \'', escapeValue(studentId || ""), '\')"><span>', hasFollowUpSequence ? '1' : '', '</span></span>',
             '<span class="todos-view__checklist-text', isItemDone ? ' is-done' : '', '">', escapeValue(itemTitle), '</span>',
             '</label>',
             childItemsMarkup,

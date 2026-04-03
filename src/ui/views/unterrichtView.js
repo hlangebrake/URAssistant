@@ -23,6 +23,11 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       ? String(service.snapshot.activeDateTimeMode || "live")
       : "live";
     const snapshot = service && service.snapshot ? service.snapshot : {};
+    const expandedTodoIds = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getExpandedTodoIds === "function"
+      ? window.UnterrichtsassistentApp.getExpandedTodoIds().map(function (entry) {
+          return String(entry || "").trim();
+        }).filter(Boolean)
+      : [];
     const activeRoom = activeClass ? service.getRelevantRoomForClass(activeClass.id, referenceDate) : "";
     const currentSeatOrder = activeClass && typeof service.getCurrentSeatOrder === "function"
       ? service.getCurrentSeatOrder(activeClass.id, activeRoom, referenceDate)
@@ -1415,6 +1420,838 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       ].join("");
     }
 
+    function getTodoClassInfo(todoItem) {
+      const normalizedRelatedClassId = String(todoItem && todoItem.relatedClassId || "").trim();
+      const classes = Array.isArray(snapshot.classes) ? snapshot.classes : [];
+      const classEntry = normalizedRelatedClassId
+        ? classes.find(function (entry) {
+            return String(entry && entry.id || "").trim() === normalizedRelatedClassId;
+          }) || null
+        : classes.find(function (entry) {
+            return [String(entry && entry.name || "").trim(), String(entry && entry.subject || "").trim()]
+              .filter(Boolean)
+              .join(" ")
+              .trim()
+              .toLowerCase() === String(todoItem && todoItem.category || "").trim().toLowerCase();
+          }) || null;
+      const studentIds = classEntry && Array.isArray(classEntry.studentIds) ? classEntry.studentIds : [];
+      const classStudents = studentIds.map(function (studentId) {
+        return (Array.isArray(snapshot.students) ? snapshot.students : []).find(function (student) {
+          return String(student && student.id || "").trim() === String(studentId || "").trim();
+        }) || null;
+      }).filter(Boolean).sort(function (left, right) {
+        const leftFirstName = String(left && left.firstName || "").trim().toLowerCase();
+        const rightFirstName = String(right && right.firstName || "").trim().toLowerCase();
+
+        if (leftFirstName !== rightFirstName) {
+          return leftFirstName.localeCompare(rightFirstName, "de", { sensitivity: "base" });
+        }
+
+        return String(left && left.lastName || "").trim().toLowerCase().localeCompare(
+          String(right && right.lastName || "").trim().toLowerCase(),
+          "de",
+          { sensitivity: "base" }
+        );
+      });
+
+      return {
+        classId: classEntry ? String(classEntry.id || "").trim() : "",
+        students: classStudents
+      };
+    }
+
+    function getStudentCompactDisplayName(student, classStudents) {
+      const firstName = String(student && student.firstName || "").trim();
+      const lastName = String(student && student.lastName || "").trim();
+      const normalizedFirstName = firstName.toLowerCase();
+      const studentsInClass = Array.isArray(classStudents) ? classStudents : [];
+      const hasDuplicateFirstName = Boolean(normalizedFirstName) && studentsInClass.some(function (entry) {
+        return entry !== student
+          && String(entry && entry.firstName || "").trim().toLowerCase() === normalizedFirstName;
+      });
+
+      if (firstName) {
+        return hasDuplicateFirstName && lastName
+          ? firstName + " " + lastName.charAt(0).toUpperCase() + "."
+          : firstName;
+      }
+
+      return lastName || "Unbekannt";
+    }
+
+    function formatTodoDateLabel(dateValue) {
+      const normalizedValue = String(dateValue || "").slice(0, 10);
+      const parts = normalizedValue.split("-");
+
+      if (parts.length !== 3) {
+        return "";
+      }
+
+      return [parts[2], parts[1], parts[0]].join(".");
+    }
+
+    function getTodoPriorityRank(priorityValue) {
+      const normalizedValue = String(priorityValue || "").trim().toLowerCase();
+
+      if (normalizedValue === "hoch") {
+        return 0;
+      }
+
+      if (normalizedValue === "standard") {
+        return 1;
+      }
+
+      return 2;
+    }
+
+    function getTodoDeadlineSortValue(todoItem) {
+      return String(todoItem && todoItem.dueDate || "").slice(0, 10);
+    }
+
+    function getReferenceDateValue() {
+      const activeDateTimeParts = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveDateTimeParts === "function"
+        ? window.UnterrichtsassistentApp.getActiveDateTimeParts()
+        : { date: "" };
+
+      return String(activeDateTimeParts && activeDateTimeParts.date || "").slice(0, 10);
+    }
+
+    function getTodoDaysUntilDeadline(todoItem) {
+      const deadlineValue = getTodoDeadlineSortValue(todoItem);
+      const referenceValue = getReferenceDateValue();
+      const deadlineDate = deadlineValue ? new Date(deadlineValue + "T00:00:00") : null;
+      const referenceDateOnly = referenceValue ? new Date(referenceValue + "T00:00:00") : null;
+
+      if (!deadlineDate || Number.isNaN(deadlineDate.getTime()) || !referenceDateOnly || Number.isNaN(referenceDateOnly.getTime())) {
+        return null;
+      }
+
+      return Math.round((deadlineDate.getTime() - referenceDateOnly.getTime()) / 86400000);
+    }
+
+    function getTodoUrgencyScore(todoItem) {
+      const daysUntilDeadline = getTodoDaysUntilDeadline(todoItem);
+      const priorityRank = getTodoPriorityRank(todoItem && todoItem.priority);
+      const priorityWeight = [28, 18, 10][priorityRank] || 10;
+
+      if (daysUntilDeadline === null) {
+        return priorityWeight;
+      }
+
+      if (daysUntilDeadline <= 1) {
+        return 220 + priorityWeight + Math.max(0, 1 - daysUntilDeadline) * 12;
+      }
+
+      return priorityWeight + (140 / (daysUntilDeadline + 1));
+    }
+
+    function isEspeciallyUrgentTodo(todoItem) {
+      const daysUntilDeadline = getTodoDaysUntilDeadline(todoItem);
+      const priorityValue = String(todoItem && todoItem.priority || "niedrig").trim().toLowerCase();
+
+      if (daysUntilDeadline === null) {
+        return false;
+      }
+
+      if (priorityValue === "hoch") {
+        return daysUntilDeadline <= 4;
+      }
+
+      if (priorityValue === "standard") {
+        return daysUntilDeadline <= 2;
+      }
+
+      return daysUntilDeadline <= 1;
+    }
+
+    function compareTodoTitles(leftItem, rightItem) {
+      return String(leftItem && leftItem.title || "").localeCompare(String(rightItem && rightItem.title || ""), "de", { sensitivity: "base" });
+    }
+
+    function compareByDeadlineThenPriority(leftItem, rightItem) {
+      const leftDeadline = getTodoDeadlineSortValue(leftItem);
+      const rightDeadline = getTodoDeadlineSortValue(rightItem);
+      const priorityDifference = getTodoPriorityRank(leftItem && leftItem.priority) - getTodoPriorityRank(rightItem && rightItem.priority);
+
+      if (leftDeadline && rightDeadline && leftDeadline !== rightDeadline) {
+        return leftDeadline.localeCompare(rightDeadline, "de");
+      }
+
+      if (leftDeadline && !rightDeadline) {
+        return -1;
+      }
+
+      if (!leftDeadline && rightDeadline) {
+        return 1;
+      }
+
+      if (priorityDifference !== 0) {
+        return priorityDifference;
+      }
+
+      return compareTodoTitles(leftItem, rightItem);
+    }
+
+    function compareByUrgency(leftItem, rightItem) {
+      const urgencyDifference = getTodoUrgencyScore(rightItem) - getTodoUrgencyScore(leftItem);
+
+      if (Math.abs(urgencyDifference) > 0.0001) {
+        return urgencyDifference;
+      }
+
+      return compareByDeadlineThenPriority(leftItem, rightItem);
+    }
+
+    function getChecklistChildItems(items, parentId) {
+      return (items || []).filter(function (entry) {
+        return String(entry && entry.parentId || "").trim() === String(parentId || "").trim();
+      });
+    }
+
+    function getChecklistNodeById(items, nodeId) {
+      const normalizedNodeId = String(nodeId || "").trim();
+
+      if (!normalizedNodeId) {
+        return null;
+      }
+
+      return (items || []).reduce(function (foundEntry, entry) {
+        if (foundEntry) {
+          return foundEntry;
+        }
+
+        if (String(entry && entry.id || "").trim() === normalizedNodeId) {
+          return {
+            kind: "item",
+            entry: entry,
+            ownerItem: entry
+          };
+        }
+
+        if (Array.isArray(entry && entry.followUpSteps)) {
+          const foundStep = entry.followUpSteps.find(function (step) {
+            return String(step && step.id || "").trim() === normalizedNodeId;
+          }) || null;
+
+          if (foundStep) {
+            return {
+              kind: "step",
+              entry: foundStep,
+              ownerItem: entry
+            };
+          }
+        }
+
+        return null;
+      }, null);
+    }
+
+    function getChecklistFollowUpSteps(items, itemId) {
+      const selectedNode = getChecklistNodeById(items, itemId);
+
+      if (!selectedNode || selectedNode.kind !== "item" || !Array.isArray(selectedNode.entry && selectedNode.entry.followUpSteps)) {
+        return [];
+      }
+
+      return selectedNode.entry.followUpSteps;
+    }
+
+    function getDerivedChecklistItemDone(items, itemId) {
+      const selectedNode = getChecklistNodeById(items, itemId);
+      const childItems = getChecklistChildItems(items, itemId);
+
+      if (!selectedNode) {
+        return false;
+      }
+
+      if (childItems.length > 0) {
+        return childItems.every(function (childItem) {
+          return getAggregatedChecklistItemDone(items, childItem && childItem.id);
+        });
+      }
+
+      return Boolean(selectedNode.entry && selectedNode.entry.done);
+    }
+
+    function getAggregatedChecklistItemDone(items, itemId) {
+      const selectedNode = getChecklistNodeById(items, itemId);
+      const followUpSteps = selectedNode && selectedNode.kind === "item"
+        ? getChecklistFollowUpSteps(items, itemId)
+        : [];
+
+      if (!selectedNode) {
+        return false;
+      }
+
+      return getDerivedChecklistItemDone(items, itemId) && followUpSteps.every(function (step) {
+        return getAggregatedChecklistItemDone(items, step && step.id);
+      });
+    }
+
+    function getChecklistNodeSelfDone(items, itemId) {
+      const selectedNode = getChecklistNodeById(items, itemId);
+
+      return Boolean(selectedNode && selectedNode.entry && selectedNode.entry.done);
+    }
+
+    function isChecklistItemManuallyToggleable(items, itemId) {
+      const selectedNode = getChecklistNodeById(items, itemId);
+      const childItems = getChecklistChildItems(items, itemId);
+
+      return Boolean(selectedNode) && childItems.length === 0;
+    }
+
+    function isChecklistNodeReadyForFollowUp(items, nodeId) {
+      return isChecklistItemManuallyToggleable(items, nodeId)
+        ? getChecklistNodeSelfDone(items, nodeId)
+        : getDerivedChecklistItemDone(items, nodeId);
+    }
+
+    function isChecklistNodeUnlocked(items, nodeId) {
+      const selectedNode = getChecklistNodeById(items, nodeId);
+      const previousNodeId = selectedNode && selectedNode.kind === "step"
+        ? String(selectedNode.entry.previousStepId || selectedNode.ownerItem && selectedNode.ownerItem.id || "").trim()
+        : "";
+      const parentNodeId = selectedNode && selectedNode.kind === "item"
+        ? String(selectedNode.entry && selectedNode.entry.parentId || "").trim()
+        : "";
+
+      if (!selectedNode) {
+        return false;
+      }
+
+      if (selectedNode.kind === "step") {
+        return previousNodeId ? isChecklistNodeReadyForFollowUp(items, previousNodeId) : true;
+      }
+
+      if (parentNodeId) {
+        return isChecklistNodeUnlocked(items, parentNodeId);
+      }
+
+      return true;
+    }
+
+    function getDerivedChecklistTodoDone(items) {
+      const topLevelItems = getChecklistChildItems(items, "");
+
+      return topLevelItems.length > 0 && topLevelItems.every(function (item) {
+        return getAggregatedChecklistItemDone(items, item && item.id);
+      });
+    }
+
+    function hasCompletedFollowUpSuccessor(items, itemId) {
+      const selectedNode = getChecklistNodeById(items, itemId);
+      const followUpSteps = selectedNode && selectedNode.kind === "item"
+        ? getChecklistFollowUpSteps(items, itemId)
+        : [];
+
+      if (!selectedNode || !followUpSteps.length) {
+        return false;
+      }
+
+      return followUpSteps.some(function (step) {
+        return getAggregatedChecklistItemDone(items, step && step.id)
+          || hasCompletedFollowUpSuccessor(items, step && step.id);
+      });
+    }
+
+    function getAssignedStudentEntries(todoEntry) {
+      const classInfo = getTodoClassInfo(todoEntry);
+      const classStudents = classInfo.students || [];
+      const assignedIds = Array.isArray(todoEntry && todoEntry.assignedStudentIds)
+        ? todoEntry.assignedStudentIds.map(function (studentId) {
+            return String(studentId || "").trim();
+          }).filter(Boolean)
+        : [];
+      const statusEntries = Array.isArray(todoEntry && todoEntry.assignedStudentStatuses)
+        ? todoEntry.assignedStudentStatuses
+        : [];
+
+      return assignedIds.map(function (studentId) {
+        const student = classStudents.find(function (entry) {
+          return String(entry && entry.id || "").trim() === studentId;
+        }) || null;
+        const statusEntry = statusEntries.find(function (entry) {
+          return String(entry && entry.studentId || "").trim() === studentId;
+        }) || null;
+
+        return student ? {
+          id: studentId,
+          label: getStudentCompactDisplayName(student, classStudents),
+          done: Boolean(statusEntry && statusEntry.done)
+        } : null;
+      }).filter(Boolean);
+    }
+
+    function getDerivedAssignedStudentsDone(todoEntry) {
+      const assignedStudents = getAssignedStudentEntries(todoEntry);
+
+      return assignedStudents.length > 0 && assignedStudents.every(function (entry) {
+        return Boolean(entry && entry.done);
+      });
+    }
+
+    function isTodoEffectivelyDone(todoItem) {
+      const todoType = String(todoItem && todoItem.type || "").trim().toLowerCase();
+      const hasAssignedStudents = Array.isArray(todoItem && todoItem.assignedStudentIds) && todoItem.assignedStudentIds.length > 0;
+      const checklistItems = Array.isArray(todoItem && todoItem.checklistItems) ? todoItem.checklistItems : [];
+
+      if (hasAssignedStudents) {
+        return getDerivedAssignedStudentsDone(todoItem);
+      }
+
+      if (todoType === "checkliste") {
+        return getDerivedChecklistTodoDone(checklistItems);
+      }
+
+      return Boolean(todoItem && todoItem.done);
+    }
+
+    function getHighestOpenUrgencyScore(items) {
+      const openItems = (items || []).filter(function (todoItem) {
+        return !isTodoEffectivelyDone(todoItem);
+      });
+
+      if (!openItems.length) {
+        return -Infinity;
+      }
+
+      return Math.max.apply(null, openItems.map(function (todoItem) {
+        return getTodoUrgencyScore(todoItem);
+      }));
+    }
+
+    function sortTodoItems(items) {
+      return items.slice().sort(function (leftItem, rightItem) {
+        const doneDifference = (isTodoEffectivelyDone(leftItem) ? 1 : 0) - (isTodoEffectivelyDone(rightItem) ? 1 : 0);
+
+        if (doneDifference !== 0) {
+          return doneDifference;
+        }
+
+        return compareByUrgency(leftItem, rightItem);
+      });
+    }
+
+    function buildTodoMeta(todoItem) {
+      const categoryLabel = String(todoItem && todoItem.category || "").trim();
+      const deadlineLabel = formatTodoDateLabel(todoItem && todoItem.dueDate);
+      const priorityLabel = String(todoItem && todoItem.priority || "niedrig").trim().toLowerCase();
+      const metaParts = [];
+
+      if (categoryLabel) {
+        metaParts.push("Kategorie: " + categoryLabel);
+      }
+
+      if (deadlineLabel) {
+        metaParts.push("Deadline: " + deadlineLabel);
+      }
+
+      if (priorityLabel && priorityLabel !== "niedrig") {
+        metaParts.push("Prioritaet: " + priorityLabel);
+      }
+
+      if (isTodoEffectivelyDone(todoItem)) {
+        metaParts.push("Status: erledigt");
+      }
+
+      return metaParts;
+    }
+
+    function buildChecklistTree(todoId, items, parentId, depth, studentId) {
+      return getChecklistChildItems(items, parentId).map(function (entry) {
+        const itemId = String(entry && entry.id || "").trim();
+        const itemTitle = String(entry && entry.title || "").trim();
+        const followUpSteps = getChecklistFollowUpSteps(items, itemId);
+        const isItemToggleable = isChecklistItemManuallyToggleable(items, itemId);
+        const isItemDone = isItemToggleable
+          ? getChecklistNodeSelfDone(items, itemId)
+          : getDerivedChecklistItemDone(items, itemId);
+        const isItemUnlocked = isChecklistNodeUnlocked(items, itemId);
+        const isItemBlockedByFollowUp = isItemDone && hasCompletedFollowUpSuccessor(items, itemId);
+        const hasFollowUpSequence = followUpSteps.length > 0;
+        const childItemsMarkup = buildChecklistTree(todoId, items, itemId, depth + 1, studentId);
+        const followUpMarkup = followUpSteps.map(function (step, index) {
+          const stepObject = step && typeof step === "object"
+            ? step
+            : { id: "", title: String(step || "").trim(), done: false, previousStepId: "" };
+          const stepId = String(stepObject.id || "").trim();
+          const stepTitle = String(stepObject.title || "").trim();
+          const stepToggleable = isChecklistItemManuallyToggleable(items, stepId);
+          const stepDone = stepToggleable
+            ? getChecklistNodeSelfDone(items, stepId)
+            : getDerivedChecklistItemDone(items, stepId);
+          const stepUnlocked = isChecklistNodeUnlocked(items, stepId);
+          const stepBlockedByFollowUp = stepDone && hasCompletedFollowUpSuccessor(items, stepId);
+          const stepChildMarkup = buildChecklistTree(todoId, items, stepId, depth + 1, studentId);
+
+          if (!stepTitle) {
+            return "";
+          }
+
+          return [
+            '<div class="todos-view__checklist-group">',
+            '<label class="todos-view__checklist-entry todos-view__checklist-entry--follow-up', stepUnlocked ? '' : ' is-locked', '" style="--todo-checklist-depth:', escapeValue(String(depth)), ';">',
+            '<span class="todos-view__checkbox todos-view__checkbox--compact todos-view__checkbox--sequence', stepToggleable && stepUnlocked && !stepBlockedByFollowUp ? '' : ' is-readonly', '" aria-label="Folgeschritt-Status umschalten"><input type="checkbox"', stepDone ? ' checked' : '', stepToggleable && stepUnlocked && !stepBlockedByFollowUp ? '' : ' disabled', ' onchange="return window.UnterrichtsassistentApp.toggleTodoChecklistFollowUpDone(\'', escapeValue(todoId), '\', \'', escapeValue(itemId), '\', ', escapeValue(String(index)), ', this.checked, \'', escapeValue(studentId || ""), '\')"><span>', escapeValue(String(index + 2)), '</span></span>',
+            '<span class="todos-view__checklist-text', stepDone ? ' is-done' : '', '">', escapeValue(stepTitle), '</span>',
+            '</label>',
+            stepChildMarkup,
+            '</div>'
+          ].join("");
+        }).join("");
+
+        if (!itemTitle) {
+          return "";
+        }
+
+        return [
+          '<div class="todos-view__checklist-group">',
+          '<label class="todos-view__checklist-entry', isItemUnlocked ? '' : ' is-locked', '" style="--todo-checklist-depth:', escapeValue(String(depth)), ';">',
+          '<span class="todos-view__checkbox todos-view__checkbox--compact', hasFollowUpSequence ? ' todos-view__checkbox--sequence' : '', isItemToggleable && isItemUnlocked && !isItemBlockedByFollowUp ? '' : ' is-readonly', '" aria-label="Listenpunkt-Status umschalten"><input type="checkbox"', isItemDone ? ' checked' : '', isItemToggleable && isItemUnlocked && !isItemBlockedByFollowUp ? '' : ' disabled', ' onchange="return window.UnterrichtsassistentApp.toggleTodoChecklistItemDone(\'', escapeValue(todoId), '\', \'', escapeValue(itemId), '\', this.checked, \'', escapeValue(studentId || ""), '\')"><span>', hasFollowUpSequence ? '1' : '', '</span></span>',
+          '<span class="todos-view__checklist-text', isItemDone ? ' is-done' : '', '">', escapeValue(itemTitle), '</span>',
+          '</label>',
+          childItemsMarkup,
+          followUpMarkup,
+          '</div>'
+        ].join("");
+      }).join("");
+    }
+
+    function buildChecklistSection(todoEntry, options) {
+      const config = options && typeof options === "object" ? options : {};
+      const checklistItems = Array.isArray(config.checklistItems)
+        ? config.checklistItems
+        : (Array.isArray(todoEntry && todoEntry.checklistItems) ? todoEntry.checklistItems : []);
+      const normalizedStudentId = String(config.studentId || "").trim();
+      const normalizedTodoId = String(todoEntry && todoEntry.id || "").trim();
+      const checklistMarkup = buildChecklistTree(normalizedTodoId, checklistItems, "", 0, normalizedStudentId);
+
+      if (String(todoEntry && todoEntry.type || "").trim().toLowerCase() !== "checkliste" || !checklistMarkup) {
+        return "";
+      }
+
+      return [
+        '<div class="todos-view__checklist">',
+        config.hideTitle ? '' : '<div class="todos-view__checklist-title">Checkliste</div>',
+        '<div class="todos-view__checklist-tree">',
+        checklistMarkup,
+        '</div>',
+        '</div>'
+      ].join("");
+    }
+
+    function buildAssignedStudentsSection(todoEntry) {
+      const assignedStudents = getAssignedStudentEntries(todoEntry);
+      const normalizedTodoId = String(todoEntry && todoEntry.id || "").trim();
+
+      if (String(todoEntry && todoEntry.type || "").trim().toLowerCase() !== "standard" || !assignedStudents.length) {
+        return "";
+      }
+
+      return [
+        '<div class="todos-view__assigned-students">',
+        '<div class="todos-view__assigned-students-title">Zuordnung</div>',
+        '<div class="todos-view__assigned-students-list">',
+        assignedStudents.map(function (entry) {
+          return [
+            '<label class="todos-view__assigned-student">',
+            '<span class="todos-view__checkbox todos-view__checkbox--compact" aria-label="Schueler-Status umschalten"><input type="checkbox"', entry.done ? ' checked' : '', ' onchange="return window.UnterrichtsassistentApp.toggleTodoAssignedStudentDone(\'', escapeValue(normalizedTodoId), '\', \'', escapeValue(entry.id), '\', this.checked)"><span></span></span>',
+            '<span class="todos-view__assigned-student-text', entry.done ? ' is-done' : '', '">', escapeValue(entry.label), '</span>',
+            '</label>'
+          ].join("");
+        }).join(""),
+        '</div>',
+        '</div>'
+      ].join("");
+    }
+
+    function buildAssignedStudentChecklistSections(todoEntry) {
+      const assignedStudents = getAssignedStudentEntries(todoEntry);
+      const statusEntries = Array.isArray(todoEntry && todoEntry.assignedStudentStatuses)
+        ? todoEntry.assignedStudentStatuses
+        : [];
+
+      if (String(todoEntry && todoEntry.type || "").trim().toLowerCase() !== "checkliste" || !assignedStudents.length) {
+        return "";
+      }
+
+      return [
+        '<div class="todos-view__assigned-checklists">',
+        assignedStudents.map(function (entry) {
+          const statusEntry = statusEntries.find(function (statusItem) {
+            return String(statusItem && statusItem.studentId || "").trim() === String(entry && entry.id || "").trim();
+          }) || null;
+          const checklistMarkup = buildChecklistSection(todoEntry, {
+            studentId: entry.id,
+            checklistItems: statusEntry && Array.isArray(statusEntry.checklistItems) ? statusEntry.checklistItems : [],
+            hideTitle: true
+          });
+
+          return [
+            '<div class="todos-view__assigned-checklist">',
+            '<div class="todos-view__assigned-checklist-header">',
+            '<span class="todos-view__checkbox todos-view__checkbox--compact is-readonly"><input type="checkbox"', entry.done ? ' checked' : '', ' disabled><span></span></span>',
+            '<span class="todos-view__assigned-checklist-name', entry.done ? ' is-done' : '', '">', escapeValue(entry.label), '</span>',
+            '</div>',
+            checklistMarkup,
+            '</div>'
+          ].join("");
+        }).join(""),
+        '</div>'
+      ].join("");
+    }
+
+    function buildLiveTodoRow(todoItem) {
+      const title = String(todoItem && todoItem.title || "").trim() || "Ohne Titel";
+      const normalizedTodoId = String(todoItem && todoItem.id || "").trim();
+      const description = String(todoItem && todoItem.description || "").trim();
+      const categoryLabel = String(todoItem && todoItem.category || "").trim();
+      const checklistItems = Array.isArray(todoItem && todoItem.checklistItems) ? todoItem.checklistItems : [];
+      const metaParts = buildTodoMeta(todoItem);
+      const assignedStudentsSectionMarkup = buildAssignedStudentsSection(todoItem);
+      const assignedStudentChecklistMarkup = buildAssignedStudentChecklistSections(todoItem);
+      const hasAssignedStudents = Array.isArray(todoItem && todoItem.assignedStudentIds) && todoItem.assignedStudentIds.length > 0;
+      const isChecklistTodo = String(todoItem && todoItem.type || "").trim().toLowerCase() === "checkliste";
+      const isDone = isTodoEffectivelyDone(todoItem);
+      const isExpanded = expandedTodoIds.indexOf(normalizedTodoId) >= 0;
+      const categoryColor = categoryLabel && window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningCategoryColor === "function"
+        ? String(window.UnterrichtsassistentApp.getPlanningCategoryColor(categoryLabel) || "").trim()
+        : "";
+      const checklistSectionMarkup = hasAssignedStudents && isChecklistTodo ? "" : buildChecklistSection(todoItem);
+      const rowStyle = categoryColor
+        ? ' style="--todo-category-color:' + escapeValue(categoryColor) + ';"'
+        : "";
+
+      return [
+        '<div class="todos-view__row', isDone ? ' is-done' : '', isExpanded ? ' is-expanded' : '', isEspeciallyUrgentTodo(todoItem) ? ' is-especially-urgent' : '', '"', rowStyle, '>',
+        '<div class="todos-view__content">',
+        '<div class="todos-view__header">',
+        '<label class="todos-view__checkbox', (isChecklistTodo || hasAssignedStudents) ? ' is-readonly' : '', '" aria-label="TODO-Status umschalten"><input type="checkbox"', isDone ? ' checked' : '', (isChecklistTodo || hasAssignedStudents) ? ' disabled' : '', ' onchange="return window.UnterrichtsassistentApp.toggleTodoDone(\'', escapeValue(normalizedTodoId), '\', this.checked)"><span></span></label>',
+        '<button class="todos-view__summary" type="button" aria-expanded="', isExpanded ? 'true' : 'false', '" onclick="return window.UnterrichtsassistentApp.toggleTodoExpanded(\'', escapeValue(normalizedTodoId), '\')">',
+        '<span class="todos-view__title-wrap">',
+        categoryColor ? '<span class="todos-view__category-marker" aria-hidden="true"></span>' : '',
+        '<span class="todos-view__title">', escapeValue(title), '</span>',
+        isEspeciallyUrgentTodo(todoItem) ? '<span class="todos-view__urgency-badge">Dringend</span>' : '',
+        '</span>',
+        '<span class="todos-view__indicator" aria-hidden="true">', isExpanded ? '&#9662;' : '&#9656;', '</span>',
+        '</button>',
+        '</div>',
+        isExpanded ? [
+          '<div class="todos-view__details">',
+          metaParts.length ? '<div class="todos-view__meta">' + escapeValue(metaParts.join(" | ")) + '</div>' : '',
+          description ? '<div class="todos-view__description">' + escapeValue(description).replace(/&#10;/g, "<br>") + '</div>' : '',
+          assignedStudentsSectionMarkup,
+          assignedStudentChecklistMarkup,
+          checklistSectionMarkup,
+          (!metaParts.length && !description && !assignedStudentsSectionMarkup && !assignedStudentChecklistMarkup && !checklistSectionMarkup) ? '<div class="todos-view__meta">Keine weiteren Informationen hinterlegt.</div>' : '',
+          '<div class="todos-view__actions todos-view__actions--details">',
+          '<button class="planning-sidebar__edit" type="button" aria-label="TODO bearbeiten" onclick="return window.UnterrichtsassistentApp.openTodoModal(\'', escapeValue(normalizedTodoId), '\')">&#9998;</button>',
+          '<button class="planning-sidebar__delete" type="button" aria-label="TODO loeschen" onclick="return window.UnterrichtsassistentApp.deleteTodo(\'', escapeValue(normalizedTodoId), '\')">&#10005;</button>',
+          '</div>',
+          '</div>'
+        ].join("") : '',
+        '</div>',
+        '</div>'
+      ].join("");
+    }
+
+    function getLiveTodoSectionSizeUnits(group) {
+      const visibleTodoCount = Math.min(Array.isArray(group && group.items) ? group.items.length : 0, 5);
+
+      return visibleTodoCount + 2;
+    }
+
+    function buildLiveTodoSectionHeader(title, count) {
+      const openTodoModalArguments = [
+        "''",
+        "'" + escapeValue(String(title || "").trim()) + "'",
+        "''"
+      ].join(", ");
+
+      return [
+        '<header class="todos-view__section-header">',
+        '<h3>', escapeValue(title), '</h3>',
+        '<div class="todos-view__section-header-meta">',
+        '<span>', escapeValue(String(count)), '</span>',
+        '<button class="todos-view__add-button todos-view__add-button--header" type="button" aria-label="TODO hinzufuegen" onclick="return window.UnterrichtsassistentApp.openTodoModal(', openTodoModalArguments, ')">+</button>',
+        '</div>',
+        '</header>'
+      ].join("");
+    }
+
+    function buildLiveCurrentClassTodoPanel() {
+      const activeClassDisplayName = activeClass
+        ? [String(activeClass.name || "").trim(), String(activeClass.subject || "").trim()].filter(Boolean).join(" ")
+        : "";
+      const normalizedActiveClassId = String(activeClass && activeClass.id || "").trim();
+      const relevantTodos = (Array.isArray(snapshot.todos) ? snapshot.todos : []).filter(function (todoItem) {
+        const normalizedTodoClassId = String(todoItem && todoItem.relatedClassId || "").trim();
+        const normalizedCategory = String(todoItem && todoItem.category || "").trim().toLowerCase();
+
+        if (isTodoEffectivelyDone(todoItem)) {
+          return false;
+        }
+
+        if (normalizedActiveClassId && normalizedTodoClassId === normalizedActiveClassId) {
+          return true;
+        }
+
+        return Boolean(activeClassDisplayName) && normalizedCategory === activeClassDisplayName.toLowerCase();
+      });
+      const groups = {};
+      const categoryOrder = [];
+
+      if (!activeClass) {
+        return "";
+      }
+
+      relevantTodos.forEach(function (todoItem) {
+        const categoryName = String(todoItem && todoItem.category || "Sonstiges").trim() || "Sonstiges";
+        const normalizedCategory = categoryName.toLowerCase();
+
+        if (!Object.prototype.hasOwnProperty.call(groups, normalizedCategory)) {
+          groups[normalizedCategory] = {
+            name: categoryName,
+            color: window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningCategoryColor === "function"
+              ? String(window.UnterrichtsassistentApp.getPlanningCategoryColor(categoryName) || "").trim()
+              : "",
+            items: []
+          };
+          categoryOrder.push(normalizedCategory);
+        }
+
+        groups[normalizedCategory].items.push(todoItem);
+      });
+
+      categoryOrder.sort(function (leftKey, rightKey) {
+        const leftGroup = groups[leftKey] || { items: [], name: "" };
+        const rightGroup = groups[rightKey] || { items: [], name: "" };
+        const leftTopScore = getHighestOpenUrgencyScore(leftGroup.items);
+        const rightTopScore = getHighestOpenUrgencyScore(rightGroup.items);
+
+        if (rightTopScore !== leftTopScore) {
+          return rightTopScore - leftTopScore;
+        }
+
+        return String(leftGroup.name || "").localeCompare(String(rightGroup.name || ""), "de", { sensitivity: "base" });
+      });
+
+      if (!categoryOrder.length) {
+        return [
+          '<article class="panel unterricht-layout__live-todos">',
+          '<div class="unterricht-live-todos__header">',
+          '<h2 class="unterricht-live-todos__title">Offene TODOs</h2>',
+          '<div class="unterricht-live-todos__subtitle">', escapeValue(activeClassDisplayName), '</div>',
+          '</div>',
+          '<p class="empty-message todos-view__empty">Keine offenen TODOs fuer die aktuelle Lerngruppe.</p>',
+          '</article>'
+        ].join("");
+      }
+
+      const orderedGroups = categoryOrder.map(function (groupKey) {
+        const group = groups[groupKey];
+
+        return {
+          name: group.name,
+          color: group.color,
+          items: sortTodoItems(group.items),
+          sizeUnits: getLiveTodoSectionSizeUnits(group)
+        };
+      });
+      const rows = [];
+      const columnSizeLimit = 14;
+      const maxColumns = Math.max(1, Math.min(3, orderedGroups.length));
+      const topRow = {
+        columns: []
+      };
+
+      orderedGroups.slice(0, maxColumns).forEach(function (group) {
+        topRow.columns.push({
+          sizeUnits: group.sizeUnits,
+          groups: [group]
+        });
+      });
+
+      rows.push(topRow);
+
+      orderedGroups.slice(maxColumns).forEach(function (group) {
+        const currentRow = rows.length ? rows[rows.length - 1] : null;
+        let targetColumn = null;
+        let targetRow = currentRow;
+
+        if (currentRow) {
+          currentRow.columns.forEach(function (column) {
+            if ((column.sizeUnits + group.sizeUnits) > columnSizeLimit) {
+              return;
+            }
+
+            if (!targetColumn || column.sizeUnits < targetColumn.sizeUnits) {
+              targetColumn = column;
+            }
+          });
+        }
+
+        if (!targetColumn) {
+          if (currentRow && currentRow.columns.length < maxColumns) {
+            targetRow = currentRow;
+          } else {
+            targetRow = {
+              columns: []
+            };
+            rows.push(targetRow);
+          }
+
+          targetColumn = {
+            sizeUnits: 0,
+            groups: []
+          };
+          targetRow.columns.push(targetColumn);
+        }
+
+        targetColumn.groups.push(group);
+        targetColumn.sizeUnits += group.sizeUnits;
+      });
+
+      return [
+        '<article class="panel unterricht-layout__live-todos">',
+        '<div class="unterricht-live-todos__header">',
+        '<h2 class="unterricht-live-todos__title">Offene TODOs</h2>',
+        '<div class="unterricht-live-todos__subtitle">', escapeValue(activeClassDisplayName), '</div>',
+        '</div>',
+        '<div class="todos-view__section-rows unterricht-live-todos__rows">',
+        rows.map(function (row) {
+          return [
+            '<div class="todos-view__section-columns todos-view__section-columns--category" style="--todo-category-column-count:', escapeValue(String(Math.max(1, row.columns.length))), ';">',
+            row.columns.map(function (column) {
+              return [
+                '<div class="todos-view__section-column">',
+                column.groups.map(function (group) {
+                  const isScrollable = group.items.length > 5;
+                  const sectionStyle = group.color
+                    ? ' style="--todo-category-color:' + escapeValue(group.color) + ';"'
+                    : '';
+
+                  return [
+                    '<section class="todos-view__section-panel todos-view__section todos-view__section--category unterricht-live-todos__section"', sectionStyle, '>',
+                    buildLiveTodoSectionHeader(group.name, group.items.length),
+                    '<div class="todos-view__section-body todos-view__section-body--scroll', isScrollable ? ' is-scrollable' : '', '">',
+                    group.items.map(buildLiveTodoRow).join(""),
+                    '</div>',
+                    isScrollable ? '<div class="todos-view__scroll-indicator">Weitere TODOs per Scrollen</div>' : '',
+                    '</section>'
+                  ].join("");
+                }).join(""),
+                '</div>'
+              ].join("");
+            }).join(""),
+            '</div>'
+          ].join("");
+        }).join(""),
+        '</div>',
+        '</article>'
+      ].join("");
+    }
+
     if (viewMode === "live") {
       const liveLessonFlowData = getCurrentAssignedCurriculumLessonFlow();
 
@@ -1425,6 +2262,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         renderLivePhaseControls(liveLessonFlowData),
         renderCompactSeatPlan(),
         '</article>',
+        buildLiveCurrentClassTodoPanel(),
         renderLiveLessonFlowPanel(liveLessonFlowData),
         '<div class="import-modal" id="unterrichtWarningOtherModal" hidden>',
         '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeUnterrichtWarningOtherModal()"></div>',
