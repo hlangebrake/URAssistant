@@ -3764,6 +3764,11 @@ button {
   grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
 }
 
+.unterricht-layout--live.has-live-flow .unterricht-layout__seatplan--full {
+  grid-column: 1 / 2;
+  grid-row: 2;
+}
+
 .unterricht-layout__seatplan,
 .unterricht-layout__content {
   min-height: 220px;
@@ -3800,6 +3805,7 @@ button {
 
 .unterricht-layout--live > .unterricht-live-notice {
   grid-column: 1 / -1;
+  grid-row: 1;
 }
 
 .unterricht-layout__live-todos {
@@ -3811,6 +3817,12 @@ button {
 
 .unterricht-layout--live.has-live-flow .unterricht-layout__live-todos {
   grid-column: 1 / 2;
+  grid-row: 3;
+}
+
+.unterricht-layout--live.has-live-flow .unterricht-layout__live-flow {
+  grid-column: 2 / 3;
+  grid-row: 2 / span 2;
 }
 
 .unterricht-live-todos__header {
