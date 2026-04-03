@@ -1778,9 +1778,25 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         return student ? {
           id: studentId,
           label: getStudentCompactDisplayName(student, classStudents),
+          sortFirstName: String(student && student.firstName || "").trim().toLowerCase(),
+          sortLastName: String(student && student.lastName || "").trim().toLowerCase(),
           done: Boolean(statusEntry && statusEntry.done)
         } : null;
-      }).filter(Boolean);
+      }).filter(Boolean).sort(function (left, right) {
+        const doneDifference = (Boolean(left && left.done) ? 1 : 0) - (Boolean(right && right.done) ? 1 : 0);
+
+        if (doneDifference !== 0) {
+          return doneDifference;
+        }
+
+        const firstNameComparison = String(left && left.sortFirstName || "").localeCompare(String(right && right.sortFirstName || ""), "de", { sensitivity: "base" });
+
+        if (firstNameComparison !== 0) {
+          return firstNameComparison;
+        }
+
+        return String(left && left.sortLastName || "").localeCompare(String(right && right.sortLastName || ""), "de", { sensitivity: "base" });
+      });
     }
 
     function getDerivedAssignedStudentsDone(todoEntry) {

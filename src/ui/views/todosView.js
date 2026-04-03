@@ -499,6 +499,12 @@ window.Unterrichtsassistent.ui.views.todos = {
               done: Boolean(statusEntry && statusEntry.done)
             } : null;
           }).filter(Boolean).sort(function (left, right) {
+            const doneDifference = (Boolean(left && left.done) ? 1 : 0) - (Boolean(right && right.done) ? 1 : 0);
+
+            if (doneDifference !== 0) {
+              return doneDifference;
+            }
+
             const firstNameComparison = String(left && left.sortFirstName || "").localeCompare(String(right && right.sortFirstName || ""), "de", { sensitivity: "base" });
 
             if (firstNameComparison !== 0) {
