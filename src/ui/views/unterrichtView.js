@@ -94,6 +94,12 @@ window.Unterrichtsassistent.ui.views.unterricht = {
 
       return lookup;
     }, {});
+    const collapsedLiveLessonIds = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getCollapsedUnterrichtLiveLessonIds === "function"
+      ? window.UnterrichtsassistentApp.getCollapsedUnterrichtLiveLessonIds()
+      : [];
+    const activeLiveLessonInfoLessonId = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveUnterrichtLiveLessonInfoLessonId === "function"
+      ? String(window.UnterrichtsassistentApp.getActiveUnterrichtLiveLessonInfoLessonId() || "").trim()
+      : "";
     const deskLayoutItemsSource = currentSeatPlan && Array.isArray(currentSeatPlan.deskLayoutItems)
       ? currentSeatPlan.deskLayoutItems
       : [];
@@ -1406,14 +1412,37 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         lessonDateLabel ? '<div class="unterricht-live-flow__meta"><span class="unterricht-live-flow__meta-date">' + escapeValue(lessonDateLabel) + '</span></div>' : "",
         '</div>',
         lessonFlowData.segments.map(function (segmentItem) {
+          const lessonPlanId = String(segmentItem && segmentItem.lessonPlan && segmentItem.lessonPlan.id || "").trim();
+          const seriesId = String(segmentItem && segmentItem.series && segmentItem.series.id || "").trim();
+          const sequenceId = String(segmentItem && segmentItem.sequence && segmentItem.sequence.id || "").trim();
+          const lessonTopic = String(segmentItem && segmentItem.lessonPlan && segmentItem.lessonPlan.topic || "").trim() || "Ohne Thema";
+          const seriesTopic = String(segmentItem && segmentItem.series && segmentItem.series.topic || "").trim() || "Ohne Thema";
+          const sequenceTopic = String(segmentItem && segmentItem.sequence && segmentItem.sequence.topic || "").trim() || "Ohne Thema";
+          const isCollapsed = collapsedLiveLessonIds.indexOf(lessonPlanId) >= 0;
+          const isInfoOpen = activeLiveLessonInfoLessonId === lessonPlanId;
           let consumedCompletedMinutes = 0;
 
           return [
             '<section class="unterricht-live-flow__lesson' + (segmentItem.isActiveNow ? ' is-active' : '') + '">',
-            '<div class="unterricht-live-flow__meta">',
-            '<span class="unterricht-live-flow__meta-topic">' + escapeValue(String(segmentItem.lessonPlan && segmentItem.lessonPlan.topic || "").trim() || "Ohne Thema") + '</span>',
-            segmentItem.slotCount > 1 ? '<span class="unterricht-live-flow__meta-date">x' + escapeValue(String(segmentItem.slotCount)) + '</span>' : '',
+            '<div class="unterricht-live-flow__lesson-header">',
+            '<button class="unterricht-live-flow__lesson-toggle' + (isCollapsed ? ' is-collapsed' : '') + '" type="button" onclick="return window.UnterrichtsassistentApp.toggleUnterrichtLiveLessonCollapsed(\'' + escapeValue(lessonPlanId) + '\')">',
+            '<span class="unterricht-live-flow__lesson-toggle-icon" aria-hidden="true">' + (isCollapsed ? '&#9656;' : '&#9662;') + '</span>',
+            '<span class="unterricht-live-flow__lesson-toggle-text">' + escapeValue(lessonTopic) + '</span>',
+            segmentItem.slotCount > 1 ? '<span class="unterricht-live-flow__lesson-toggle-meta">x' + escapeValue(String(segmentItem.slotCount)) + '</span>' : '',
+            '</button>',
+            '<button class="unterricht-live-flow__lesson-info-button' + (isInfoOpen ? ' is-active' : '') + '" type="button" aria-label="Infos zur geplanten Stunde" onclick="window.UnterrichtsassistentApp.stopEventPropagation(event); return window.UnterrichtsassistentApp.toggleUnterrichtLiveLessonInfo(\'' + escapeValue(lessonPlanId) + '\')">i</button>',
             '</div>',
+            isInfoOpen ? [
+              '<div class="unterricht-live-flow__lesson-info">',
+              '<div class="unterricht-live-flow__lesson-info-grid">',
+              '<div class="unterricht-live-flow__lesson-info-item"><span>Reihe</span><strong>' + escapeValue(seriesTopic) + '</strong></div>',
+              '<div class="unterricht-live-flow__lesson-info-item"><span>Sequenz</span><strong>' + escapeValue(sequenceTopic) + '</strong></div>',
+              '<div class="unterricht-live-flow__lesson-info-item"><span>Stunde</span><strong>' + escapeValue(lessonTopic) + '</strong></div>',
+              '</div>',
+              '<button class="unterricht-live-flow__lesson-link" type="button" onclick="window.UnterrichtsassistentApp.stopEventPropagation(event); return window.UnterrichtsassistentApp.openCurriculumLessonFlowFromUnterrichtLive(\'' + escapeValue(seriesId) + '\', \'' + escapeValue(sequenceId) + '\', \'' + escapeValue(lessonPlanId) + '\')">Zur Unterrichtsplanung</button>',
+              '</div>'
+            ].join("") : "",
+            isCollapsed ? "" : [
             renderLiveLessonPreparation(segmentItem.lessonPlan),
             '<div class="unterricht-live-flow__phase-list">',
             segmentItem.phases.map(function (phaseItem) {
@@ -1500,7 +1529,8 @@ window.Unterrichtsassistent.ui.views.unterricht = {
             ].join("");
             }).join(""),
             '</div>',
-            renderLiveLessonHomework(segmentItem.lessonPlan),
+            renderLiveLessonHomework(segmentItem.lessonPlan)
+            ].join(""),
             '</section>'
           ].join("");
         }).join(""),
@@ -2375,11 +2405,13 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       return [
         '<div class="unterricht-layout unterricht-layout--live' + (liveLessonFlowData ? ' has-live-flow' : '') + '">',
         renderLiveNotice(),
+        '<div class="unterricht-layout__live-main">',
         '<article class="panel unterricht-layout__seatplan unterricht-layout__seatplan--full">',
         renderLivePhaseControls(liveLessonFlowData),
         renderCompactSeatPlan(),
         '</article>',
         buildLiveCurrentClassTodoPanel(),
+        '</div>',
         renderLiveLessonFlowPanel(liveLessonFlowData),
         '<div class="import-modal" id="unterrichtWarningOtherModal" hidden>',
         '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeUnterrichtWarningOtherModal()"></div>',

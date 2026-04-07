@@ -3900,7 +3900,14 @@ button {
   grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
 }
 
-.unterricht-layout--live.has-live-flow .unterricht-layout__seatplan--full {
+.unterricht-layout__live-main {
+  min-width: 0;
+  display: grid;
+  gap: 0;
+  align-content: start;
+}
+
+.unterricht-layout--live.has-live-flow .unterricht-layout__live-main {
   grid-column: 1 / 2;
   grid-row: 2;
 }
@@ -3951,14 +3958,9 @@ button {
   margin-top: -2.2rem;
 }
 
-.unterricht-layout--live.has-live-flow .unterricht-layout__live-todos {
-  grid-column: 1 / 2;
-  grid-row: 3;
-}
-
 .unterricht-layout--live.has-live-flow .unterricht-layout__live-flow {
   grid-column: 2 / 3;
-  grid-row: 2 / span 2;
+  grid-row: 2;
 }
 
 .unterricht-live-todos__header {
@@ -4194,6 +4196,121 @@ button {
   gap: 0.6rem;
 }
 
+.unterricht-live-flow__lesson-header {
+  display: flex;
+  align-items: start;
+  gap: 0.55rem;
+}
+
+.unterricht-live-flow__lesson-toggle {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.unterricht-live-flow__lesson-toggle-icon {
+  flex: 0 0 auto;
+  width: 18px;
+  color: rgba(23, 49, 62, 0.56);
+  font-size: 0.78rem;
+  line-height: 1;
+  text-align: center;
+}
+
+.unterricht-live-flow__lesson-toggle-text {
+  min-width: 0;
+  color: rgba(23, 49, 62, 0.9);
+  font-size: 0.96rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.unterricht-live-flow__lesson-toggle-meta {
+  flex: 0 0 auto;
+  color: rgba(23, 49, 62, 0.58);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.unterricht-live-flow__lesson-info-button,
+.unterricht-live-flow__lesson-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid rgba(23, 49, 62, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: rgba(23, 49, 62, 0.84);
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.unterricht-live-flow__lesson-info-button {
+  flex: 0 0 auto;
+  width: 30px;
+  min-width: 30px;
+  padding: 0;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.unterricht-live-flow__lesson-info-button.is-active {
+  background: rgba(57, 117, 171, 0.1);
+  border-color: rgba(57, 117, 171, 0.24);
+  color: #27536d;
+}
+
+.unterricht-live-flow__lesson-info {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(23, 49, 62, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.unterricht-live-flow__lesson-info-grid {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.unterricht-live-flow__lesson-info-item {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.unterricht-live-flow__lesson-info-item span {
+  color: rgba(23, 49, 62, 0.56);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.unterricht-live-flow__lesson-info-item strong {
+  color: rgba(23, 49, 62, 0.86);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.unterricht-live-flow__lesson-link {
+  justify-self: start;
+  white-space: nowrap;
+}
+
 .unterricht-live-flow__lesson + .unterricht-live-flow__lesson {
   margin-top: 0.35rem;
   padding-top: 0.75rem;
@@ -4423,6 +4540,25 @@ button {
 
 .unterricht-live-flow__empty--inline {
   font-size: 0.76rem;
+}
+
+.unterricht-live-flow__lesson-toggle:hover,
+.unterricht-live-flow__lesson-toggle:focus-visible {
+  outline: none;
+}
+
+.unterricht-live-flow__lesson-toggle:hover .unterricht-live-flow__lesson-toggle-text,
+.unterricht-live-flow__lesson-toggle:focus-visible .unterricht-live-flow__lesson-toggle-text {
+  color: #27536d;
+}
+
+.unterricht-live-flow__lesson-info-button:hover,
+.unterricht-live-flow__lesson-info-button:focus-visible,
+.unterricht-live-flow__lesson-link:hover,
+.unterricht-live-flow__lesson-link:focus-visible {
+  outline: none;
+  background: rgba(57, 117, 171, 0.08);
+  border-color: rgba(57, 117, 171, 0.24);
 }
 
 .unterricht-seatplan {
@@ -9399,6 +9535,12 @@ body.is-desk-dragging {
 @media (max-width: 960px) {
   .unterricht-layout--live {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .unterricht-layout--live.has-live-flow .unterricht-layout__live-main,
+  .unterricht-layout--live.has-live-flow .unterricht-layout__live-flow {
+    grid-column: 1 / -1;
+    grid-row: auto;
   }
 
   .unterricht-live-flow__step {

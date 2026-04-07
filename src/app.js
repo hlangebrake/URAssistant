@@ -108,6 +108,8 @@ let activeCurriculumLessonFlowLessonId = "";
 let activeCurriculumLessonFlowViewPhaseIds = [];
 let expandedCurriculumSeriesIds = [];
 let expandedCurriculumSequenceIds = [];
+let collapsedUnterrichtLiveLessonIds = [];
+let activeUnterrichtLiveLessonInfoLessonId = "";
 let activeCurriculumSeriesDrag = null;
 let activeCurriculumSeriesDropIndicator = null;
 let activeCurriculumSeriesDragPreview = null;
@@ -15930,6 +15932,12 @@ window.UnterrichtsassistentApp.getExpandedCurriculumSeriesIds = function () {
 window.UnterrichtsassistentApp.getExpandedCurriculumSequenceIds = function () {
   return expandedCurriculumSequenceIds.slice();
 };
+window.UnterrichtsassistentApp.getCollapsedUnterrichtLiveLessonIds = function () {
+  return collapsedUnterrichtLiveLessonIds.slice();
+};
+window.UnterrichtsassistentApp.getActiveUnterrichtLiveLessonInfoLessonId = function () {
+  return activeUnterrichtLiveLessonInfoLessonId;
+};
 window.UnterrichtsassistentApp.getActivePlanningRangeDraft = function () {
   return activePlanningRangeDraft;
 };
@@ -16038,6 +16046,88 @@ window.UnterrichtsassistentApp.togglePlanningAvailableLessons = function () {
     setActiveView("planung");
   }
 
+  return false;
+};
+window.UnterrichtsassistentApp.toggleUnterrichtLiveLessonCollapsed = function (lessonId) {
+  const normalizedLessonId = String(lessonId || "").trim();
+
+  if (activeViewId !== "unterricht" || !normalizedLessonId) {
+    return false;
+  }
+
+  if (collapsedUnterrichtLiveLessonIds.indexOf(normalizedLessonId) >= 0) {
+    collapsedUnterrichtLiveLessonIds = collapsedUnterrichtLiveLessonIds.filter(function (entry) {
+      return entry !== normalizedLessonId;
+    });
+  } else {
+    collapsedUnterrichtLiveLessonIds = collapsedUnterrichtLiveLessonIds.concat([normalizedLessonId]);
+  }
+
+  setActiveView("unterricht");
+  return false;
+};
+window.UnterrichtsassistentApp.toggleUnterrichtLiveLessonInfo = function (lessonId) {
+  const normalizedLessonId = String(lessonId || "").trim();
+
+  if (activeViewId !== "unterricht" || !normalizedLessonId) {
+    return false;
+  }
+
+  activeUnterrichtLiveLessonInfoLessonId = activeUnterrichtLiveLessonInfoLessonId === normalizedLessonId
+    ? ""
+    : normalizedLessonId;
+  setActiveView("unterricht");
+  return false;
+};
+window.UnterrichtsassistentApp.openCurriculumLessonFlowFromUnterrichtLive = function (seriesId, sequenceId, lessonId) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
+  const normalizedSeriesId = String(seriesId || "").trim();
+  const normalizedSequenceId = String(sequenceId || "").trim();
+  const normalizedLessonId = String(lessonId || "").trim();
+  const expansionKey = [normalizedSeriesId, normalizedSequenceId].join("::");
+  const lessonItem = collections
+    ? collections.lessons.find(function (entry) {
+        return String(entry && entry.id || "").trim() === normalizedLessonId
+          && String(entry && entry.sequenceId || "").trim() === normalizedSequenceId;
+      }) || null
+    : null;
+
+  if (!currentRawSnapshot || !collections || !normalizedSeriesId || !normalizedSequenceId || !normalizedLessonId || !lessonItem) {
+    return false;
+  }
+
+  planningViewMode = "unterrichtsplanung";
+
+  if (expandedCurriculumSeriesIds.indexOf(normalizedSeriesId) < 0) {
+    expandedCurriculumSeriesIds = expandedCurriculumSeriesIds.concat([normalizedSeriesId]);
+  }
+
+  if (expandedCurriculumSequenceIds.indexOf(expansionKey) < 0) {
+    expandedCurriculumSequenceIds = expandedCurriculumSequenceIds.concat([expansionKey]);
+  }
+
+  activeCurriculumSeriesDraft = null;
+  activeCurriculumSequenceDraft = null;
+  activeCurriculumLessonDraft = null;
+  activeCurriculumLessonFlowLessonId = normalizedLessonId;
+  activeCurriculumLessonFlowViewPhaseIds = [];
+  activeUnterrichtLiveLessonInfoLessonId = "";
+  currentRawSnapshot.activeClassId = String((collections.series.find(function (entry) {
+    return String(entry && entry.id || "").trim() === normalizedSeriesId;
+  }) || {}).classId || currentRawSnapshot.activeClassId || "").trim();
+  refreshSnapshotInMemory(currentRawSnapshot, "planung");
+  window.setTimeout(function () {
+    const target = document.querySelector('.planning-curriculum__lesson-block[data-lesson-drop-target="' + normalizedLessonId.replace(/"/g, '\\"') + '"]');
+
+    if (target && typeof target.scrollIntoView === "function") {
+      target.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "center"
+      });
+    }
+  }, 0);
   return false;
 };
 window.UnterrichtsassistentApp.togglePlanningAdminMode = function () {
