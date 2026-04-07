@@ -523,14 +523,35 @@ class CurriculumSequence {
 }
 
 class CurriculumLessonPlan {
-  constructor({ id, sequenceId = "", topic = "", hourType = "single", functionType = "", situationType = "", demandLevel = "", nextLessonId = "" }) {
+  constructor({
+    id,
+    sequenceId = "",
+    topic = "",
+    summary = "",
+    hourType = "single",
+    functionType = "",
+    situationType = "",
+    demandLevel = "",
+    preparationMode = "",
+    preparationText = "",
+    preparationTodoId = "",
+    homeworkText = "",
+    homeworkDueMode = "",
+    homeworkDueAmount = 1,
+    homeworkDueUnit = "tage",
+    nextLessonId = ""
+  }) {
     const normalizedFunctionType = String(functionType || "").trim().toLowerCase();
     const normalizedSituationType = String(situationType || "").trim().toLowerCase();
     const normalizedDemandLevel = String(demandLevel || "").trim().toLowerCase();
+    const normalizedPreparationMode = String(preparationMode || "").trim().toLowerCase();
+    const normalizedHomeworkDueMode = String(homeworkDueMode || "").trim().toLowerCase();
+    const normalizedHomeworkDueUnit = String(homeworkDueUnit || "").trim().toLowerCase();
 
     this.id = id;
     this.sequenceId = sequenceId;
     this.topic = topic;
+    this.summary = String(summary || "").trim();
     this.hourType = hourType === "double" ? "double" : "single";
     this.functionType = ["erarbeiten", "vertiefen", "ueben", "wiederholen", "ueberpruefen"].indexOf(normalizedFunctionType) >= 0
       ? normalizedFunctionType
@@ -547,6 +568,19 @@ class CurriculumLessonPlan {
     this.demandLevel = ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(normalizedDemandLevel) >= 0
       ? normalizedDemandLevel
       : "";
+    this.preparationMode = ["text", "todo"].indexOf(normalizedPreparationMode) >= 0
+      ? normalizedPreparationMode
+      : "";
+    this.preparationText = String(preparationText || "").trim();
+    this.preparationTodoId = String(preparationTodoId || "").trim();
+    this.homeworkText = String(homeworkText || "").trim();
+    this.homeworkDueMode = ["next_available_day", "next_week", "manual"].indexOf(normalizedHomeworkDueMode) >= 0
+      ? normalizedHomeworkDueMode
+      : "";
+    this.homeworkDueAmount = Math.max(1, Number(homeworkDueAmount) || 1);
+    this.homeworkDueUnit = ["tage", "wochen", "monate"].indexOf(normalizedHomeworkDueUnit) >= 0
+      ? normalizedHomeworkDueUnit
+      : "tage";
     this.nextLessonId = nextLessonId;
   }
 }

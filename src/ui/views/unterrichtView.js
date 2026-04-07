@@ -488,6 +488,81 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       return fullLabel ? fullLabel.charAt(0) : "";
     }
 
+    function getCurriculumHomeworkDueModeLabel(dueModeValue) {
+      const normalizedValue = String(dueModeValue || "").trim().toLowerCase();
+
+      if (normalizedValue === "next_available_day") {
+        return "naechster verfuegbarer Tag";
+      }
+
+      if (normalizedValue === "next_week") {
+        return "naechste Woche";
+      }
+
+      if (normalizedValue === "manual") {
+        return "manuell";
+      }
+
+      return "";
+    }
+
+    function getCurriculumHomeworkDueUnitLabel(unitValue, amountValue) {
+      const normalizedValue = String(unitValue || "").trim().toLowerCase();
+      const normalizedAmount = Math.max(1, Number(amountValue) || 1);
+
+      if (normalizedValue === "wochen") {
+        return normalizedAmount === 1 ? "Woche" : "Wochen";
+      }
+
+      if (normalizedValue === "monate") {
+        return normalizedAmount === 1 ? "Monat" : "Monate";
+      }
+
+      return normalizedAmount === 1 ? "Tag" : "Tage";
+    }
+
+    function renderLiveLessonPreparation(lessonPlan) {
+      const preparationMode = String(lessonPlan && lessonPlan.preparationMode || "").trim().toLowerCase();
+      const preparationText = String(lessonPlan && lessonPlan.preparationText || "").trim();
+
+      if (preparationMode !== "text" || !preparationText) {
+        return "";
+      }
+
+      return [
+        '<div class="unterricht-live-flow__extra unterricht-live-flow__extra--preparation">',
+        '<div class="unterricht-live-flow__extra-title">Vorbereitung</div>',
+        '<div class="unterricht-live-flow__extra-text">', escapeValue(preparationText), '</div>',
+        '</div>'
+      ].join("");
+    }
+
+    function renderLiveLessonHomework(lessonPlan) {
+      const homeworkText = String(lessonPlan && lessonPlan.homeworkText || "").trim();
+      const homeworkDueMode = String(lessonPlan && lessonPlan.homeworkDueMode || "").trim().toLowerCase();
+      const homeworkDueAmount = Math.max(1, Number(lessonPlan && lessonPlan.homeworkDueAmount) || 1);
+      const homeworkDueUnit = String(lessonPlan && lessonPlan.homeworkDueUnit || "").trim().toLowerCase();
+      let dueLabel = getCurriculumHomeworkDueModeLabel(homeworkDueMode);
+
+      if (!homeworkDueMode || !homeworkText) {
+        return "";
+      }
+
+      if (homeworkDueMode === "manual") {
+        dueLabel = String(homeworkDueAmount) + " " + getCurriculumHomeworkDueUnitLabel(homeworkDueUnit, homeworkDueAmount);
+      }
+
+      return [
+        '<div class="unterricht-live-flow__extra unterricht-live-flow__extra--homework">',
+        '<div class="unterricht-live-flow__extra-header">',
+        '<div class="unterricht-live-flow__extra-title">Hausaufgabe</div>',
+        dueLabel ? '<div class="unterricht-live-flow__extra-meta">' + escapeValue(dueLabel) + '</div>' : '',
+        '</div>',
+        '<div class="unterricht-live-flow__extra-text">', escapeValue(homeworkText), '</div>',
+        '</div>'
+      ].join("");
+    }
+
     function getCurriculumSituationTypeLabel(situationTypeValue) {
       const normalizedValue = String(situationTypeValue || "").trim().toLowerCase();
 
@@ -706,6 +781,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
 
         if (!isInstructionFreeDateValue(isoDate) && !(lessonStatus && lessonStatus.isCancelled)) {
           service.getLessonUnitsForClass(classId, cursor).forEach(function (lessonUnit) {
+            const outageInfo = getInstructionOutageInfoForLesson(classId, isoDate, lessonUnit && lessonUnit.startTime, lessonUnit && lessonUnit.endTime);
             const currentTimetable = typeof service.getCurrentTimetable === "function"
               ? service.getCurrentTimetable(cursor)
               : null;
@@ -726,6 +802,10 @@ window.Unterrichtsassistent.ui.views.unterricht = {
               return effectiveClassId === classId && effectiveSourceRowId === sourceRowId;
             }).length || 1;
             let partIndex = 0;
+
+            if (outageInfo && outageInfo.isCancelled) {
+              return;
+            }
 
             while (partIndex < Math.max(1, lessonCount)) {
               lessonSlots.push({
@@ -1334,6 +1414,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
             '<span class="unterricht-live-flow__meta-topic">' + escapeValue(String(segmentItem.lessonPlan && segmentItem.lessonPlan.topic || "").trim() || "Ohne Thema") + '</span>',
             segmentItem.slotCount > 1 ? '<span class="unterricht-live-flow__meta-date">x' + escapeValue(String(segmentItem.slotCount)) + '</span>' : '',
             '</div>',
+            renderLiveLessonPreparation(segmentItem.lessonPlan),
             '<div class="unterricht-live-flow__phase-list">',
             segmentItem.phases.map(function (phaseItem) {
             const phaseItemId = String(phaseItem && phaseItem.id || "").trim();
@@ -1419,6 +1500,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
             ].join("");
             }).join(""),
             '</div>',
+            renderLiveLessonHomework(segmentItem.lessonPlan),
             '</section>'
           ].join("");
         }).join(""),

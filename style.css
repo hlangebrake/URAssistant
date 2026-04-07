@@ -1519,9 +1519,37 @@ button {
   max-width: 640px;
 }
 
+.import-modal__dialog--curriculum-lesson {
+  width: min(940px, calc(100% - 2rem));
+  max-width: 940px;
+}
+
 .curriculum-series-form {
   display: grid;
   gap: 1rem;
+}
+
+.curriculum-lesson-form {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.9fr);
+  align-items: start;
+}
+
+.curriculum-lesson-form__main {
+  display: grid;
+  gap: 1rem;
+}
+
+.curriculum-lesson-form__summary {
+  min-height: 100%;
+}
+
+.curriculum-lesson-form__summary textarea {
+  min-height: 100%;
+  resize: vertical;
+}
+
+.curriculum-lesson-form .import-modal__actions {
+  grid-column: 1 / -1;
 }
 
 .curriculum-series-form__color-field {
@@ -1564,6 +1592,12 @@ button {
   max-width: 220px;
 }
 
+@media (max-width: 840px) {
+  .curriculum-lesson-form {
+    grid-template-columns: 1fr;
+  }
+}
+
 .planning-lesson-flow {
   display: grid;
   gap: 0.85rem;
@@ -1596,6 +1630,23 @@ button {
   color: rgba(23, 49, 62, 0.88);
 }
 
+.planning-lesson-flow__lesson-summary {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid rgba(23, 49, 62, 0.1);
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.planning-lesson-flow__lesson-summary-text {
+  color: rgba(23, 49, 62, 0.72);
+  font-size: 0.84rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
 .planning-lesson-flow__phase-table,
 .planning-lesson-flow__step-table {
   width: 100%;
@@ -1622,6 +1673,22 @@ button {
   background: rgba(255, 255, 255, 0.82);
 }
 
+.planning-lesson-flow__extra-row--preparation td {
+  padding-bottom: 0.65rem;
+}
+
+.planning-lesson-flow__extra-row--homework td {
+  padding-top: 0.65rem;
+}
+
+.planning-lesson-flow__extra-card {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.8rem 0.9rem 0.9rem;
+  border: 1px solid rgba(23, 49, 62, 0.12);
+  background: rgba(255, 255, 255, 0.76);
+}
+
 .planning-lesson-flow__phase-toolbar {
   display: grid;
   grid-template-columns: minmax(140px, 0.95fr) 72px auto auto auto auto auto;
@@ -1629,14 +1696,37 @@ button {
   gap: 0.5rem;
 }
 
+.planning-lesson-flow__extra-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.planning-lesson-flow__extra-title {
+  color: rgba(23, 49, 62, 0.9);
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
 .planning-lesson-flow__phase-field,
-.planning-lesson-flow__phase-checkbox {
+.planning-lesson-flow__phase-checkbox,
+.planning-lesson-flow__extra-field {
   display: grid;
   gap: 0.28rem;
 }
 
 .planning-lesson-flow__phase-field--compact {
   justify-self: start;
+}
+
+.planning-lesson-flow__extra-field--select {
+  min-width: 180px;
+}
+
+.planning-lesson-flow__extra-field--amount {
+  width: 96px;
 }
 
 .planning-lesson-flow__phase-field--title {
@@ -1648,7 +1738,8 @@ button {
 }
 
 .planning-lesson-flow__phase-field span,
-.planning-lesson-flow__phase-checkbox span {
+.planning-lesson-flow__phase-checkbox span,
+.planning-lesson-flow__extra-field span {
   color: rgba(23, 49, 62, 0.62);
   font-size: 0.72rem;
   font-weight: 700;
@@ -1694,6 +1785,7 @@ button {
 }
 
 .planning-lesson-flow__phase-field input,
+.planning-lesson-flow__extra-field input,
 .planning-lesson-flow__step-title,
 .planning-lesson-flow__select,
 .planning-lesson-flow__textarea {
@@ -1704,6 +1796,13 @@ button {
   background: rgba(255, 255, 255, 0.98);
   color: var(--text);
   font: inherit;
+}
+
+.planning-lesson-flow__extra-inline {
+  display: flex;
+  align-items: end;
+  gap: 0.6rem;
+  flex-wrap: wrap;
 }
 
 .planning-lesson-flow__step-table thead th {
@@ -1747,9 +1846,19 @@ button {
   resize: vertical;
 }
 
+.planning-lesson-flow__extra-placeholder {
+  margin: 0;
+  padding: 0.7rem 0.8rem;
+  border: 1px dashed rgba(23, 49, 62, 0.14);
+  color: rgba(23, 49, 62, 0.58);
+  background: rgba(255, 255, 255, 0.52);
+  font-size: 0.84rem;
+}
+
 .planning-lesson-flow__delete-button,
 .planning-lesson-flow__mode-button,
-.planning-lesson-flow__add-button {
+.planning-lesson-flow__add-button,
+.planning-lesson-flow__summary-edit {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1782,6 +1891,15 @@ button {
   justify-content: flex-start;
   border-style: dashed;
   background: rgba(255, 255, 255, 0.66);
+}
+
+.planning-lesson-flow__add-button--extra {
+  min-height: 42px;
+}
+
+.planning-lesson-flow__summary-edit {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .planning-lesson-flow__step-add-row td,
@@ -1846,7 +1964,9 @@ button {
 .planning-lesson-flow__mode-button:hover,
 .planning-lesson-flow__mode-button:focus-visible,
 .planning-lesson-flow__add-button:hover,
-.planning-lesson-flow__add-button:focus-visible {
+.planning-lesson-flow__add-button:focus-visible,
+.planning-lesson-flow__summary-edit:hover,
+.planning-lesson-flow__summary-edit:focus-visible {
   outline: none;
   background: rgba(57, 117, 171, 0.08);
   border-color: rgba(57, 117, 171, 0.24);
@@ -4078,6 +4198,44 @@ button {
   margin-top: 0.35rem;
   padding-top: 0.75rem;
   border-top: 1px solid rgba(23, 49, 62, 0.1);
+}
+
+.unterricht-live-flow__extra {
+  display: grid;
+  gap: 0.32rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(23, 49, 62, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.unterricht-live-flow__extra-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.unterricht-live-flow__extra-title {
+  color: rgba(23, 49, 62, 0.9);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.unterricht-live-flow__extra-meta {
+  color: rgba(23, 49, 62, 0.58);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.unterricht-live-flow__extra-text {
+  color: rgba(31, 36, 48, 0.8);
+  font-size: 0.8rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
 }
 
 .unterricht-live-flow__phase {
