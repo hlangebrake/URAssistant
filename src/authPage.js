@@ -25,6 +25,8 @@ const authImportMeta = document.getElementById("authImportMeta");
 const authImportButton = document.getElementById("authImportButton");
 const authImportCancelButton = document.getElementById("authImportCancelButton");
 const authImportInput = document.getElementById("authImportInput");
+const authResetSection = document.getElementById("authResetSection");
+const authResetButton = document.getElementById("authResetButton");
 const AUTH_AUTOFILL_POLL_INTERVAL_MS = 50;
 const AUTH_AUTOFILL_STABLE_DELAY_MS = 20;
 const AUTH_AUTOFILL_JUMP_MIN_CHARS = 6;
@@ -368,6 +370,10 @@ function syncModeUi() {
     authImportSection.hidden = !isSetupMode;
   }
 
+  if (authResetSection) {
+    authResetSection.hidden = isSetupMode;
+  }
+
   if (authImportDescription) {
     authImportDescription.textContent = isImportMode
       ? "Das ausgewaehlte Backup kann jetzt mit seinem bisherigen Passwort entsperrt und uebernommen werden."
@@ -609,6 +615,44 @@ function handleImportCancel() {
   return false;
 }
 
+async function handleResetButtonClick() {
+  const deleteDatabase = window.Unterrichtsassistent
+    && window.Unterrichtsassistent.data
+    && typeof window.Unterrichtsassistent.data.deleteDatabase === "function"
+      ? window.Unterrichtsassistent.data.deleteDatabase
+      : null;
+  const confirmed = window.confirm(
+    "Der alte Speicherstand wird vollstaendig geloescht und die App beginnt neu. Bitte nur fortfahren, wenn zuvor ein Export oder Backup erstellt wurde. Wirklich loeschen?"
+  );
+
+  if (!deleteDatabase || authMode === "setup" || isAuthFormBusy || !confirmed) {
+    return false;
+  }
+
+  showError("");
+  setFormBusy(true);
+
+  try {
+    stopAuthAutofillWatcher();
+
+    if (passwordAuthApi && typeof passwordAuthApi.clearUnlockSession === "function") {
+      passwordAuthApi.clearUnlockSession();
+    }
+
+    clearPendingImport();
+    await deleteDatabase();
+    authMode = "setup";
+    pendingImportPayload = null;
+    syncModeUi();
+  } catch (error) {
+    console.error("Der alte Speicherstand konnte nicht geloescht werden.", error);
+    showError("Der alte Speicherstand konnte nicht geloescht werden.");
+    setFormBusy(false);
+  }
+
+  return false;
+}
+
 document.addEventListener("submit", preventLocalOnlyFormSubmit, true);
 
 if (authForm) {
@@ -634,6 +678,10 @@ if (authImportCancelButton) {
 
 if (authImportInput) {
   authImportInput.addEventListener("change", handleImportFileSelection);
+}
+
+if (authResetButton) {
+  authResetButton.addEventListener("click", handleResetButtonClick);
 }
 
 resolveAuthMode().catch(function (error) {

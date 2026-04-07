@@ -71,6 +71,17 @@ async function writeStates(entries) {
   });
 }
 
+function deleteDatabase() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(DB_NAME);
+
+    request.onsuccess = () => resolve(true);
+    request.onerror = () => reject(request.error);
+    request.onblocked = () => reject(new Error("Die Datenbank konnte nicht geloescht werden, weil sie noch verwendet wird."));
+  });
+}
+
 window.Unterrichtsassistent.data.readState = readState;
 window.Unterrichtsassistent.data.writeState = writeState;
 window.Unterrichtsassistent.data.writeStates = writeStates;
+window.Unterrichtsassistent.data.deleteDatabase = deleteDatabase;

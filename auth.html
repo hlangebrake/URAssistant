@@ -44,6 +44,14 @@
         </div>
         <input id="authImportInput" type="file" accept=".json,application/json" hidden>
       </section>
+      <section class="auth-import" id="authResetSection" hidden>
+        <div class="auth-import__divider"><span>oder</span></div>
+        <p class="auth-import__text">Statt das Passwort einzugeben, kann der bisherige Speicherstand geloescht und die App neu begonnen werden.</p>
+        <p class="auth-form__error" id="authResetWarning">Wichtig: Vor dem Neuanfang sollte zuvor ein Export bzw. Backup des alten Speicherstands erstellt worden sein.</p>
+        <div class="auth-import__actions">
+          <button class="auth-import__cancel" id="authResetButton" type="button">Alten Speicherstand loeschen und neu beginnen</button>
+        </div>
+      </section>
     </section>
   </main>
 
