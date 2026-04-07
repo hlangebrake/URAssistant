@@ -1369,6 +1369,55 @@ function getPlanningInstructionOutageInfo(snapshot, classId, lessonDate, lessonS
   };
 }
 
+function getPlanningInstructionOutageEventDetail(snapshot, classId, lessonDate) {
+  const normalizedClassId = String(classId || "").trim();
+  const normalizedLessonDate = String(lessonDate || "").slice(0, 10);
+  const dateParts = normalizedLessonDate.split("-");
+  const year = Number(dateParts[0]);
+  const month = Number(dateParts[1]);
+  const day = Number(dateParts[2]);
+  const seenLookup = {};
+  const matchingEvents = [];
+  let lessonUnits = [];
+
+  function appendEvents(items) {
+    (Array.isArray(items) ? items : []).forEach(function (eventItem) {
+      const eventKey = String(eventItem && eventItem.occurrenceId || eventItem && eventItem.id || "").trim();
+
+      if (!eventKey || seenLookup[eventKey]) {
+        return;
+      }
+
+      seenLookup[eventKey] = true;
+      matchingEvents.push(eventItem);
+    });
+  }
+
+  if (!normalizedClassId || !normalizedLessonDate) {
+    return null;
+  }
+
+  appendEvents(getPlanningInstructionOutageInfo(snapshot, normalizedClassId, normalizedLessonDate, "", "").events);
+
+  if (schoolService && typeof schoolService.getLessonUnitsForClass === "function" && dateParts.length === 3 && !Number.isNaN(year) && !Number.isNaN(month) && !Number.isNaN(day)) {
+    lessonUnits = schoolService.getLessonUnitsForClass(normalizedClassId, new Date(year, month - 1, day)).slice().sort(function (leftItem, rightItem) {
+      return String(leftItem && leftItem.startTime || "").trim().localeCompare(String(rightItem && rightItem.startTime || "").trim());
+    });
+
+    lessonUnits.forEach(function (lessonUnit) {
+      appendEvents(getPlanningInstructionOutageInfo(
+        snapshot,
+        normalizedClassId,
+        normalizedLessonDate,
+        lessonUnit && lessonUnit.startTime,
+        lessonUnit && lessonUnit.endTime
+      ).events);
+    });
+  }
+
+  return matchingEvents[0] || null;
+}
+
 function getCurriculumCollections(snapshot) {
   const source = snapshot || {};
 
@@ -10883,6 +10932,9 @@ window.UnterrichtsassistentApp.openPlanningInstructionLessonModal = function (le
   const collections = currentRawSnapshot ? getPlanningCollections(currentRawSnapshot) : null;
   const normalizedLessonDate = String(lessonDateValue || "").slice(0, 10);
   const normalizedClassId = String(classId || activeClass && activeClass.id || "").trim();
+  const outageEvent = currentRawSnapshot
+    ? getPlanningInstructionOutageEventDetail(currentRawSnapshot, normalizedClassId, normalizedLessonDate)
+    : null;
   const existingStatus = collections
     ? collections.lessonStatuses.find(function (entry) {
         return String(entry && entry.classId || "").trim() === normalizedClassId
@@ -10900,15 +10952,37 @@ window.UnterrichtsassistentApp.openPlanningInstructionLessonModal = function (le
         id: String(existingStatus.id || "").trim(),
         classId: normalizedClassId,
         lessonDate: String(existingStatus.lessonDate || "").slice(0, 10),
-        isCancelled: Boolean(existingStatus.isCancelled),
-        cancelReason: String(existingStatus.cancelReason || "").trim()
+        isCancelled: Boolean(existingStatus.isCancelled || outageEvent),
+        cancelReason: String(existingStatus.cancelReason || outageEvent && (outageEvent.description || outageEvent.title) || "").trim(),
+        isControlledByOutageEvent: Boolean(outageEvent),
+        outageEventDetail: outageEvent
+          ? {
+              id: String(outageEvent.id || "").trim(),
+              sourceEventId: String(outageEvent.sourceEventId || outageEvent.id || "").trim(),
+              occurrenceId: String(outageEvent.occurrenceId || "").trim(),
+              title: String(outageEvent.title || "").trim(),
+              startDate: String(outageEvent.startDate || "").slice(0, 10),
+              endDate: String(outageEvent.endDate || outageEvent.startDate || "").slice(0, 10)
+            }
+          : null
       }
     : {
         id: "",
         classId: normalizedClassId,
         lessonDate: normalizedLessonDate,
-        isCancelled: false,
-        cancelReason: ""
+        isCancelled: Boolean(outageEvent),
+        cancelReason: String(outageEvent && (outageEvent.description || outageEvent.title) || "").trim(),
+        isControlledByOutageEvent: Boolean(outageEvent),
+        outageEventDetail: outageEvent
+          ? {
+              id: String(outageEvent.id || "").trim(),
+              sourceEventId: String(outageEvent.sourceEventId || outageEvent.id || "").trim(),
+              occurrenceId: String(outageEvent.occurrenceId || "").trim(),
+              title: String(outageEvent.title || "").trim(),
+              startDate: String(outageEvent.startDate || "").slice(0, 10),
+              endDate: String(outageEvent.endDate || outageEvent.startDate || "").slice(0, 10)
+            }
+          : null
       };
 
   setActiveView(activeViewId);
@@ -11935,6 +12009,10 @@ window.UnterrichtsassistentApp.handlePlanningInstructionLessonCancelledChange = 
   const reasonField = document.getElementById("planningInstructionLessonReasonField");
   const reasonInput = document.getElementById("planningInstructionLessonReasonInput");
 
+  if (activePlanningInstructionLessonDraft && activePlanningInstructionLessonDraft.isControlledByOutageEvent) {
+    return false;
+  }
+
   if (activePlanningInstructionLessonDraft) {
     activePlanningInstructionLessonDraft.isCancelled = isCancelled;
     if (!isCancelled) {
@@ -11974,6 +12052,10 @@ window.UnterrichtsassistentApp.submitPlanningInstructionLessonModal = function (
     return window.UnterrichtsassistentApp.closePlanningInstructionLessonModal();
   }
 
+  if (activePlanningInstructionLessonDraft && activePlanningInstructionLessonDraft.isControlledByOutageEvent) {
+    return window.UnterrichtsassistentApp.closePlanningInstructionLessonModal();
+  }
+
   existingIndex = collections.lessonStatuses.findIndex(function (entry) {
     return String(entry && entry.classId || "").trim() === classIdValue
       && String(entry && entry.lessonDate || "").slice(0, 10) === lessonDateValue;
@@ -12004,6 +12086,36 @@ window.UnterrichtsassistentApp.submitPlanningInstructionLessonModal = function (
   currentRawSnapshot.planningInstructionLessonStatuses = collections.lessonStatuses;
   saveAndRefreshSnapshot(currentRawSnapshot, activeViewId === "stundenplan" ? "stundenplan" : "planung");
   return window.UnterrichtsassistentApp.closePlanningInstructionLessonModal();
+};
+window.UnterrichtsassistentApp.openPlanningEventFromInstructionLessonModal = function () {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const draft = activePlanningInstructionLessonDraft;
+  const detail = draft && draft.outageEventDetail ? draft.outageEventDetail : null;
+  const targetDate = String(detail && detail.startDate || draft && draft.lessonDate || "").slice(0, 10);
+
+  if (!currentRawSnapshot || !detail || !targetDate) {
+    return false;
+  }
+
+  currentRawSnapshot.activeDateTime = targetDate + "T12:00";
+  currentRawSnapshot.activeDateTimeMode = "manual";
+  planningViewMode = "jahresplanung";
+  planningAdminMode = false;
+  planningSidebarFilterOpen = false;
+  planningSidebarCategoryFilters = [];
+  planningSidebarCategoryFiltersInitialized = false;
+  activePlanningEventDraft = null;
+  activePlanningRangeDraft = null;
+  selectedPlanningEventId = String(detail.sourceEventId || detail.id || "").trim();
+  selectedPlanningEventOccurrenceId = String(detail.occurrenceId || "").trim();
+  selectedPlanningEventOccurrenceRange = {
+    startDate: String(detail.startDate || "").slice(0, 10),
+    endDate: String(detail.endDate || detail.startDate || "").slice(0, 10)
+  };
+
+  activePlanningInstructionLessonDraft = null;
+  refreshSnapshotInMemory(currentRawSnapshot, "planung");
+  return false;
 };
 window.UnterrichtsassistentApp.openCurriculumSeriesModal = function (seriesId) {
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;

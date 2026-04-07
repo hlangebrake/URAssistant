@@ -1354,6 +1354,8 @@ window.Unterrichtsassistent.ui.views.planung = {
 
         return lookup;
       }, {});
+      const outageEventTitle = String(draft && draft.outageEventDetail && draft.outageEventDetail.title || "").trim();
+      const isOutageControlledByEvent = Boolean(draft && draft.isControlledByOutageEvent && draft.outageEventDetail);
 
       function getUniqueIds(values) {
         return (Array.isArray(values) ? values : []).map(function (entry) {
@@ -1429,8 +1431,19 @@ window.Unterrichtsassistent.ui.views.planung = {
         ),
         '</section>',
         '<section class="planning-instruction-modal__section planning-instruction-modal__section--settings">',
-        '<label class="planning-instruction-modal__checkbox"><input id="planningInstructionLessonCancelledInput" type="checkbox"' + (draft && draft.isCancelled ? ' checked' : '') + ' onchange="return window.UnterrichtsassistentApp.handlePlanningInstructionLessonCancelledChange(this.checked)"><span>Faellt aus</span></label>',
-        '<label class="import-modal__field planning-instruction-modal__reason" id="planningInstructionLessonReasonField"' + (draft && draft.isCancelled ? '' : ' hidden') + '><span>Grund</span><textarea id="planningInstructionLessonReasonInput" rows="4" placeholder="Grund fuer den Ausfall"' + (draft && draft.isCancelled ? '' : ' disabled') + '>' + escapeValue(String(draft && draft.cancelReason || "").trim()) + '</textarea></label>',
+        isOutageControlledByEvent
+          ? [
+              '<div class="import-modal__field">',
+              '<span>Termin als Ursache</span>',
+              '<div>',
+              '<div>', escapeValue(outageEventTitle || "Unterrichtsausfall"), '</div>',
+              '<button class="header-utility-button" type="button" onclick="return window.UnterrichtsassistentApp.openPlanningEventFromInstructionLessonModal()">Zum Termin in Jahresplanung</button>',
+              '</div>',
+              '</div>'
+            ].join("")
+          : '',
+        '<label class="planning-instruction-modal__checkbox"><input id="planningInstructionLessonCancelledInput" type="checkbox"' + (draft && draft.isCancelled ? ' checked' : '') + (isOutageControlledByEvent ? ' disabled' : '') + ' onchange="return window.UnterrichtsassistentApp.handlePlanningInstructionLessonCancelledChange(this.checked)"><span>Faellt aus</span></label>',
+        '<label class="import-modal__field planning-instruction-modal__reason" id="planningInstructionLessonReasonField"' + (draft && draft.isCancelled ? '' : ' hidden') + '><span>Grund</span><textarea id="planningInstructionLessonReasonInput" rows="4" placeholder="Grund fuer den Ausfall"' + (draft && draft.isCancelled && !isOutageControlledByEvent ? '' : ' disabled') + '>' + escapeValue(String(draft && draft.cancelReason || "").trim()) + '</textarea></label>',
         '</section>',
         '</form>',
         '</div>',
