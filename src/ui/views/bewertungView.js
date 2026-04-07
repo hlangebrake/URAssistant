@@ -2444,9 +2444,25 @@ window.Unterrichtsassistent.ui.views.bewertung = {
       ].join("");
     }
 
+    function renderEvidenceMode() {
+      return [
+        '<div class="unterricht-layout">',
+        '<article class="panel unterricht-layout__content">',
+        '<div class="seat-plan-placeholder">',
+        '<div>',
+        '<strong>Evidenz</strong><br>',
+        escapeValue("Hier wird spaeter erweitert: Man kann Evidenz-Werkzeuge fuer die Erfassung von Leistungen im Live Unterricht erstellen. Dazu kann ein Symbol ausgewaehlt werden, es koennen Bewertungsdimensionen und Kompetenzstufen definiert werden, aehnlich eines Kriterien/Kompetenzrasters."),
+        '</div>',
+        '</div>',
+        '</article>',
+        '</div>'
+      ].join("");
+    }
+
     const modeLabels = {
       bewerten: "Bewerten",
       analysieren: "Analysieren",
+      evidenz: "Evidenz",
       erstellen: "Erstellen",
       entwerfen: "Erstellen"
     };
@@ -2458,6 +2474,10 @@ window.Unterrichtsassistent.ui.views.bewertung = {
 
     if (mode === "bewerten") {
       return renderBewertenMode();
+    }
+
+    if (mode === "evidenz") {
+      return renderEvidenceMode();
     }
 
     return [

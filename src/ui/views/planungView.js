@@ -462,6 +462,14 @@ window.Unterrichtsassistent.ui.views.planung = {
       });
     }
 
+    function isInstructionOutageDate(isoDate) {
+      const outageInfo = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningInstructionOutageInfo === "function"
+        ? window.UnterrichtsassistentApp.getPlanningInstructionOutageInfo(activeClass && activeClass.id, isoDate, "", "", snapshot)
+        : null;
+
+      return Boolean(outageInfo && outageInfo.isCancelled);
+    }
+
     function buildMonthCards(startDate, endDate, activeDate) {
       const cards = [];
       const firstVisibleMonth = hidePastPlanningMonths && activeDate && activeDate > startDate
@@ -509,6 +517,7 @@ window.Unterrichtsassistent.ui.views.planung = {
           const isToday = !isOutsideRange && activeDateIso && isoDate === activeDateIso;
           const isPast = !isOutsideRange && activeDateIso && isoDate < activeDateIso;
           const isInstructionFree = !isOutsideRange && isInstructionFreeDate(isoDate);
+          const isInstructionOutage = !isOutsideRange && !isInstructionFree && isInstructionOutageDate(isoDate);
           const isInRangePreview = !isOutsideRange && planningRangeDraft && planningRangeDraft.startDate && planningRangeDraft.endDate && (function () {
             const start = String(planningRangeDraft.startDate || "");
             const end = String(planningRangeDraft.endDate || "");
@@ -524,6 +533,9 @@ window.Unterrichtsassistent.ui.views.planung = {
             }
             if (isInstructionFree) {
               dayClassName += " planning-year__day--unterrichtsfrei";
+            }
+            if (isInstructionOutage) {
+              dayClassName += " planning-year__day--unterrichtsausfall";
             }
             if (isPast) {
               dayClassName += " planning-year__day--past";
@@ -640,6 +652,12 @@ window.Unterrichtsassistent.ui.views.planung = {
       });
     }
 
+    function getInstructionOutageInfoForLesson(lessonDateValue, lessonStartTime, lessonEndTime) {
+      return window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningInstructionOutageInfo === "function"
+        ? window.UnterrichtsassistentApp.getPlanningInstructionOutageInfo(activeClass && activeClass.id, lessonDateValue, lessonStartTime, lessonEndTime, snapshot)
+        : { isCancelled: false, isAllDay: false, title: "", reason: "" };
+    }
+
     function buildInstructionLessonOccurrences() {
       const occurrencesByDate = {};
       const cursor = startDate ? new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()) : null;
@@ -717,15 +735,25 @@ window.Unterrichtsassistent.ui.views.planung = {
                 id: "unterrichtstag::" + isoDate,
                 lessonDate: isoDate,
                 lessonCount: 0,
+                cancelledLessonCount: 0,
                 remainingLessonCount: 0,
                 isCancelled: Boolean(lessonStatus && lessonStatus.isCancelled),
                 cancelReason: String(lessonStatus && lessonStatus.cancelReason || "").trim()
               };
             }
 
-            occurrencesByDate[isoDate].lessonCount += Math.max(1, lessonCount);
+            const outageInfo = getInstructionOutageInfoForLesson(isoDate, lessonUnit && lessonUnit.startTime, lessonUnit && lessonUnit.endTime);
+            const isLessonCancelled = Boolean(occurrencesByDate[isoDate].isCancelled) || Boolean(outageInfo && outageInfo.isCancelled);
 
-            if (!occurrencesByDate[isoDate].isCancelled && !isLessonOccurrencePast(isoDate, lessonUnit && lessonUnit.endTime)) {
+            occurrencesByDate[isoDate].lessonCount += Math.max(1, lessonCount);
+            if (isLessonCancelled) {
+              occurrencesByDate[isoDate].cancelledLessonCount += Math.max(1, lessonCount);
+              if (!occurrencesByDate[isoDate].cancelReason) {
+                occurrencesByDate[isoDate].cancelReason = String(outageInfo && (outageInfo.reason || outageInfo.title) || "").trim();
+              }
+            }
+
+            if (!isLessonCancelled && !isLessonOccurrencePast(isoDate, lessonUnit && lessonUnit.endTime)) {
               occurrencesByDate[isoDate].remainingLessonCount += Math.max(1, lessonCount);
             }
           });
@@ -735,6 +763,12 @@ window.Unterrichtsassistent.ui.views.planung = {
       }
 
       return Object.keys(occurrencesByDate).map(function (dateKey) {
+        const entry = occurrencesByDate[dateKey];
+
+        if (entry && Number(entry.lessonCount || 0) > 0 && Number(entry.cancelledLessonCount || 0) >= Number(entry.lessonCount || 0)) {
+          entry.isCancelled = true;
+        }
+
         return occurrencesByDate[dateKey];
       }).sort(function (left, right) {
         const leftKey = [left.lessonDate, left.id].join("|");
@@ -1421,6 +1455,9 @@ window.Unterrichtsassistent.ui.views.planung = {
       const hasPlanningCapacityWarning = Object.keys(seriesAssignments || {}).some(function (seriesId) {
         return Boolean(seriesAssignments[seriesId] && seriesAssignments[seriesId].hasUnassignedDemand);
       });
+      const missingPlanningCapacityUnits = Object.keys(seriesAssignments || {}).reduce(function (sum, seriesId) {
+        return sum + Math.max(0, Number(seriesAssignments[seriesId] && seriesAssignments[seriesId].unassignedDemand || 0));
+      }, 0);
 
       if (!activeClass) {
         return [
@@ -1440,7 +1477,7 @@ window.Unterrichtsassistent.ui.views.planung = {
         '<h2 class="planning-instruction__title">Geplante Unterrichtsstunden</h2>',
         '</div>',
         hasPlanningCapacityWarning
-          ? '<p class="empty-message planning-instruction__warning-message">Nicht genuegend verfuegbare Stunden vorhanden: Mindestens eine Unterrichtsreihe hat noch offene Bedarfsstunden, die aktuell nicht mehr zugeordnet werden koennen.</p>'
+          ? '<p class="empty-message planning-instruction__warning-message">Nicht genuegend verfuegbare Stunden vorhanden: Mindestens eine Unterrichtsreihe hat noch offene Bedarfsstunden, die aktuell nicht mehr zugeordnet werden koennen. Es wurden insgesamt ' + escapeValue(String(missingPlanningCapacityUnits)) + ' Unterrichtsstunden zu viel geplant.</p>'
           : '',
         buildStoffPlanningContent(false),
         buildCurriculumLessonFlowContent(instructionAssignmentData),
@@ -2513,6 +2550,7 @@ window.Unterrichtsassistent.ui.views.planung = {
         '<label class="import-modal__field import-modal__field--knowledge-gap"><span>Kategorie</span><input id="planningEventCategory" type="text" value="', escapeValue(planningEventDraft.category || ""), '" placeholder="Kategorie" autocomplete="off" autocapitalize="none" spellcheck="false"', planningEventDraft.isExternallyControlled ? ' disabled' : ' onfocus="return window.UnterrichtsassistentApp.handlePlanningCategoryInputFocus(\'planningEventCategory\', \'planningEventCategorySuggestions\')" oninput="return window.UnterrichtsassistentApp.handlePlanningCategoryInput(event, \'planningEventCategorySuggestions\')" onblur="return window.UnterrichtsassistentApp.handlePlanningCategoryInputBlur(\'planningEventCategorySuggestions\')"', '><div class="knowledge-gap-suggestions knowledge-gap-suggestions--planning" id="planningEventCategorySuggestions" hidden onpointerdown="return window.UnterrichtsassistentApp.handlePlanningCategorySuggestionsPointerDown(event, \'planningEventCategorySuggestions\')" onpointermove="return window.UnterrichtsassistentApp.handlePlanningCategorySuggestionsPointerMove(event, \'planningEventCategorySuggestions\')" onpointerup="return window.UnterrichtsassistentApp.handlePlanningCategorySuggestionsPointerUp(event, \'planningEventCategorySuggestions\')" onpointercancel="return window.UnterrichtsassistentApp.handlePlanningCategorySuggestionsPointerUp(event, \'planningEventCategorySuggestions\')"></div></label>',
         '<label class="import-modal__field"><span>Prioritaet</span><select id="planningEventPriority"', planningEventDraft.isExternallyControlled ? ' disabled' : '', '><option value="1"', Number(planningEventDraft.priority || 3) === 1 ? ' selected' : '', '>hoch</option><option value="2"', Number(planningEventDraft.priority || 3) === 2 ? ' selected' : '', '>standard</option><option value="3"', Number(planningEventDraft.priority || 3) === 3 ? ' selected' : '', '>niederig</option></select></label>',
         '<label class="planning-event-form__toggle planning-event-form__toggle--inline"><input id="planningEventShowInTimetable" type="checkbox"', planningEventDraft.showInTimetable ? ' checked' : '', planningEventDraft.isExternallyControlled ? ' disabled' : '', '><span>Termin im Stundenplan anzeigen</span></label>',
+        '<label class="planning-event-form__toggle planning-event-form__toggle--inline"><input id="planningEventCausesInstructionOutage" type="checkbox"', planningEventDraft.causesInstructionOutage ? ' checked' : '', planningEventDraft.isExternallyControlled ? ' disabled' : '', '><span>Verursacht Unterrichtsausfall</span></label>',
         '</section>',
         '<section class="planning-event-form__section planning-event-form__section--description">',
         '<label class="import-modal__field planning-event-form__field planning-event-form__field--description"><span>Beschreibung</span><textarea id="planningEventDescription" rows="10" placeholder="Beschreibung des Termins"', planningEventDraft.isExternallyControlled ? ' disabled' : '', '>', escapeValue(planningEventDraft.description || ""), '</textarea></label>',

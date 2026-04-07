@@ -3433,6 +3433,10 @@ button {
   background: rgba(169, 207, 143, 0.24);
 }
 
+.planning-year__day--unterrichtsausfall {
+  background: rgba(201, 88, 88, 0.16);
+}
+
 .planning-year__day--past {
   color: rgba(31, 36, 48, 0.34);
   background: rgba(23, 49, 62, 0.03);
@@ -3440,6 +3444,10 @@ button {
 
 .planning-year__day--unterrichtsfrei.planning-year__day--past {
   background: rgba(169, 207, 143, 0.15);
+}
+
+.planning-year__day--unterrichtsausfall.planning-year__day--past {
+  background: rgba(201, 88, 88, 0.1);
 }
 
 .planning-year__day--today {
@@ -3451,6 +3459,10 @@ button {
 
 .planning-year__day--unterrichtsfrei.planning-year__day--today {
   background: rgba(169, 207, 143, 0.28);
+}
+
+.planning-year__day--unterrichtsausfall.planning-year__day--today {
+  background: rgba(201, 88, 88, 0.2);
 }
 
 .planning-year__day--range-preview {
@@ -3470,6 +3482,10 @@ button {
 
 .planning-year__day--selected-event.planning-year__day--unterrichtsfrei {
   background: linear-gradient(0deg, rgba(57, 117, 171, 0.08), rgba(57, 117, 171, 0.08)), rgba(169, 207, 143, 0.24);
+}
+
+.planning-year__day--selected-event.planning-year__day--unterrichtsausfall {
+  background: linear-gradient(0deg, rgba(57, 117, 171, 0.08), rgba(57, 117, 171, 0.08)), rgba(201, 88, 88, 0.16);
 }
 
 .planning-year__day--selected-event.planning-year__day--past {

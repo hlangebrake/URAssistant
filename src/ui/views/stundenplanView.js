@@ -175,19 +175,18 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
       return normalizedValue === "unterrichtsfrei" || normalizedValue === "unterrichtsausfall";
     }
 
-    function getInstructionOutageEventForDate(isoDate) {
-      return planningEvents.filter(function (eventItem) {
-        const category = eventItem && eventItem.category;
-        const startDateValue = String(eventItem && eventItem.startDate || "").slice(0, 10);
-        const endDateValue = String(eventItem && eventItem.endDate || startDateValue).slice(0, 10);
-        const showInTimetable = Boolean(eventItem && eventItem.showInTimetable);
-        const normalizedCategory = normalizePlanningCategoryKey(category);
+    function getInstructionOutageInfoForLesson(classId, lessonDateValue, lessonStartTime, lessonEndTime) {
+      return window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningInstructionOutageInfo === "function"
+        ? window.UnterrichtsassistentApp.getPlanningInstructionOutageInfo(classId, lessonDateValue, lessonStartTime, lessonEndTime, snapshot)
+        : { isCancelled: false, isAllDay: false, events: [], title: "", reason: "" };
+    }
 
-        return ((normalizedCategory === "unterrichtsfrei") || showInTimetable)
-          && isInstructionOutageCategoryValue(category)
-          && startDateValue
-          && startDateValue <= isoDate
-          && isoDate <= endDateValue;
+    function getInstructionOutageEventForDate(isoDate, classId) {
+      const outageInfo = getInstructionOutageInfoForLesson(classId, isoDate, "", "");
+      const matchingEvents = outageInfo && Array.isArray(outageInfo.events) ? outageInfo.events.slice() : [];
+
+      return matchingEvents.filter(function (eventItem) {
+        return !String(eventItem && eventItem.startTime || "").trim() && !String(eventItem && eventItem.endTime || "").trim();
       }).sort(function (leftItem, rightItem) {
         const leftPriority = [1, 2, 3].indexOf(Number(leftItem && leftItem.priority)) >= 0 ? Number(leftItem.priority) : 2;
         const rightPriority = [1, 2, 3].indexOf(Number(rightItem && rightItem.priority)) >= 0 ? Number(rightItem.priority) : 2;
@@ -792,15 +791,25 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
                 id: getInstructionOccurrenceId(isoDate),
                 lessonDate: isoDate,
                 lessonCount: 0,
+                cancelledLessonCount: 0,
                 remainingLessonCount: 0,
                 isCancelled: Boolean(lessonStatus && lessonStatus.isCancelled),
                 cancelReason: String(lessonStatus && lessonStatus.cancelReason || "").trim()
               };
             }
 
-            occurrencesByDate[isoDate].lessonCount += Math.max(1, lessonCount);
+            const outageInfo = getInstructionOutageInfoForLesson(classId, isoDate, lessonUnit && lessonUnit.startTime, lessonUnit && lessonUnit.endTime);
+            const isLessonCancelled = Boolean(occurrencesByDate[isoDate].isCancelled) || Boolean(outageInfo && outageInfo.isCancelled);
 
-            if (!occurrencesByDate[isoDate].isCancelled && !isLessonOccurrencePast(isoDate, lessonUnit && lessonUnit.endTime)) {
+            occurrencesByDate[isoDate].lessonCount += Math.max(1, lessonCount);
+            if (isLessonCancelled) {
+              occurrencesByDate[isoDate].cancelledLessonCount += Math.max(1, lessonCount);
+              if (!occurrencesByDate[isoDate].cancelReason) {
+                occurrencesByDate[isoDate].cancelReason = String(outageInfo && (outageInfo.reason || outageInfo.title) || "").trim();
+              }
+            }
+
+            if (!isLessonCancelled && !isLessonOccurrencePast(isoDate, lessonUnit && lessonUnit.endTime)) {
               occurrencesByDate[isoDate].remainingLessonCount += Math.max(1, lessonCount);
             }
           });
@@ -810,6 +819,12 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
       }
 
       return Object.keys(occurrencesByDate).map(function (dateKey) {
+        const entry = occurrencesByDate[dateKey];
+
+        if (entry && Number(entry.lessonCount || 0) > 0 && Number(entry.cancelledLessonCount || 0) >= Number(entry.lessonCount || 0)) {
+          entry.isCancelled = true;
+        }
+
         return occurrencesByDate[dateKey];
       }).sort(function (left, right) {
         const leftKey = [left.lessonDate, left.id].join("|");
@@ -1150,7 +1165,17 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
       const resolvedClass = resolvedClassId ? getClassById(resolvedClassId) : null;
       const resolvedRoom = cell.isBlocked ? cell.inheritedRoom : cell.room;
       const lessonDateValue = timeContext.weekDates[weekday.key] ? timeContext.weekDates[weekday.key].isoDate : "";
+      const lessonDate = parseLocalDate(lessonDateValue);
+      const sourceRowId = String(cell.isBlocked ? (cell.sourceRowId || row.id) : row.id || "").trim();
+      const lessonUnit = resolvedClass && lessonDate && service && typeof service.getLessonUnitsForClass === "function"
+        ? service.getLessonUnitsForClass(resolvedClass.id, lessonDate).find(function (entry) {
+            return String(entry && entry.sourceRowId || "").trim() === sourceRowId;
+          }) || null
+        : null;
       const lessonStatus = resolvedClass ? lessonStatusLookup[[String(resolvedClass.id || "").trim(), lessonDateValue].join("::")] || null : null;
+      const outageInfo = resolvedClass
+        ? getInstructionOutageInfoForLesson(String(resolvedClass.id || "").trim(), lessonDateValue, lessonUnit && lessonUnit.startTime, lessonUnit && lessonUnit.endTime)
+        : { isCancelled: false };
       const lessonTopic = resolvedClass ? getInstructionDisplayTopicForClassAndDate(resolvedClass.id, lessonDateValue) : "";
       const rowspan = countCellRowspan(lessonRows, rowIndex, weekday.key);
       const isWithinVisibleSchoolYear = isWithinSchoolYear(lessonDateValue);
@@ -1192,7 +1217,7 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
 
       return [
         '<td class="schedule-compact__lesson-cell', currentCellClass, '"', rowspan > 1 ? ' rowspan="' + rowspan + '"' : "", hasParallelEvent ? ' style="--schedule-parallel-slots:' + escapeValue(String(parallelSlotCount)) + ';"' : '', ">",
-        '<button class="schedule-compact__lesson-box', rowspan > 1 ? " is-double" : "", lessonStatus && lessonStatus.isCancelled ? ' is-cancelled' : '', hasParallelEvent ? ' has-parallel-event' : '', '"' + actionAttributes + ' style="', buildLessonBoxStyle(resolvedClass), " ", boxStyle, '">',
+        '<button class="schedule-compact__lesson-box', rowspan > 1 ? " is-double" : "", (lessonStatus && lessonStatus.isCancelled) || (outageInfo && outageInfo.isCancelled) ? ' is-cancelled' : '', hasParallelEvent ? ' has-parallel-event' : '', '"' + actionAttributes + ' style="', buildLessonBoxStyle(resolvedClass), " ", boxStyle, '">',
         '<div class="schedule-compact__lesson-title">', escapeValue(getClassDisplayName(resolvedClass)), "</div>",
         lessonTopic ? '<div class="schedule-compact__lesson-topic">' + escapeValue(lessonTopic) + '</div>' : '',
         '<div class="schedule-compact__lesson-room">', escapeValue(resolvedRoom || "Raum offen"), "</div>",
@@ -1380,7 +1405,7 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
         : "";
       const outageOverlayMarkup = weekdays.map(function (weekday, weekdayIndex) {
         const weekDate = weekDates[weekday.key] || null;
-        const outageEvent = weekDate ? getInstructionOutageEventForDate(weekDate.isoDate) : null;
+        const outageEvent = weekDate ? getInstructionOutageEventForDate(weekDate.isoDate, "") : null;
 
         if (!outageEvent) {
           return "";

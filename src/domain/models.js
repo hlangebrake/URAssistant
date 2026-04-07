@@ -436,6 +436,7 @@ class PlanningEvent {
       description = "",
       priority = 3,
       showInTimetable = false,
+      causesInstructionOutage = false,
       isRecurring = false,
       recurrenceInterval = 1,
       recurrenceUnit = "weeks",
@@ -465,6 +466,7 @@ class PlanningEvent {
       this.description = description;
       this.priority = [1, 2, 3].indexOf(Number(priority)) >= 0 ? Number(priority) : 3;
       this.showInTimetable = Boolean(showInTimetable);
+      this.causesInstructionOutage = Boolean(causesInstructionOutage);
       this.isRecurring = Boolean(isRecurring)
         && Boolean(normalizedStartDate)
         && Boolean(normalizedRecurrenceUntilDate)

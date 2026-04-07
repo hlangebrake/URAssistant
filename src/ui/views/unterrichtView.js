@@ -16,7 +16,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
     const referenceDate = service && typeof service.getReferenceDate === "function"
       ? service.getReferenceDate()
       : new Date();
-    const currentClassLesson = activeClass && typeof service.getCurrentLessonForClass === "function"
+    let currentClassLesson = activeClass && typeof service.getCurrentLessonForClass === "function"
       ? service.getCurrentLessonForClass(activeClass.id, referenceDate)
       : null;
     const activeDateTimeMode = service && service.snapshot
@@ -168,6 +168,12 @@ window.Unterrichtsassistent.ui.views.unterricht = {
 
         return category === "unterrichtsfrei" && startDateValue && startDateValue <= isoDate && isoDate <= endDateValue;
       });
+    }
+
+    function getInstructionOutageInfoForLesson(classId, lessonDateValue, lessonStartTime, lessonEndTime) {
+      return window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningInstructionOutageInfo === "function"
+        ? window.UnterrichtsassistentApp.getPlanningInstructionOutageInfo(classId, lessonDateValue, lessonStartTime, lessonEndTime, snapshot)
+        : { isCancelled: false };
     }
 
     function getOrderedCurriculumSeriesForClass(classId) {
@@ -2266,6 +2272,19 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         '</div>',
         '</article>'
       ].join("");
+    }
+
+    if (currentClassLesson && activeClass) {
+      const liveOutageInfo = getInstructionOutageInfoForLesson(
+        String(activeClass.id || "").trim(),
+        toIsoDate(referenceDate),
+        currentClassLesson && currentClassLesson.startTime,
+        currentClassLesson && currentClassLesson.endTime
+      );
+
+      if (liveOutageInfo && liveOutageInfo.isCancelled) {
+        currentClassLesson = null;
+      }
     }
 
     if (viewMode === "live") {

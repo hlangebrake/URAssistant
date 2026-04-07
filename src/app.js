@@ -380,7 +380,7 @@ function applyAuthReturnStateToRawState(snapshot) {
   planningViewMode = ["jahresplanung", "unterrichtsplanung", "stoffplanung"].indexOf(String(returnState.planningViewMode || "")) >= 0
     ? String(returnState.planningViewMode)
     : planningViewMode;
-  bewertungViewMode = ["analysieren", "erstellen", "entwerfen"].indexOf(String(returnState.bewertungViewMode || "")) >= 0
+  bewertungViewMode = ["analysieren", "evidenz", "erstellen", "entwerfen"].indexOf(String(returnState.bewertungViewMode || "")) >= 0
     ? (String(returnState.bewertungViewMode || "") === "entwerfen" ? "erstellen" : String(returnState.bewertungViewMode))
     : "bewerten";
   if (planningViewMode === "stoffplanung") {
@@ -1271,6 +1271,102 @@ function getPlanningEventsForDisplay(snapshot, options) {
   });
 
   return renderedEvents;
+}
+
+function timeValueToMinutes(value, fallbackValue) {
+  const trimmedValue = String(value || "").trim();
+  const fallbackMinutes = Number.isFinite(Number(fallbackValue)) ? Number(fallbackValue) : null;
+  const parts = trimmedValue.split(":");
+  const hours = Number(parts[0]);
+  const minutes = Number(parts[1]);
+
+  if (parts.length >= 2 && Number.isFinite(hours) && Number.isFinite(minutes)) {
+    return Math.max(0, Math.min(1440, (hours * 60) + minutes));
+  }
+
+  return fallbackMinutes;
+}
+
+function getPlanningEventTargetClassIds(snapshot, eventItem) {
+  const classes = snapshot && Array.isArray(snapshot.classes) ? snapshot.classes : [];
+  const normalizedCategory = String(eventItem && eventItem.category || "").trim().toLowerCase();
+
+  return classes.filter(function (schoolClass) {
+    return [String(schoolClass && schoolClass.name || "").trim(), String(schoolClass && schoolClass.subject || "").trim()]
+      .filter(Boolean)
+      .join(" ")
+      .trim()
+      .toLowerCase() === normalizedCategory;
+  }).map(function (schoolClass) {
+    return String(schoolClass && schoolClass.id || "").trim();
+  }).filter(Boolean);
+}
+
+function doesPlanningEventCauseInstructionOutage(eventItem) {
+  const normalizedCategory = String(eventItem && eventItem.category || "").trim().toLowerCase();
+
+  return normalizedCategory === "unterrichtsfrei" || Boolean(eventItem && eventItem.causesInstructionOutage);
+}
+
+function doesPlanningEventAffectClass(snapshot, eventItem, classId) {
+  const normalizedClassId = String(classId || "").trim();
+  const normalizedCategory = String(eventItem && eventItem.category || "").trim().toLowerCase();
+  const targetClassIds = getPlanningEventTargetClassIds(snapshot, eventItem);
+
+  if (!normalizedClassId) {
+    return true;
+  }
+
+  if (normalizedCategory === "unterrichtsfrei") {
+    return true;
+  }
+
+  if (targetClassIds.length > 0) {
+    return targetClassIds.indexOf(normalizedClassId) >= 0;
+  }
+
+  return Boolean(eventItem && eventItem.causesInstructionOutage);
+}
+
+function doesPlanningEventAffectLessonTime(eventItem, lessonStartTime, lessonEndTime) {
+  const eventStartMinutes = timeValueToMinutes(eventItem && eventItem.startTime, 0);
+  const eventEndMinutes = timeValueToMinutes(eventItem && eventItem.endTime, 1440);
+  const hasTimedBounds = Boolean(String(eventItem && eventItem.startTime || "").trim() || String(eventItem && eventItem.endTime || "").trim());
+  const lessonStartMinutes = timeValueToMinutes(lessonStartTime, 0);
+  const lessonEndMinutes = timeValueToMinutes(lessonEndTime, lessonStartMinutes + 1);
+
+  if (!hasTimedBounds) {
+    return true;
+  }
+
+  return lessonStartMinutes < eventEndMinutes && lessonEndMinutes > eventStartMinutes;
+}
+
+function getPlanningInstructionOutageInfo(snapshot, classId, lessonDate, lessonStartTime, lessonEndTime) {
+  const normalizedLessonDate = String(lessonDate || "").slice(0, 10);
+  const displayEvents = normalizedLessonDate
+    ? getPlanningEventsForDisplay(snapshot, {
+        rangeStart: normalizedLessonDate,
+        rangeEnd: normalizedLessonDate
+      })
+    : [];
+  const matchingEvents = displayEvents.filter(function (eventItem) {
+    return doesPlanningEventCauseInstructionOutage(eventItem)
+      && doesPlanningEventAffectClass(snapshot, eventItem, classId)
+      && doesPlanningEventAffectLessonTime(eventItem, lessonStartTime, lessonEndTime);
+  });
+  const allDayEvents = matchingEvents.filter(function (eventItem) {
+    return !String(eventItem && eventItem.startTime || "").trim() && !String(eventItem && eventItem.endTime || "").trim();
+  });
+  const firstEvent = matchingEvents[0] || null;
+
+  return {
+    isCancelled: matchingEvents.length > 0,
+    isAllDay: allDayEvents.length > 0,
+    events: matchingEvents,
+    title: String(firstEvent && firstEvent.title || "").trim(),
+    reason: String(firstEvent && firstEvent.description || "").trim()
+  };
 }
 
 function getCurriculumCollections(snapshot) {
@@ -3897,10 +3993,8 @@ function updateHeaderSubtitle(viewId, config) {
 
   if (viewId === "bewertung" && schoolService) {
     const activeClass = schoolService.getActiveClass();
-    const referenceDate = schoolService.getReferenceDate();
-    const room = activeClass ? schoolService.getRelevantRoomForClass(activeClass.id, referenceDate) : "";
     const subtitleParts = activeClass
-      ? [activeClass.name || "", activeClass.subject || "", room || ""].filter(Boolean)
+      ? [activeClass.name || "", activeClass.subject || ""].filter(Boolean)
       : [];
     const subtitle = subtitleParts.join(" ").trim();
 
@@ -4039,10 +4133,15 @@ function updateHeaderActions(viewId) {
             label: "Bewerten",
             action: "window.UnterrichtsassistentApp.setBewertungViewMode('bewerten')"
           },
+        {
+          value: "analysieren",
+          label: "Analysieren",
+          action: "window.UnterrichtsassistentApp.setBewertungViewMode('analysieren')"
+          },
           {
-            value: "analysieren",
-            label: "Analysieren",
-            action: "window.UnterrichtsassistentApp.setBewertungViewMode('analysieren')"
+            value: "evidenz",
+            label: "Evidenz",
+            action: "window.UnterrichtsassistentApp.setBewertungViewMode('evidenz')"
           },
         {
           value: "erstellen",
@@ -8865,6 +8964,7 @@ function buildPlannedEvaluationPlanningEventPayload(currentRawSnapshot, plannedE
     description: [sheetTitle ? "Bewertungsbogen: " + sheetTitle : "", classLabel ? "Lerngruppe: " + classLabel : ""].filter(Boolean).join("\n"),
     priority: 2,
     showInTimetable: false,
+    causesInstructionOutage: false,
     isRecurring: false,
     recurrenceInterval: 1,
     recurrenceUnit: "weeks",
@@ -8903,6 +9003,7 @@ function repairPlannedEvaluationPlanningEvents(currentRawSnapshot) {
           description: String(previousPlanningEvent.description || "").trim(),
           priority: Number(previousPlanningEvent.priority) || 0,
           showInTimetable: Boolean(previousPlanningEvent.showInTimetable),
+          causesInstructionOutage: Boolean(previousPlanningEvent.causesInstructionOutage),
           isRecurring: Boolean(previousPlanningEvent.isRecurring),
           recurrenceInterval: normalizePlanningEventRecurrenceInterval(previousPlanningEvent.recurrenceInterval),
           recurrenceUnit: normalizePlanningEventRecurrenceUnit(previousPlanningEvent.recurrenceUnit),
@@ -8944,6 +9045,7 @@ function repairPlannedEvaluationPlanningEvents(currentRawSnapshot) {
           description: String(nextPlanningEvent.description || "").trim(),
           priority: Number(nextPlanningEvent.priority) || 0,
           showInTimetable: Boolean(nextPlanningEvent.showInTimetable),
+          causesInstructionOutage: Boolean(nextPlanningEvent.causesInstructionOutage),
           isRecurring: Boolean(nextPlanningEvent.isRecurring),
           recurrenceInterval: normalizePlanningEventRecurrenceInterval(nextPlanningEvent.recurrenceInterval),
           recurrenceUnit: normalizePlanningEventRecurrenceUnit(nextPlanningEvent.recurrenceUnit),
@@ -9021,6 +9123,7 @@ function syncPlanningEventForPlannedEvaluation(currentRawSnapshot, plannedEvalua
   planningEvent.description = payload.description;
   planningEvent.priority = payload.priority;
   planningEvent.showInTimetable = false;
+  planningEvent.causesInstructionOutage = false;
   planningEvent.isRecurring = false;
   planningEvent.recurrenceInterval = 1;
   planningEvent.recurrenceUnit = "weeks";
@@ -9651,6 +9754,9 @@ window.UnterrichtsassistentApp.getPlanningCategoryDefinitions = function () {
 };
 window.UnterrichtsassistentApp.getPlanningEventsForDisplay = function (snapshot, options) {
   return getPlanningEventsForDisplay(snapshot || getMutableRawSnapshot(), options);
+};
+window.UnterrichtsassistentApp.getPlanningInstructionOutageInfo = function (classId, lessonDate, lessonStartTime, lessonEndTime, snapshot) {
+  return getPlanningInstructionOutageInfo(snapshot || getMutableRawSnapshot(), classId, lessonDate, lessonStartTime, lessonEndTime);
 };
 window.UnterrichtsassistentApp.getActiveTodoDraft = function () {
   return activeTodoDraft;
@@ -10677,6 +10783,7 @@ window.UnterrichtsassistentApp.openPlanningEventModal = function (dateValue) {
       description: String(existingEvent.description || "").trim(),
       priority: [1, 2, 3].indexOf(Number(existingEvent.priority)) >= 0 ? Number(existingEvent.priority) : 3,
       showInTimetable: Boolean(existingEvent.showInTimetable),
+      causesInstructionOutage: Boolean(existingEvent.causesInstructionOutage),
       isRecurring: Boolean(existingEvent.isRecurring),
       recurrenceInterval: normalizePlanningEventRecurrenceInterval(existingEvent.recurrenceInterval),
       recurrenceUnit: normalizePlanningEventRecurrenceUnit(existingEvent.recurrenceUnit),
@@ -10702,6 +10809,7 @@ window.UnterrichtsassistentApp.openPlanningEventModal = function (dateValue) {
       description: "",
       priority: 3,
       showInTimetable: false,
+      causesInstructionOutage: false,
       isRecurring: false,
       recurrenceInterval: 1,
       recurrenceUnit: "weeks",
@@ -13748,6 +13856,7 @@ window.UnterrichtsassistentApp.submitPlanningEventModal = function (event) {
   const categoryInput = document.getElementById("planningEventCategory");
   const descriptionInput = document.getElementById("planningEventDescription");
   const showInTimetableInput = document.getElementById("planningEventShowInTimetable");
+  const causesInstructionOutageInput = document.getElementById("planningEventCausesInstructionOutage");
   const recurringInput = document.getElementById("planningEventRecurringInput");
   const recurrenceIntervalInput = document.getElementById("planningEventRecurrenceInterval");
   const recurrenceUnitInput = document.getElementById("planningEventRecurrenceUnit");
@@ -13763,6 +13872,7 @@ window.UnterrichtsassistentApp.submitPlanningEventModal = function (event) {
   let categoryValue;
   let descriptionValue;
   let showInTimetableValue;
+  let causesInstructionOutageValue;
   let isRecurringValue;
   let recurrenceIntervalValue;
   let recurrenceUnitValue;
@@ -13790,6 +13900,7 @@ window.UnterrichtsassistentApp.submitPlanningEventModal = function (event) {
   categoryValue = normalizePlanningEventCategoryValue(categoryInput && categoryInput.value);
   descriptionValue = String(descriptionInput && descriptionInput.value || "").trim();
   showInTimetableValue = Boolean(showInTimetableInput && showInTimetableInput.checked);
+  causesInstructionOutageValue = Boolean(causesInstructionOutageInput && causesInstructionOutageInput.checked);
   isRecurringValue = Boolean(recurringInput && recurringInput.checked);
   recurrenceIntervalValue = normalizePlanningEventRecurrenceInterval(recurrenceIntervalInput && recurrenceIntervalInput.value);
   recurrenceUnitValue = normalizePlanningEventRecurrenceUnit(recurrenceUnitInput && recurrenceUnitInput.value);
@@ -13834,6 +13945,7 @@ window.UnterrichtsassistentApp.submitPlanningEventModal = function (event) {
       existingEvent.description = descriptionValue;
       existingEvent.priority = priorityValue;
       existingEvent.showInTimetable = showInTimetableValue;
+      existingEvent.causesInstructionOutage = causesInstructionOutageValue;
       existingEvent.isRecurring = isRecurringValue;
       existingEvent.recurrenceInterval = recurrenceIntervalValue;
       existingEvent.recurrenceUnit = recurrenceUnitValue;
@@ -13851,6 +13963,7 @@ window.UnterrichtsassistentApp.submitPlanningEventModal = function (event) {
         description: descriptionValue,
         priority: priorityValue,
         showInTimetable: showInTimetableValue,
+        causesInstructionOutage: causesInstructionOutageValue,
         isRecurring: isRecurringValue,
         recurrenceInterval: recurrenceIntervalValue,
         recurrenceUnit: recurrenceUnitValue,
@@ -13873,6 +13986,7 @@ window.UnterrichtsassistentApp.submitPlanningEventModal = function (event) {
       description: descriptionValue,
       priority: priorityValue,
       showInTimetable: showInTimetableValue,
+      causesInstructionOutage: causesInstructionOutageValue,
       isRecurring: isRecurringValue,
       recurrenceInterval: recurrenceIntervalValue,
       recurrenceUnit: recurrenceUnitValue,
@@ -15130,7 +15244,7 @@ window.UnterrichtsassistentApp.setPlanningViewMode = function (nextMode) {
 window.UnterrichtsassistentApp.setBewertungViewMode = function (nextMode) {
   const normalizedMode = String(nextMode || "");
 
-  bewertungViewMode = ["analysieren", "erstellen", "entwerfen"].indexOf(normalizedMode) >= 0
+  bewertungViewMode = ["analysieren", "evidenz", "erstellen", "entwerfen"].indexOf(normalizedMode) >= 0
     ? (normalizedMode === "entwerfen" ? "erstellen" : normalizedMode)
     : "bewerten";
   if (bewertungViewMode !== "erstellen") {
