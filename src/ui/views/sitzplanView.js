@@ -14,6 +14,10 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
     const seatPlanDeskToolMode = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getSeatPlanDeskToolMode === "function"
       ? window.UnterrichtsassistentApp.getSeatPlanDeskToolMode()
       : "move";
+    const seatPlanAnsichtRotation = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getSeatPlanAnsichtRotation === "function"
+      ? window.UnterrichtsassistentApp.getSeatPlanAnsichtRotation()
+      : 0;
+    const isSeatPlanAnsichtRotated = seatPlanAnsichtRotation === 180;
     const seatPlanMoveLinkMode = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.isSeatPlanMoveLinkMode === "function"
       ? window.UnterrichtsassistentApp.isSeatPlanMoveLinkMode()
       : true;
@@ -283,7 +287,7 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
               return '<div class="seat-order-slot seat-order-slot--readonly seat-order-slot--' + slotName + (extraClassName ? ' ' + extraClassName : '') + '"></div>';
             }
 
-            return '<div class="seat-order-slot seat-order-slot--readonly seat-order-slot--' + slotName + (extraClassName ? ' ' + extraClassName : '') + '"><span class="seat-order-desk__label seat-order-desk__label--readonly">' + escapeValue(studentLabel) + "</span></div>";
+            return '<div class="seat-order-slot seat-order-slot--readonly seat-order-slot--' + slotName + (extraClassName ? ' ' + extraClassName : '') + '"><div class="seat-plan-ansicht-slot__content"><span class="seat-order-desk__label seat-order-desk__label--readonly">' + escapeValue(studentLabel) + "</span></div></div>";
           }
 
           if (assignedStudent) {
@@ -340,7 +344,7 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
           '<button class="desk-layout-room-edge desk-layout-room-edge--', edge.side,
           roomWindowSide === edge.side ? ' is-active' : '',
           '" type="button" onclick="return window.UnterrichtsassistentApp.setDeskLayoutWindowSide(\'', edge.side, '\')" aria-label="', edge.label, '">',
-          '<span class="desk-layout-room-edge__label">Fenster</span>',
+          '<span class="desk-layout-room-edge__label seat-plan-ansicht-rotation-counter">Fenster</span>',
           '</button>'
         ].join("");
       }).join("");
@@ -781,6 +785,12 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
             "height:" + String(canvasHeight) + "px"
           ].join(";")
         : "width:" + String(roomWidth) + "px;height:" + String(roomHeight) + "px";
+      const viewClassName = isSeatPlanAnsichtRotated
+        ? "seat-plan-ansicht-readonly is-rotated-180"
+        : "seat-plan-ansicht-readonly";
+      const canvasClassName = isSeatPlanAnsichtRotated
+        ? "desk-layout-builder__canvas desk-layout-builder__canvas--readonly seat-plan-ansicht-canvas is-rotated-180"
+        : "desk-layout-builder__canvas desk-layout-builder__canvas--readonly seat-plan-ansicht-canvas";
 
       if (!seatOrder) {
         return '<div class="seat-plan-placeholder">Fuer diese Lerngruppe und diesen Raum ist noch keine aktuelle Sitzordnung hinterlegt.</div>';
@@ -843,6 +853,12 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
             "height:" + String(canvasHeight) + "px"
           ].join(";")
         : "width:" + String(roomWidth) + "px;height:" + String(roomHeight) + "px";
+      const viewClassName = isSeatPlanAnsichtRotated
+        ? "seat-plan-ansicht-readonly is-rotated-180"
+        : "seat-plan-ansicht-readonly";
+      const canvasClassName = isSeatPlanAnsichtRotated
+        ? "desk-layout-builder__canvas desk-layout-builder__canvas--readonly seat-plan-ansicht-canvas is-rotated-180"
+        : "desk-layout-builder__canvas desk-layout-builder__canvas--readonly seat-plan-ansicht-canvas";
 
       if (!currentSeatOrder) {
         return '<div class="seat-plan-placeholder">Fuer diese Lerngruppe und diesen Raum ist aktuell keine Sitzordnung hinterlegt.</div>';
@@ -853,12 +869,17 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
       }
 
       return [
+        '<div class="' + viewClassName + '">',
+        '<div class="seat-plan-ansicht-toolbar" role="toolbar" aria-label="Werkzeuge fuer die Sitzplanansicht">',
+        '<button class="unterricht-seatplan-action unterricht-seatplan-action--rotation' + (isSeatPlanAnsichtRotated ? ' is-active' : '') + '" type="button" aria-label="Sitzplanansicht um 180 Grad drehen" aria-pressed="' + (isSeatPlanAnsichtRotated ? "true" : "false") + '" onclick="return window.UnterrichtsassistentApp.toggleSeatPlanAnsichtRotation()">180&deg;</button>',
+        '</div>',
         '<div class="desk-layout-builder desk-layout-builder--readonly desk-layout-builder--readonly-single">',
         '<div class="desk-layout-builder__canvas-wrap desk-layout-builder__canvas-wrap--readonly">',
-        '<div class="desk-layout-builder__canvas desk-layout-builder__canvas--readonly" style="', canvasStyle, '">',
+        '<div class="' + canvasClassName + '" style="', canvasStyle, '">',
         renderRoomWindowEdgesStatic(),
         renderSeatOrderDeskItems(offsetX, offsetY, canvasWidth, canvasHeight, { interactive: false }),
         deskLayoutItems.length ? "" : '<div class="desk-layout-builder__hint">Diese Tischordnung enthaelt noch keine Tische.</div>',
+        '</div>',
         '</div>',
         '</div>',
         '</div>'

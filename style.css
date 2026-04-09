@@ -4652,6 +4652,12 @@ button {
   letter-spacing: 0.01em;
 }
 
+.seat-plan-ansicht-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 0.85rem;
+}
+
 .unterricht-seatplan-action.is-active {
   border-color: rgba(37, 76, 93, 0.18);
   background: rgba(255, 255, 255, 0.9);
@@ -4702,6 +4708,21 @@ button {
 }
 
 .unterricht-seatplan.is-rotated-180 .unterricht-seatplan-slot__content {
+  transform: rotate(180deg);
+}
+
+.seat-plan-ansicht-canvas.is-rotated-180 {
+  transform: rotate(180deg);
+  transform-origin: center center;
+}
+
+.seat-plan-ansicht-slot__content,
+.seat-plan-ansicht-rotation-counter {
+  transform-origin: center center;
+}
+
+.seat-plan-ansicht-readonly.is-rotated-180 .seat-plan-ansicht-slot__content,
+.seat-plan-ansicht-readonly.is-rotated-180 .seat-plan-ansicht-rotation-counter {
   transform: rotate(180deg);
 }
 

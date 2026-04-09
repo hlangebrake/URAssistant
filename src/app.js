@@ -72,6 +72,7 @@ let classAnalysisEnabledTypes = {
 };
 let timetableViewMode = "ansicht";
 let seatPlanViewMode = "ansicht";
+let seatPlanAnsichtRotation = 0;
 let planningViewMode = "jahresplanung";
 let bewertungViewMode = "bewerten";
 let bewertungCurriculumSectionExpanded = true;
@@ -334,6 +335,7 @@ function storeAuthReturnState() {
       classViewMode: classViewMode,
       timetableViewMode: timetableViewMode,
       seatPlanViewMode: seatPlanViewMode,
+      seatPlanAnsichtRotation: seatPlanAnsichtRotation,
       planningViewMode: planningViewMode,
       bewertungViewMode: bewertungViewMode,
       planningAdminMode: planningAdminMode,
@@ -382,6 +384,7 @@ function applyAuthReturnStateToRawState(snapshot) {
   classViewMode = String(returnState.classViewMode || classViewMode || "analyse");
   timetableViewMode = String(returnState.timetableViewMode || timetableViewMode || "ansicht");
   seatPlanViewMode = String(returnState.seatPlanViewMode || seatPlanViewMode || "ansicht");
+  seatPlanAnsichtRotation = Number(returnState.seatPlanAnsichtRotation) === 180 ? 180 : 0;
   planningViewMode = ["jahresplanung", "unterrichtsplanung", "stoffplanung"].indexOf(String(returnState.planningViewMode || "")) >= 0
     ? String(returnState.planningViewMode)
     : planningViewMode;
@@ -15976,6 +15979,9 @@ window.UnterrichtsassistentApp.getSeatPlanRotateMode = function () {
 window.UnterrichtsassistentApp.getSeatPlanMirrorMode = function () {
   return seatPlanMirrorMode;
 };
+window.UnterrichtsassistentApp.getSeatPlanAnsichtRotation = function () {
+  return seatPlanAnsichtRotation === 180 ? 180 : 0;
+};
 window.UnterrichtsassistentApp.setSeatPlanViewMode = function (nextMode) {
   seatPlanViewMode = ["sitzordnung", "tischordnung"].indexOf(nextMode) >= 0 ? nextMode : "ansicht";
   seatPlanManageMode = seatPlanViewMode === "tischordnung" ? "tischordnung" : "sitzordnung";
@@ -15985,6 +15991,15 @@ window.UnterrichtsassistentApp.setSeatPlanViewMode = function (nextMode) {
   }
 
   if (activeViewId === "sitzplan") {
+    setActiveView("sitzplan");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.toggleSeatPlanAnsichtRotation = function () {
+  seatPlanAnsichtRotation = seatPlanAnsichtRotation === 180 ? 0 : 180;
+
+  if (activeViewId === "sitzplan" && seatPlanViewMode === "ansicht") {
     setActiveView("sitzplan");
   }
 
