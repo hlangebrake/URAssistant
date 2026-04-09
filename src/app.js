@@ -58,6 +58,7 @@ let pendingAuthReturnState = null;
 let activeViewId = "unterricht";
 let unterrichtViewMode = "live";
 let unterrichtToolMode = "attendance";
+let unterrichtSeatPlanRotation = 0;
 let classViewMode = "analyse";
 let classAnalysisSort = { key: "name", direction: "asc" };
 let classAnalysisGrouping = "day";
@@ -92,7 +93,7 @@ let activePlanningEventDraft = null;
 let activeTodoDraft = null;
 let expandedTodoIds = [];
 let todoStatusFilter = "offen";
-let todoViewMode = "liste";
+let todoViewMode = "kategorie";
 let todoSortMode = "dringlichkeit";
 let todoCategoryFilterOpen = false;
 let todoCategoryFilters = [];
@@ -329,6 +330,7 @@ function storeAuthReturnState() {
       viewId: activeViewId,
       unterrichtViewMode: unterrichtViewMode,
       unterrichtToolMode: unterrichtToolMode,
+      unterrichtSeatPlanRotation: unterrichtSeatPlanRotation,
       classViewMode: classViewMode,
       timetableViewMode: timetableViewMode,
       seatPlanViewMode: seatPlanViewMode,
@@ -376,6 +378,7 @@ function applyAuthReturnStateToRawState(snapshot) {
   activeViewId = String(returnState.viewId || activeViewId || "unterricht");
   unterrichtViewMode = String(returnState.unterrichtViewMode || unterrichtViewMode || "live");
   unterrichtToolMode = String(returnState.unterrichtToolMode || unterrichtToolMode || "attendance");
+  unterrichtSeatPlanRotation = Number(returnState.unterrichtSeatPlanRotation) === 180 ? 180 : 0;
   classViewMode = String(returnState.classViewMode || classViewMode || "analyse");
   timetableViewMode = String(returnState.timetableViewMode || timetableViewMode || "ansicht");
   seatPlanViewMode = String(returnState.seatPlanViewMode || seatPlanViewMode || "ansicht");
@@ -10440,9 +10443,21 @@ window.UnterrichtsassistentApp.setUnterrichtViewMode = function (nextMode) {
 window.UnterrichtsassistentApp.getUnterrichtToolMode = function () {
   return unterrichtToolMode;
 };
+window.UnterrichtsassistentApp.getUnterrichtSeatPlanRotation = function () {
+  return unterrichtSeatPlanRotation === 180 ? 180 : 0;
+};
 window.UnterrichtsassistentApp.setUnterrichtToolMode = function (nextMode) {
   const allowedModes = ["attendance", "homework", "warning", "assessment"];
   unterrichtToolMode = allowedModes.indexOf(nextMode) >= 0 ? nextMode : "attendance";
+
+  if (activeViewId === "unterricht") {
+    setActiveView("unterricht");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.toggleUnterrichtSeatPlanRotation = function () {
+  unterrichtSeatPlanRotation = unterrichtSeatPlanRotation === 180 ? 0 : 180;
 
   if (activeViewId === "unterricht") {
     setActiveView("unterricht");

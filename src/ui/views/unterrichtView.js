@@ -13,6 +13,10 @@ window.Unterrichtsassistent.ui.views.unterricht = {
     const toolMode = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getUnterrichtToolMode === "function"
       ? window.UnterrichtsassistentApp.getUnterrichtToolMode()
       : "attendance";
+    const seatPlanRotation = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getUnterrichtSeatPlanRotation === "function"
+      ? window.UnterrichtsassistentApp.getUnterrichtSeatPlanRotation()
+      : 0;
+    const isSeatPlanRotated = seatPlanRotation === 180;
     const referenceDate = service && typeof service.getReferenceDate === "function"
       ? service.getReferenceDate()
       : new Date();
@@ -1101,6 +1105,12 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         : "unterricht-seatplan-action";
     }
 
+    function getRotationButtonClass() {
+      return isSeatPlanRotated
+        ? "unterricht-seatplan-action unterricht-seatplan-action--rotation is-active"
+        : "unterricht-seatplan-action unterricht-seatplan-action--rotation";
+    }
+
     function getWarningCountForStudent(studentId) {
       if (!studentId || !activeClass || typeof service.getWarningCountForStudent !== "function") {
         return 0;
@@ -1184,7 +1194,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         classes.push(toolMode === "attendance" ? "is-absent" : "is-muted");
       }
 
-      return '<div class="' + classes.join(" ") + '"' + onclick + pointerdown + warningPointerdown + assessmentPointerdown + '>' + assessmentBadge + (student ? '<span class="seat-order-desk__label seat-order-desk__label--readonly">' + escapeValue(getStudentShortLabel(student)) + "</span>" : "") + symbolRow + "</div>";
+      return '<div class="' + classes.join(" ") + '"' + onclick + pointerdown + warningPointerdown + assessmentPointerdown + '><div class="unterricht-seatplan-slot__content">' + assessmentBadge + (student ? '<span class="seat-order-desk__label seat-order-desk__label--readonly">' + escapeValue(getStudentShortLabel(student)) + "</span>" : "") + symbolRow + "</div></div>";
     }
 
     function getDeskItemMetrics(item) {
@@ -1306,6 +1316,12 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       const frameStyle = "width:" + String(scaledFrameWidth) + "px;height:" + String(scaledFrameHeight) + "px";
       const shellStyle = "width:" + String(scaledCanvasWidth) + "px;height:" + String(scaledCanvasHeight) + "px";
       const anchorStyle = "transform:scale(" + String(seatPlanScale) + ");transform-origin:top left";
+      const seatPlanClassName = isSeatPlanRotated
+        ? "unterricht-seatplan is-rotated-180"
+        : "unterricht-seatplan";
+      const canvasClassName = isSeatPlanRotated
+        ? "desk-layout-builder__canvas desk-layout-builder__canvas--readonly desk-layout-builder__canvas--tight unterricht-seatplan-canvas is-rotated-180"
+        : "desk-layout-builder__canvas desk-layout-builder__canvas--readonly desk-layout-builder__canvas--tight unterricht-seatplan-canvas";
 
       if (!activeClass) {
         return '<div class="seat-plan-placeholder">Noch keine aktive Lerngruppe vorhanden.</div>';
@@ -1320,13 +1336,13 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       }
 
       return [
-        '<div class="unterricht-seatplan">',
+        '<div class="' + seatPlanClassName + '">',
         '<div class="unterricht-seatplan-frame" style="', frameStyle, '">',
         '<div class="desk-layout-builder desk-layout-builder--readonly desk-layout-builder--readonly-single">',
         '<div class="desk-layout-builder__canvas-wrap desk-layout-builder__canvas-wrap--readonly desk-layout-builder__canvas-wrap--tight desk-layout-builder__canvas-wrap--unterricht">',
         '<div class="unterricht-seatplan-canvas-shell" style="', shellStyle, '">',
         '<div class="unterricht-seatplan-canvas-anchor" style="', anchorStyle, '">',
-        '<div class="desk-layout-builder__canvas desk-layout-builder__canvas--readonly desk-layout-builder__canvas--tight" style="', canvasStyle, '">',
+        '<div class="' + canvasClassName + '" style="', canvasStyle, '">',
         deskLayoutItems.map(function (item) {
           const metrics = getDeskItemMetrics(item);
           const inlineStyle = [
@@ -1366,6 +1382,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         '<button class="' + getToolButtonClass("homework") + '" type="button" aria-label="Hausaufgabe markieren" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'homework\')">H</button>',
         '<button class="' + getToolButtonClass("warning") + '" type="button" aria-label="Warnung vergeben" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'warning\')">&#9888;</button>',
         '<button class="' + getToolButtonClass("assessment") + '" type="button" aria-label="Bewertung oeffnen" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'assessment\')">&#128269;</button>',
+        '<button class="' + getRotationButtonClass() + '" type="button" aria-label="Sitzplan um 180 Grad drehen" aria-pressed="' + (isSeatPlanRotated ? "true" : "false") + '" onclick="return window.UnterrichtsassistentApp.toggleUnterrichtSeatPlanRotation()">180&deg;</button>',
         '</div>',
         '</div>',
         '</div>',

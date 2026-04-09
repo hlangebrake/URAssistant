@@ -4609,6 +4609,11 @@ button {
   max-width: none;
 }
 
+.unterricht-seatplan-canvas.is-rotated-180 {
+  transform: rotate(180deg);
+  transform-origin: center center;
+}
+
 .unterricht-seatplan-actions {
   position: absolute;
   left: 50%;
@@ -4640,6 +4645,11 @@ button {
   font-weight: 700;
   cursor: pointer;
   box-shadow: none;
+}
+
+.unterricht-seatplan-action--rotation {
+  font-size: 0.94rem;
+  letter-spacing: 0.01em;
 }
 
 .unterricht-seatplan-action.is-active {
@@ -4678,6 +4688,21 @@ button {
 .unterricht-seatplan-student .seat-order-desk__label--readonly {
   pointer-events: none;
   cursor: inherit;
+}
+
+.unterricht-seatplan-slot__content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.32rem;
+  width: 100%;
+  height: 100%;
+  transform-origin: center center;
+}
+
+.unterricht-seatplan.is-rotated-180 .unterricht-seatplan-slot__content {
+  transform: rotate(180deg);
 }
 
 .unterricht-seatplan-student.is-interactive {
