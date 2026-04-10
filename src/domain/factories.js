@@ -12,6 +12,7 @@ function createDomainSnapshot(rawData) {
     CurriculumLessonPhase,
     CurriculumLessonPhaseStatus,
     CurriculumLessonStep,
+    CurriculumLessonStepStatus,
     CurriculumSequence,
     CurriculumSeries,
     HomeworkRecord,
@@ -80,6 +81,7 @@ function createDomainSnapshot(rawData) {
     curriculumLessonPhases: (Array.isArray(rawData.curriculumLessonPhases) ? rawData.curriculumLessonPhases : []).map((item) => new CurriculumLessonPhase(item)),
     curriculumLessonSteps: (Array.isArray(rawData.curriculumLessonSteps) ? rawData.curriculumLessonSteps : []).map((item) => new CurriculumLessonStep(item)),
     curriculumLessonPhaseStatuses: (Array.isArray(rawData.curriculumLessonPhaseStatuses) ? rawData.curriculumLessonPhaseStatuses : []).map((item) => new CurriculumLessonPhaseStatus(item)),
+    curriculumLessonStepStatuses: (Array.isArray(rawData.curriculumLessonStepStatuses) ? rawData.curriculumLessonStepStatuses : []).map((item) => new CurriculumLessonStepStatus(item)),
     seatOrders: (Array.isArray(rawData.seatOrders) ? rawData.seatOrders : rawData.seatPlans.map(function (item) {
       return {
         id: (item && item.id ? String(item.id) : "seat-order") + "-order",
@@ -246,14 +248,15 @@ function serializeDomainSnapshot(snapshot) {
     }),
     seatPlans: cloneItems(snapshot.seatPlans, ["id", "classId", "room", "validFrom", "validTo", "updatedAt", "seats", "deskLayoutItems", "deskLayoutLinks", "roomWindowSide", "roomWidth", "roomHeight"]),
     planningEvents: cloneItems(snapshot.planningEvents || [], ["id", "title", "startDate", "endDate", "startTime", "endTime", "category", "description", "priority", "showInTimetable", "causesInstructionOutage", "isRecurring", "recurrenceInterval", "recurrenceUnit", "recurrenceUntilDate", "recurrenceMonthlyWeekday", "isExternallyControlled", "controlledByView", "controlledById"]),
-    planningCategories: cloneItems(snapshot.planningCategories || [], ["id", "name", "color"]),
+    planningCategories: cloneItems(snapshot.planningCategories || [], ["id", "name", "color", "filterLabels"]),
     planningInstructionLessonStatuses: cloneItems(snapshot.planningInstructionLessonStatuses || [], ["id", "classId", "lessonDate", "isCancelled", "cancelReason"]),
     curriculumSeries: cloneItems(snapshot.curriculumSeries || [], ["id", "classId", "topic", "hourDemand", "color", "startMode", "startDate", "nextSeriesId"]),
     curriculumSequences: cloneItems(snapshot.curriculumSequences || [], ["id", "seriesId", "topic", "hourDemand", "nextSequenceId"]),
     curriculumLessonPlans: cloneItems(snapshot.curriculumLessonPlans || [], ["id", "sequenceId", "topic", "summary", "hourType", "functionType", "situationType", "demandLevel", "preparationMode", "preparationText", "preparationTodoId", "homeworkText", "homeworkDueMode", "homeworkDueAmount", "homeworkDueUnit", "nextLessonId"]),
     curriculumLessonPhases: cloneItems(snapshot.curriculumLessonPhases || [], ["id", "lessonPlanId", "title", "durationMinutes", "isReserve", "situationType", "demandLevel", "nextPhaseId"]),
-    curriculumLessonSteps: cloneItems(snapshot.curriculumLessonSteps || [], ["id", "phaseId", "title", "content", "socialForm", "material", "nextStepId"]),
+    curriculumLessonSteps: cloneItems(snapshot.curriculumLessonSteps || [], ["id", "phaseId", "title", "content", "durationMinutes", "socialForm", "material", "nextStepId"]),
     curriculumLessonPhaseStatuses: cloneItems(snapshot.curriculumLessonPhaseStatuses || [], ["id", "classId", "lessonDate", "lessonPlanId", "phaseId", "isCompleted", "elapsedMinutes", "resumeStartMinutes", "liveSituationType", "liveDemandLevel"]),
+    curriculumLessonStepStatuses: cloneItems(snapshot.curriculumLessonStepStatuses || [], ["id", "classId", "lessonDate", "lessonPlanId", "phaseId", "stepId", "isCompleted", "elapsedMinutes", "completedAt"]),
     seatOrders: cloneItems(snapshot.seatOrders || [], ["id", "classId", "room", "validFrom", "validTo", "updatedAt", "seats"])
   };
 }

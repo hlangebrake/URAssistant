@@ -523,6 +523,16 @@ window.Unterrichtsassistent.ui.views.todos = {
         });
       }
 
+      function getAssignedStudentProgressLabel(todoEntry) {
+        const assignedStudents = getAssignedStudentEntries(todoEntry);
+        const totalCount = assignedStudents.length;
+        const completedCount = assignedStudents.reduce(function (count, entry) {
+          return count + (Boolean(entry && entry.done) ? 1 : 0);
+        }, 0);
+
+        return totalCount > 0 ? String(completedCount) + " / " + String(totalCount) : "";
+      }
+
       function buildAssignedStudentsSection(todoEntry) {
         const assignedStudents = getAssignedStudentEntries(todoEntry);
         const normalizedTodoId = String(todoEntry && todoEntry.id || "").trim();
@@ -833,6 +843,7 @@ window.Unterrichtsassistent.ui.views.todos = {
         && Array.isArray(todoItem && todoItem.assignedStudentIds)
         && todoItem.assignedStudentIds.length > 0;
       const hasAssignedTodoState = hasAssignedStudents || hasAssignedStudentChecklists;
+      const assignedStudentProgressLabel = hasAssignedTodoState ? getAssignedStudentProgressLabel(todoItem) : "";
       const isEspeciallyUrgentTodo = isEspeciallyUrgent(todoItem);
       const isChecklistTodo = String(todoItem && todoItem.type || "").trim().toLowerCase() === "checkliste";
       const isDone = hasAssignedTodoState
@@ -856,6 +867,7 @@ window.Unterrichtsassistent.ui.views.todos = {
         '<span class="todos-view__title-wrap">',
         categoryColor ? '<span class="todos-view__category-marker" aria-hidden="true"></span>' : '',
         '<span class="todos-view__title">', escapeValue(title), '</span>',
+        assignedStudentProgressLabel ? '<span class="todos-view__title-meta">' + escapeValue(assignedStudentProgressLabel) + '</span>' : '',
         isEspeciallyUrgentTodo ? '<span class="todos-view__urgency-badge">Dringend</span>' : '',
         '</span>',
         '<span class="todos-view__indicator" aria-hidden="true">', isExpanded ? '&#9662;' : '&#9656;', '</span>',

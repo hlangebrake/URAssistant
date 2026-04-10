@@ -98,6 +98,50 @@ window.Unterrichtsassistent.ui.views.unterricht = {
 
       return lookup;
     }, {});
+    const lessonStepStatusLookup = (Array.isArray(snapshot.curriculumLessonStepStatuses) ? snapshot.curriculumLessonStepStatuses : []).reduce(function (lookup, statusItem) {
+      const classId = String(statusItem && statusItem.classId || "").trim();
+      const lessonDate = String(statusItem && statusItem.lessonDate || "").slice(0, 10);
+      const lessonPlanId = String(statusItem && statusItem.lessonPlanId || "").trim();
+      const phaseId = String(statusItem && statusItem.phaseId || "").trim();
+      const stepId = String(statusItem && statusItem.stepId || "").trim();
+
+      if (classId && lessonDate && lessonPlanId && phaseId && stepId && statusItem) {
+        lookup[[classId, lessonDate, lessonPlanId, phaseId, stepId].join("::")] = statusItem;
+        lookup[[classId, lessonPlanId, phaseId, stepId].join("::")] = statusItem;
+      }
+
+      return lookup;
+    }, {});
+
+    function getLessonPhaseStatus(classId, lessonDate, lessonPlanId, phaseId) {
+      return lessonPhaseStatusLookup[[String(classId || "").trim(), String(lessonPlanId || "").trim(), String(phaseId || "").trim()].join("::")]
+        || lessonPhaseStatusLookup[[String(classId || "").trim(), String(lessonDate || "").trim(), String(lessonPlanId || "").trim(), String(phaseId || "").trim()].join("::")]
+        || null;
+    }
+
+    function getSegmentCompletionState(segmentItem, lessonDate) {
+      const normalizedClassId = String(activeClass && activeClass.id || "").trim();
+      const normalizedLessonPlanId = String(segmentItem && segmentItem.lessonPlan && segmentItem.lessonPlan.id || "").trim();
+      const phases = Array.isArray(segmentItem && segmentItem.phases) ? segmentItem.phases : [];
+      let completedElapsedMinutes = 0;
+
+      const isCompleted = phases.length > 0 && phases.every(function (phaseItem) {
+        const phaseId = String(phaseItem && phaseItem.id || "").trim();
+        const phaseStatus = getLessonPhaseStatus(normalizedClassId, lessonDate, normalizedLessonPlanId, phaseId);
+
+        if (!(phaseStatus && phaseStatus.isCompleted)) {
+          return false;
+        }
+
+        completedElapsedMinutes += Math.max(0, Number(phaseStatus && phaseStatus.elapsedMinutes) || 0);
+        return true;
+      });
+
+      return {
+        isCompleted: isCompleted,
+        completedElapsedMinutes: completedElapsedMinutes
+      };
+    }
     const collapsedLiveLessonIds = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getCollapsedUnterrichtLiveLessonIds === "function"
       ? window.UnterrichtsassistentApp.getCollapsedUnterrichtLiveLessonIds()
       : [];
@@ -1026,16 +1070,43 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         return null;
       }
 
+      const blockStartMinutes = segments[0].startMinutes;
+      const blockElapsedMinutes = Math.max(0, currentMinutes - blockStartMinutes);
+      let consumedCompletedSegmentMinutes = 0;
+
+      // If earlier single lessons are already fully checked off, the next single lesson
+      // in the same block starts consuming time immediately, even before its nominal slot.
       activeSegmentIndex = segments.findIndex(function (segmentItem) {
-        return currentMinutes >= segmentItem.startMinutes && currentMinutes < segmentItem.endMinutes;
+        return !getSegmentCompletionState(segmentItem, lessonDate).isCompleted;
       });
+
+      if (activeSegmentIndex < 0) {
+        activeSegmentIndex = segments.findIndex(function (segmentItem) {
+          return currentMinutes >= segmentItem.startMinutes && currentMinutes < segmentItem.endMinutes;
+        });
+      }
 
       if (activeSegmentIndex < 0) {
         activeSegmentIndex = Math.max(0, Math.min(segments.length - 1, slotIndex));
       }
 
       segments.forEach(function (segmentItem, segmentIndex) {
-        segmentItem.elapsedMinutes = Math.max(0, Math.min(segmentItem.endMinutes - segmentItem.startMinutes, currentMinutes - segmentItem.startMinutes));
+        const completionState = getSegmentCompletionState(segmentItem, lessonDate);
+
+        segmentItem.isCompleted = completionState.isCompleted;
+        segmentItem.completedElapsedMinutes = completionState.completedElapsedMinutes;
+
+        if (segmentIndex < activeSegmentIndex) {
+          segmentItem.elapsedMinutes = completionState.completedElapsedMinutes;
+          consumedCompletedSegmentMinutes += completionState.completedElapsedMinutes;
+        } else if (segmentIndex === activeSegmentIndex && !completionState.isCompleted) {
+          segmentItem.elapsedMinutes = Math.max(0, blockElapsedMinutes - consumedCompletedSegmentMinutes);
+        } else if (completionState.isCompleted) {
+          segmentItem.elapsedMinutes = completionState.completedElapsedMinutes;
+        } else {
+          segmentItem.elapsedMinutes = 0;
+        }
+
         segmentItem.isActiveNow = segmentIndex === activeSegmentIndex;
       });
 
@@ -1519,17 +1590,48 @@ window.Unterrichtsassistent.ui.views.unterricht = {
                 : "",
               '</div>',
               !isCompleted && phaseSteps.length
-                ? '<div class="unterricht-live-flow__step-list">' + phaseSteps.map(function (stepItem) {
+                ? '<div class="unterricht-live-flow__step-list">' + (function () {
+                  let consumedStepMinutes = 0;
+                  let activeIncompleteAssigned = false;
+
+                  return phaseSteps.map(function (stepItem) {
+                  const stepId = String(stepItem && stepItem.id || "").trim();
                   const stepTitle = String(stepItem && stepItem.title || "").trim();
                   const stepContent = String(stepItem && stepItem.content || "").trim();
                   const stepMaterial = String(stepItem && stepItem.material || "").trim();
+                  const stepDurationRaw = stepItem && stepItem.durationMinutes !== null && typeof stepItem.durationMinutes !== "undefined"
+                    ? String(stepItem.durationMinutes).trim()
+                    : "";
+                  const stepHasDuration = stepDurationRaw !== "";
+                  const stepPlannedMinutes = stepHasDuration ? Math.max(0, Number(stepItem && stepItem.durationMinutes) || 0) : 0;
+                  const stepStatus = lessonStepStatusLookup[[String(activeClass && activeClass.id || "").trim(), String(segmentItem.lessonPlan && segmentItem.lessonPlan.id || "").trim(), phaseItemId, stepId].join("::")] || lessonStepStatusLookup[[String(activeClass && activeClass.id || "").trim(), lessonFlowData.lessonDate, String(segmentItem.lessonPlan && segmentItem.lessonPlan.id || "").trim(), phaseItemId, stepId].join("::")] || null;
+                  const isStepCompleted = Boolean(stepStatus && stepStatus.isCompleted);
+                  let stepElapsedMinutes = 0;
+
+                  if (isStepCompleted) {
+                    stepElapsedMinutes = Math.max(0, Number(stepStatus && stepStatus.elapsedMinutes) || 0);
+                    consumedStepMinutes += stepElapsedMinutes;
+                  } else if (!activeIncompleteAssigned) {
+                    stepElapsedMinutes = Math.max(0, elapsedMinutes - consumedStepMinutes);
+                    activeIncompleteAssigned = true;
+                  }
+
+                  const stepTimingClass = stepHasDuration && stepElapsedMinutes > stepPlannedMinutes
+                    ? ' unterricht-live-flow__step-timing--overdue'
+                    : '';
+                  const stepTimingLabel = stepHasDuration
+                    ? '<div class="unterricht-live-flow__step-timing' + stepTimingClass + '">(' + escapeValue(String(stepElapsedMinutes)) + ' / ' + escapeValue(String(stepPlannedMinutes)) + ' Min.)</div>'
+                    : "";
+                  const stepCheckbox = '<input type="checkbox" aria-label="Schritt erledigt" ' + (isStepCompleted ? 'checked ' : '') + 'onchange="return window.UnterrichtsassistentApp.toggleCurriculumLessonStepCompleted(\'' + escapeValue(String(activeClass && activeClass.id || "").trim()) + '\', \'' + escapeValue(lessonFlowData.lessonDate) + '\', \'' + escapeValue(String(segmentItem.lessonPlan && segmentItem.lessonPlan.id || "").trim()) + '\', \'' + escapeValue(phaseItemId) + '\', \'' + escapeValue(stepId) + '\', this.checked, ' + String(stepElapsedMinutes) + ')">';
 
                   return [
-                    '<div class="unterricht-live-flow__step">',
+                    '<div class="unterricht-live-flow__step' + (isStepCompleted ? ' is-completed' : '') + '">',
                     '<div class="unterricht-live-flow__step-main">',
-                    stepTitle ? '<div class="unterricht-live-flow__step-title">' + escapeValue(stepTitle) + '</div>' : "",
-                    stepContent ? '<div class="unterricht-live-flow__step-content">' + escapeValue(stepContent) + '</div>' : "",
-                    (!stepTitle && !stepContent) ? '<div class="unterricht-live-flow__empty unterricht-live-flow__empty--inline">Noch kein Inhalt.</div>' : "",
+                    (stepTitle || stepTimingLabel)
+                      ? '<div class="unterricht-live-flow__step-title-row"><label class="unterricht-live-flow__step-title-label">' + stepCheckbox + (stepTitle ? '<div class="unterricht-live-flow__step-title">' + escapeValue(stepTitle) + '</div>' : '<div class="unterricht-live-flow__step-title">Ohne Titel</div>') + '</label>' + stepTimingLabel + '</div>'
+                      : "",
+                    (!isStepCompleted && stepContent) ? '<div class="unterricht-live-flow__step-content">' + escapeValue(stepContent) + '</div>' : "",
+                    (!isStepCompleted && !stepTitle && !stepContent) ? '<div class="unterricht-live-flow__empty unterricht-live-flow__empty--inline">Noch kein Inhalt.</div>' : "",
                     '</div>',
                     '<div class="unterricht-live-flow__step-side">',
                     '<div class="unterricht-live-flow__step-meta"><span>S</span><strong>' + escapeValue(getCurriculumLessonStepSocialFormShortLabel(stepItem && stepItem.socialForm)) + '</strong></div>',
@@ -1537,7 +1639,8 @@ window.Unterrichtsassistent.ui.views.unterricht = {
                     '</div>',
                     '</div>'
                   ].join("");
-                }).join("") + '</div>'
+                }).join("");
+                })() + '</div>'
                 : (!isCompleted
                   ? '<div class="unterricht-live-flow__empty unterricht-live-flow__empty--inline">Noch keine Schritte angelegt.</div>'
                   : ""),
@@ -1942,6 +2045,16 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       });
     }
 
+    function getAssignedStudentProgressLabel(todoEntry) {
+      const assignedStudents = getAssignedStudentEntries(todoEntry);
+      const totalCount = assignedStudents.length;
+      const completedCount = assignedStudents.reduce(function (count, entry) {
+        return count + (Boolean(entry && entry.done) ? 1 : 0);
+      }, 0);
+
+      return totalCount > 0 ? String(completedCount) + " / " + String(totalCount) : "";
+    }
+
     function isTodoEffectivelyDone(todoItem) {
       const todoType = String(todoItem && todoItem.type || "").trim().toLowerCase();
       const hasAssignedStudents = Array.isArray(todoItem && todoItem.assignedStudentIds) && todoItem.assignedStudentIds.length > 0;
@@ -2162,6 +2275,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       const assignedStudentsSectionMarkup = buildAssignedStudentsSection(todoItem);
       const assignedStudentChecklistMarkup = buildAssignedStudentChecklistSections(todoItem);
       const hasAssignedStudents = Array.isArray(todoItem && todoItem.assignedStudentIds) && todoItem.assignedStudentIds.length > 0;
+      const assignedStudentProgressLabel = hasAssignedStudents ? getAssignedStudentProgressLabel(todoItem) : "";
       const isChecklistTodo = String(todoItem && todoItem.type || "").trim().toLowerCase() === "checkliste";
       const isDone = isTodoEffectivelyDone(todoItem);
       const isExpanded = expandedTodoIds.indexOf(normalizedTodoId) >= 0;
@@ -2182,6 +2296,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         '<span class="todos-view__title-wrap">',
         categoryColor ? '<span class="todos-view__category-marker" aria-hidden="true"></span>' : '',
         '<span class="todos-view__title">', escapeValue(title), '</span>',
+        assignedStudentProgressLabel ? '<span class="todos-view__title-meta">' + escapeValue(assignedStudentProgressLabel) + '</span>' : '',
         isEspeciallyUrgentTodo(todoItem) ? '<span class="todos-view__urgency-badge">Dringend</span>' : '',
         '</span>',
         '<span class="todos-view__indicator" aria-hidden="true">', isExpanded ? '&#9662;' : '&#9656;', '</span>',

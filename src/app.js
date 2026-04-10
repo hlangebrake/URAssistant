@@ -119,6 +119,10 @@ let activeCurriculumSequenceDrag = null;
 let activeCurriculumSequenceDropIndicator = null;
 let activeCurriculumLessonDrag = null;
 let activeCurriculumLessonDropIndicator = null;
+let activeCurriculumLessonFlowPhaseDrag = null;
+let activeCurriculumLessonFlowPhaseDropIndicator = null;
+let activeCurriculumLessonFlowStepDrag = null;
+let activeCurriculumLessonFlowStepDropIndicator = null;
 let activePlanningRangeDraft = null;
 let suppressPlanningDayClickUntil = 0;
 let planningSidebarFilterOpen = false;
@@ -161,6 +165,8 @@ let activeClassAnalysisDragScroll = null;
 let activePlanningCurriculumDragScroll = null;
 let activePlanningCurriculumAutoScroll = null;
 let planningCurriculumAutoScrollFrameId = 0;
+let activePlanningLessonFlowAutoScroll = null;
+let planningLessonFlowAutoScrollFrameId = 0;
 let hasBoundClassAnalysisResize = false;
 let classAnalysisScrollLeftByClassId = {};
 let planningCurriculumScrollLeftByClassId = {};
@@ -174,6 +180,11 @@ let activePlanningCategorySuggestionListId = "";
 let activePlanningCategorySuggestionInputId = "";
 let activePlanningCategorySuggestionBlurTimerId = 0;
 let activePlanningCategorySuggestionDrag = null;
+let activePlanningCategoryFilterLabelSuggestionListId = "";
+let activePlanningCategoryFilterLabelSuggestionInputId = "";
+let activePlanningCategoryFilterLabelSuggestionBlurTimerId = 0;
+let activePlanningCategoryFilterLabelSuggestionDrag = null;
+let planningCategoryFilterLabelDrafts = {};
 let activeEvaluationTopicSuggestionListId = "";
 let activeEvaluationTopicSuggestionInputId = "";
 let activeEvaluationTopicSuggestionBlurTimerId = 0;
@@ -784,6 +795,59 @@ function buildImportableSnapshot(rawSnapshot) {
   return cloneRawSnapshot(rawSnapshot);
 }
 
+function restoreImportedCurriculumHourDemands(snapshot, importedSnapshot) {
+  const normalizedSnapshot = snapshot || {};
+  const sourceSnapshot = importedSnapshot || {};
+  const importedSeriesById = {};
+  const importedSequencesById = {};
+
+  (Array.isArray(sourceSnapshot.curriculumSeries) ? sourceSnapshot.curriculumSeries : []).forEach(function (entry) {
+    const seriesId = String(entry && entry.id || "").trim();
+
+    if (!seriesId) {
+      return;
+    }
+
+    importedSeriesById[seriesId] = Math.max(0, Number(entry && entry.hourDemand) || 0);
+  });
+
+  (Array.isArray(sourceSnapshot.curriculumSequences) ? sourceSnapshot.curriculumSequences : []).forEach(function (entry) {
+    const sequenceId = String(entry && entry.id || "").trim();
+
+    if (!sequenceId) {
+      return;
+    }
+
+    importedSequencesById[sequenceId] = Math.max(0, Number(entry && entry.hourDemand) || 0);
+  });
+
+  normalizedSnapshot.curriculumSeries = (Array.isArray(normalizedSnapshot.curriculumSeries) ? normalizedSnapshot.curriculumSeries : []).map(function (entry) {
+    const seriesId = String(entry && entry.id || "").trim();
+
+    if (!seriesId || !Object.prototype.hasOwnProperty.call(importedSeriesById, seriesId)) {
+      return entry;
+    }
+
+    return Object.assign({}, entry, {
+      hourDemand: importedSeriesById[seriesId]
+    });
+  });
+
+  normalizedSnapshot.curriculumSequences = (Array.isArray(normalizedSnapshot.curriculumSequences) ? normalizedSnapshot.curriculumSequences : []).map(function (entry) {
+    const sequenceId = String(entry && entry.id || "").trim();
+
+    if (!sequenceId || !Object.prototype.hasOwnProperty.call(importedSequencesById, sequenceId)) {
+      return entry;
+    }
+
+    return Object.assign({}, entry, {
+      hourDemand: importedSequencesById[sequenceId]
+    });
+  });
+
+  return normalizedSnapshot;
+}
+
 function normalizeImportedAppSnapshot(rawSnapshot) {
   const normalizedSnapshot = normalizeRawSnapshot(rawSnapshot || {});
   const importedSnapshot = rawSnapshot || {};
@@ -796,6 +860,7 @@ function normalizeImportedAppSnapshot(rawSnapshot) {
   normalizedSnapshot.activeSeatPlanRoom = String(importedSnapshot.activeSeatPlanRoom || normalizedSnapshot.activeSeatPlanRoom || "");
   normalizedSnapshot.activeDateTime = String(importedSnapshot.activeDateTime || normalizedSnapshot.activeDateTime || "");
   normalizedSnapshot.activeDateTimeMode = String(importedSnapshot.activeDateTimeMode || normalizedSnapshot.activeDateTimeMode || "live");
+  restoreImportedCurriculumHourDemands(normalizedSnapshot, importedSnapshot);
 
   return normalizedSnapshot;
 }
@@ -941,6 +1006,15 @@ function clearPlanningCategorySuggestionBlurTimer() {
   activePlanningCategorySuggestionBlurTimerId = 0;
 }
 
+function clearPlanningCategoryFilterLabelSuggestionBlurTimer() {
+  if (!activePlanningCategoryFilterLabelSuggestionBlurTimerId) {
+    return;
+  }
+
+  window.clearTimeout(activePlanningCategoryFilterLabelSuggestionBlurTimerId);
+  activePlanningCategoryFilterLabelSuggestionBlurTimerId = 0;
+}
+
 function clearEvaluationTopicSuggestionBlurTimer() {
   if (!activeEvaluationTopicSuggestionBlurTimerId) {
     return;
@@ -1001,6 +1075,92 @@ function getKnowledgeGapSuggestionList(listId) {
 
 function getPlanningCategorySuggestionList(listId) {
   return listId ? document.getElementById(listId) : null;
+}
+
+function normalizePlanningCategoryFilterLabels(value) {
+  const rawEntries = Array.isArray(value)
+    ? value
+    : String(value || "").split(",");
+
+  return rawEntries.map(function (entry) {
+    return String(entry || "").trim();
+  }).filter(Boolean).filter(function (entry, index, array) {
+    return array.findIndex(function (candidate) {
+      return String(candidate || "").trim().toLowerCase() === entry.toLowerCase();
+    }) === index;
+  });
+}
+
+function getAllPlanningNamedFilters(snapshot) {
+  const sourceSnapshot = snapshot || getMutableRawSnapshot();
+  const definitions = getPlanningCategoryDefinitions(sourceSnapshot);
+  const labelsByKey = {};
+
+  definitions.forEach(function (entry) {
+    const filterLabels = Array.isArray(entry && entry.filterLabels) ? entry.filterLabels : [];
+
+    filterLabels.forEach(function (label) {
+      const trimmed = String(label || "").trim();
+      const normalized = trimmed.toLowerCase();
+
+      if (!trimmed || normalized === "alle aus" || labelsByKey[normalized]) {
+        return;
+      }
+
+      labelsByKey[normalized] = trimmed;
+    });
+  });
+
+  return Object.keys(labelsByKey).map(function (key) {
+    return labelsByKey[key];
+  }).sort(function (left, right) {
+    return String(left || "").localeCompare(String(right || ""), "de", { sensitivity: "base" });
+  });
+}
+
+function getPlanningCategoryFilterLabelDraftKey(categoryName) {
+  return String(categoryName || "").trim().toLowerCase();
+}
+
+function getPlanningCategoryFilterLabelDraftValue(categoryName, fallbackValue) {
+  const draftKey = getPlanningCategoryFilterLabelDraftKey(categoryName);
+
+  if (draftKey && Object.prototype.hasOwnProperty.call(planningCategoryFilterLabelDrafts, draftKey)) {
+    return planningCategoryFilterLabelDrafts[draftKey];
+  }
+
+  return String(fallbackValue || "");
+}
+
+function setPlanningCategoryFilterLabelDraftValue(categoryName, nextValue) {
+  const draftKey = getPlanningCategoryFilterLabelDraftKey(categoryName);
+
+  if (!draftKey) {
+    return;
+  }
+
+  planningCategoryFilterLabelDrafts[draftKey] = String(nextValue || "");
+}
+
+function getPlanningCategoryFilterLabelSuggestions(value) {
+  const rawValue = String(value || "");
+  const parts = rawValue.split(",");
+  const currentToken = String(parts[parts.length - 1] || "").trim().toLowerCase();
+  const allLabels = getAllPlanningNamedFilters(getMutableRawSnapshot());
+
+  return allLabels.map(function (label) {
+    return {
+      value: label,
+      count: getPlanningCategoryDefinitions(getMutableRawSnapshot()).filter(function (entry) {
+        return Array.isArray(entry && entry.filterLabels)
+          && entry.filterLabels.some(function (item) {
+            return String(item || "").trim().toLowerCase() === String(label || "").trim().toLowerCase();
+          });
+      }).length
+    };
+  }).filter(function (entry) {
+    return !currentToken || String(entry.value || "").trim().toLowerCase().indexOf(currentToken) >= 0;
+  });
 }
 
 function getEvaluationTopicSuggestionList(listId) {
@@ -1453,13 +1613,18 @@ function getCurriculumCollections(snapshot) {
     source.curriculumLessonPhaseStatuses = [];
   }
 
+  if (!Array.isArray(source.curriculumLessonStepStatuses)) {
+    source.curriculumLessonStepStatuses = [];
+  }
+
   return {
     series: source.curriculumSeries,
     sequences: source.curriculumSequences,
     lessons: source.curriculumLessonPlans,
     lessonPhases: source.curriculumLessonPhases,
     lessonSteps: source.curriculumLessonSteps,
-    lessonPhaseStatuses: source.curriculumLessonPhaseStatuses
+    lessonPhaseStatuses: source.curriculumLessonPhaseStatuses,
+    lessonStepStatuses: source.curriculumLessonStepStatuses
   };
 }
 
@@ -2253,6 +2418,135 @@ function reconnectCurriculumLessonStepChain(items) {
   });
 }
 
+function setCurriculumLessonFlowPhaseModeForLesson(snapshot, lessonId, shouldUseViewMode) {
+  const normalizedLessonId = String(lessonId || "").trim();
+  const orderedPhases = snapshot
+    ? getOrderedCurriculumLessonPhasesForLesson(snapshot, normalizedLessonId)
+    : [];
+
+  activeCurriculumLessonFlowViewPhaseIds = shouldUseViewMode
+    ? orderedPhases.map(function (entry) {
+        return String(entry && entry.id || "").trim();
+      }).filter(Boolean)
+    : [];
+}
+
+function reorderCurriculumLessonFlowPhases(lessonId, draggedPhaseId, targetPhaseId, placement) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
+  const normalizedLessonId = String(lessonId || "").trim();
+  const normalizedDraggedPhaseId = String(draggedPhaseId || "").trim();
+  const normalizedTargetPhaseId = String(targetPhaseId || "").trim();
+  const normalizedPlacement = placement === "before" ? "before" : "after";
+  const orderedPhases = currentRawSnapshot
+    ? getOrderedCurriculumLessonPhasesForLesson(currentRawSnapshot, normalizedLessonId).slice()
+    : [];
+  const draggedPhase = orderedPhases.find(function (entry) {
+    return String(entry && entry.id || "").trim() === normalizedDraggedPhaseId;
+  }) || null;
+  const remainingPhases = orderedPhases.filter(function (entry) {
+    return String(entry && entry.id || "").trim() !== normalizedDraggedPhaseId;
+  });
+  let insertIndex = remainingPhases.length;
+
+  if (!currentRawSnapshot || !collections || !normalizedLessonId || !draggedPhase) {
+    return false;
+  }
+
+  if (normalizedTargetPhaseId) {
+    const targetIndex = remainingPhases.findIndex(function (entry) {
+      return String(entry && entry.id || "").trim() === normalizedTargetPhaseId;
+    });
+
+    if (targetIndex >= 0) {
+      insertIndex = normalizedPlacement === "before" ? targetIndex : targetIndex + 1;
+    }
+  }
+
+  remainingPhases.splice(insertIndex, 0, draggedPhase);
+  reconnectCurriculumLessonPhaseChain(remainingPhases);
+
+  remainingPhases.forEach(function (phaseItem) {
+    const collectionIndex = collections.lessonPhases.findIndex(function (entry) {
+      return String(entry && entry.id || "").trim() === String(phaseItem && phaseItem.id || "").trim();
+    });
+
+    if (collectionIndex >= 0) {
+      collections.lessonPhases[collectionIndex] = phaseItem;
+    }
+  });
+
+  currentRawSnapshot.curriculumLessonPhases = collections.lessonPhases;
+  activeCurriculumLessonFlowLessonId = normalizedLessonId;
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return true;
+}
+
+function reorderCurriculumLessonFlowSteps(sourcePhaseId, draggedStepId, targetPhaseId, targetStepId, placement) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
+  const normalizedSourcePhaseId = String(sourcePhaseId || "").trim();
+  const normalizedDraggedStepId = String(draggedStepId || "").trim();
+  const normalizedTargetPhaseId = String(targetPhaseId || sourcePhaseId || "").trim();
+  const normalizedTargetStepId = String(targetStepId || "").trim();
+  const normalizedPlacement = placement === "before" ? "before" : "after";
+  const sourceSteps = currentRawSnapshot
+    ? getOrderedCurriculumLessonStepsForPhase(currentRawSnapshot, normalizedSourcePhaseId).slice()
+    : [];
+  const targetSteps = currentRawSnapshot
+    ? getOrderedCurriculumLessonStepsForPhase(currentRawSnapshot, normalizedTargetPhaseId).slice()
+    : [];
+  const draggedStep = sourceSteps.find(function (entry) {
+    return String(entry && entry.id || "").trim() === normalizedDraggedStepId;
+  }) || null;
+  const remainingSourceSteps = sourceSteps.filter(function (entry) {
+    return String(entry && entry.id || "").trim() !== normalizedDraggedStepId;
+  });
+  const targetStepList = normalizedSourcePhaseId === normalizedTargetPhaseId
+    ? remainingSourceSteps.slice()
+    : targetSteps.slice();
+  const targetPhase = collections
+    ? collections.lessonPhases.find(function (entry) {
+        return String(entry && entry.id || "").trim() === normalizedTargetPhaseId;
+      }) || null
+    : null;
+  let insertIndex = targetStepList.length;
+
+  if (!currentRawSnapshot || !collections || !normalizedSourcePhaseId || !normalizedTargetPhaseId || !draggedStep || !targetPhase) {
+    return false;
+  }
+
+  draggedStep.phaseId = normalizedTargetPhaseId;
+
+  if (normalizedTargetStepId) {
+    const targetIndex = targetStepList.findIndex(function (entry) {
+      return String(entry && entry.id || "").trim() === normalizedTargetStepId;
+    });
+
+    if (targetIndex >= 0) {
+      insertIndex = normalizedPlacement === "before" ? targetIndex : targetIndex + 1;
+    }
+  }
+
+  targetStepList.splice(insertIndex, 0, draggedStep);
+  reconnectCurriculumLessonStepChain(remainingSourceSteps);
+  reconnectCurriculumLessonStepChain(targetStepList);
+
+  collections.lessonSteps = collections.lessonSteps.map(function (entry) {
+    const entryId = String(entry && entry.id || "").trim();
+    const replacement = targetStepList.concat(remainingSourceSteps).find(function (candidate) {
+      return String(candidate && candidate.id || "").trim() === entryId;
+    });
+
+    return replacement || entry;
+  });
+
+  currentRawSnapshot.curriculumLessonSteps = collections.lessonSteps;
+  activeCurriculumLessonFlowLessonId = String(targetPhase.lessonPlanId || "").trim();
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return true;
+}
+
 function getCurriculumLessonHourDemand(lessonItem) {
   return String(lessonItem && lessonItem.hourType || "").trim() === "double" ? 2 : 1;
 }
@@ -2517,6 +2811,7 @@ function getPlanningCategoryDefinitions(snapshot) {
     const trimmedName = String(name || "").trim();
     const normalizedName = trimmedName.toLowerCase();
     const defaultDefinition = getDefaultPlanningCategoryDefinition(sourceSnapshot, trimmedName);
+    const storedCategoryEntry = getStoredPlanningCategoryEntry(sourceSnapshot, trimmedName);
 
     if (!trimmedName || definitionsByKey[normalizedName]) {
       return;
@@ -2526,7 +2821,8 @@ function getPlanningCategoryDefinitions(snapshot) {
       name: defaultDefinition && defaultDefinition.name ? defaultDefinition.name : trimmedName,
       color: getPlanningCategoryColor(sourceSnapshot, trimmedName),
       isClassCategory: Boolean(defaultDefinition && defaultDefinition.isClassCategory),
-      isSystemCategory: Boolean(defaultDefinition && defaultDefinition.isSystemCategory)
+      isSystemCategory: Boolean(defaultDefinition && defaultDefinition.isSystemCategory),
+      filterLabels: normalizePlanningCategoryFilterLabels(storedCategoryEntry && storedCategoryEntry.filterLabels)
     };
   });
 
@@ -2541,7 +2837,9 @@ function getPlanningCategoryDefinitions(snapshot) {
     definitionsByKey[normalizedName] = {
       name: trimmedName,
       color: getPlanningCategoryColor(sourceSnapshot, trimmedName),
-      isClassCategory: false
+      isClassCategory: false,
+      isSystemCategory: false,
+      filterLabels: normalizePlanningCategoryFilterLabels(entry && entry.filterLabels)
     };
   });
 
@@ -2556,7 +2854,9 @@ function getPlanningCategoryDefinitions(snapshot) {
     definitionsByKey[normalizedName] = {
       name: trimmedName,
       color: getPlanningCategoryColor(sourceSnapshot, trimmedName),
-      isClassCategory: false
+      isClassCategory: false,
+      isSystemCategory: false,
+      filterLabels: []
     };
   });
 
@@ -2854,6 +3154,22 @@ function closePlanningCategorySuggestions() {
   activePlanningCategorySuggestionInputId = "";
 }
 
+function closePlanningCategoryFilterLabelSuggestions() {
+  const list = getPlanningCategorySuggestionList(activePlanningCategoryFilterLabelSuggestionListId);
+
+  clearPlanningCategoryFilterLabelSuggestionBlurTimer();
+  activePlanningCategoryFilterLabelSuggestionDrag = null;
+
+  if (list) {
+    list.hidden = true;
+    list.classList.remove("is-dragging");
+    list.innerHTML = "";
+  }
+
+  activePlanningCategoryFilterLabelSuggestionListId = "";
+  activePlanningCategoryFilterLabelSuggestionInputId = "";
+}
+
 function closeEvaluationTopicSuggestions() {
   const list = getEvaluationTopicSuggestionList(activeEvaluationTopicSuggestionListId);
 
@@ -2922,6 +3238,98 @@ function renderPlanningCategorySuggestions(inputId, listId) {
   return false;
 }
 
+function renderPlanningCategoryFilterLabelSuggestions(inputId, listId) {
+  const input = inputId ? document.getElementById(inputId) : null;
+  const list = getPlanningCategorySuggestionList(listId);
+  const suggestions = getPlanningCategoryFilterLabelSuggestions(input && input.value);
+
+  if (!input || !list || !document.body.contains(input)) {
+    closePlanningCategoryFilterLabelSuggestions();
+    return false;
+  }
+
+  activePlanningCategoryFilterLabelSuggestionInputId = inputId;
+  activePlanningCategoryFilterLabelSuggestionListId = listId;
+
+  if (!suggestions.length) {
+    list.hidden = true;
+    list.innerHTML = "";
+    return false;
+  }
+
+  list.innerHTML = suggestions.map(function (entry) {
+    return '<button class="knowledge-gap-suggestion" type="button" data-value="' + escapePlanningCategorySuggestionHtml(entry.value) + '" onclick="return window.UnterrichtsassistentApp.selectPlanningCategoryFilterLabelSuggestion(this.dataset.value, \'' + escapePlanningCategorySuggestionHtml(inputId) + '\', \'' + escapePlanningCategorySuggestionHtml(listId) + '\')">' + escapePlanningCategorySuggestionHtml(entry.value) + ' <span class="knowledge-gap-suggestion__count">(' + escapePlanningCategorySuggestionHtml(String(entry.count)) + ')</span></button>';
+  }).join("");
+  list.hidden = false;
+  return false;
+}
+
+function updatePlanningCategoryFilterLabelsInSnapshot(snapshot, categoryName, nextValue) {
+  const currentRawSnapshot = snapshot || null;
+  const collections = currentRawSnapshot ? getPlanningCollections(currentRawSnapshot) : null;
+  const normalizedName = String(categoryName || "").trim();
+  const nextLabels = normalizePlanningCategoryFilterLabels(nextValue);
+  let existingCategory = null;
+  let didChange = false;
+
+  if (!currentRawSnapshot || !collections || !normalizedName) {
+    return false;
+  }
+
+  existingCategory = getStoredPlanningCategoryEntry(currentRawSnapshot, normalizedName);
+
+  if (!existingCategory) {
+    existingCategory = {
+      id: createPlanningCategoryId(),
+      name: normalizedName,
+      color: "",
+      filterLabels: nextLabels.slice()
+    };
+    collections.categories.push(existingCategory);
+    didChange = true;
+  } else if (JSON.stringify(normalizePlanningCategoryFilterLabels(existingCategory.filterLabels)) !== JSON.stringify(nextLabels)) {
+    existingCategory.filterLabels = nextLabels.slice();
+    didChange = true;
+  }
+
+  if (didChange) {
+    currentRawSnapshot.planningCategories = collections.categories;
+  }
+
+  return didChange;
+}
+
+function flushPlanningCategoryFilterLabelDrafts() {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const draftKeys = Object.keys(planningCategoryFilterLabelDrafts);
+  let didChange = false;
+
+  if (!currentRawSnapshot || !draftKeys.length) {
+    return false;
+  }
+
+  getPlanningCategoryDefinitions(currentRawSnapshot).forEach(function (entry) {
+    const categoryName = String(entry && entry.name || "").trim();
+    const draftKey = getPlanningCategoryFilterLabelDraftKey(categoryName);
+
+    if (!draftKey || !Object.prototype.hasOwnProperty.call(planningCategoryFilterLabelDrafts, draftKey)) {
+      return;
+    }
+
+    if (updatePlanningCategoryFilterLabelsInSnapshot(currentRawSnapshot, categoryName, planningCategoryFilterLabelDrafts[draftKey])) {
+      didChange = true;
+    }
+  });
+
+  planningCategoryFilterLabelDrafts = {};
+
+  if (didChange) {
+    saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  }
+
+  return didChange;
+}
+
 function renderEvaluationTopicSuggestions(inputId, listId) {
   const input = inputId ? document.getElementById(inputId) : null;
   const list = getEvaluationTopicSuggestionList(listId);
@@ -2969,6 +3377,13 @@ function schedulePlanningCategorySuggestionsClose() {
   }, 120);
 }
 
+function schedulePlanningCategoryFilterLabelSuggestionsClose() {
+  clearPlanningCategoryFilterLabelSuggestionBlurTimer();
+  activePlanningCategoryFilterLabelSuggestionBlurTimerId = window.setTimeout(function () {
+    closePlanningCategoryFilterLabelSuggestions();
+  }, 120);
+}
+
 function scheduleEvaluationTopicSuggestionsClose() {
   clearEvaluationTopicSuggestionBlurTimer();
   activeEvaluationTopicSuggestionBlurTimerId = window.setTimeout(function () {
@@ -3005,6 +3420,26 @@ function beginPlanningCategorySuggestionsDrag(event, listId) {
 
   clearPlanningCategorySuggestionBlurTimer();
   activePlanningCategorySuggestionDrag = {
+    listId: listId,
+    pointerId: event.pointerId,
+    startY: Number(event.clientY) || 0,
+    startScrollTop: list.scrollTop,
+    moved: false
+  };
+  list.classList.remove("is-dragging");
+  trySetPointerCapture(list, event.pointerId);
+  return false;
+}
+
+function beginPlanningCategoryFilterLabelSuggestionsDrag(event, listId) {
+  const list = getPlanningCategorySuggestionList(listId);
+
+  if (!event || !list || (event.target && event.target.closest(".knowledge-gap-suggestion"))) {
+    return false;
+  }
+
+  clearPlanningCategoryFilterLabelSuggestionBlurTimer();
+  activePlanningCategoryFilterLabelSuggestionDrag = {
     listId: listId,
     pointerId: event.pointerId,
     startY: Number(event.clientY) || 0,
@@ -3082,6 +3517,28 @@ function movePlanningCategorySuggestionsDrag(event, listId) {
   return false;
 }
 
+function movePlanningCategoryFilterLabelSuggestionsDrag(event, listId) {
+  const list = getPlanningCategorySuggestionList(listId);
+  let currentY;
+  let offsetY;
+
+  if (!activePlanningCategoryFilterLabelSuggestionDrag || activePlanningCategoryFilterLabelSuggestionDrag.listId !== listId || event.pointerId !== activePlanningCategoryFilterLabelSuggestionDrag.pointerId || !list) {
+    return false;
+  }
+
+  currentY = Number(event.clientY) || 0;
+  offsetY = currentY - activePlanningCategoryFilterLabelSuggestionDrag.startY;
+
+  if (Math.abs(offsetY) > 2) {
+    activePlanningCategoryFilterLabelSuggestionDrag.moved = true;
+    list.classList.add("is-dragging");
+  }
+
+  list.scrollTop = activePlanningCategoryFilterLabelSuggestionDrag.startScrollTop - offsetY;
+  event.preventDefault();
+  return false;
+}
+
 function moveEvaluationTopicSuggestionsDrag(event, listId) {
   const list = getEvaluationTopicSuggestionList(listId);
   let currentY;
@@ -3140,6 +3597,26 @@ function endPlanningCategorySuggestionsDrag(event, listId) {
   }
 
   activePlanningCategorySuggestionDrag = null;
+  return false;
+}
+
+function endPlanningCategoryFilterLabelSuggestionsDrag(event, listId) {
+  const list = getPlanningCategorySuggestionList(listId);
+
+  if (!activePlanningCategoryFilterLabelSuggestionDrag || activePlanningCategoryFilterLabelSuggestionDrag.listId !== listId || event.pointerId !== activePlanningCategoryFilterLabelSuggestionDrag.pointerId) {
+    return false;
+  }
+
+  if (list) {
+    tryReleasePointerCapture(list, event.pointerId);
+    list.classList.remove("is-dragging");
+  }
+
+  if (activePlanningCategoryFilterLabelSuggestionDrag.moved) {
+    suppressKnowledgeGapSuggestionClickUntil = Date.now() + 80;
+  }
+
+  activePlanningCategoryFilterLabelSuggestionDrag = null;
   return false;
 }
 
@@ -5018,6 +5495,10 @@ function setActiveView(viewId) {
   const shouldPreserveTodoScroll = viewId === "todos";
   todoViewScrollState = shouldPreserveTodoScroll ? captureTodoViewScrollState() : null;
 
+  if ((previousViewId === "planung" || viewId === "planung") && Object.keys(planningCategoryFilterLabelDrafts).length) {
+    flushPlanningCategoryFilterLabelDrafts();
+  }
+
   if (previousViewId !== viewId) {
     expandedTodoIds = [];
   }
@@ -5334,6 +5815,10 @@ function createCurriculumLessonStepId() {
 
 function createCurriculumLessonPhaseStatusId() {
   return "curriculum-lesson-phase-status-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+}
+
+function createCurriculumLessonStepStatusId() {
+  return "curriculum-lesson-step-status-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
 }
 
 function shouldAutoApplyCalculatedCurriculumHourDemands(snapshot) {
@@ -10321,6 +10806,7 @@ window.UnterrichtsassistentApp.isPlanningSidebarFilterOpen = function () {
   return planningSidebarFilterOpen;
 };
 window.UnterrichtsassistentApp.togglePlanningSidebarFilter = function () {
+  flushPlanningCategoryFilterLabelDrafts();
   planningSidebarFilterOpen = !planningSidebarFilterOpen;
 
   if (activeViewId === "planung") {
@@ -10330,6 +10816,7 @@ window.UnterrichtsassistentApp.togglePlanningSidebarFilter = function () {
   return false;
 };
 window.UnterrichtsassistentApp.togglePlanningSidebarCategoryFilter = function (categoryName) {
+  flushPlanningCategoryFilterLabelDrafts();
   const normalizedName = String(categoryName || "").trim();
   const existingIndex = planningSidebarCategoryFilters.findIndex(function (entry) {
     return String(entry || "").trim().toLowerCase() === normalizedName.toLowerCase();
@@ -10353,6 +10840,7 @@ window.UnterrichtsassistentApp.togglePlanningSidebarCategoryFilter = function (c
   return false;
 };
 window.UnterrichtsassistentApp.clearPlanningSidebarCategoryFilters = function () {
+  flushPlanningCategoryFilterLabelDrafts();
   planningSidebarCategoryFilters = getDefaultPlanningSidebarFilters(getMutableRawSnapshot());
   planningSidebarCategoryFiltersInitialized = true;
 
@@ -10362,7 +10850,21 @@ window.UnterrichtsassistentApp.clearPlanningSidebarCategoryFilters = function ()
 
   return false;
 };
+window.UnterrichtsassistentApp.selectAllPlanningSidebarCategoryFilters = function () {
+  flushPlanningCategoryFilterLabelDrafts();
+  planningSidebarCategoryFilters = getPlanningCategoryDefinitions(getMutableRawSnapshot()).map(function (entry) {
+    return String(entry && entry.name || "").trim();
+  }).filter(Boolean);
+  planningSidebarCategoryFiltersInitialized = true;
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
+};
 window.UnterrichtsassistentApp.clearAllPlanningSidebarCategoryFilters = function () {
+  flushPlanningCategoryFilterLabelDrafts();
   planningSidebarCategoryFilters = [];
   planningSidebarCategoryFiltersInitialized = true;
 
@@ -10455,6 +10957,38 @@ window.UnterrichtsassistentApp.setUnterrichtToolMode = function (nextMode) {
 
   if (activeViewId === "unterricht") {
     setActiveView("unterricht");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.toggleAllPlanningSidebarCategoryFilters = function () {
+  if (planningSidebarCategoryFiltersInitialized && !planningSidebarCategoryFilters.length) {
+    return window.UnterrichtsassistentApp.selectAllPlanningSidebarCategoryFilters();
+  }
+
+  return window.UnterrichtsassistentApp.clearAllPlanningSidebarCategoryFilters();
+};
+window.UnterrichtsassistentApp.applyPlanningSidebarNamedFilter = function (filterLabel) {
+  flushPlanningCategoryFilterLabelDrafts();
+  const normalizedFilterLabel = String(filterLabel || "").trim().toLowerCase();
+  const categories = getPlanningCategoryDefinitions(getMutableRawSnapshot()).filter(function (entry) {
+    return Array.isArray(entry && entry.filterLabels)
+      && entry.filterLabels.some(function (label) {
+        return String(label || "").trim().toLowerCase() === normalizedFilterLabel;
+      });
+  }).map(function (entry) {
+    return String(entry && entry.name || "").trim();
+  }).filter(Boolean);
+
+  if (!normalizedFilterLabel) {
+    return false;
+  }
+
+  planningSidebarCategoryFilters = categories;
+  planningSidebarCategoryFiltersInitialized = true;
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
   }
 
   return false;
@@ -11152,6 +11686,41 @@ window.UnterrichtsassistentApp.handlePlanningCategoryInputBlur = function (listI
   schedulePlanningCategorySuggestionsClose();
   return false;
 };
+window.UnterrichtsassistentApp.handlePlanningCategoryFilterLabelInputFocus = function (categoryName, inputId, listId) {
+  const input = inputId ? document.getElementById(inputId) : null;
+
+  clearPlanningCategoryFilterLabelSuggestionBlurTimer();
+
+  if (input) {
+    setPlanningCategoryFilterLabelDraftValue(categoryName, input.value);
+  }
+
+  return renderPlanningCategoryFilterLabelSuggestions(inputId, listId);
+};
+window.UnterrichtsassistentApp.handlePlanningCategoryFilterLabelInput = function (event, categoryName, listId) {
+  const input = event && event.target ? event.target : document.getElementById(activePlanningCategoryFilterLabelSuggestionInputId);
+
+  clearPlanningCategoryFilterLabelSuggestionBlurTimer();
+
+  if (!input || !input.id) {
+    closePlanningCategoryFilterLabelSuggestions();
+    return false;
+  }
+
+  setPlanningCategoryFilterLabelDraftValue(categoryName, input.value);
+  return renderPlanningCategoryFilterLabelSuggestions(input.id, listId);
+};
+window.UnterrichtsassistentApp.handlePlanningCategoryFilterLabelInputBlur = function (listId) {
+  flushPlanningCategoryFilterLabelDrafts();
+
+  if (listId && listId !== activePlanningCategoryFilterLabelSuggestionListId) {
+    closePlanningCategoryFilterLabelSuggestions();
+    return false;
+  }
+
+  schedulePlanningCategoryFilterLabelSuggestionsClose();
+  return false;
+};
 window.UnterrichtsassistentApp.selectPlanningCategorySuggestion = function (value, inputId) {
   const input = inputId ? document.getElementById(inputId) : null;
 
@@ -11361,6 +11930,72 @@ window.UnterrichtsassistentApp.closePlanningEventModal = function () {
 
   return false;
 };
+function syncActivePlanningEventDraftFromModalInputs() {
+  const titleInput = document.getElementById("planningEventTitleInput");
+  const startDateInput = document.getElementById("planningEventStartDate");
+  const endDateInput = document.getElementById("planningEventEndDate");
+  const startTimeInput = document.getElementById("planningEventStartTime");
+  const endTimeInput = document.getElementById("planningEventEndTime");
+  const categoryInput = document.getElementById("planningEventCategory");
+  const descriptionInput = document.getElementById("planningEventDescription");
+  const priorityInput = document.getElementById("planningEventPriority");
+  const showInTimetableInput = document.getElementById("planningEventShowInTimetable");
+  const causesInstructionOutageInput = document.getElementById("planningEventCausesInstructionOutage");
+  const recurringInput = document.getElementById("planningEventRecurringInput");
+  const recurrenceIntervalInput = document.getElementById("planningEventRecurrenceInterval");
+  const recurrenceUnitInput = document.getElementById("planningEventRecurrenceUnit");
+  const recurrenceUntilDateInput = document.getElementById("planningEventRecurrenceUntilDate");
+  const recurrenceMonthlyWeekdayInput = document.getElementById("planningEventRecurrenceMonthlyWeekday");
+  const normalizedRecurrenceUnit = normalizePlanningEventRecurrenceUnit(recurrenceUnitInput && recurrenceUnitInput.value || activePlanningEventDraft && activePlanningEventDraft.recurrenceUnit);
+
+  if (!activePlanningEventDraft || activePlanningEventDraft.isExternallyControlled) {
+    return false;
+  }
+
+  if (titleInput) {
+    activePlanningEventDraft.title = String(titleInput.value || "").trim();
+  }
+  if (startDateInput) {
+    activePlanningEventDraft.startDate = String(startDateInput.value || "").slice(0, 10);
+  }
+  if (endDateInput) {
+    activePlanningEventDraft.endDate = String(endDateInput.value || "").slice(0, 10);
+  }
+  if (startTimeInput) {
+    activePlanningEventDraft.startTime = String(startTimeInput.value || "").trim();
+  }
+  if (endTimeInput) {
+    activePlanningEventDraft.endTime = String(endTimeInput.value || "").trim();
+  }
+  if (categoryInput) {
+    activePlanningEventDraft.category = normalizePlanningEventCategoryValue(categoryInput.value);
+  }
+  if (descriptionInput) {
+    activePlanningEventDraft.description = String(descriptionInput.value || "").trim();
+  }
+  if (priorityInput) {
+    activePlanningEventDraft.priority = [1, 2, 3].indexOf(Number(priorityInput.value)) >= 0 ? Number(priorityInput.value) : 3;
+  }
+  if (showInTimetableInput) {
+    activePlanningEventDraft.showInTimetable = Boolean(showInTimetableInput.checked);
+  }
+  if (causesInstructionOutageInput) {
+    activePlanningEventDraft.causesInstructionOutage = Boolean(causesInstructionOutageInput.checked);
+  }
+  if (recurringInput) {
+    activePlanningEventDraft.isRecurring = Boolean(recurringInput.checked);
+  }
+  if (recurrenceIntervalInput) {
+    activePlanningEventDraft.recurrenceInterval = normalizePlanningEventRecurrenceInterval(recurrenceIntervalInput.value);
+  }
+  activePlanningEventDraft.recurrenceUnit = normalizedRecurrenceUnit;
+  if (recurrenceUntilDateInput) {
+    activePlanningEventDraft.recurrenceUntilDate = normalizePlanningEventRecurrenceUntilDate(recurrenceUntilDateInput.value);
+  }
+  activePlanningEventDraft.recurrenceMonthlyWeekday = normalizedRecurrenceUnit === "months" && Boolean(recurrenceMonthlyWeekdayInput && recurrenceMonthlyWeekdayInput.checked);
+
+  return true;
+}
 window.UnterrichtsassistentApp.handlePlanningEventRecurringChange = function (isRecurring) {
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
 
@@ -11368,6 +12003,7 @@ window.UnterrichtsassistentApp.handlePlanningEventRecurringChange = function (is
     return false;
   }
 
+  syncActivePlanningEventDraftFromModalInputs();
   activePlanningEventDraft.isRecurring = Boolean(isRecurring);
 
   if (activePlanningEventDraft.isRecurring && !String(activePlanningEventDraft.recurrenceUntilDate || "").slice(0, 10)) {
@@ -11390,6 +12026,7 @@ window.UnterrichtsassistentApp.handlePlanningEventRecurrenceUnitChange = functio
     return false;
   }
 
+  syncActivePlanningEventDraftFromModalInputs();
   activePlanningEventDraft.recurrenceUnit = normalizePlanningEventRecurrenceUnit(value);
 
   if (activePlanningEventDraft.recurrenceUnit !== "months") {
@@ -11587,9 +12224,10 @@ window.UnterrichtsassistentApp.openTodoModal = function (todoId, presetCategory,
     setActiveView(activeViewId === "unterricht" ? "unterricht" : "todos");
     return false;
   };
-window.UnterrichtsassistentApp.setTodoDraftType = function (nextType) {
+
+function syncActiveTodoDraftFromModalInputs() {
   if (!activeTodoDraft) {
-    return false;
+    return;
   }
 
   const titleInput = document.getElementById("todoTitleInput");
@@ -11610,6 +12248,13 @@ window.UnterrichtsassistentApp.setTodoDraftType = function (nextType) {
     : "niedrig";
   activeTodoDraft.done = Boolean(doneInput && doneInput.checked || activeTodoDraft.done);
   activeTodoDraft.checklistText = String(checklistInput && checklistInput.value || activeTodoDraft.checklistText || "");
+}
+
+window.UnterrichtsassistentApp.setTodoDraftType = function (nextType) {
+  if (!activeTodoDraft) {
+    return false;
+  }
+  syncActiveTodoDraftFromModalInputs();
 
   activeTodoDraft.type = ["standard", "checkliste", "step-checkliste"].indexOf(String(nextType || "").trim().toLowerCase()) >= 0
     ? String(nextType || "").trim().toLowerCase()
@@ -11718,6 +12363,7 @@ window.UnterrichtsassistentApp.toggleTodoStudentAssignmentOpen = function () {
     return false;
   }
 
+  syncActiveTodoDraftFromModalInputs();
   todoStudentAssignmentOpen = !todoStudentAssignmentOpen;
 
   if (activeViewId === "todos") {
@@ -11728,6 +12374,7 @@ window.UnterrichtsassistentApp.toggleTodoStudentAssignmentOpen = function () {
 };
 window.UnterrichtsassistentApp.selectAllTodoAssignedStudents = function () {
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  syncActiveTodoDraftFromModalInputs();
   const classInfo = normalizeTodoDraftAssignments(currentRawSnapshot);
 
   if (!activeTodoDraft || !classInfo.isClassCategory) {
@@ -11750,6 +12397,7 @@ window.UnterrichtsassistentApp.clearAllTodoAssignedStudents = function () {
     return false;
   }
 
+  syncActiveTodoDraftFromModalInputs();
   activeTodoDraft.assignedStudentIds = [];
 
   if (activeViewId === "todos") {
@@ -11760,6 +12408,7 @@ window.UnterrichtsassistentApp.clearAllTodoAssignedStudents = function () {
 };
 window.UnterrichtsassistentApp.toggleTodoAssignedStudent = function (studentId) {
   const normalizedStudentId = String(studentId || "").trim();
+  syncActiveTodoDraftFromModalInputs();
   const selectedIds = Array.isArray(activeTodoDraft && activeTodoDraft.assignedStudentIds)
     ? activeTodoDraft.assignedStudentIds.slice()
     : [];
@@ -13178,7 +13827,7 @@ window.UnterrichtsassistentApp.selectCurriculumLessonFlow = function (seriesId, 
   activeCurriculumLessonFlowLessonId = activeCurriculumLessonFlowLessonId === normalizedLessonId
     ? ""
     : normalizedLessonId;
-  activeCurriculumLessonFlowViewPhaseIds = [];
+  setCurriculumLessonFlowPhaseModeForLesson(currentRawSnapshot, activeCurriculumLessonFlowLessonId, Boolean(activeCurriculumLessonFlowLessonId));
 
   if (activeViewId === "planung") {
     setActiveView("planung");
@@ -13404,8 +14053,30 @@ window.UnterrichtsassistentApp.addCurriculumLessonPhase = function (lessonId) {
 
   currentRawSnapshot.curriculumLessonPhases = collections.lessonPhases;
   activeCurriculumLessonFlowLessonId = normalizedLessonId;
-  activeCurriculumLessonFlowViewPhaseIds = [];
+  setCurriculumLessonFlowPhaseModeForLesson(currentRawSnapshot, normalizedLessonId, true);
   saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return false;
+};
+window.UnterrichtsassistentApp.toggleCurriculumLessonFlowMode = function (lessonId) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const normalizedLessonId = String(lessonId || activeCurriculumLessonFlowLessonId || "").trim();
+  const orderedPhases = currentRawSnapshot
+    ? getOrderedCurriculumLessonPhasesForLesson(currentRawSnapshot, normalizedLessonId)
+    : [];
+  const areAllPhasesInViewMode = orderedPhases.length > 0 && orderedPhases.every(function (entry) {
+    return activeCurriculumLessonFlowViewPhaseIds.indexOf(String(entry && entry.id || "").trim()) >= 0;
+  });
+
+  if (!isCurriculumPlanningMode() || !currentRawSnapshot || !normalizedLessonId) {
+    return false;
+  }
+
+  setCurriculumLessonFlowPhaseModeForLesson(currentRawSnapshot, normalizedLessonId, !areAllPhasesInViewMode);
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
   return false;
 };
 window.UnterrichtsassistentApp.toggleCurriculumLessonFlowPhaseMode = function (phaseId) {
@@ -13738,8 +14409,16 @@ window.UnterrichtsassistentApp.deleteCurriculumLessonPhase = function (phaseId) 
   collections.lessonSteps = collections.lessonSteps.filter(function (entry) {
     return String(entry && entry.phaseId || "").trim() !== normalizedPhaseId;
   });
+  collections.lessonPhaseStatuses = collections.lessonPhaseStatuses.filter(function (entry) {
+    return String(entry && entry.phaseId || "").trim() !== normalizedPhaseId;
+  });
+  collections.lessonStepStatuses = collections.lessonStepStatuses.filter(function (entry) {
+    return String(entry && entry.phaseId || "").trim() !== normalizedPhaseId;
+  });
   currentRawSnapshot.curriculumLessonPhases = collections.lessonPhases;
   currentRawSnapshot.curriculumLessonSteps = collections.lessonSteps;
+  currentRawSnapshot.curriculumLessonPhaseStatuses = collections.lessonPhaseStatuses;
+  currentRawSnapshot.curriculumLessonStepStatuses = collections.lessonStepStatuses;
   activeCurriculumLessonFlowLessonId = normalizedLessonId;
   activeCurriculumLessonFlowViewPhaseIds = activeCurriculumLessonFlowViewPhaseIds.filter(function (entry) {
     return entry !== normalizedPhaseId;
@@ -13764,6 +14443,7 @@ window.UnterrichtsassistentApp.addCurriculumLessonStep = function (phaseId) {
     phaseId: normalizedPhaseId,
     title: "",
     content: "",
+    durationMinutes: "",
     socialForm: "plenum",
     material: "",
     nextStepId: ""
@@ -13819,6 +14499,10 @@ window.UnterrichtsassistentApp.updateCurriculumLessonStepField = function (stepI
     stepItem.title = String(nextValue || "").trim();
   } else if (normalizedFieldName === "content") {
     stepItem.content = String(nextValue || "").trim();
+  } else if (normalizedFieldName === "durationMinutes") {
+    stepItem.durationMinutes = nextValue === null || typeof nextValue === "undefined" || String(nextValue).trim() === ""
+      ? ""
+      : Math.max(0, Number(nextValue) || 0);
   } else if (normalizedFieldName === "socialForm") {
     stepItem.socialForm = ["einzel", "partner", "gruppe", "plenum"].indexOf(normalizedSocialForm) >= 0
       ? normalizedSocialForm
@@ -13878,6 +14562,10 @@ window.UnterrichtsassistentApp.deleteCurriculumLessonStep = function (stepId) {
     return reordered || entry;
   });
   currentRawSnapshot.curriculumLessonSteps = collections.lessonSteps;
+  collections.lessonStepStatuses = collections.lessonStepStatuses.filter(function (entry) {
+    return String(entry && entry.stepId || "").trim() !== normalizedStepId;
+  });
+  currentRawSnapshot.curriculumLessonStepStatuses = collections.lessonStepStatuses;
   activeCurriculumLessonFlowLessonId = String(phaseItem.lessonPlanId || "").trim();
   saveAndRefreshSnapshot(currentRawSnapshot, "planung");
   return false;
@@ -13932,6 +14620,481 @@ window.UnterrichtsassistentApp.toggleCurriculumLessonPhaseCompleted = function (
   currentRawSnapshot.curriculumLessonPhaseStatuses = collections.lessonPhaseStatuses;
   saveAndRefreshSnapshot(currentRawSnapshot, activeViewId === "unterricht" ? "unterricht" : "planung");
   return false;
+};
+window.UnterrichtsassistentApp.toggleCurriculumLessonStepCompleted = function (classId, lessonDate, lessonPlanId, phaseId, stepId, isChecked, elapsedMinutes) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
+  const normalizedClassId = String(classId || "").trim();
+  const normalizedLessonDate = String(lessonDate || "").slice(0, 10);
+  const normalizedLessonPlanId = String(lessonPlanId || "").trim();
+  const normalizedPhaseId = String(phaseId || "").trim();
+  const normalizedStepId = String(stepId || "").trim();
+  const shouldBeCompleted = Boolean(isChecked);
+  const normalizedElapsedMinutes = Math.max(0, Number(elapsedMinutes) || 0);
+  const existingStatus = collections
+    ? collections.lessonStepStatuses.find(function (entry) {
+        return String(entry && entry.classId || "").trim() === normalizedClassId
+          && String(entry && entry.lessonPlanId || "").trim() === normalizedLessonPlanId
+          && String(entry && entry.phaseId || "").trim() === normalizedPhaseId
+          && String(entry && entry.stepId || "").trim() === normalizedStepId;
+      }) || null
+    : null;
+
+  if (!currentRawSnapshot || !collections || !normalizedClassId || !normalizedLessonDate || !normalizedLessonPlanId || !normalizedPhaseId || !normalizedStepId) {
+    return false;
+  }
+
+  if (shouldBeCompleted) {
+    if (existingStatus) {
+      existingStatus.isCompleted = true;
+      existingStatus.elapsedMinutes = normalizedElapsedMinutes;
+      existingStatus.completedAt = String(existingStatus.completedAt || "").trim() || getActiveDateTimeTimestamp();
+    } else {
+      collections.lessonStepStatuses.push({
+        id: createCurriculumLessonStepStatusId(),
+        classId: normalizedClassId,
+        lessonDate: normalizedLessonDate,
+        lessonPlanId: normalizedLessonPlanId,
+        phaseId: normalizedPhaseId,
+        stepId: normalizedStepId,
+        isCompleted: true,
+        elapsedMinutes: normalizedElapsedMinutes,
+        completedAt: getActiveDateTimeTimestamp()
+      });
+    }
+  } else if (existingStatus) {
+    existingStatus.isCompleted = false;
+    existingStatus.elapsedMinutes = normalizedElapsedMinutes;
+    existingStatus.completedAt = "";
+  }
+
+  currentRawSnapshot.curriculumLessonStepStatuses = collections.lessonStepStatuses;
+  saveAndRefreshSnapshot(currentRawSnapshot, activeViewId === "unterricht" ? "unterricht" : "planung");
+  return false;
+};
+
+function applyCurriculumLessonFlowPhaseDropIndicatorToDom() {
+  const targets = document.querySelectorAll(".planning-lesson-flow__phase-row[data-phase-drop-target], .planning-lesson-flow__phase-add-row[data-phase-drop-target-add='true']");
+
+  eachNode(targets, function (target) {
+    target.classList.remove("is-drop-target", "is-drop-target--before", "is-drop-target--after");
+  });
+
+  if (!activeCurriculumLessonFlowPhaseDropIndicator) {
+    return;
+  }
+
+  const targetPhaseId = String(activeCurriculumLessonFlowPhaseDropIndicator.targetPhaseId || "").trim();
+  const placement = String(activeCurriculumLessonFlowPhaseDropIndicator.placement || "").trim() === "before" ? "before" : "after";
+  const selector = targetPhaseId
+    ? '.planning-lesson-flow__phase-row[data-phase-drop-target="' + targetPhaseId.replace(/"/g, '\\"') + '"]'
+    : ".planning-lesson-flow__phase-add-row[data-phase-drop-target-add='true']";
+  const target = document.querySelector(selector);
+
+  if (!target) {
+    return;
+  }
+
+  target.classList.add("is-drop-target", placement === "before" ? "is-drop-target--before" : "is-drop-target--after");
+}
+
+function clearCurriculumLessonFlowPhaseDropIndicator() {
+  activeCurriculumLessonFlowPhaseDropIndicator = null;
+  applyCurriculumLessonFlowPhaseDropIndicatorToDom();
+}
+
+function setCurriculumLessonFlowPhaseDropIndicator(targetPhaseId, placement) {
+  activeCurriculumLessonFlowPhaseDropIndicator = {
+    targetPhaseId: String(targetPhaseId || "").trim(),
+    placement: placement === "before" ? "before" : "after"
+  };
+  applyCurriculumLessonFlowPhaseDropIndicatorToDom();
+}
+
+function applyCurriculumLessonFlowStepDropIndicatorToDom() {
+  const targets = document.querySelectorAll(".planning-lesson-flow__step-row[data-step-drop-target], .planning-lesson-flow__step-add-row[data-step-drop-target-add='true'], .planning-lesson-flow__step-empty-row[data-step-drop-target-add='true']");
+
+  eachNode(targets, function (target) {
+    target.classList.remove("is-drop-target", "is-drop-target--before", "is-drop-target--after");
+  });
+
+  if (!activeCurriculumLessonFlowStepDropIndicator) {
+    return;
+  }
+
+  const targetStepId = String(activeCurriculumLessonFlowStepDropIndicator.targetStepId || "").trim();
+  const targetPhaseId = String(activeCurriculumLessonFlowStepDropIndicator.phaseId || "").trim();
+  const placement = String(activeCurriculumLessonFlowStepDropIndicator.placement || "").trim() === "before" ? "before" : "after";
+  const selector = targetStepId
+    ? '.planning-lesson-flow__step-row[data-step-drop-target="' + targetStepId.replace(/"/g, '\\"') + '"][data-phase-id="' + targetPhaseId.replace(/"/g, '\\"') + '"]'
+    : '.planning-lesson-flow__step-add-row[data-step-drop-target-add="true"][data-phase-id="' + targetPhaseId.replace(/"/g, '\\"') + '"], .planning-lesson-flow__step-empty-row[data-step-drop-target-add="true"][data-phase-id="' + targetPhaseId.replace(/"/g, '\\"') + '"]';
+  const target = document.querySelector(selector);
+
+  if (!target) {
+    return;
+  }
+
+  target.classList.add("is-drop-target", placement === "before" ? "is-drop-target--before" : "is-drop-target--after");
+}
+
+function clearCurriculumLessonFlowStepDropIndicator() {
+  activeCurriculumLessonFlowStepDropIndicator = null;
+  applyCurriculumLessonFlowStepDropIndicatorToDom();
+}
+
+function setCurriculumLessonFlowStepDropIndicator(phaseId, targetStepId, placement) {
+  activeCurriculumLessonFlowStepDropIndicator = {
+    phaseId: String(phaseId || "").trim(),
+    targetStepId: String(targetStepId || "").trim(),
+    placement: placement === "before" ? "before" : "after"
+  };
+  applyCurriculumLessonFlowStepDropIndicatorToDom();
+}
+
+function stopPlanningLessonFlowAutoScroll() {
+  if (planningLessonFlowAutoScrollFrameId) {
+    window.cancelAnimationFrame(planningLessonFlowAutoScrollFrameId);
+    planningLessonFlowAutoScrollFrameId = 0;
+  }
+
+  activePlanningLessonFlowAutoScroll = null;
+}
+
+function runPlanningLessonFlowAutoScrollFrame() {
+  if (!activePlanningLessonFlowAutoScroll || !activePlanningLessonFlowAutoScroll.container) {
+    planningLessonFlowAutoScrollFrameId = 0;
+    return;
+  }
+
+  const container = activePlanningLessonFlowAutoScroll.container;
+
+  container.scrollLeft = Math.max(0, Math.min(
+    container.scrollLeft + activePlanningLessonFlowAutoScroll.stepX,
+    Math.max(0, container.scrollWidth - container.clientWidth)
+  ));
+  container.scrollTop = Math.max(0, Math.min(
+    container.scrollTop + activePlanningLessonFlowAutoScroll.stepY,
+    Math.max(0, container.scrollHeight - container.clientHeight)
+  ));
+  planningLessonFlowAutoScrollFrameId = window.requestAnimationFrame(runPlanningLessonFlowAutoScrollFrame);
+}
+
+function updatePlanningLessonFlowAutoScroll(clientX, clientY) {
+  const container = document.getElementById("mainContent") || document.querySelector(".content");
+  const threshold = 56;
+  const maxStep = 18;
+  const rect = container && typeof container.getBoundingClientRect === "function"
+    ? container.getBoundingClientRect()
+    : null;
+  let directionX = 0;
+  let directionY = 0;
+  let intensityX = 0;
+  let intensityY = 0;
+
+  if (!container || !rect) {
+    stopPlanningLessonFlowAutoScroll();
+    return;
+  }
+
+  if ((Number(clientX) || 0) <= rect.left + threshold) {
+    directionX = -1;
+    intensityX = Math.min(1, Math.max(0, ((rect.left + threshold) - (Number(clientX) || 0)) / threshold));
+  } else if ((Number(clientX) || 0) >= rect.right - threshold) {
+    directionX = 1;
+    intensityX = Math.min(1, Math.max(0, ((Number(clientX) || 0) - (rect.right - threshold)) / threshold));
+  }
+
+  if ((Number(clientY) || 0) <= rect.top + threshold) {
+    directionY = -1;
+    intensityY = Math.min(1, Math.max(0, ((rect.top + threshold) - (Number(clientY) || 0)) / threshold));
+  } else if ((Number(clientY) || 0) >= rect.bottom - threshold) {
+    directionY = 1;
+    intensityY = Math.min(1, Math.max(0, ((Number(clientY) || 0) - (rect.bottom - threshold)) / threshold));
+  }
+
+  if (!directionX && !directionY) {
+    stopPlanningLessonFlowAutoScroll();
+    return;
+  }
+
+  activePlanningLessonFlowAutoScroll = {
+    container: container,
+    stepX: directionX ? Math.max(4, Math.round(maxStep * intensityX)) * directionX : 0,
+    stepY: directionY ? Math.max(4, Math.round(maxStep * intensityY)) * directionY : 0
+  };
+
+  if (!planningLessonFlowAutoScrollFrameId) {
+    planningLessonFlowAutoScrollFrameId = window.requestAnimationFrame(runPlanningLessonFlowAutoScrollFrame);
+  }
+}
+
+function getCurriculumLessonFlowPhaseDropTargetFromPoint(clientX, clientY) {
+  const target = document.elementFromPoint(Number(clientX) || 0, Number(clientY) || 0);
+  const dropTarget = target && typeof target.closest === "function"
+    ? target.closest(".planning-lesson-flow__phase-row[data-phase-drop-target], .planning-lesson-flow__phase-add-row[data-phase-drop-target-add='true']")
+    : null;
+  const targetPhaseId = dropTarget ? String(dropTarget.getAttribute("data-phase-drop-target") || "").trim() : "";
+  const rect = dropTarget && typeof dropTarget.getBoundingClientRect === "function" ? dropTarget.getBoundingClientRect() : null;
+  const placement = targetPhaseId && rect && (Number(clientY) || 0) <= (rect.top + (rect.height / 2)) ? "before" : "after";
+
+  if (!dropTarget) {
+    return null;
+  }
+
+  return {
+    targetPhaseId: targetPhaseId,
+    placement: placement
+  };
+}
+
+function getCurriculumLessonFlowStepDropTargetFromPoint(clientX, clientY) {
+  const target = document.elementFromPoint(Number(clientX) || 0, Number(clientY) || 0);
+  const dropTarget = target && typeof target.closest === "function"
+    ? target.closest(".planning-lesson-flow__step-row[data-step-drop-target], .planning-lesson-flow__step-add-row[data-step-drop-target-add='true'], .planning-lesson-flow__step-empty-row[data-step-drop-target-add='true']")
+    : null;
+  const targetStepId = dropTarget ? String(dropTarget.getAttribute("data-step-drop-target") || "").trim() : "";
+  const phaseId = dropTarget ? String(dropTarget.getAttribute("data-phase-id") || "").trim() : "";
+  const rect = dropTarget && typeof dropTarget.getBoundingClientRect === "function" ? dropTarget.getBoundingClientRect() : null;
+  const placement = targetStepId && rect && (Number(clientY) || 0) <= (rect.top + (rect.height / 2)) ? "before" : "after";
+
+  if (!dropTarget || !phaseId) {
+    return null;
+  }
+
+  return {
+    phaseId: phaseId,
+    targetStepId: targetStepId,
+    placement: placement
+  };
+}
+
+function clearCurriculumLessonFlowPhasePointerDrag() {
+  if (!activeCurriculumLessonFlowPhaseDrag) {
+    return;
+  }
+
+  window.removeEventListener("pointermove", window.UnterrichtsassistentApp.handleCurriculumLessonFlowPhasePointerMove);
+  window.removeEventListener("pointerup", window.UnterrichtsassistentApp.handleCurriculumLessonFlowPhasePointerEnd);
+  window.removeEventListener("pointercancel", window.UnterrichtsassistentApp.handleCurriculumLessonFlowPhasePointerEnd);
+  removeCurriculumSeriesDragPreview();
+  clearCurriculumLessonFlowPhaseDropIndicator();
+  stopPlanningLessonFlowAutoScroll();
+  activeCurriculumLessonFlowPhaseDrag = null;
+}
+
+function clearCurriculumLessonFlowStepPointerDrag() {
+  if (!activeCurriculumLessonFlowStepDrag) {
+    return;
+  }
+
+  window.removeEventListener("pointermove", window.UnterrichtsassistentApp.handleCurriculumLessonFlowStepPointerMove);
+  window.removeEventListener("pointerup", window.UnterrichtsassistentApp.handleCurriculumLessonFlowStepPointerEnd);
+  window.removeEventListener("pointercancel", window.UnterrichtsassistentApp.handleCurriculumLessonFlowStepPointerEnd);
+  removeCurriculumSeriesDragPreview();
+  clearCurriculumLessonFlowStepDropIndicator();
+  stopPlanningLessonFlowAutoScroll();
+  activeCurriculumLessonFlowStepDrag = null;
+}
+
+window.UnterrichtsassistentApp.startCurriculumLessonFlowPhaseDrag = function (event, lessonId, phaseId) {
+  const normalizedLessonId = String(lessonId || "").trim();
+  const normalizedPhaseId = String(phaseId || "").trim();
+  const sourceElement = event && event.currentTarget ? event.currentTarget : null;
+
+  if (!isCurriculumPlanningMode() || !normalizedLessonId || !normalizedPhaseId || !event) {
+    return false;
+  }
+
+  activeCurriculumLessonFlowPhaseDrag = {
+    lessonId: normalizedLessonId,
+    phaseId: normalizedPhaseId,
+    pointerId: typeof event.pointerId === "number" ? event.pointerId : null,
+    startX: Number(event.clientX) || 0,
+    startY: Number(event.clientY) || 0,
+    sourceElement: sourceElement,
+    didDrag: false
+  };
+  clearCurriculumLessonFlowPhaseDropIndicator();
+
+  if (typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+  if (typeof event.stopPropagation === "function") {
+    event.stopPropagation();
+  }
+
+  if (sourceElement && typeof event.pointerId === "number") {
+    trySetPointerCapture(sourceElement, event.pointerId);
+    window.addEventListener("pointermove", window.UnterrichtsassistentApp.handleCurriculumLessonFlowPhasePointerMove);
+    window.addEventListener("pointerup", window.UnterrichtsassistentApp.handleCurriculumLessonFlowPhasePointerEnd);
+    window.addEventListener("pointercancel", window.UnterrichtsassistentApp.handleCurriculumLessonFlowPhasePointerEnd);
+    updateCurriculumSeriesDragPreview(event.clientX, event.clientY, "#3975ab");
+  }
+
+  return false;
+};
+
+window.UnterrichtsassistentApp.handleCurriculumLessonFlowPhasePointerMove = function (event) {
+  const deltaX = activeCurriculumLessonFlowPhaseDrag ? (Number(event.clientX) || 0) - activeCurriculumLessonFlowPhaseDrag.startX : 0;
+  const deltaY = activeCurriculumLessonFlowPhaseDrag ? (Number(event.clientY) || 0) - activeCurriculumLessonFlowPhaseDrag.startY : 0;
+  const dropTarget = getCurriculumLessonFlowPhaseDropTargetFromPoint(event && event.clientX, event && event.clientY);
+
+  if (!activeCurriculumLessonFlowPhaseDrag || event.pointerId !== activeCurriculumLessonFlowPhaseDrag.pointerId) {
+    return false;
+  }
+
+  if (!activeCurriculumLessonFlowPhaseDrag.didDrag) {
+    if (Math.abs(deltaX) < 6 && Math.abs(deltaY) < 6) {
+      return false;
+    }
+
+    activeCurriculumLessonFlowPhaseDrag.didDrag = true;
+  }
+
+  updateCurriculumSeriesDragPreview(event.clientX, event.clientY, "#3975ab");
+  updatePlanningLessonFlowAutoScroll(Number(event.clientX) || 0, Number(event.clientY) || 0);
+
+  if (!dropTarget || String(dropTarget.targetPhaseId || "").trim() === activeCurriculumLessonFlowPhaseDrag.phaseId) {
+    clearCurriculumLessonFlowPhaseDropIndicator();
+  } else {
+    setCurriculumLessonFlowPhaseDropIndicator(dropTarget.targetPhaseId, dropTarget.placement);
+  }
+
+  event.preventDefault();
+  return false;
+};
+
+window.UnterrichtsassistentApp.handleCurriculumLessonFlowPhasePointerEnd = function (event) {
+  const pointerId = activeCurriculumLessonFlowPhaseDrag ? activeCurriculumLessonFlowPhaseDrag.pointerId : null;
+  const sourceElement = activeCurriculumLessonFlowPhaseDrag ? activeCurriculumLessonFlowPhaseDrag.sourceElement : null;
+  const didDrag = activeCurriculumLessonFlowPhaseDrag ? activeCurriculumLessonFlowPhaseDrag.didDrag === true : false;
+  const draggedPhaseId = activeCurriculumLessonFlowPhaseDrag ? String(activeCurriculumLessonFlowPhaseDrag.phaseId || "").trim() : "";
+  const lessonId = activeCurriculumLessonFlowPhaseDrag ? String(activeCurriculumLessonFlowPhaseDrag.lessonId || "").trim() : "";
+  const dropIndicator = activeCurriculumLessonFlowPhaseDropIndicator
+    ? {
+        targetPhaseId: String(activeCurriculumLessonFlowPhaseDropIndicator.targetPhaseId || "").trim(),
+        placement: String(activeCurriculumLessonFlowPhaseDropIndicator.placement || "").trim() === "before" ? "before" : "after"
+      }
+    : null;
+
+  if (!activeCurriculumLessonFlowPhaseDrag || event.pointerId !== pointerId) {
+    return false;
+  }
+
+  if (sourceElement && typeof pointerId === "number") {
+    tryReleasePointerCapture(sourceElement, pointerId);
+  }
+
+  clearCurriculumLessonFlowPhasePointerDrag();
+
+  if (!didDrag || !lessonId || !draggedPhaseId || !dropIndicator || draggedPhaseId === dropIndicator.targetPhaseId) {
+    return false;
+  }
+
+  event.preventDefault();
+  return reorderCurriculumLessonFlowPhases(lessonId, draggedPhaseId, dropIndicator.targetPhaseId, dropIndicator.placement);
+};
+
+window.UnterrichtsassistentApp.startCurriculumLessonFlowStepDrag = function (event, phaseId, stepId) {
+  const normalizedPhaseId = String(phaseId || "").trim();
+  const normalizedStepId = String(stepId || "").trim();
+  const sourceElement = event && event.currentTarget ? event.currentTarget : null;
+
+  if (!isCurriculumPlanningMode() || !normalizedPhaseId || !normalizedStepId || !event) {
+    return false;
+  }
+
+  activeCurriculumLessonFlowStepDrag = {
+    phaseId: normalizedPhaseId,
+    stepId: normalizedStepId,
+    pointerId: typeof event.pointerId === "number" ? event.pointerId : null,
+    startX: Number(event.clientX) || 0,
+    startY: Number(event.clientY) || 0,
+    sourceElement: sourceElement,
+    didDrag: false
+  };
+  clearCurriculumLessonFlowStepDropIndicator();
+
+  if (typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+  if (typeof event.stopPropagation === "function") {
+    event.stopPropagation();
+  }
+
+  if (sourceElement && typeof event.pointerId === "number") {
+    trySetPointerCapture(sourceElement, event.pointerId);
+    window.addEventListener("pointermove", window.UnterrichtsassistentApp.handleCurriculumLessonFlowStepPointerMove);
+    window.addEventListener("pointerup", window.UnterrichtsassistentApp.handleCurriculumLessonFlowStepPointerEnd);
+    window.addEventListener("pointercancel", window.UnterrichtsassistentApp.handleCurriculumLessonFlowStepPointerEnd);
+    updateCurriculumSeriesDragPreview(event.clientX, event.clientY, "#3975ab");
+  }
+
+  return false;
+};
+
+window.UnterrichtsassistentApp.handleCurriculumLessonFlowStepPointerMove = function (event) {
+  const deltaX = activeCurriculumLessonFlowStepDrag ? (Number(event.clientX) || 0) - activeCurriculumLessonFlowStepDrag.startX : 0;
+  const deltaY = activeCurriculumLessonFlowStepDrag ? (Number(event.clientY) || 0) - activeCurriculumLessonFlowStepDrag.startY : 0;
+  const dropTarget = getCurriculumLessonFlowStepDropTargetFromPoint(event && event.clientX, event && event.clientY);
+
+  if (!activeCurriculumLessonFlowStepDrag || event.pointerId !== activeCurriculumLessonFlowStepDrag.pointerId) {
+    return false;
+  }
+
+  if (!activeCurriculumLessonFlowStepDrag.didDrag) {
+    if (Math.abs(deltaX) < 6 && Math.abs(deltaY) < 6) {
+      return false;
+    }
+
+    activeCurriculumLessonFlowStepDrag.didDrag = true;
+  }
+
+  updateCurriculumSeriesDragPreview(event.clientX, event.clientY, "#3975ab");
+  updatePlanningLessonFlowAutoScroll(Number(event.clientX) || 0, Number(event.clientY) || 0);
+
+  if (!dropTarget
+    || (String(dropTarget.phaseId || "").trim() === activeCurriculumLessonFlowStepDrag.phaseId
+      && String(dropTarget.targetStepId || "").trim() === activeCurriculumLessonFlowStepDrag.stepId)) {
+    clearCurriculumLessonFlowStepDropIndicator();
+  } else {
+    setCurriculumLessonFlowStepDropIndicator(dropTarget.phaseId, dropTarget.targetStepId, dropTarget.placement);
+  }
+
+  event.preventDefault();
+  return false;
+};
+
+window.UnterrichtsassistentApp.handleCurriculumLessonFlowStepPointerEnd = function (event) {
+  const pointerId = activeCurriculumLessonFlowStepDrag ? activeCurriculumLessonFlowStepDrag.pointerId : null;
+  const sourceElement = activeCurriculumLessonFlowStepDrag ? activeCurriculumLessonFlowStepDrag.sourceElement : null;
+  const didDrag = activeCurriculumLessonFlowStepDrag ? activeCurriculumLessonFlowStepDrag.didDrag === true : false;
+  const draggedStepId = activeCurriculumLessonFlowStepDrag ? String(activeCurriculumLessonFlowStepDrag.stepId || "").trim() : "";
+  const sourcePhaseId = activeCurriculumLessonFlowStepDrag ? String(activeCurriculumLessonFlowStepDrag.phaseId || "").trim() : "";
+  const dropIndicator = activeCurriculumLessonFlowStepDropIndicator
+    ? {
+        phaseId: String(activeCurriculumLessonFlowStepDropIndicator.phaseId || "").trim(),
+        targetStepId: String(activeCurriculumLessonFlowStepDropIndicator.targetStepId || "").trim(),
+        placement: String(activeCurriculumLessonFlowStepDropIndicator.placement || "").trim() === "before" ? "before" : "after"
+      }
+    : null;
+
+  if (!activeCurriculumLessonFlowStepDrag || event.pointerId !== pointerId) {
+    return false;
+  }
+
+  if (sourceElement && typeof pointerId === "number") {
+    tryReleasePointerCapture(sourceElement, pointerId);
+  }
+
+  clearCurriculumLessonFlowStepPointerDrag();
+
+  if (!didDrag || !sourcePhaseId || !draggedStepId || !dropIndicator) {
+    return false;
+  }
+
+  event.preventDefault();
+  return reorderCurriculumLessonFlowSteps(sourcePhaseId, draggedStepId, dropIndicator.phaseId, dropIndicator.targetStepId, dropIndicator.placement);
 };
 window.UnterrichtsassistentApp.startCurriculumLessonDrag = function (event, sequenceId, lessonId, color) {
   const normalizedSequenceId = String(sequenceId || "").trim();
@@ -14796,7 +15959,8 @@ window.UnterrichtsassistentApp.updatePlanningCategoryColor = function (categoryN
     existingCategory = {
       id: createPlanningCategoryId(),
       name: normalizedName,
-      color: normalizedColor
+      color: normalizedColor,
+      filterLabels: []
     };
     collections.categories.push(existingCategory);
   } else {
@@ -14835,9 +15999,95 @@ window.UnterrichtsassistentApp.addPlanningCategory = function (inputId) {
   collections.categories.push({
     id: createPlanningCategoryId(),
     name: categoryName,
-    color: ""
+    color: "",
+    filterLabels: []
   });
   currentRawSnapshot.planningCategories = collections.categories;
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return false;
+};
+window.UnterrichtsassistentApp.updatePlanningCategoryFilterLabels = function (categoryName, nextValue) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+
+  if (!currentRawSnapshot || !String(categoryName || "").trim()) {
+    return false;
+  }
+
+  setPlanningCategoryFilterLabelDraftValue(categoryName, nextValue);
+
+  if (!updatePlanningCategoryFilterLabelsInSnapshot(currentRawSnapshot, categoryName, nextValue)) {
+    return false;
+  }
+
+  delete planningCategoryFilterLabelDrafts[getPlanningCategoryFilterLabelDraftKey(categoryName)];
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return false;
+};
+window.UnterrichtsassistentApp.renamePlanningCategory = function (categoryName) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const collections = currentRawSnapshot ? getPlanningCollections(currentRawSnapshot) : null;
+  const normalizedName = String(categoryName || "").trim();
+  const existingCategory = currentRawSnapshot
+    ? getStoredPlanningCategoryEntry(currentRawSnapshot, normalizedName)
+    : null;
+  const nextNameInput = window.prompt("Kategorie umbenennen", normalizedName);
+  const nextName = String(nextNameInput || "").trim();
+  const alreadyExists = currentRawSnapshot
+    ? getPlanningCategoryDefinitions(currentRawSnapshot).some(function (entry) {
+        return String(entry && entry.name || "").trim().toLowerCase() === nextName.toLowerCase()
+          && String(entry && entry.name || "").trim().toLowerCase() !== normalizedName.toLowerCase();
+      })
+    : false;
+
+  if (!currentRawSnapshot || !collections || !normalizedName || !existingCategory) {
+    return false;
+  }
+
+  if (getDefaultPlanningCategoryDefinition(currentRawSnapshot, normalizedName)) {
+    return false;
+  }
+
+  if (!nextName || nextName.toLowerCase() === normalizedName.toLowerCase()) {
+    return false;
+  }
+
+  if (alreadyExists) {
+    return false;
+  }
+
+  existingCategory.name = nextName;
+  currentRawSnapshot.planningCategories = collections.categories;
+
+  collections.events.forEach(function (entry) {
+    if (String(entry && entry.category || "").trim().toLowerCase() === normalizedName.toLowerCase()) {
+      entry.category = nextName;
+    }
+  });
+  getTodosCollection(currentRawSnapshot).forEach(function (entry) {
+    if (String(entry && entry.category || "").trim().toLowerCase() === normalizedName.toLowerCase()) {
+      entry.category = nextName;
+    }
+  });
+
+  planningSidebarCategoryFilters = planningSidebarCategoryFilters.map(function (entry) {
+    return String(entry || "").trim().toLowerCase() === normalizedName.toLowerCase()
+      ? nextName
+      : entry;
+  });
+  todoCategoryFilters = todoCategoryFilters.map(function (entry) {
+    return String(entry || "").trim().toLowerCase() === normalizedName.toLowerCase()
+      ? nextName
+      : entry;
+  });
+
+  if (activePlanningEventDraft && String(activePlanningEventDraft.category || "").trim().toLowerCase() === normalizedName.toLowerCase()) {
+    activePlanningEventDraft.category = nextName;
+  }
+
+  if (activeTodoDraft && String(activeTodoDraft.category || "").trim().toLowerCase() === normalizedName.toLowerCase()) {
+    activeTodoDraft.category = nextName;
+  }
 
   saveAndRefreshSnapshot(currentRawSnapshot, "planung");
   return false;
@@ -14880,7 +16130,8 @@ window.UnterrichtsassistentApp.deletePlanningCategory = function (categoryName) 
     collections.categories.push({
       id: createPlanningCategoryId(),
       name: fallbackCategory,
-      color: ""
+      color: "",
+      filterLabels: []
     });
     currentRawSnapshot.planningCategories = collections.categories;
   }
@@ -16160,7 +17411,52 @@ window.UnterrichtsassistentApp.openCurriculumLessonFlowFromUnterrichtLive = func
   }, 0);
   return false;
 };
+window.UnterrichtsassistentApp.selectPlanningCategoryFilterLabelSuggestion = function (value, inputId) {
+  const input = inputId ? document.getElementById(inputId) : null;
+  const categoryName = input ? String(input.getAttribute("data-category-name") || "").trim() : "";
+  const selectedValue = String(value || "").trim();
+  let parts;
+
+  if (Date.now() < suppressKnowledgeGapSuggestionClickUntil) {
+    return false;
+  }
+
+  clearPlanningCategoryFilterLabelSuggestionBlurTimer();
+
+  if (!input || !selectedValue) {
+    closePlanningCategoryFilterLabelSuggestions();
+    return false;
+  }
+
+  parts = String(input.value || "").split(",");
+  parts[parts.length - 1] = " " + selectedValue;
+  input.value = normalizePlanningCategoryFilterLabels(parts).join(", ");
+  setPlanningCategoryFilterLabelDraftValue(categoryName, input.value);
+  closePlanningCategoryFilterLabelSuggestions();
+  window.setTimeout(function () {
+    if (typeof input.focus === "function") {
+      input.focus();
+      if (typeof input.setSelectionRange === "function") {
+        input.setSelectionRange(input.value.length, input.value.length);
+      }
+    }
+  }, 0);
+  return false;
+};
+window.UnterrichtsassistentApp.getPlanningCategoryFilterLabelsDraftValue = function (categoryName, fallbackValue) {
+  return getPlanningCategoryFilterLabelDraftValue(categoryName, fallbackValue);
+};
+window.UnterrichtsassistentApp.handlePlanningCategoryFilterLabelSuggestionsPointerDown = function (event, listId) {
+  return beginPlanningCategoryFilterLabelSuggestionsDrag(event, listId);
+};
+window.UnterrichtsassistentApp.handlePlanningCategoryFilterLabelSuggestionsPointerMove = function (event, listId) {
+  return movePlanningCategoryFilterLabelSuggestionsDrag(event, listId);
+};
+window.UnterrichtsassistentApp.handlePlanningCategoryFilterLabelSuggestionsPointerUp = function (event, listId) {
+  return endPlanningCategoryFilterLabelSuggestionsDrag(event, listId);
+};
 window.UnterrichtsassistentApp.togglePlanningAdminMode = function () {
+  flushPlanningCategoryFilterLabelDrafts();
   planningAdminMode = !planningAdminMode;
 
   if (activeViewId === "planung") {

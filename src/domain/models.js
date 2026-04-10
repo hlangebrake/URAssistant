@@ -482,10 +482,19 @@ class PlanningEvent {
   }
 
 class PlanningCategory {
-    constructor({ id, name = "", color = "" }) {
+    constructor({ id, name = "", color = "", filterLabels = [] }) {
       this.id = id;
       this.name = name;
       this.color = color;
+      this.filterLabels = Array.isArray(filterLabels)
+        ? filterLabels.map(function (entry) {
+            return String(entry || "").trim();
+          }).filter(Boolean).filter(function (entry, index, array) {
+            return array.findIndex(function (candidate) {
+              return String(candidate || "").trim().toLowerCase() === entry.toLowerCase();
+            }) === index;
+          })
+        : [];
     }
   }
 
@@ -612,13 +621,17 @@ class CurriculumLessonPhase {
 }
 
 class CurriculumLessonStep {
-  constructor({ id, phaseId = "", title = "", content = "", socialForm = "plenum", material = "", nextStepId = "" }) {
+  constructor({ id, phaseId = "", title = "", content = "", durationMinutes = "", socialForm = "plenum", material = "", nextStepId = "" }) {
     const normalizedSocialForm = String(socialForm || "").trim().toLowerCase();
+    const numericDuration = Number(durationMinutes);
 
     this.id = id;
     this.phaseId = phaseId;
     this.title = String(title || "").trim();
     this.content = String(content || "").trim();
+    this.durationMinutes = durationMinutes === null || typeof durationMinutes === "undefined" || String(durationMinutes).trim() === ""
+      ? ""
+      : Math.max(0, Number.isFinite(numericDuration) ? numericDuration : 0);
     this.socialForm = ["einzel", "partner", "gruppe", "plenum"].indexOf(normalizedSocialForm) >= 0
       ? normalizedSocialForm
       : "plenum";
@@ -649,6 +662,22 @@ class CurriculumLessonPhaseStatus {
   }
 }
 
+class CurriculumLessonStepStatus {
+  constructor({ id, classId = "", lessonDate = "", lessonPlanId = "", phaseId = "", stepId = "", isCompleted = false, elapsedMinutes = 0, completedAt = "" }) {
+    this.id = id;
+    this.classId = classId;
+    this.lessonDate = String(lessonDate || "").slice(0, 10);
+    this.lessonPlanId = lessonPlanId;
+    this.phaseId = phaseId;
+    this.stepId = stepId;
+    this.isCompleted = Boolean(isCompleted);
+    this.elapsedMinutes = Math.max(0, Number(elapsedMinutes) || 0);
+    this.completedAt = this.isCompleted
+      ? String(completedAt || "").trim()
+      : "";
+  }
+}
+
 window.Unterrichtsassistent.domain.Student = Student;
 window.Unterrichtsassistent.domain.SchoolClass = SchoolClass;
 window.Unterrichtsassistent.domain.Lesson = Lesson;
@@ -673,3 +702,4 @@ window.Unterrichtsassistent.domain.CurriculumLessonPlan = CurriculumLessonPlan;
 window.Unterrichtsassistent.domain.CurriculumLessonPhase = CurriculumLessonPhase;
 window.Unterrichtsassistent.domain.CurriculumLessonStep = CurriculumLessonStep;
 window.Unterrichtsassistent.domain.CurriculumLessonPhaseStatus = CurriculumLessonPhaseStatus;
+window.Unterrichtsassistent.domain.CurriculumLessonStepStatus = CurriculumLessonStepStatus;

@@ -279,13 +279,21 @@ window.Unterrichtsassistent.ui.views.planung = {
 
       return [
         '<div class="planning-category-admin">',
-        '<div class="planning-category-admin__header"><span>Kategorie</span><span>Farbe</span><span></span></div>',
-        categoryDefinitions.map(function (entry) {
+        '<div class="planning-category-admin__header"><span>Kategorie</span><span>Farbe</span><span>Filter</span><span></span></div>',
+        categoryDefinitions.map(function (entry, index) {
           const name = String(entry && entry.name || "").trim();
           const color = getCategoryColor(name);
           const isClassCategory = Boolean(entry && entry.isClassCategory);
           const isSystemCategory = Boolean(entry && entry.isSystemCategory);
           const isStandardCategory = isClassCategory || isSystemCategory;
+          const filterInputId = 'planningCategoryFilterLabelsInput-' + String(index);
+          const filterListId = 'planningCategoryFilterLabelsSuggestions-' + String(index);
+          const persistedFilterLabelsValue = Array.isArray(entry && entry.filterLabels)
+            ? entry.filterLabels.join(", ")
+            : "";
+          const filterLabelsValue = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningCategoryFilterLabelsDraftValue === "function"
+            ? window.UnterrichtsassistentApp.getPlanningCategoryFilterLabelsDraftValue(name, persistedFilterLabelsValue)
+            : persistedFilterLabelsValue;
 
             return [
             '<div class="planning-category-admin__row">',
@@ -295,15 +303,17 @@ window.Unterrichtsassistent.ui.views.planung = {
             isStandardCategory ? ' disabled' : ' onchange="return window.UnterrichtsassistentApp.updatePlanningCategoryColor(\'' + escapeValue(name) + '\', this.value)"',
             '>',
             '</label>',
+            '<label class="planning-category-admin__filter-field"><span>Filter</span><input id="', escapeValue(filterInputId), '" data-category-name="', escapeValue(name), '" class="planning-category-admin__input planning-category-admin__input--filter" type="text" value="', escapeValue(filterLabelsValue), '" placeholder="z. B. zuruecksetzen, pruefungen" autocomplete="off" autocapitalize="none" spellcheck="false" onfocus="return window.UnterrichtsassistentApp.handlePlanningCategoryFilterLabelInputFocus(\'', escapeValue(name), '\', \'', escapeValue(filterInputId), '\', \'', escapeValue(filterListId), '\')" oninput="return window.UnterrichtsassistentApp.handlePlanningCategoryFilterLabelInput(event, \'', escapeValue(name), '\', \'', escapeValue(filterListId), '\')" onblur="return window.UnterrichtsassistentApp.handlePlanningCategoryFilterLabelInputBlur(\'', escapeValue(filterListId), '\')" onchange="return window.UnterrichtsassistentApp.updatePlanningCategoryFilterLabels(\'', escapeValue(name), '\', this.value)"><div class="knowledge-gap-suggestions knowledge-gap-suggestions--planning" id="', escapeValue(filterListId), '" hidden onpointerdown="return window.UnterrichtsassistentApp.handlePlanningCategoryFilterLabelSuggestionsPointerDown(event, \'', escapeValue(filterListId), '\')" onpointermove="return window.UnterrichtsassistentApp.handlePlanningCategoryFilterLabelSuggestionsPointerMove(event, \'', escapeValue(filterListId), '\')" onpointerup="return window.UnterrichtsassistentApp.handlePlanningCategoryFilterLabelSuggestionsPointerUp(event, \'', escapeValue(filterListId), '\')" onpointercancel="return window.UnterrichtsassistentApp.handlePlanningCategoryFilterLabelSuggestionsPointerUp(event, \'', escapeValue(filterListId), '\')"></div></label>',
             isStandardCategory
               ? '<span class="planning-category-admin__lock" aria-hidden="true" title="Standardkategorie ist geschuetzt">&#128274;</span>'
-              : '<button class="row-delete-button row-delete-button--small" type="button" aria-label="Kategorie loeschen" onclick="return window.UnterrichtsassistentApp.deletePlanningCategory(\'' + escapeValue(name) + '\')">Loeschen</button>',
+              : '<span class="planning-category-admin__actions"><button class="planning-category-admin__icon-button" type="button" aria-label="Kategorie umbenennen" title="Umbenennen" onclick="return window.UnterrichtsassistentApp.renamePlanningCategory(\'' + escapeValue(name) + '\')">&#9998;</button><button class="row-delete-button row-delete-button--small" type="button" aria-label="Kategorie loeschen" onclick="return window.UnterrichtsassistentApp.deletePlanningCategory(\'' + escapeValue(name) + '\')">Loeschen</button></span>',
             '</div>'
           ].join("");
         }).join(""),
         '<div class="planning-category-admin__row planning-category-admin__row--add">',
         '<input id="planningCategoryCreateInput" class="planning-category-admin__input" type="text" placeholder="Neue Kategorie" autocomplete="off" autocapitalize="none" spellcheck="false">',
         '<span class="planning-category-admin__swatch planning-category-admin__swatch--empty" aria-hidden="true"></span>',
+        '<span class="planning-category-admin__filter-placeholder" aria-hidden="true"></span>',
         '<button class="planning-category-admin__add" type="button" aria-label="Kategorie hinzufuegen" onclick="return window.UnterrichtsassistentApp.addPlanningCategory(\'planningCategoryCreateInput\')">+</button>',
         '</div>',
         '</div>'
@@ -325,6 +335,26 @@ window.Unterrichtsassistent.ui.views.planung = {
       const upcomingEvents = buildUpcomingEvents(activeDate);
       const addDateValue = activeDate ? toIsoDate(activeDate) : "";
       const availableCategories = {};
+      const namedFilters = getCategoryDefinitions().reduce(function (result, entry) {
+        const labels = Array.isArray(entry && entry.filterLabels) ? entry.filterLabels : [];
+
+        labels.forEach(function (label) {
+          const trimmed = String(label || "").trim();
+          const normalized = trimmed.toLowerCase();
+
+          if (!trimmed || normalized === "alle aus" || result.some(function (existing) {
+            return String(existing || "").trim().toLowerCase() === normalized;
+          })) {
+            return;
+          }
+
+          result.push(trimmed);
+        });
+
+        return result;
+      }, []).sort(function (left, right) {
+        return String(left || "").localeCompare(String(right || ""), "de", { sensitivity: "base" });
+      });
       const filteredEvents = upcomingEvents.filter(function (eventItem) {
         const category = getEventCategoryName(eventItem);
         const normalizedCategory = category.toLowerCase();
@@ -358,9 +388,12 @@ window.Unterrichtsassistent.ui.views.planung = {
               '</label>'
             ].join("");
           }).join("") : '<p class="empty-message">Keine Kategorien vorhanden.</p>',
+          namedFilters.length ? '<div class="planning-sidebar__named-filters">' + namedFilters.map(function (filterLabel) {
+            return '<button class="planning-sidebar__filter-clear planning-sidebar__filter-clear--named" type="button" onclick="return window.UnterrichtsassistentApp.applyPlanningSidebarNamedFilter(\'' + escapeValue(filterLabel) + '\')">' + escapeValue(filterLabel) + '</button>';
+          }).join("") + '</div>' : '',
           '<div class="planning-sidebar__filter-actions">',
           '<button class="planning-sidebar__filter-clear" type="button" onclick="return window.UnterrichtsassistentApp.clearPlanningSidebarCategoryFilters()">Filter zuruecksetzen</button>',
-          '<button class="planning-sidebar__filter-clear" type="button" onclick="return window.UnterrichtsassistentApp.clearAllPlanningSidebarCategoryFilters()">Alle aus</button>',
+          '<button class="planning-sidebar__filter-clear" type="button" onclick="return window.UnterrichtsassistentApp.toggleAllPlanningSidebarCategoryFilters()">', isSidebarFilterAllOff ? 'Alle an' : 'Alle aus', '</button>',
           '</div>',
           '</div>'
         ].join("") : '',
@@ -2154,6 +2187,9 @@ window.Unterrichtsassistent.ui.views.planung = {
         lookup[phaseId] = true;
         return lookup;
       }, {});
+      const areAllPhasesInViewMode = orderedPhases.length > 0 && orderedPhases.every(function (phaseItem) {
+        return Boolean(viewPhaseLookup[String(phaseItem && phaseItem.id || "").trim()]);
+      });
 
       if (!activeClass || !lessonItem || !sequenceItem || !seriesItem || String(seriesItem.classId || "").trim() !== String(activeClass.id || "").trim()) {
         return "";
@@ -2163,6 +2199,7 @@ window.Unterrichtsassistent.ui.views.planung = {
         '<section class="planning-lesson-flow">',
         '<div class="planning-lesson-flow__header">',
         '<h2 class="planning-lesson-flow__title">Stundenverlauf</h2>',
+        '<button class="planning-lesson-flow__mode-button planning-lesson-flow__mode-button--global" type="button" onclick="return window.UnterrichtsassistentApp.toggleCurriculumLessonFlowMode(\'', escapeValue(normalizedLessonId), '\')">', areAllPhasesInViewMode ? 'Edit' : 'View', '</button>',
         '<p class="planning-lesson-flow__meta"><strong>', escapeValue(String(lessonItem.topic || "").trim() || "Ohne Thema"), '</strong><span>', escapeValue(lessonDateLabel), '</span></p>',
         '<div class="planning-lesson-flow__lesson-summary">',
         '<div class="planning-lesson-flow__lesson-summary-text">', escapeValue(lessonSummary || "Noch keine Zusammenfassung hinterlegt."), '</div>',
@@ -2186,10 +2223,11 @@ window.Unterrichtsassistent.ui.views.planung = {
           ].filter(Boolean);
 
           return [
-            '<tr class="planning-lesson-flow__phase-row">',
+            '<tr class="planning-lesson-flow__phase-row" data-phase-drop-target="', escapeValue(phaseId), '">',
             '<td>',
             '<div class="planning-lesson-flow__phase-card">',
             '<div class="planning-lesson-flow__phase-toolbar">',
+            '<button class="planning-lesson-flow__drag-handle planning-lesson-flow__drag-handle--phase" type="button" aria-label="Phase verschieben" onclick="return window.UnterrichtsassistentApp.stopEventPropagation(event)" onpointerdown="return window.UnterrichtsassistentApp.startCurriculumLessonFlowPhaseDrag(event, \'', escapeValue(normalizedLessonId), '\', \'', escapeValue(phaseId), '\')">&#8645;</button>',
             isViewMode
               ? '<div class="planning-lesson-flow__phase-summary"><div class="planning-lesson-flow__phase-summary-title">' + escapeValue(String(phaseItem && phaseItem.title || "").trim() || "Ohne Titel") + '</div><div class="planning-lesson-flow__phase-summary-meta">' + phaseSummaryMetaParts.map(function (entry) { return '<span>' + escapeValue(entry) + '</span>'; }).join("") + '</div></div>'
               : '<label class="planning-lesson-flow__phase-field planning-lesson-flow__phase-field--title"><span>Phase</span><input type="text" value="' + escapeValue(String(phaseItem && phaseItem.title || "").trim()) + '" placeholder="Titel der Phase" onchange="return window.UnterrichtsassistentApp.updateCurriculumLessonPhaseField(\'' + escapeValue(phaseId) + '\', \'title\', this.value)"></label>',
@@ -2206,44 +2244,55 @@ window.Unterrichtsassistent.ui.views.planung = {
               ? ''
               : '<label class="planning-lesson-flow__phase-field planning-lesson-flow__phase-field--compact"><span>Anforderungsbereich</span><select class="planning-lesson-flow__select planning-lesson-flow__select--compact" onchange="return window.UnterrichtsassistentApp.updateCurriculumLessonPhaseField(\'' + escapeValue(phaseId) + '\', \'demandLevel\', this.value)"><option value=""' + (!phaseDemandLevel ? ' selected' : '') + '></option><option value="afb1"' + (phaseDemandLevel === 'afb1' ? ' selected' : '') + '>AFB1</option><option value="afb1/2"' + (phaseDemandLevel === 'afb1/2' ? ' selected' : '') + '>AFB1/2</option><option value="afb2"' + (phaseDemandLevel === 'afb2' ? ' selected' : '') + '>AFB2</option><option value="afb2/3"' + (phaseDemandLevel === 'afb2/3' ? ' selected' : '') + '>AFB2/3</option><option value="afb3"' + (phaseDemandLevel === 'afb3' ? ' selected' : '') + '>AFB3</option></select></label>',
             '<button class="planning-lesson-flow__delete-button" type="button" onclick="return window.UnterrichtsassistentApp.deleteCurriculumLessonPhase(\'', escapeValue(phaseId), '\')">Loeschen</button>',
-            '<button class="planning-lesson-flow__mode-button" type="button" onclick="return window.UnterrichtsassistentApp.toggleCurriculumLessonFlowPhaseMode(\'', escapeValue(phaseId), '\')">', isViewMode ? 'Edit' : 'View', '</button>',
             '</div>',
             isViewMode
               ? [
                   '<table class="planning-lesson-flow__step-table planning-lesson-flow__step-table--compact">',
                   '<tbody>',
                   orderedSteps.length ? orderedSteps.map(function (stepItem) {
+                    const stepDurationRaw = stepItem && stepItem.durationMinutes !== null && typeof stepItem.durationMinutes !== "undefined"
+                      ? String(stepItem.durationMinutes).trim()
+                      : "";
+
                     return [
-                      '<tr class="planning-lesson-flow__step-row planning-lesson-flow__step-row--compact">',
+                      '<tr class="planning-lesson-flow__step-row planning-lesson-flow__step-row--compact" data-step-drop-target="', escapeValue(String(stepItem && stepItem.id || "").trim()), '" data-phase-id="', escapeValue(phaseId), '">',
                       '<td class="planning-lesson-flow__step-main-cell">',
-                      '<div class="planning-lesson-flow__step-view-title">', escapeValue(String(stepItem && stepItem.title || "").trim() || "Ohne Titel"), '</div>',
+                      '<div class="planning-lesson-flow__step-view-head"><button class="planning-lesson-flow__drag-handle planning-lesson-flow__drag-handle--step" type="button" aria-label="Schritt verschieben" onclick="return window.UnterrichtsassistentApp.stopEventPropagation(event)" onpointerdown="return window.UnterrichtsassistentApp.startCurriculumLessonFlowStepDrag(event, \'', escapeValue(phaseId), '\', \'', escapeValue(String(stepItem && stepItem.id || "").trim()), '\')">&#8645;</button><div class="planning-lesson-flow__step-view-title">', escapeValue(String(stepItem && stepItem.title || "").trim() || "Ohne Titel"), '</div></div>',
                       String(stepItem && stepItem.content || "").trim()
                         ? '<div class="planning-lesson-flow__step-view-content">' + escapeValue(String(stepItem && stepItem.content || "").trim()) + '</div>'
                         : '',
                       '</td>',
+                      '<td class="planning-lesson-flow__step-duration-cell">', stepDurationRaw ? escapeValue(stepDurationRaw + ' Min.') : '-', '</td>',
                       '<td class="planning-lesson-flow__step-social-cell"><span class="planning-lesson-flow__step-pill">', escapeValue(getCurriculumLessonStepSocialFormLabel(stepItem && stepItem.socialForm)), '</span></td>',
                       '<td class="planning-lesson-flow__step-material-cell">', escapeValue(String(stepItem && stepItem.material || "").trim() || "-"), '</td>',
                       '</tr>'
                     ].join("");
-                  }).join("") : '<tr class="planning-lesson-flow__step-row planning-lesson-flow__step-row--compact"><td colspan="3" class="planning-lesson-flow__step-empty">Noch keine Schritte angelegt.</td></tr>',
+                  }).join("") : '<tr class="planning-lesson-flow__step-row planning-lesson-flow__step-row--compact planning-lesson-flow__step-empty-row" data-step-drop-target-add="true" data-phase-id="' + escapeValue(phaseId) + '"><td colspan="4" class="planning-lesson-flow__step-empty">Noch keine Schritte angelegt.</td></tr>',
                   '</tbody>',
                   '</table>'
                 ].join("")
               : [
                   '<table class="planning-lesson-flow__step-table">',
-                  '<thead><tr><th>Schritt</th><th>Sozialform</th><th>Material</th></tr></thead>',
+                  '<thead><tr><th>Schritt</th><th>Dauer</th><th>Sozialform</th><th>Material</th></tr></thead>',
                   '<tbody>',
                   orderedSteps.map(function (stepItem) {
                     const stepId = String(stepItem && stepItem.id || "").trim();
+                    const stepDurationValue = stepItem && stepItem.durationMinutes !== null && typeof stepItem.durationMinutes !== "undefined"
+                      ? String(stepItem.durationMinutes).trim()
+                      : "";
 
                     return [
-                      '<tr class="planning-lesson-flow__step-row">',
+                      '<tr class="planning-lesson-flow__step-row" data-step-drop-target="', escapeValue(stepId), '" data-phase-id="', escapeValue(phaseId), '">',
                       '<td class="planning-lesson-flow__step-main-cell">',
                       '<div class="planning-lesson-flow__step-main-top">',
+                      '<button class="planning-lesson-flow__drag-handle planning-lesson-flow__drag-handle--step" type="button" aria-label="Schritt verschieben" onclick="return window.UnterrichtsassistentApp.stopEventPropagation(event)" onpointerdown="return window.UnterrichtsassistentApp.startCurriculumLessonFlowStepDrag(event, \'', escapeValue(phaseId), '\', \'', escapeValue(stepId), '\')">&#8645;</button>',
                       '<input class="planning-lesson-flow__step-title" type="text" value="', escapeValue(String(stepItem && stepItem.title || "").trim()), '" placeholder="Titel des Schritts" onchange="return window.UnterrichtsassistentApp.updateCurriculumLessonStepField(\'', escapeValue(stepId), '\', \'title\', this.value)">',
                       '<button class="planning-lesson-flow__delete-button planning-lesson-flow__delete-button--step" type="button" onclick="return window.UnterrichtsassistentApp.deleteCurriculumLessonStep(\'', escapeValue(stepId), '\')">Loeschen</button>',
                       '</div>',
                       '<textarea class="planning-lesson-flow__textarea planning-lesson-flow__textarea--content" rows="3" placeholder="Inhalt" onchange="return window.UnterrichtsassistentApp.updateCurriculumLessonStepField(\'', escapeValue(stepId), '\', \'content\', this.value)">', escapeValue(String(stepItem && stepItem.content || "").trim()), '</textarea>',
+                      '</td>',
+                      '<td class="planning-lesson-flow__step-duration-cell">',
+                      '<input class="planning-lesson-flow__step-duration" type="number" min="0" step="1" value="', escapeValue(stepDurationValue), '" placeholder="-" onchange="return window.UnterrichtsassistentApp.updateCurriculumLessonStepField(\'', escapeValue(stepId), '\', \'durationMinutes\', this.value)">',
                       '</td>',
                       '<td class="planning-lesson-flow__step-social-cell">',
                       '<select class="planning-lesson-flow__select" onchange="return window.UnterrichtsassistentApp.updateCurriculumLessonStepField(\'', escapeValue(stepId), '\', \'socialForm\', this.value)">',
@@ -2258,7 +2307,7 @@ window.Unterrichtsassistent.ui.views.planung = {
                       '</tr>'
                     ].join("");
                   }).join(""),
-                  '<tr class="planning-lesson-flow__step-add-row"><td colspan="3"><button class="planning-lesson-flow__add-button planning-lesson-flow__add-button--step" type="button" onclick="return window.UnterrichtsassistentApp.addCurriculumLessonStep(\'', escapeValue(phaseId), '\')">+ Schritt hinzufuegen</button></td></tr>',
+                  '<tr class="planning-lesson-flow__step-add-row" data-step-drop-target-add="true" data-phase-id="', escapeValue(phaseId), '"><td colspan="4"><button class="planning-lesson-flow__add-button planning-lesson-flow__add-button--step" type="button" onclick="return window.UnterrichtsassistentApp.addCurriculumLessonStep(\'', escapeValue(phaseId), '\')">+ Schritt hinzufuegen</button></td></tr>',
                   '</tbody>',
                   '</table>'
                 ].join(""),
@@ -2267,7 +2316,7 @@ window.Unterrichtsassistent.ui.views.planung = {
             '</tr>'
           ].join("");
         }).join("") : '<tr class="planning-lesson-flow__phase-empty-row"><td><p class="planning-lesson-flow__empty">Noch keine Phasen angelegt.</p></td></tr>',
-        '<tr class="planning-lesson-flow__phase-add-row"><td><button class="planning-lesson-flow__add-button planning-lesson-flow__add-button--phase" type="button" onclick="return window.UnterrichtsassistentApp.addCurriculumLessonPhase(\'', escapeValue(normalizedLessonId), '\')">+ Phase hinzufuegen</button></td></tr>',
+        '<tr class="planning-lesson-flow__phase-add-row" data-phase-drop-target-add="true"><td><button class="planning-lesson-flow__add-button planning-lesson-flow__add-button--phase" type="button" onclick="return window.UnterrichtsassistentApp.addCurriculumLessonPhase(\'', escapeValue(normalizedLessonId), '\')">+ Phase hinzufuegen</button></td></tr>',
         buildCurriculumLessonHomeworkRow(normalizedLessonId, lessonItem),
         '</tbody>',
         '</table>',
