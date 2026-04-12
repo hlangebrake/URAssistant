@@ -1048,6 +1048,49 @@ function findScrollableYAncestor(startNode) {
   return null;
 }
 
+function getPrimaryScrollableContent() {
+  return document.getElementById("mainContent")
+    || document.querySelector(".content")
+    || null;
+}
+
+function canScrollYInDirection(element, deltaY) {
+  if (!isScrollableY(element)) {
+    return false;
+  }
+
+  if (deltaY > 0) {
+    return element.scrollTop > 0;
+  }
+
+  if (deltaY < 0) {
+    return Math.ceil(element.scrollTop + element.clientHeight) < element.scrollHeight;
+  }
+
+  return true;
+}
+
+function findScrollableYAncestorForDelta(startNode, deltaY) {
+  let currentNode = startNode && startNode.nodeType === 1
+    ? startNode
+    : (startNode ? startNode.parentElement : null);
+  const fallbackScrollableContent = getPrimaryScrollableContent();
+
+  while (currentNode && currentNode !== document.body) {
+    if (canScrollYInDirection(currentNode, deltaY)) {
+      return currentNode;
+    }
+
+    currentNode = currentNode.parentElement;
+  }
+
+  if (fallbackScrollableContent && canScrollYInDirection(fallbackScrollableContent, deltaY)) {
+    return fallbackScrollableContent;
+  }
+
+  return null;
+}
+
 function escapeKnowledgeGapSuggestionHtml(value) {
   return String(value || "")
     .replace(/&/g, "&amp;")
@@ -20663,11 +20706,9 @@ document.addEventListener("submit", preventLocalOnlyFormSubmit, true);
 
 document.addEventListener("touchmove", function (event) {
   const touch = event && event.touches && event.touches[0];
-  const scrollableAncestor = findScrollableYAncestor(event.target);
   const currentClientY = touch ? Number(touch.clientY) || 0 : 0;
   const deltaY = currentClientY - lastTouchClientY;
-  const atTop = !scrollableAncestor || scrollableAncestor.scrollTop <= 0;
-  const atBottom = !scrollableAncestor || Math.ceil(scrollableAncestor.scrollTop + scrollableAncestor.clientHeight) >= scrollableAncestor.scrollHeight;
+  const scrollableAncestor = findScrollableYAncestorForDelta(event.target, deltaY);
 
   lastTouchClientY = currentClientY;
 
@@ -20675,7 +20716,7 @@ document.addEventListener("touchmove", function (event) {
     return;
   }
 
-  if (!scrollableAncestor || (deltaY > 0 && atTop) || (deltaY < 0 && atBottom)) {
+  if (!scrollableAncestor && deltaY !== 0) {
     event.preventDefault();
   }
 }, { passive: false });

@@ -854,7 +854,7 @@ button {
 
 .planning-curriculum--embedded .planning-curriculum__table-wrap {
   overscroll-behavior: contain;
-  touch-action: pan-x;
+  touch-action: pan-x pan-y pinch-zoom;
 }
 
 .planning-curriculum__table-wrap.is-dragging {
@@ -1005,6 +1005,7 @@ button {
 .planning-curriculum--embedded .planning-curriculum__lesson-wrap {
   overflow: visible;
   -webkit-overflow-scrolling: auto;
+  touch-action: pan-y pinch-zoom;
 }
 
 .planning-curriculum__lesson-column {
@@ -4943,7 +4944,19 @@ button {
 }
 
 .unterricht-seatplan-student.is-interactive {
-  touch-action: none;
+  touch-action: pan-y;
+}
+
+.unterricht-layout--live .unterricht-seatplan,
+.unterricht-layout--live .unterricht-seatplan-frame,
+.unterricht-layout--live .unterricht-seatplan-canvas-shell,
+.unterricht-layout--live .unterricht-seatplan-canvas-anchor,
+.unterricht-layout--live .desk-layout-builder__canvas-wrap--readonly.desk-layout-builder__canvas-wrap--unterricht,
+.unterricht-layout--live .desk-layout-builder__canvas--readonly,
+.unterricht-layout--live .seat-order-slot--readonly.unterricht-seatplan-student,
+.unterricht-layout--live .seat-order-slot--readonly .seat-order-desk__label,
+.unterricht-layout--live .seat-order-desk__label--readonly {
+  touch-action: pan-y pinch-zoom;
 }
 
 .unterricht-seatplan-student {
@@ -4966,6 +4979,7 @@ button {
   font-size: 0.98rem;
   font-weight: 800;
   line-height: 1.15;
+  touch-action: pan-y;
 }
 
 .unterricht-seatplan-homework-badge {
