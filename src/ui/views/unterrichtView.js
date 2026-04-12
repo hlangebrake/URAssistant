@@ -1202,6 +1202,14 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       return service.getAssessmentStatusForStudent(studentId, activeClass.id, service.getReferenceDate());
     }
 
+    function getMathObservationCountForStudent(studentId) {
+      if (!studentId || !activeClass || typeof service.getMathObservationCountForStudent !== "function") {
+        return 0;
+      }
+
+      return service.getMathObservationCountForStudent(studentId, activeClass.id, service.getReferenceDate());
+    }
+
     function renderReadonlySeatSlot(student, extraClasses) {
       const classes = ["seat-order-slot", "unterricht-seatplan-slot"];
       const attendanceState = student ? getAttendanceStateForStudent(student.id) : "present";
@@ -1214,6 +1222,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         isOlderThanFourteenDays: false
       };
       const assessmentCount = assessmentStatus.currentCount;
+      const mathObservationCount = student ? getMathObservationCountForStudent(student.id) : 0;
       const assessmentStateClass = assessmentStatus.hasCurrentAssessment
         ? "is-positive"
         : (assessmentStatus.isOlderThanFourteenDays ? "is-overdue" : "is-empty");
@@ -1221,7 +1230,8 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       const isHomeworkInteractive = Boolean(student && currentClassLesson && toolMode === "homework" && attendanceState !== "absent");
       const isWarningInteractive = Boolean(student && currentClassLesson && toolMode === "warning" && attendanceState !== "absent");
       const isAssessmentInteractive = Boolean(student && currentClassLesson && toolMode === "assessment" && attendanceState !== "absent");
-      const isInteractive = isAttendanceInteractive || isHomeworkInteractive || isWarningInteractive || isAssessmentInteractive;
+      const isMathObservationInteractive = Boolean(student && currentClassLesson && toolMode === "mathObservation" && attendanceState !== "absent");
+      const isInteractive = isAttendanceInteractive || isHomeworkInteractive || isWarningInteractive || isAssessmentInteractive || isMathObservationInteractive;
       const onclick = isAttendanceInteractive
         ? ' onclick="return window.UnterrichtsassistentApp.handleUnterrichtSeatClick(\'' + escapeValue(student.id) + '\', \'' + escapeValue(currentClassLesson.id) + '\', \'' + escapeValue(currentClassLesson.startTime || "") + '\', \'' + escapeValue(currentClassLesson.room || "") + '\')"'
         : "";
@@ -1234,6 +1244,9 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       const assessmentPointerdown = isAssessmentInteractive
         ? ' onpointerdown="return window.UnterrichtsassistentApp.startUnterrichtAssessmentPointer(event, \'' + escapeValue(student.id) + '\', \'' + escapeValue(currentClassLesson.id) + '\', \'' + escapeValue(currentClassLesson.startTime || "") + '\', \'' + escapeValue(currentClassLesson.room || "") + '\')" oncontextmenu="return false"'
         : "";
+      const mathObservationPointerdown = isMathObservationInteractive
+        ? ' onpointerdown="return window.UnterrichtsassistentApp.startUnterrichtMathObservationPointer(event, \'' + escapeValue(student.id) + '\', \'' + escapeValue(currentClassLesson.id) + '\', \'' + escapeValue(currentClassLesson.startTime || "") + '\', \'' + escapeValue(currentClassLesson.room || "") + '\')" oncontextmenu="return false"'
+        : "";
       const homeworkBadge = student && currentClassLesson && showStatusInfo
         ? '<span class="unterricht-seatplan-homework-badge ' + getHomeworkBadgeClass(homeworkState) + (toolMode === "homework" ? ' is-emphasized' : ' is-muted') + '">H</span>'
         : "";
@@ -1243,8 +1256,11 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       const assessmentBadge = student && currentClassLesson && showStatusInfo
         ? '<div class="unterricht-seatplan-assessment-count ' + assessmentStateClass + (toolMode === "assessment" ? ' is-emphasized' : ' is-muted') + '"><span class="unterricht-seatplan-assessment-count__icon">&#128269;</span><span class="unterricht-seatplan-assessment-count__value">' + escapeValue(String(assessmentCount)) + '</span></div>'
         : "";
-      const symbolRow = (homeworkBadge || warningBadge)
-        ? '<div class="unterricht-seatplan-symbol-row">' + homeworkBadge + warningBadge + '</div>'
+      const mathObservationBadge = student && currentClassLesson && showStatusInfo
+        ? '<span class="unterricht-seatplan-observation-badge' + (toolMode === "mathObservation" ? ' is-emphasized' : ' is-muted') + '">K<span class="unterricht-seatplan-observation-badge__count">' + escapeValue(String(mathObservationCount)) + '</span></span>'
+        : "";
+      const symbolRow = (homeworkBadge || warningBadge || mathObservationBadge)
+        ? '<div class="unterricht-seatplan-symbol-row">' + homeworkBadge + warningBadge + mathObservationBadge + '</div>'
         : "";
 
       if (extraClasses) {
@@ -1265,7 +1281,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         classes.push(toolMode === "attendance" ? "is-absent" : "is-muted");
       }
 
-      return '<div class="' + classes.join(" ") + '"' + onclick + pointerdown + warningPointerdown + assessmentPointerdown + '><div class="unterricht-seatplan-slot__content">' + assessmentBadge + (student ? '<span class="seat-order-desk__label seat-order-desk__label--readonly">' + escapeValue(getStudentShortLabel(student)) + "</span>" : "") + symbolRow + "</div></div>";
+      return '<div class="' + classes.join(" ") + '"' + onclick + pointerdown + warningPointerdown + assessmentPointerdown + mathObservationPointerdown + '><div class="unterricht-seatplan-slot__content">' + assessmentBadge + (student ? '<span class="seat-order-desk__label seat-order-desk__label--readonly">' + escapeValue(getStudentShortLabel(student)) + "</span>" : "") + symbolRow + "</div></div>";
     }
 
     function getDeskItemMetrics(item) {
@@ -1453,6 +1469,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         '<button class="' + getToolButtonClass("homework") + '" type="button" aria-label="Hausaufgabe markieren" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'homework\')">H</button>',
         '<button class="' + getToolButtonClass("warning") + '" type="button" aria-label="Warnung vergeben" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'warning\')">&#9888;</button>',
         '<button class="' + getToolButtonClass("assessment") + '" type="button" aria-label="Bewertung oeffnen" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'assessment\')">&#128269;</button>',
+        '<button class="' + getToolButtonClass("mathObservation") + '" type="button" aria-label="Mathematik-Beobachtung erfassen" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'mathObservation\')">K</button>',
         '<button class="' + getRotationButtonClass() + '" type="button" aria-label="Sitzplan um 180 Grad drehen" aria-pressed="' + (isSeatPlanRotated ? "true" : "false") + '" onclick="return window.UnterrichtsassistentApp.toggleUnterrichtSeatPlanRotation()">180&deg;</button>',
         '</div>',
         '</div>',
@@ -2641,7 +2658,6 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         '</section>',
         '</div>',
         '</form>',
-        '</div>',
         '</div>'
       ].join("");
     }

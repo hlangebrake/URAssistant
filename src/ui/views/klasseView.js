@@ -224,7 +224,15 @@ window.Unterrichtsassistent.ui.views.klasse = {
         afb3: "AFB3",
         workBehavior: "AV",
         socialBehavior: "SV",
-        knowledgeGap: "Wissensluecke"
+        knowledgeGap: "Wissensluecke",
+        primaryCompetency: "Kompetenz",
+        competencyIds: "Komplex",
+        processQuality: "Qualitaet",
+        marker: "Marker",
+        markerDirection: "Richtung",
+        markerQuality: "Marker-Stufe",
+        situationType: "Situation",
+        demandLevel: "AFB"
       }[key] || key;
     }
 
@@ -272,6 +280,70 @@ window.Unterrichtsassistent.ui.views.klasse = {
         }[normalizedValue] || normalizedValue;
       }
 
+      if (key === "primaryCompetency" || key === "competencyIds") {
+        return normalizedValue.split(",").map(function (entry) {
+          const competencyKey = String(entry || "").trim().toLowerCase();
+
+          return {
+            k1: "K1",
+            k2: "K2",
+            k3: "K3",
+            k4: "K4",
+            k5: "K5",
+            k6: "K6"
+          }[competencyKey] || String(entry || "").trim();
+        }).filter(Boolean).join(", ");
+      }
+
+      if (key === "processQuality" || key === "markerQuality") {
+        return {
+          "-2": "--",
+          "-1": "-",
+          "0": "0",
+          "1": "+",
+          "2": "++"
+        }[normalizedValue] || normalizedValue;
+      }
+
+      if (key === "marker") {
+        return {
+          frage: "Frage",
+          vermutung: "Vermutung",
+          begruendung_widerlegung: "Begruendung / Widerlegung",
+          beitrag: "Beitrag",
+          strategie: "Strategie",
+          loesungsweg_praesentiert: "Loesungsweg praesentiert",
+          fehlende_information: "fehlende Information",
+          plausibilitaet_geprueft: "Plausibilitaet geprueft",
+          darstellung: "Darstellung",
+          symbolisiert_formalisiert: "symbolisiert / formalisiert",
+          werkzeug_funktional: "Werkzeug funktional eingesetzt",
+          modell_geprueft: "Modell gebildet / geprueft",
+          anderer_beitrag: "auf anderen Beitrag eingegangen",
+          fachsprache: "Fachsprache genutzt",
+          fehler: "Fehler",
+          vorgehen_reflektiert: "Vorgehen reflektiert"
+        }[normalizedValue.toLowerCase()] || normalizedValue;
+      }
+
+      if (key === "markerDirection") {
+        return {
+          left: "links / reaktiv",
+          right: "rechts / eigenstaendig"
+        }[normalizedValue.toLowerCase()] || normalizedValue;
+      }
+
+      if (key === "situationType") {
+        return {
+          lernen: "Lernen",
+          leisten: "Leisten"
+        }[normalizedValue.toLowerCase()] || normalizedValue;
+      }
+
+      if (key === "demandLevel") {
+        return normalizedValue.toUpperCase();
+      }
+
       return normalizedValue;
     }
 
@@ -290,10 +362,18 @@ window.Unterrichtsassistent.ui.views.klasse = {
     }
 
     function buildAnalysisDetailSummary(record) {
-        const orderedKeys = ["status", "quality", "category", "note", "afb1", "afb2", "afb3", "workBehavior", "socialBehavior", "knowledgeGap"];
+      const orderedKeys = ["status", "quality", "category", "primaryCompetency", "competencyIds", "processQuality", "marker", "markerDirection", "markerQuality", "situationType", "demandLevel", "note", "afb1", "afb2", "afb3", "workBehavior", "socialBehavior", "knowledgeGap"];
 
       return orderedKeys.filter(function (key) {
         const value = record[key];
+        if (key === "competencyIds") {
+          const competencyIds = Array.isArray(value)
+            ? value
+            : String(value || "").split(",");
+          return competencyIds.map(function (entry) {
+            return String(entry || "").trim();
+          }).filter(Boolean).length > 1;
+        }
         return value !== undefined && value !== null && String(value).trim() !== "";
       }).map(function (key) {
         return normalizeLabel(key) + ": " + formatDetailValue(key, record[key]);
@@ -479,6 +559,18 @@ window.Unterrichtsassistent.ui.views.klasse = {
           raw: record
         };
       }))
+      .concat((service.snapshot.mathObservationRecords || []).filter(function (record) {
+        return record.classId === schoolClass.id;
+      }).map(function (record, index) {
+        return {
+          studentId: record.studentId,
+          date: normalizeDateValue(record.lessonDate),
+          type: "mathObservation",
+          symbol: "K",
+          sortKey: getAnalysisRecordCreatedAt(record) + "|" + String(record.id || index).padStart(6, "0"),
+          raw: record
+        };
+      }))
       .concat((service.snapshot.performedEvaluations || []).filter(function (record) {
         return record.classId === schoolClass.id && Boolean(record.isCompleted);
       }).map(function (record, index) {
@@ -552,6 +644,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
           homework: 0,
           warning: 0,
           assessment: 0,
+          mathObservation: 0,
           completedEvaluation: 0
         };
       }
@@ -720,7 +813,8 @@ window.Unterrichtsassistent.ui.views.klasse = {
         ? String(count)
         : formatCriterionValue(criterionValue);
       const typeCounts = analysisTypeCountsByStudentDate[studentId + "|" + groupInfo.key] || {};
-            const typeItems = [
+      const typeItems = [
+        { key: "mathObservation", symbol: "K" },
         { key: "attendance", symbol: "✓" },
         { key: "homework", symbol: "H" },
         { key: "warning", symbol: "⚠" },
@@ -905,6 +999,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
         '<button class="unterricht-seatplan-action class-analysis-tool', analysisEnabledTypes.homework !== false ? ' is-active' : "", '" type="button" aria-label="Hausaufgaben filtern" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisType(\'homework\')">H</button>',
         '<button class="unterricht-seatplan-action class-analysis-tool', analysisEnabledTypes.warning !== false ? ' is-active' : "", '" type="button" aria-label="Verwarnungen filtern" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisType(\'warning\')">&#9888;</button>',
         '<button class="unterricht-seatplan-action class-analysis-tool', analysisEnabledTypes.assessment !== false ? ' is-active' : "", '" type="button" aria-label="Bewertungen filtern" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisType(\'assessment\')">&#128269;</button>',
+        '<button class="unterricht-seatplan-action class-analysis-tool', analysisEnabledTypes.mathObservation !== false ? ' is-active' : "", '" type="button" aria-label="Mathematik-Beobachtungen filtern" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisType(\'mathObservation\')">K</button>',
         '<button class="unterricht-seatplan-action class-analysis-tool', analysisEnabledTypes.completedEvaluation !== false ? ' is-active' : "", '" type="button" aria-label="Abgeschlossene Bewertungen filtern" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisType(\'completedEvaluation\')">&#9733;</button>',
         '</div>',
         '</div>',
@@ -989,6 +1084,10 @@ window.Unterrichtsassistent.ui.views.klasse = {
           '<button class="assessment-category-button class-analysis-warning-button', analysisEditRecord.raw && analysisEditRecord.raw.category === "andere" ? " is-active" : "", '" type="button" data-category="andere" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisWarningCategory(\'andere\')">andere</button>',
           '</div><input id="classAnalysisWarningCategory" type="hidden" value="', escapeValue(analysisEditRecord.raw && analysisEditRecord.raw.category || ""), '"></div>',
           '<label class="import-modal__field"><span>Notiz</span><input id="classAnalysisWarningNote" type="text" maxlength="120" value="', escapeValue(analysisEditRecord.raw && analysisEditRecord.raw.note || ""), '" placeholder="Kurzer Hinweis" autocomplete="off" autocapitalize="none" spellcheck="false"></label>'
+        ].join("") : "",
+        analysisEditRecord && analysisEditRecord.type === "mathObservation" ? [
+          '<div class="import-modal__field"><span>Beobachtung</span><input type="text" readonly value="', escapeValue(buildAnalysisDetailSummary(analysisEditRecord.raw || {})), '"></div>',
+          '<label class="import-modal__field"><span>Notiz</span><input id="classAnalysisMathObservationNote" type="text" maxlength="240" value="', escapeValue(analysisEditRecord.raw && analysisEditRecord.raw.note || ""), '" placeholder="Freie Notiz zur Beobachtung" autocomplete="off" autocapitalize="none" spellcheck="false"></label>'
         ].join("") : "",
         analysisEditRecord && analysisEditRecord.type === "assessment" ? [
           '<div class="assessment-columns">',

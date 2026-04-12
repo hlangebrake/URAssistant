@@ -68,6 +68,7 @@ let classAnalysisEnabledTypes = {
   homework: true,
   warning: true,
   assessment: true,
+  mathObservation: true,
   completedEvaluation: true
 };
 let timetableViewMode = "ansicht";
@@ -161,6 +162,14 @@ let activeUnterrichtAssessmentGridDrag = null;
 let activeUnterrichtAssessmentPress = null;
 let unterrichtAssessmentQuickMenu = null;
 let unterrichtAssessmentQuickOverlay = null;
+let isUnterrichtMathObservationModalOpen = false;
+let activeUnterrichtMathObservationDraft = null;
+let activeUnterrichtMathObservationPress = null;
+let activeUnterrichtMathObservationMarkerPress = null;
+let unterrichtMathObservationQuickMenu = null;
+let unterrichtMathObservationProcessOverlay = null;
+let unterrichtMathObservationMarkerMenu = null;
+let unterrichtMathObservationMarkerOverlay = null;
 let activeClassAnalysisDragScroll = null;
 let activePlanningCurriculumDragScroll = null;
 let activePlanningCurriculumAutoScroll = null;
@@ -212,6 +221,127 @@ const WARNING_RADIAL_OPTIONS = [
   { category: "arbeitsorganisation", label: "Arbeitsorganisation", side: "right", row: "middle" },
   { category: "material", label: "Material", side: "bottom", row: "center" }
 ];
+const MATH_OBSERVATION_COMPETENCIES = [
+  { key: "k1", label: "Argumentieren" },
+  { key: "k2", label: "Probleme loesen" },
+  { key: "k3", label: "Modellieren" },
+  { key: "k4", label: "Darstellungen" },
+  { key: "k5", label: "Symbolik/Formales" },
+  { key: "k6", label: "Kommunizieren" }
+];
+const MATH_OBSERVATION_PROCESS_BANDS = [
+  MATH_OBSERVATION_COMPETENCIES[0],
+  MATH_OBSERVATION_COMPETENCIES[1],
+  MATH_OBSERVATION_COMPETENCIES[2],
+  { key: "", label: "nur Qualitaet" },
+  MATH_OBSERVATION_COMPETENCIES[3],
+  MATH_OBSERVATION_COMPETENCIES[4],
+  MATH_OBSERVATION_COMPETENCIES[5]
+];
+const MATH_OBSERVATION_QUALITY_LABELS = [
+  { value: 2, label: "++ reflektiert, verallgemeinernd oder bewertend" },
+  { value: 1, label: "+ selbststaendig, nachvollziehbar und verknuepfend" },
+  { value: 0, label: "0 sachgerecht im vertrauten Rahmen" },
+  { value: -1, label: "- ansatzweise tragfaehig, aber unvollstaendig" },
+  { value: -2, label: "-- fachlich nicht tragfaehig" }
+];
+const MATH_OBSERVATION_MARKERS = [
+  { key: "frage", label: "Frage", swipable: true },
+  { key: "vermutung", label: "Vermutung", swipable: true },
+  { key: "begruendung_widerlegung", label: "Begruendung / Widerlegung", swipable: true },
+  { key: "beitrag", label: "Beitrag", swipable: true },
+  { key: "strategie", label: "Strategie", swipable: true },
+  { key: "loesungsweg_praesentiert", label: "Loesungsweg praesentiert", swipable: false },
+  { key: "fehlende_information", label: "fehlende Information", swipable: false },
+  { key: "plausibilitaet_geprueft", label: "Plausibilitaet geprueft", swipable: false },
+  { key: "darstellung", label: "Darstellung", swipable: true },
+  { key: "symbolisiert_formalisiert", label: "symbolisiert / formalisiert", swipable: false },
+  { key: "werkzeug_funktional", label: "Werkzeug funktional eingesetzt", swipable: false },
+  { key: "modell_geprueft", label: "Modell gebildet / geprueft", swipable: false },
+  { key: "anderer_beitrag", label: "auf anderen Beitrag eingegangen", swipable: false },
+  { key: "fachsprache", label: "Fachsprache genutzt", swipable: false },
+  { key: "fehler", label: "Fehler", swipable: true },
+  { key: "vorgehen_reflektiert", label: "Vorgehen reflektiert", swipable: false }
+];
+const MATH_OBSERVATION_MARKER_QUALIFIERS = {
+  frage: {
+    left: "reaktive Anschlussfrage / Rueckfrage",
+    right: "selbst initiierte Frage",
+    qualities: [
+      { value: 2, label: "++ weiterfuehrend mit Erkenntniswert" },
+      { value: 1, label: "+ fachliche Rueckfrage zu Zusammenhang oder Vorgehen" },
+      { value: 0, label: "0 sachgerechte Verstaendnisfrage" },
+      { value: -1, label: "- Klaerungsfrage zum Arbeitsauftrag" },
+      { value: -2, label: "-- fachlich kaum brauchbare Frage" }
+    ]
+  },
+  vermutung: {
+    left: "an Impuls oder fremden Beitrag angeschlossen",
+    right: "selbst initiierte Vermutung",
+    qualities: [
+      { value: 2, label: "++ weiterfuehrend oder verallgemeinernd" },
+      { value: 1, label: "+ tragfaehig mit Begruendungsansatz" },
+      { value: 0, label: "0 sachgerecht und pruefbar" },
+      { value: -1, label: "- vage ohne tragfaehige Richtung" },
+      { value: -2, label: "-- unplausibel oder ungerichtet" }
+    ]
+  },
+  begruendung_widerlegung: {
+    left: "reaktiv auf Nachfrage oder fremden Beitrag",
+    right: "eigenstaendig initiiert",
+    qualities: [
+      { value: 2, label: "++ reflektiert, verallgemeinernd oder mit Gegenbeispiel" },
+      { value: 1, label: "+ strukturiert, schluessig und anschlussfaehig" },
+      { value: 0, label: "0 sachgerecht und nachvollziehbar" },
+      { value: -1, label: "- mit Luecken oder unsauberem Schluss" },
+      { value: -2, label: "-- nicht tragfaehig oder Scheinwiderlegung" }
+    ]
+  },
+  beitrag: {
+    left: "anschliessend an fremden Gedanken",
+    right: "eigenstaendiger Denkbeitrag",
+    qualities: [
+      { value: 2, label: "++ ordnend, begruendend oder weiterfuehrend" },
+      { value: 1, label: "+ strukturiert, eigenstaendig und anschlussfaehig" },
+      { value: 0, label: "0 nachvollziehbarer Sachbeitrag" },
+      { value: -1, label: "- kurzer Teilbeitrag ohne groessere Tragweite" },
+      { value: -2, label: "-- fachlich unklar oder nachsprechend" }
+    ]
+  },
+  strategie: {
+    left: "auf Impuls uebernommen oder veraendert",
+    right: "selbst gewaehlt oder selbststaendig umgestellt",
+    qualities: [
+      { value: 2, label: "++ reflektiert, verglichen oder begruendet gewaehlt" },
+      { value: 1, label: "+ selbststaendig angepasst oder kombiniert" },
+      { value: 0, label: "0 brauchbar fuer die konkrete Aufgabe" },
+      { value: -1, label: "- erster, noch schwacher Ansatz" },
+      { value: -2, label: "-- planlos oder fachlich ungeeignet" }
+    ]
+  },
+  darstellung: {
+    left: "vorgegebene Darstellung aufgenommen",
+    right: "selbst erzeugt oder gewechselt",
+    qualities: [
+      { value: 2, label: "++ vernetzt, bewertet oder begruendet ausgewaehlt" },
+      { value: 1, label: "+ zielgerichtet erzeugt oder transformiert" },
+      { value: 0, label: "0 passend und sachgerecht genutzt" },
+      { value: -1, label: "- basal genutzt oder nur abgelesen" },
+      { value: -2, label: "-- unpassend oder missverstanden" }
+    ]
+  },
+  fehler: {
+    left: "nach Hinweis erkannt oder bearbeitet",
+    right: "selbst erkannt oder bearbeitet",
+    qualities: [
+      { value: 2, label: "++ produktiv fuer Begruendung, Kontrolle oder Verallgemeinerung" },
+      { value: 1, label: "+ eigenstaendig erkannt und korrigiert" },
+      { value: 0, label: "0 sachgerecht korrigiert" },
+      { value: -1, label: "- oberflaechlich oder unvollstaendig bearbeitet" },
+      { value: -2, label: "-- blockierend oder fachlich nicht verstanden" }
+    ]
+  }
+};
 
 function isSmartphoneLayout() {
   return !!(smartphoneLayoutMedia && smartphoneLayoutMedia.matches);
@@ -638,7 +768,7 @@ function isEditingFocusableInput() {
 }
 
 function syncLiveDateTimeUi() {
-  if (!schoolService || !isLiveDateTimeMode() || activeDeskLayoutDrag || activeDeskLayoutResize || isClassImportModalOpen || isClassAnalysisDetailModalOpen || isClassAnalysisRecordEditModalOpen || isUnterrichtAssessmentModalOpen || isEditingFocusableInput()) {
+  if (!schoolService || !isLiveDateTimeMode() || activeDeskLayoutDrag || activeDeskLayoutResize || activeUnterrichtMathObservationPress || activeUnterrichtMathObservationMarkerPress || isClassImportModalOpen || isClassAnalysisDetailModalOpen || isClassAnalysisRecordEditModalOpen || isUnterrichtAssessmentModalOpen || isUnterrichtMathObservationModalOpen || isEditingFocusableInput()) {
     return;
   }
 
@@ -872,6 +1002,11 @@ function closeOpenTransientUi() {
   if (typeof window.UnterrichtsassistentApp.closeUnterrichtAssessmentModal === "function") {
     window.UnterrichtsassistentApp.closeUnterrichtAssessmentModal();
   }
+
+  if (typeof window.UnterrichtsassistentApp.closeUnterrichtMathObservationModal === "function") {
+    window.UnterrichtsassistentApp.closeUnterrichtMathObservationModal();
+  }
+  cancelUnterrichtMathObservationInteraction();
 
   if (typeof window.UnterrichtsassistentApp.closeUnterrichtWarningOtherModal === "function") {
     window.UnterrichtsassistentApp.closeUnterrichtWarningOtherModal();
@@ -5559,6 +5694,7 @@ function setActiveView(viewId) {
       homework: true,
       warning: true,
       assessment: true,
+      mathObservation: true,
       completedEvaluation: true
     };
   }
@@ -5940,6 +6076,10 @@ function createAssessmentRecordId() {
   return "assessment-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
 }
 
+function createMathObservationRecordId() {
+  return "math-observation-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+}
+
 function timeStringToMinutes(timeValue) {
   const parts = String(timeValue || "").split(":");
   const hours = Number(parts[0]);
@@ -5979,6 +6119,82 @@ function normalizeWarningCategoryValue(categoryValue) {
   }
 
   return "stoerung";
+}
+
+function normalizeMathObservationCompetencyValue(competencyValue) {
+  const normalized = String(competencyValue || "").trim().toLowerCase();
+
+  if (!normalized) {
+    return "";
+  }
+
+  return MATH_OBSERVATION_COMPETENCIES.some(function (entry) {
+    return entry.key === normalized;
+  }) ? normalized : "";
+}
+
+function normalizeMathObservationCompetencyIds(primaryCompetency, competencyIds) {
+  const normalizedPrimary = normalizeMathObservationCompetencyValue(primaryCompetency);
+  const rawIds = Array.isArray(competencyIds)
+    ? competencyIds
+    : String(competencyIds || "").split(",");
+
+  return Array.from(new Set((normalizedPrimary ? [normalizedPrimary] : []).concat(rawIds.map(function (competencyId) {
+    return String(competencyId || "").trim().toLowerCase();
+  })))).filter(function (competencyId) {
+    return MATH_OBSERVATION_COMPETENCIES.some(function (entry) {
+      return entry.key === competencyId;
+    });
+  });
+}
+
+function normalizeMathObservationQualityValue(qualityValue) {
+  const numericValue = Number(qualityValue);
+
+  return Number.isFinite(numericValue)
+    ? Math.max(-2, Math.min(2, Math.round(numericValue)))
+    : 0;
+}
+
+function normalizeMathObservationMarkerValue(markerValue) {
+  const normalized = String(markerValue || "").trim().toLowerCase();
+
+  return MATH_OBSERVATION_MARKERS.some(function (entry) {
+    return entry.key === normalized;
+  }) ? normalized : "beitrag";
+}
+
+function isMathObservationSwipeMarker(markerValue) {
+  const normalized = normalizeMathObservationMarkerValue(markerValue);
+  const marker = MATH_OBSERVATION_MARKERS.find(function (entry) {
+    return entry.key === normalized;
+  }) || null;
+
+  return Boolean(marker && marker.swipable);
+}
+
+function normalizeMathObservationMarkerDirectionValue(directionValue) {
+  const normalized = String(directionValue || "").trim().toLowerCase();
+
+  return ["left", "right"].indexOf(normalized) >= 0 ? normalized : "";
+}
+
+function normalizeOptionalMathObservationMarkerQualityValue(qualityValue) {
+  const normalized = String(qualityValue === undefined || qualityValue === null ? "" : qualityValue).trim();
+
+  return normalized === "" ? "" : normalizeMathObservationQualityValue(normalized);
+}
+
+function normalizeMathObservationSituationTypeValue(situationValue) {
+  const normalized = String(situationValue || "").trim().toLowerCase();
+
+  return ["lernen", "leisten"].indexOf(normalized) >= 0 ? normalized : "";
+}
+
+function normalizeMathObservationDemandLevelValue(demandValue) {
+  const normalized = String(demandValue || "").trim().toLowerCase();
+
+  return ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(normalized) >= 0 ? normalized : "";
 }
 
 function getDeskSeatSlots(deskType) {
@@ -6078,6 +6294,22 @@ function getMutableWarningRecordsCollection(rawSnapshot) {
   }
 
   return rawSnapshot.warningRecords;
+}
+
+function getMathObservationRecordsCollection(rawSnapshot) {
+  return Array.isArray(rawSnapshot && rawSnapshot.mathObservationRecords) ? rawSnapshot.mathObservationRecords : [];
+}
+
+function getMutableMathObservationRecordsCollection(rawSnapshot) {
+  if (!rawSnapshot) {
+    return [];
+  }
+
+  if (!Array.isArray(rawSnapshot.mathObservationRecords)) {
+    rawSnapshot.mathObservationRecords = [];
+  }
+
+  return rawSnapshot.mathObservationRecords;
 }
 
 function getTodosCollection(rawSnapshot) {
@@ -6493,6 +6725,17 @@ function getWarningRecordsForLessonOccurrenceFromSnapshot(rawSnapshot, studentId
   });
 }
 
+function getMathObservationRecordsForLessonOccurrenceFromSnapshot(rawSnapshot, studentId, classId, lessonId, lessonDate) {
+  return getMathObservationRecordsCollection(rawSnapshot).filter(function (record) {
+    return (!studentId || record.studentId === studentId)
+      && record.classId === classId
+      && record.lessonId === lessonId
+      && normalizeDateValue(record.lessonDate) === normalizeDateValue(lessonDate);
+  }).sort(function (left, right) {
+    return String(left.recordedAt || "").localeCompare(String(right.recordedAt || ""));
+  });
+}
+
 function ensureUnterrichtHomeworkRadialMenu() {
   if (unterrichtHomeworkRadialMenu && document.body.contains(unterrichtHomeworkRadialMenu)) {
     return unterrichtHomeworkRadialMenu;
@@ -6770,6 +7013,402 @@ function clearUnterrichtAssessmentPressListeners() {
   window.removeEventListener("pointercancel", window.UnterrichtsassistentApp.handleUnterrichtAssessmentPointerEnd);
 }
 
+function ensureUnterrichtMathObservationQuickMenu() {
+  if (unterrichtMathObservationQuickMenu && document.body.contains(unterrichtMathObservationQuickMenu)) {
+    return unterrichtMathObservationQuickMenu;
+  }
+
+  unterrichtMathObservationQuickMenu = document.createElement("div");
+  unterrichtMathObservationQuickMenu.className = "unterricht-assessment-quick-menu unterricht-math-observation-quick-menu";
+  unterrichtMathObservationQuickMenu.setAttribute("aria-hidden", "true");
+  document.body.appendChild(unterrichtMathObservationQuickMenu);
+  return unterrichtMathObservationQuickMenu;
+}
+
+function ensureUnterrichtMathObservationProcessOverlay() {
+  if (unterrichtMathObservationProcessOverlay && document.body.contains(unterrichtMathObservationProcessOverlay)) {
+    return unterrichtMathObservationProcessOverlay;
+  }
+
+  unterrichtMathObservationProcessOverlay = document.createElement("div");
+  unterrichtMathObservationProcessOverlay.className = "unterricht-assessment-quick-overlay unterricht-math-observation-process-overlay";
+  unterrichtMathObservationProcessOverlay.setAttribute("aria-hidden", "true");
+  unterrichtMathObservationProcessOverlay.innerHTML = [
+    '<div class="unterricht-assessment-quick-overlay__quality">',
+    MATH_OBSERVATION_QUALITY_LABELS.map(function (quality) {
+      return '<div class="unterricht-assessment-quick-overlay__band" data-observation-process-quality-value="' + escapeHtml(String(quality.value)) + '"><span class="unterricht-assessment-quick-overlay__label">' + escapeHtml(quality.label) + "</span></div>";
+    }).join(""),
+    '</div>',
+    '<div class="unterricht-assessment-quick-overlay__afb unterricht-math-observation-process-overlay__competencies">',
+    MATH_OBSERVATION_PROCESS_BANDS.map(function (competency) {
+      return '<div class="unterricht-assessment-quick-overlay__afb-band" data-observation-process-competency="' + escapeHtml(competency.key) + '"><span class="unterricht-assessment-quick-overlay__afb-label">' + escapeHtml(competency.label) + "</span></div>";
+    }).join(""),
+    '</div>'
+  ].join("");
+  document.body.appendChild(unterrichtMathObservationProcessOverlay);
+  return unterrichtMathObservationProcessOverlay;
+}
+
+function ensureUnterrichtMathObservationMarkerMenu() {
+  if (unterrichtMathObservationMarkerMenu && document.body.contains(unterrichtMathObservationMarkerMenu)) {
+    return unterrichtMathObservationMarkerMenu;
+  }
+
+  unterrichtMathObservationMarkerMenu = document.createElement("div");
+  unterrichtMathObservationMarkerMenu.className = "unterricht-math-observation-marker-menu";
+  unterrichtMathObservationMarkerMenu.setAttribute("aria-hidden", "true");
+  unterrichtMathObservationMarkerMenu.innerHTML = [
+    '<div class="unterricht-math-observation-marker-menu__outer">',
+    MATH_OBSERVATION_MARKERS.filter(function (marker) {
+      return !marker.swipable;
+    }).map(function (marker) {
+      return '<button class="unterricht-math-observation-marker-menu__button" type="button" data-observation-marker-button="' + escapeHtml(marker.key) + '" onpointerdown="return window.UnterrichtsassistentApp.startUnterrichtMathObservationMarkerPointer(event, \'' + escapeHtml(marker.key) + '\')" onclick="return false">' + escapeHtml(marker.label) + "</button>";
+    }).join(""),
+    '</div>',
+    '<div class="unterricht-math-observation-marker-menu__center">',
+    MATH_OBSERVATION_MARKERS.filter(function (marker) {
+      return marker.swipable;
+    }).map(function (marker) {
+    return '<button class="unterricht-math-observation-marker-menu__button" type="button" data-observation-marker-button="' + escapeHtml(marker.key) + '" onpointerdown="return window.UnterrichtsassistentApp.startUnterrichtMathObservationMarkerPointer(event, \'' + escapeHtml(marker.key) + '\')" onclick="return false">' + escapeHtml(marker.label) + (marker.swipable ? '<span class="unterricht-math-observation-marker-menu__hint">Drag</span>' : "") + "</button>";
+    }).join(""),
+    '</div>'
+  ].join("");
+  document.body.appendChild(unterrichtMathObservationMarkerMenu);
+  return unterrichtMathObservationMarkerMenu;
+}
+
+function ensureUnterrichtMathObservationMarkerOverlay() {
+  if (unterrichtMathObservationMarkerOverlay && document.body.contains(unterrichtMathObservationMarkerOverlay)) {
+    return unterrichtMathObservationMarkerOverlay;
+  }
+
+  unterrichtMathObservationMarkerOverlay = document.createElement("div");
+  unterrichtMathObservationMarkerOverlay.className = "unterricht-assessment-quick-overlay unterricht-math-observation-marker-overlay";
+  unterrichtMathObservationMarkerOverlay.setAttribute("aria-hidden", "true");
+  unterrichtMathObservationMarkerOverlay.innerHTML = [
+    '<div class="unterricht-assessment-quick-overlay__quality">',
+    [2, 1, 0, -1, -2].map(function (qualityValue) {
+      return '<div class="unterricht-assessment-quick-overlay__band" data-observation-marker-quality-value="' + escapeHtml(String(qualityValue)) + '"><span class="unterricht-assessment-quick-overlay__label"></span></div>';
+    }).join(""),
+    '</div>',
+    '<div class="unterricht-assessment-quick-overlay__afb unterricht-math-observation-marker-overlay__directions">',
+    '<div class="unterricht-assessment-quick-overlay__afb-band" data-observation-marker-direction-label="left"><span class="unterricht-assessment-quick-overlay__afb-label"></span></div>',
+    '<div class="unterricht-assessment-quick-overlay__afb-band" data-observation-marker-direction-label=""><span class="unterricht-assessment-quick-overlay__afb-label">neutral</span></div>',
+    '<div class="unterricht-assessment-quick-overlay__afb-band" data-observation-marker-direction-label="right"><span class="unterricht-assessment-quick-overlay__afb-label"></span></div>',
+    '</div>'
+  ].join("");
+  document.body.appendChild(unterrichtMathObservationMarkerOverlay);
+  return unterrichtMathObservationMarkerOverlay;
+}
+
+function clearUnterrichtMathObservationPressListeners() {
+  window.removeEventListener("pointermove", window.UnterrichtsassistentApp.handleUnterrichtMathObservationPointerMove);
+  window.removeEventListener("pointerup", window.UnterrichtsassistentApp.handleUnterrichtMathObservationPointerEnd);
+  window.removeEventListener("pointercancel", window.UnterrichtsassistentApp.handleUnterrichtMathObservationPointerEnd);
+}
+
+function clearUnterrichtMathObservationMarkerPressListeners() {
+  window.removeEventListener("pointermove", window.UnterrichtsassistentApp.handleUnterrichtMathObservationMarkerPointerMove);
+  window.removeEventListener("pointerup", window.UnterrichtsassistentApp.handleUnterrichtMathObservationMarkerPointerEnd);
+  window.removeEventListener("pointercancel", window.UnterrichtsassistentApp.handleUnterrichtMathObservationMarkerPointerEnd);
+}
+
+function hideUnterrichtMathObservationProcessOverlay() {
+  const menu = ensureUnterrichtMathObservationQuickMenu();
+  const overlay = ensureUnterrichtMathObservationProcessOverlay();
+
+  menu.classList.remove("is-visible");
+  menu.setAttribute("aria-hidden", "true");
+  menu.textContent = "";
+  overlay.classList.remove("is-visible", "is-flash");
+  overlay.setAttribute("aria-hidden", "true");
+  overlay.querySelectorAll("[data-observation-process-quality-value], [data-observation-process-competency]").forEach(function (item) {
+    item.classList.remove("is-active");
+  });
+}
+
+function hideUnterrichtMathObservationMarkerOverlay() {
+  const menu = ensureUnterrichtMathObservationQuickMenu();
+  const overlay = ensureUnterrichtMathObservationMarkerOverlay();
+
+  menu.classList.remove("is-visible");
+  menu.setAttribute("aria-hidden", "true");
+  menu.textContent = "";
+  overlay.classList.remove("is-visible", "is-flash");
+  overlay.setAttribute("aria-hidden", "true");
+  overlay.querySelectorAll("[data-observation-marker-quality-value], [data-observation-marker-direction-label]").forEach(function (item) {
+    item.classList.remove("is-active");
+  });
+}
+
+function hideUnterrichtMathObservationMarkerMenu() {
+  const menu = ensureUnterrichtMathObservationMarkerMenu();
+
+  menu.classList.remove("is-visible", "is-dragging");
+  menu.setAttribute("aria-hidden", "true");
+}
+
+function setUnterrichtMathObservationMarkerMenuDragging(isDragging) {
+  const menu = ensureUnterrichtMathObservationMarkerMenu();
+
+  menu.classList.toggle("is-dragging", Boolean(isDragging));
+  menu.setAttribute("aria-hidden", isDragging ? "true" : "false");
+}
+
+function hideUnterrichtMathObservationUi() {
+  hideUnterrichtMathObservationProcessOverlay();
+  hideUnterrichtMathObservationMarkerOverlay();
+  hideUnterrichtMathObservationMarkerMenu();
+}
+
+function cancelUnterrichtMathObservationInteraction() {
+  if (activeUnterrichtMathObservationPress && activeUnterrichtMathObservationPress.timerId) {
+    window.clearTimeout(activeUnterrichtMathObservationPress.timerId);
+  }
+  clearUnterrichtMathObservationPressListeners();
+  clearUnterrichtMathObservationMarkerPressListeners();
+  activeUnterrichtMathObservationPress = null;
+  activeUnterrichtMathObservationMarkerPress = null;
+  activeUnterrichtMathObservationDraft = null;
+  hideUnterrichtMathObservationUi();
+}
+
+function showUnterrichtMathObservationQuickMenu(clientX, clientY, label) {
+  const menu = ensureUnterrichtMathObservationQuickMenu();
+
+  menu.style.left = String(clientX + 16) + "px";
+  menu.style.top = String(clientY - 18) + "px";
+  menu.textContent = label || "";
+  menu.classList.add("is-visible");
+  menu.setAttribute("aria-hidden", "false");
+}
+
+function clampOverlayCenter(anchorX, anchorY, overlayWidth, overlayHeight) {
+  const margin = 12;
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1024;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 768;
+  const width = Math.min(Number(overlayWidth) || 0, Math.max(0, viewportWidth - (margin * 2)));
+  const height = Math.min(Number(overlayHeight) || 0, Math.max(0, viewportHeight - (margin * 2)));
+  const minX = margin + (width / 2);
+  const maxX = viewportWidth - margin - (width / 2);
+  const minY = margin + (height / 2);
+  const maxY = viewportHeight - margin - (height / 2);
+
+  return {
+    x: maxX >= minX
+      ? Math.max(minX, Math.min(maxX, Number(anchorX) || 0))
+      : viewportWidth / 2,
+    y: maxY >= minY
+      ? Math.max(minY, Math.min(maxY, Number(anchorY) || 0))
+      : viewportHeight / 2
+  };
+}
+
+function getUnterrichtMathObservationProcessOverlayCenter(anchorX, anchorY) {
+  const overlay = ensureUnterrichtMathObservationProcessOverlay();
+  const width = overlay.offsetWidth || 620;
+  const height = overlay.offsetHeight || 300;
+
+  return clampOverlayCenter(anchorX, anchorY, width, height);
+}
+
+function getMathObservationMarkerQualifier(markerValue) {
+  const marker = normalizeMathObservationMarkerValue(markerValue);
+
+  return MATH_OBSERVATION_MARKER_QUALIFIERS[marker] || {
+    left: "links / reaktiv",
+    right: "rechts / eigenstaendig",
+    qualities: [
+      { value: 2, label: "++ sehr stark" },
+      { value: 1, label: "+ stark" },
+      { value: 0, label: "0 sachgerecht" },
+      { value: -1, label: "- schwach" },
+      { value: -2, label: "-- nicht tragfaehig" }
+    ]
+  };
+}
+
+function syncUnterrichtMathObservationMarkerOverlayLabels(markerValue) {
+  const overlay = ensureUnterrichtMathObservationMarkerOverlay();
+  const qualifier = getMathObservationMarkerQualifier(markerValue);
+  const qualityByValue = {};
+  const directionLabels = {
+    left: qualifier.left,
+    "": "neutral",
+    right: qualifier.right
+  };
+
+  qualifier.qualities.forEach(function (quality) {
+    qualityByValue[String(quality.value)] = quality.label;
+  });
+  overlay.querySelectorAll("[data-observation-marker-quality-value]").forEach(function (item) {
+    const label = item.querySelector(".unterricht-assessment-quick-overlay__label");
+    if (label) {
+      label.textContent = qualityByValue[item.getAttribute("data-observation-marker-quality-value")] || "";
+    }
+  });
+  overlay.querySelectorAll("[data-observation-marker-direction-label]").forEach(function (item) {
+    const label = item.querySelector(".unterricht-assessment-quick-overlay__afb-label");
+    if (label) {
+      label.textContent = directionLabels[item.getAttribute("data-observation-marker-direction-label")] || "";
+    }
+  });
+}
+
+function showUnterrichtMathObservationProcessOverlay(anchorX, anchorY, selection) {
+  const overlay = ensureUnterrichtMathObservationProcessOverlay();
+  const center = getUnterrichtMathObservationProcessOverlayCenter(anchorX, anchorY);
+  const activeQuality = String(normalizeMathObservationQualityValue(selection && selection.processQuality));
+
+  overlay.style.left = String(center.x) + "px";
+  overlay.style.top = String(center.y) + "px";
+  overlay.classList.add("is-visible");
+  overlay.setAttribute("aria-hidden", "false");
+  overlay.querySelectorAll("[data-observation-process-quality-value]").forEach(function (item) {
+    item.classList.toggle("is-active", item.getAttribute("data-observation-process-quality-value") === activeQuality);
+  });
+  overlay.querySelectorAll("[data-observation-process-competency]").forEach(function (item) {
+    item.classList.toggle("is-active", item.getAttribute("data-observation-process-competency") === String(selection && selection.primaryCompetency || ""));
+  });
+}
+
+function showUnterrichtMathObservationMarkerOverlay(anchorX, anchorY, selection, markerValue) {
+  const overlay = ensureUnterrichtMathObservationMarkerOverlay();
+  const center = clampOverlayCenter(anchorX, anchorY, overlay.offsetWidth || 220, overlay.offsetHeight || 300);
+  const activeQuality = selection && selection.markerQuality === "" ? "" : String(normalizeMathObservationQualityValue(selection && selection.markerQuality));
+  const activeDirection = String(selection && selection.markerDirection || "");
+
+  syncUnterrichtMathObservationMarkerOverlayLabels(markerValue);
+  overlay.style.left = String(center.x) + "px";
+  overlay.style.top = String(center.y) + "px";
+  overlay.classList.add("is-visible");
+  overlay.setAttribute("aria-hidden", "false");
+  overlay.querySelectorAll("[data-observation-marker-quality-value]").forEach(function (item) {
+    item.classList.toggle("is-active", item.getAttribute("data-observation-marker-quality-value") === activeQuality);
+  });
+  overlay.querySelectorAll("[data-observation-marker-direction-label]").forEach(function (item) {
+    item.classList.toggle("is-active", item.getAttribute("data-observation-marker-direction-label") === activeDirection);
+  });
+}
+
+function flashUnterrichtMathObservationMarkerOverlay() {
+  const overlay = ensureUnterrichtMathObservationMarkerOverlay();
+
+  overlay.classList.remove("is-flash");
+  void overlay.offsetWidth;
+  overlay.classList.add("is-flash");
+  window.setTimeout(function () {
+    overlay.classList.remove("is-flash");
+  }, 220);
+}
+
+function getUnterrichtMathObservationProcessSelection(clientX, clientY, anchorX, anchorY) {
+  const dx = clientX - anchorX;
+  const dy = clientY - anchorY;
+  const overlay = ensureUnterrichtMathObservationProcessOverlay();
+  const overlayWidth = overlay.offsetWidth || 620;
+  const overlayHeight = overlay.offsetHeight || 300;
+  const qualityMax = Math.max(40, overlayHeight / 2);
+  const qualityZoneHalf = qualityMax * 0.2;
+  const qualityOuterHalf = qualityMax * 0.6;
+  const qualityTolerance = 120;
+  const competencyCenterHalf = Math.max(28, Math.min(42, overlayWidth * 0.07));
+  const competencyMax = Math.max(120, (overlayWidth / 2) - 30);
+  const competencyTolerance = 120;
+  const clampedDx = Math.max(-competencyMax, Math.min(competencyMax, dx));
+  const clampedDy = Math.max(-qualityMax, Math.min(qualityMax, dy));
+  const zoneWidth = (competencyMax - competencyCenterHalf) / 3;
+  let competency = null;
+  let processQuality = 0;
+
+  if (Math.abs(dy) > qualityMax + qualityTolerance || Math.abs(dx) > competencyMax + competencyTolerance) {
+    return null;
+  }
+
+  if (clampedDx < -competencyCenterHalf) {
+    competency = MATH_OBSERVATION_COMPETENCIES[Math.max(0, Math.min(2, Math.floor((clampedDx + competencyMax) / zoneWidth)))];
+  } else if (clampedDx > competencyCenterHalf) {
+    competency = MATH_OBSERVATION_COMPETENCIES[3 + Math.max(0, Math.min(2, Math.floor((clampedDx - competencyCenterHalf) / zoneWidth)))];
+  }
+
+  if (clampedDy < -qualityOuterHalf) {
+    processQuality = 2;
+  } else if (clampedDy < -qualityZoneHalf) {
+    processQuality = 1;
+  } else if (clampedDy > qualityOuterHalf) {
+    processQuality = -2;
+  } else if (clampedDy > qualityZoneHalf) {
+    processQuality = -1;
+  }
+
+  return {
+    primaryCompetency: competency ? competency.key : "",
+    competencyIds: competency ? [competency.key] : [],
+    processQuality: processQuality,
+    label: (competency ? competency.label + " " : "") + formatMathObservationQualityLabel(processQuality)
+  };
+}
+
+function getUnterrichtMathObservationMarkerSelection(clientX, clientY, anchorX, anchorY) {
+  const dx = clientX - anchorX;
+  const dy = clientY - anchorY;
+  const qualityZoneHalf = 30;
+  const qualityOuterHalf = 90;
+  const qualityMax = 150;
+  const qualityTolerance = 120;
+  const directionZoneHalf = 39;
+  const directionMax = 117;
+  const directionTolerance = 120;
+  const clampedDy = Math.max(-qualityMax, Math.min(qualityMax, dy));
+  let markerDirection = "";
+  let markerQuality = 0;
+
+  if (Math.abs(dy) > qualityMax + qualityTolerance || Math.abs(dx) > directionMax + directionTolerance) {
+    return null;
+  }
+
+  if (dx < -directionZoneHalf) {
+    markerDirection = "left";
+  } else if (dx > directionZoneHalf) {
+    markerDirection = "right";
+  }
+
+  if (clampedDy < -qualityOuterHalf) {
+    markerQuality = 2;
+  } else if (clampedDy < -qualityZoneHalf) {
+    markerQuality = 1;
+  } else if (clampedDy > qualityOuterHalf) {
+    markerQuality = -2;
+  } else if (clampedDy > qualityZoneHalf) {
+    markerQuality = -1;
+  }
+
+  return {
+    markerDirection: markerDirection,
+    markerQuality: markerQuality,
+    label: (markerDirection === "left" ? "reaktiv " : (markerDirection === "right" ? "eigen " : "")) + formatAssessmentQuickQuality(markerQuality)
+  };
+}
+
+function formatMathObservationQualityLabel(value) {
+  const normalizedValue = normalizeMathObservationQualityValue(value);
+  const quality = MATH_OBSERVATION_QUALITY_LABELS.find(function (entry) {
+    return entry.value === normalizedValue;
+  }) || null;
+
+  return quality ? quality.label : formatAssessmentQuickQuality(normalizedValue);
+}
+
+function showUnterrichtMathObservationMarkerMenu(anchorX, anchorY) {
+  const menu = ensureUnterrichtMathObservationMarkerMenu();
+
+  menu.style.left = "";
+  menu.style.top = "";
+  menu.style.width = "";
+  menu.classList.add("is-visible");
+  menu.setAttribute("aria-hidden", "false");
+}
+
 function formatAssessmentQuickQuality(value) {
   return formatAfbQualityLabel(value) || "0";
 }
@@ -6854,6 +7493,10 @@ function getUnterrichtAssessmentModal() {
   return document.getElementById("unterrichtAssessmentModal");
 }
 
+function getUnterrichtMathObservationModal() {
+  return document.getElementById("unterrichtMathObservationModal");
+}
+
 function getUnterrichtAssessmentGridSvg() {
   return document.getElementById("unterrichtAssessmentGridSvg");
 }
@@ -6906,6 +7549,37 @@ function appendUnterrichtAssessmentRecord(rawSnapshot, draft, values) {
     workBehavior: String(values && values.workBehavior || "").trim(),
     socialBehavior: String(values && values.socialBehavior || "").trim(),
     knowledgeGap: String(values && values.knowledgeGap || "").trim(),
+    note: String(values && values.note || "").trim()
+  });
+}
+
+function appendUnterrichtMathObservationRecord(rawSnapshot, draft, values) {
+  const recordedAt = String(values && values.recordedAt || getReferenceDateTimeValue()).trim();
+  const primaryCompetency = normalizeMathObservationCompetencyValue(values && values.primaryCompetency);
+  const competencyIds = normalizeMathObservationCompetencyIds(primaryCompetency, values && values.competencyIds);
+  const marker = normalizeMathObservationMarkerValue(values && values.marker);
+  const isSwipableMarker = isMathObservationSwipeMarker(marker);
+
+  if (!rawSnapshot || !draft) {
+    return;
+  }
+
+  getMutableMathObservationRecordsCollection(rawSnapshot).push({
+    id: createMathObservationRecordId(),
+    studentId: draft.studentId,
+    classId: draft.classId,
+    lessonId: draft.lessonId,
+    lessonDate: draft.lessonDate,
+    room: draft.lessonRoom,
+    recordedAt: recordedAt,
+    primaryCompetency: primaryCompetency,
+    competencyIds: competencyIds,
+    processQuality: normalizeMathObservationQualityValue(values && values.processQuality),
+    marker: marker,
+    markerDirection: isSwipableMarker ? normalizeMathObservationMarkerDirectionValue(values && values.markerDirection) : "",
+    markerQuality: isSwipableMarker ? normalizeOptionalMathObservationMarkerQualityValue(values && values.markerQuality) : "",
+    situationType: normalizeMathObservationSituationTypeValue(values && values.situationType),
+    demandLevel: normalizeMathObservationDemandLevelValue(values && values.demandLevel),
     note: String(values && values.note || "").trim()
   });
 }
@@ -7187,6 +7861,110 @@ function syncUnterrichtAssessmentGradeUi() {
   });
 }
 
+function syncUnterrichtMathObservationUi() {
+  const primaryInput = document.getElementById("unterrichtMathObservationPrimaryCompetency");
+  const competencyIdsInput = document.getElementById("unterrichtMathObservationCompetencyIds");
+  const processQualityInput = document.getElementById("unterrichtMathObservationProcessQuality");
+  const markerInput = document.getElementById("unterrichtMathObservationMarker");
+  const markerDirectionInput = document.getElementById("unterrichtMathObservationMarkerDirection");
+  const markerQualityInput = document.getElementById("unterrichtMathObservationMarkerQuality");
+  const situationInput = document.getElementById("unterrichtMathObservationSituationType");
+  const demandLevelInput = document.getElementById("unterrichtMathObservationDemandLevel");
+  const markerQualifier = document.getElementById("unterrichtMathObservationMarkerQualifier");
+  const primaryCompetency = normalizeMathObservationCompetencyValue(primaryInput && primaryInput.value);
+  const competencyIds = normalizeMathObservationCompetencyIds(primaryCompetency, competencyIdsInput && competencyIdsInput.value);
+  const processQuality = normalizeMathObservationQualityValue(processQualityInput && processQualityInput.value);
+  const marker = normalizeMathObservationMarkerValue(markerInput && markerInput.value);
+  const markerDirection = normalizeMathObservationMarkerDirectionValue(markerDirectionInput && markerDirectionInput.value);
+  const markerQuality = normalizeOptionalMathObservationMarkerQualityValue(markerQualityInput && markerQualityInput.value);
+  const situationType = normalizeMathObservationSituationTypeValue(situationInput && situationInput.value);
+  const demandLevel = normalizeMathObservationDemandLevelValue(demandLevelInput && demandLevelInput.value);
+  const markerIsSwipable = isMathObservationSwipeMarker(marker);
+
+  if (primaryInput) {
+    primaryInput.value = primaryCompetency;
+  }
+  if (competencyIdsInput) {
+    competencyIdsInput.value = competencyIds.join(",");
+  }
+  if (processQualityInput) {
+    processQualityInput.value = String(processQuality);
+  }
+  if (markerInput) {
+    markerInput.value = marker;
+  }
+  if (markerDirectionInput) {
+    markerDirectionInput.value = markerIsSwipable ? markerDirection : "";
+  }
+  if (markerQualityInput) {
+    markerQualityInput.value = markerIsSwipable && markerQuality !== "" ? String(markerQuality) : "";
+  }
+  if (situationInput) {
+    situationInput.value = situationType;
+  }
+  if (demandLevelInput) {
+    demandLevelInput.value = demandLevel;
+  }
+
+  Array.from(document.querySelectorAll("[data-observation-primary-competency]")).forEach(function (button) {
+    const value = String(button.getAttribute("data-observation-primary-competency") || "").trim();
+    const isActive = value === primaryCompetency;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+  Array.from(document.querySelectorAll("[data-observation-competency]")).forEach(function (button) {
+    const value = String(button.getAttribute("data-observation-competency") || "").trim();
+    const isPrimary = value === primaryCompetency;
+    const isActive = competencyIds.indexOf(value) >= 0 && !isPrimary;
+    button.disabled = isPrimary;
+    button.classList.toggle("is-active", isActive || isPrimary);
+    button.classList.toggle("is-primary", isPrimary);
+    button.setAttribute("aria-pressed", isActive || isPrimary ? "true" : "false");
+  });
+  Array.from(document.querySelectorAll("[data-observation-process-quality]")).forEach(function (button) {
+    const value = normalizeMathObservationQualityValue(button.getAttribute("data-observation-process-quality"));
+    const isActive = value === processQuality;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+  Array.from(document.querySelectorAll("[data-observation-marker]")).forEach(function (button) {
+    const value = String(button.getAttribute("data-observation-marker") || "").trim();
+    const isActive = value === marker;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+  Array.from(document.querySelectorAll("[data-observation-marker-direction]")).forEach(function (button) {
+    const value = String(button.getAttribute("data-observation-marker-direction") || "").trim();
+    const isActive = markerIsSwipable && value === markerDirection;
+    button.disabled = !markerIsSwipable;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+  Array.from(document.querySelectorAll("[data-observation-marker-quality]")).forEach(function (button) {
+    const value = normalizeOptionalMathObservationMarkerQualityValue(button.getAttribute("data-observation-marker-quality"));
+    const isActive = markerIsSwipable && markerQuality !== "" && value === markerQuality;
+    button.disabled = !markerIsSwipable;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+  Array.from(document.querySelectorAll("[data-observation-situation]")).forEach(function (button) {
+    const value = String(button.getAttribute("data-observation-situation") || "").trim();
+    const isActive = Boolean(situationType) && value === situationType;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+  Array.from(document.querySelectorAll("[data-observation-demand-level]")).forEach(function (button) {
+    const value = String(button.getAttribute("data-observation-demand-level") || "").trim();
+    const isActive = Boolean(demandLevel) && value === demandLevel;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+
+  if (markerQualifier) {
+    markerQualifier.hidden = !markerIsSwipable;
+  }
+}
+
 function getClassAnalysisRecordByDraft(rawSnapshot, draft) {
   const type = String(draft && draft.recordType || "");
   const recordId = String(draft && draft.recordId || "");
@@ -7196,7 +7974,9 @@ function getClassAnalysisRecordByDraft(rawSnapshot, draft) {
       ? getAttendanceRecordsCollection(rawSnapshot)
       : (type === "homework"
         ? getHomeworkRecordsCollection(rawSnapshot)
-        : (type === "warning" ? getWarningRecordsCollection(rawSnapshot) : [])));
+        : (type === "warning"
+          ? getWarningRecordsCollection(rawSnapshot)
+          : (type === "mathObservation" ? getMathObservationRecordsCollection(rawSnapshot) : []))));
 
   return collection.find(function (record) {
     return String(record.id || "") === recordId;
@@ -10995,7 +11775,8 @@ window.UnterrichtsassistentApp.getUnterrichtSeatPlanRotation = function () {
   return unterrichtSeatPlanRotation === 180 ? 180 : 0;
 };
 window.UnterrichtsassistentApp.setUnterrichtToolMode = function (nextMode) {
-  const allowedModes = ["attendance", "homework", "warning", "assessment"];
+  const allowedModes = ["attendance", "homework", "warning", "assessment", "mathObservation"];
+  cancelUnterrichtMathObservationInteraction();
   unterrichtToolMode = allowedModes.indexOf(nextMode) >= 0 ? nextMode : "attendance";
 
   if (activeViewId === "unterricht") {
@@ -11184,6 +11965,10 @@ window.UnterrichtsassistentApp.handleUnterrichtSeatClick = function (studentId, 
 
     currentRawSnapshot.warningRecords = warningRecords;
     saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
+    return false;
+  }
+
+  if (unterrichtToolMode === "mathObservation") {
     return false;
   }
 
@@ -11586,6 +12371,303 @@ window.UnterrichtsassistentApp.handleUnterrichtAssessmentPointerEnd = function (
     pressState.lessonStartTime,
     pressState.lessonRoom
   );
+  event.preventDefault();
+  return false;
+};
+window.UnterrichtsassistentApp.startUnterrichtMathObservationPointer = function (event, studentId, lessonId, lessonStartTime, lessonRoom) {
+  if (unterrichtToolMode !== "mathObservation" || !studentId || !lessonId) {
+    return false;
+  }
+
+  if (activeUnterrichtMathObservationPress && activeUnterrichtMathObservationPress.timerId) {
+    window.clearTimeout(activeUnterrichtMathObservationPress.timerId);
+  }
+
+  clearUnterrichtMathObservationPressListeners();
+  clearUnterrichtMathObservationMarkerPressListeners();
+  hideUnterrichtMathObservationUi();
+
+  activeUnterrichtMathObservationPress = {
+    pointerId: event.pointerId,
+    studentId: String(studentId),
+    lessonId: String(lessonId),
+    lessonStartTime: String(lessonStartTime || ""),
+    lessonRoom: String(lessonRoom || ""),
+    anchorX: Number(event.clientX) || 0,
+    anchorY: Number(event.clientY) || 0,
+    overlayAnchorX: 0,
+    overlayAnchorY: 0,
+    clientX: Number(event.clientX) || 0,
+    clientY: Number(event.clientY) || 0,
+    menuVisible: false,
+    moved: false,
+    selection: null,
+    timerId: window.setTimeout(function () {
+      if (!activeUnterrichtMathObservationPress || activeUnterrichtMathObservationPress.menuVisible) {
+        return;
+      }
+
+      activeUnterrichtMathObservationPress.menuVisible = true;
+      activeUnterrichtMathObservationPress.selection = getUnterrichtMathObservationProcessSelection(
+        activeUnterrichtMathObservationPress.clientX,
+        activeUnterrichtMathObservationPress.clientY,
+        activeUnterrichtMathObservationPress.overlayAnchorX,
+        activeUnterrichtMathObservationPress.overlayAnchorY
+      );
+      if (activeUnterrichtMathObservationPress.selection) {
+        showUnterrichtMathObservationQuickMenu(
+          activeUnterrichtMathObservationPress.clientX,
+          activeUnterrichtMathObservationPress.clientY,
+          activeUnterrichtMathObservationPress.selection.label
+        );
+        showUnterrichtMathObservationProcessOverlay(
+          activeUnterrichtMathObservationPress.anchorX,
+          activeUnterrichtMathObservationPress.anchorY,
+          activeUnterrichtMathObservationPress.selection
+        );
+      }
+    }, ASSESSMENT_LONG_PRESS_DELAY_MS)
+  };
+  (function () {
+    const center = getUnterrichtMathObservationProcessOverlayCenter(
+      activeUnterrichtMathObservationPress.anchorX,
+      activeUnterrichtMathObservationPress.anchorY
+    );
+    activeUnterrichtMathObservationPress.overlayAnchorX = center.x;
+    activeUnterrichtMathObservationPress.overlayAnchorY = center.y;
+  }());
+
+  trySetPointerCapture(event.target, event.pointerId);
+  window.addEventListener("pointermove", window.UnterrichtsassistentApp.handleUnterrichtMathObservationPointerMove);
+  window.addEventListener("pointerup", window.UnterrichtsassistentApp.handleUnterrichtMathObservationPointerEnd);
+  window.addEventListener("pointercancel", window.UnterrichtsassistentApp.handleUnterrichtMathObservationPointerEnd);
+  event.preventDefault();
+  return false;
+};
+window.UnterrichtsassistentApp.handleUnterrichtMathObservationPointerMove = function (event) {
+  if (!activeUnterrichtMathObservationPress || event.pointerId !== activeUnterrichtMathObservationPress.pointerId) {
+    return false;
+  }
+
+  activeUnterrichtMathObservationPress.clientX = Number(event.clientX) || 0;
+  activeUnterrichtMathObservationPress.clientY = Number(event.clientY) || 0;
+
+  if (Math.abs(activeUnterrichtMathObservationPress.clientX - activeUnterrichtMathObservationPress.anchorX) >= 8
+    || Math.abs(activeUnterrichtMathObservationPress.clientY - activeUnterrichtMathObservationPress.anchorY) >= 8) {
+    activeUnterrichtMathObservationPress.moved = true;
+  }
+
+  if (!activeUnterrichtMathObservationPress.menuVisible && activeUnterrichtMathObservationPress.moved) {
+    if (activeUnterrichtMathObservationPress.timerId) {
+      window.clearTimeout(activeUnterrichtMathObservationPress.timerId);
+      activeUnterrichtMathObservationPress.timerId = 0;
+    }
+    activeUnterrichtMathObservationPress.menuVisible = true;
+  }
+
+  if (activeUnterrichtMathObservationPress.menuVisible) {
+    activeUnterrichtMathObservationPress.selection = getUnterrichtMathObservationProcessSelection(
+      activeUnterrichtMathObservationPress.clientX,
+      activeUnterrichtMathObservationPress.clientY,
+      activeUnterrichtMathObservationPress.overlayAnchorX,
+      activeUnterrichtMathObservationPress.overlayAnchorY
+    );
+
+    if (activeUnterrichtMathObservationPress.selection) {
+      showUnterrichtMathObservationQuickMenu(
+        activeUnterrichtMathObservationPress.clientX,
+        activeUnterrichtMathObservationPress.clientY,
+        activeUnterrichtMathObservationPress.selection.label
+      );
+      showUnterrichtMathObservationProcessOverlay(
+        activeUnterrichtMathObservationPress.anchorX,
+        activeUnterrichtMathObservationPress.anchorY,
+        activeUnterrichtMathObservationPress.selection
+      );
+    } else {
+      hideUnterrichtMathObservationProcessOverlay();
+    }
+  }
+
+  event.preventDefault();
+  return false;
+};
+window.UnterrichtsassistentApp.handleUnterrichtMathObservationPointerEnd = function (event) {
+  const pressState = activeUnterrichtMathObservationPress;
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const lessonDate = normalizeDateValue(getReferenceDateValue());
+
+  if (!pressState || event.pointerId !== pressState.pointerId) {
+    return false;
+  }
+
+  if (pressState.timerId) {
+    window.clearTimeout(pressState.timerId);
+  }
+
+  clearUnterrichtMathObservationPressListeners();
+  activeUnterrichtMathObservationPress = null;
+
+  if (pressState.menuVisible && pressState.selection && activeClass) {
+    activeUnterrichtMathObservationDraft = {
+      studentId: pressState.studentId,
+      classId: activeClass.id,
+      lessonId: pressState.lessonId,
+      lessonDate: lessonDate,
+      lessonStartTime: pressState.lessonStartTime,
+      lessonRoom: pressState.lessonRoom,
+      primaryCompetency: pressState.selection.primaryCompetency,
+      competencyIds: pressState.selection.competencyIds,
+      processQuality: pressState.selection.processQuality
+    };
+    hideUnterrichtMathObservationProcessOverlay();
+    showUnterrichtMathObservationMarkerMenu(pressState.anchorX, pressState.anchorY);
+    event.preventDefault();
+    return false;
+  }
+
+  hideUnterrichtMathObservationProcessOverlay();
+  event.preventDefault();
+  return false;
+};
+window.UnterrichtsassistentApp.startUnterrichtMathObservationMarkerPointer = function (event, marker) {
+  const normalizedMarker = normalizeMathObservationMarkerValue(marker);
+  const markerIsSwipable = isMathObservationSwipeMarker(normalizedMarker);
+
+  if (!activeUnterrichtMathObservationDraft) {
+    hideUnterrichtMathObservationUi();
+    return false;
+  }
+
+  clearUnterrichtMathObservationMarkerPressListeners();
+  hideUnterrichtMathObservationMarkerOverlay();
+
+  activeUnterrichtMathObservationMarkerPress = {
+    pointerId: event.pointerId,
+    marker: normalizedMarker,
+    anchorX: Number(event.clientX) || 0,
+    anchorY: Number(event.clientY) || 0,
+    overlayAnchorX: 0,
+    overlayAnchorY: 0,
+    clientX: Number(event.clientX) || 0,
+    clientY: Number(event.clientY) || 0,
+    menuVisible: false,
+    moved: false,
+    swipable: markerIsSwipable,
+    selection: {
+      markerDirection: "",
+      markerQuality: ""
+    }
+  };
+  (function () {
+    const overlay = ensureUnterrichtMathObservationMarkerOverlay();
+    const center = clampOverlayCenter(
+      activeUnterrichtMathObservationMarkerPress.anchorX,
+      activeUnterrichtMathObservationMarkerPress.anchorY,
+      overlay.offsetWidth || 220,
+      overlay.offsetHeight || 300
+    );
+    activeUnterrichtMathObservationMarkerPress.overlayAnchorX = center.x;
+    activeUnterrichtMathObservationMarkerPress.overlayAnchorY = center.y;
+  }());
+
+  trySetPointerCapture(event.currentTarget || event.target, event.pointerId);
+  window.addEventListener("pointermove", window.UnterrichtsassistentApp.handleUnterrichtMathObservationMarkerPointerMove);
+  window.addEventListener("pointerup", window.UnterrichtsassistentApp.handleUnterrichtMathObservationMarkerPointerEnd);
+  window.addEventListener("pointercancel", window.UnterrichtsassistentApp.handleUnterrichtMathObservationMarkerPointerEnd);
+  event.preventDefault();
+  return false;
+};
+window.UnterrichtsassistentApp.handleUnterrichtMathObservationMarkerPointerMove = function (event) {
+  if (!activeUnterrichtMathObservationMarkerPress || event.pointerId !== activeUnterrichtMathObservationMarkerPress.pointerId) {
+    return false;
+  }
+
+  activeUnterrichtMathObservationMarkerPress.clientX = Number(event.clientX) || 0;
+  activeUnterrichtMathObservationMarkerPress.clientY = Number(event.clientY) || 0;
+
+  if (Math.abs(activeUnterrichtMathObservationMarkerPress.clientX - activeUnterrichtMathObservationMarkerPress.anchorX) >= 8
+    || Math.abs(activeUnterrichtMathObservationMarkerPress.clientY - activeUnterrichtMathObservationMarkerPress.anchorY) >= 8) {
+    activeUnterrichtMathObservationMarkerPress.moved = true;
+  }
+
+  if (activeUnterrichtMathObservationMarkerPress.swipable && activeUnterrichtMathObservationMarkerPress.moved) {
+    activeUnterrichtMathObservationMarkerPress.menuVisible = true;
+    setUnterrichtMathObservationMarkerMenuDragging(true);
+    activeUnterrichtMathObservationMarkerPress.selection = getUnterrichtMathObservationMarkerSelection(
+      activeUnterrichtMathObservationMarkerPress.clientX,
+      activeUnterrichtMathObservationMarkerPress.clientY,
+      activeUnterrichtMathObservationMarkerPress.overlayAnchorX,
+      activeUnterrichtMathObservationMarkerPress.overlayAnchorY
+    );
+
+    if (activeUnterrichtMathObservationMarkerPress.selection) {
+      showUnterrichtMathObservationQuickMenu(
+        activeUnterrichtMathObservationMarkerPress.clientX,
+        activeUnterrichtMathObservationMarkerPress.clientY,
+        activeUnterrichtMathObservationMarkerPress.selection.label
+      );
+      showUnterrichtMathObservationMarkerOverlay(
+        activeUnterrichtMathObservationMarkerPress.anchorX,
+        activeUnterrichtMathObservationMarkerPress.anchorY,
+        activeUnterrichtMathObservationMarkerPress.selection,
+        activeUnterrichtMathObservationMarkerPress.marker
+      );
+    } else {
+      hideUnterrichtMathObservationMarkerOverlay();
+    }
+  }
+
+  event.preventDefault();
+  return false;
+};
+window.UnterrichtsassistentApp.handleUnterrichtMathObservationMarkerPointerEnd = function (event) {
+  const pressState = activeUnterrichtMathObservationMarkerPress;
+  const currentRawSnapshot = schoolService && serializeSnapshot ? serializeSnapshot(schoolService.snapshot) : null;
+  const draft = activeUnterrichtMathObservationDraft;
+  const selection = pressState && pressState.menuVisible && pressState.selection
+    ? pressState.selection
+    : { markerDirection: "", markerQuality: "" };
+
+  if (!pressState || event.pointerId !== pressState.pointerId) {
+    return false;
+  }
+
+  clearUnterrichtMathObservationMarkerPressListeners();
+  activeUnterrichtMathObservationMarkerPress = null;
+
+  if (currentRawSnapshot && draft) {
+    appendUnterrichtMathObservationRecord(currentRawSnapshot, draft, {
+      primaryCompetency: draft.primaryCompetency,
+      competencyIds: draft.competencyIds,
+      processQuality: draft.processQuality,
+      marker: pressState.marker,
+      markerDirection: selection.markerDirection,
+      markerQuality: selection.markerQuality,
+      situationType: "",
+      demandLevel: "",
+      note: ""
+    });
+    saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
+  }
+
+  if (pressState.menuVisible) {
+    showUnterrichtMathObservationMarkerOverlay(
+      pressState.anchorX,
+      pressState.anchorY,
+      selection,
+      pressState.marker
+    );
+    flashUnterrichtMathObservationMarkerOverlay();
+    window.setTimeout(function () {
+      hideUnterrichtMathObservationUi();
+    }, 180);
+  } else {
+    setUnterrichtMathObservationMarkerMenuDragging(false);
+    hideUnterrichtMathObservationUi();
+  }
+
+  activeUnterrichtMathObservationDraft = null;
   event.preventDefault();
   return false;
 };
@@ -16340,6 +17422,240 @@ window.UnterrichtsassistentApp.cancelPlanningRangeSelection = function () {
 
   return false;
 };
+window.UnterrichtsassistentApp.openUnterrichtMathObservationModal = function () {
+  const modal = getUnterrichtMathObservationModal();
+  const header = document.getElementById("unterrichtMathObservationStudent");
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const student = schoolService && activeUnterrichtMathObservationDraft
+    ? schoolService.snapshot.students.find(function (entry) {
+        return entry.id === activeUnterrichtMathObservationDraft.studentId;
+      }) || null
+    : null;
+  const dateLabel = document.getElementById("unterrichtMathObservationDate");
+  const primaryInput = document.getElementById("unterrichtMathObservationPrimaryCompetency");
+  const competencyIdsInput = document.getElementById("unterrichtMathObservationCompetencyIds");
+  const processQualityInput = document.getElementById("unterrichtMathObservationProcessQuality");
+  const markerInput = document.getElementById("unterrichtMathObservationMarker");
+  const markerDirectionInput = document.getElementById("unterrichtMathObservationMarkerDirection");
+  const markerQualityInput = document.getElementById("unterrichtMathObservationMarkerQuality");
+  const situationInput = document.getElementById("unterrichtMathObservationSituationType");
+  const demandLevelInput = document.getElementById("unterrichtMathObservationDemandLevel");
+  const noteInput = document.getElementById("unterrichtMathObservationNote");
+  const firstFocusable = document.querySelector("[data-observation-primary-competency]");
+
+  if (!modal || !activeUnterrichtMathObservationDraft) {
+    return false;
+  }
+
+  isUnterrichtMathObservationModalOpen = true;
+  modal.hidden = false;
+  modal.classList.add("is-open");
+
+  if (header) {
+    header.textContent = student
+      ? [String(student.firstName || "").trim(), String(student.lastName || "").trim()].filter(Boolean).join(" ")
+      : "Schueler";
+  }
+
+  if (dateLabel) {
+    dateLabel.textContent = [activeClass ? ((activeClass.name || "") + " " + (activeClass.subject || "")).trim() : "", formatDateLabel(activeUnterrichtMathObservationDraft.lessonDate)].filter(Boolean).join(" - ");
+  }
+
+  if (primaryInput) {
+    primaryInput.value = "k1";
+  }
+  if (competencyIdsInput) {
+    competencyIdsInput.value = "k1";
+  }
+  if (processQualityInput) {
+    processQualityInput.value = "0";
+  }
+  if (markerInput) {
+    markerInput.value = "beitrag";
+  }
+  if (markerDirectionInput) {
+    markerDirectionInput.value = "";
+  }
+  if (markerQualityInput) {
+    markerQualityInput.value = "";
+  }
+  if (situationInput) {
+    situationInput.value = "";
+  }
+  if (demandLevelInput) {
+    demandLevelInput.value = "";
+  }
+  if (noteInput) {
+    noteInput.value = "";
+  }
+  syncUnterrichtMathObservationUi();
+
+  if (firstFocusable) {
+    window.setTimeout(function () {
+      firstFocusable.focus();
+    }, 0);
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.closeUnterrichtMathObservationModal = function () {
+  const modal = getUnterrichtMathObservationModal();
+
+  if (modal) {
+    modal.hidden = true;
+    modal.classList.remove("is-open");
+  }
+
+  isUnterrichtMathObservationModalOpen = false;
+  activeUnterrichtMathObservationDraft = null;
+  return false;
+};
+window.UnterrichtsassistentApp.selectUnterrichtMathObservationPrimaryCompetency = function (competency) {
+  const primaryInput = document.getElementById("unterrichtMathObservationPrimaryCompetency");
+  const competencyIdsInput = document.getElementById("unterrichtMathObservationCompetencyIds");
+  const nextCompetency = normalizeMathObservationCompetencyValue(competency);
+
+  if (!primaryInput || !competencyIdsInput) {
+    return false;
+  }
+
+  primaryInput.value = nextCompetency;
+  competencyIdsInput.value = nextCompetency;
+  syncUnterrichtMathObservationUi();
+  return false;
+};
+window.UnterrichtsassistentApp.toggleUnterrichtMathObservationCompetency = function (competency) {
+  const primaryInput = document.getElementById("unterrichtMathObservationPrimaryCompetency");
+  const competencyIdsInput = document.getElementById("unterrichtMathObservationCompetencyIds");
+  const primaryCompetency = normalizeMathObservationCompetencyValue(primaryInput && primaryInput.value);
+  const nextCompetency = normalizeMathObservationCompetencyValue(competency);
+  let competencyIds = normalizeMathObservationCompetencyIds(primaryCompetency, competencyIdsInput && competencyIdsInput.value);
+
+  if (!competencyIdsInput || nextCompetency === primaryCompetency) {
+    syncUnterrichtMathObservationUi();
+    return false;
+  }
+
+  if (competencyIds.indexOf(nextCompetency) >= 0) {
+    competencyIds = competencyIds.filter(function (entry) {
+      return entry !== nextCompetency;
+    });
+  } else {
+    competencyIds.push(nextCompetency);
+  }
+
+  competencyIdsInput.value = normalizeMathObservationCompetencyIds(primaryCompetency, competencyIds).join(",");
+  syncUnterrichtMathObservationUi();
+  return false;
+};
+window.UnterrichtsassistentApp.selectUnterrichtMathObservationProcessQuality = function (quality) {
+  const input = document.getElementById("unterrichtMathObservationProcessQuality");
+
+  if (input) {
+    input.value = String(normalizeMathObservationQualityValue(quality));
+  }
+
+  syncUnterrichtMathObservationUi();
+  return false;
+};
+window.UnterrichtsassistentApp.selectUnterrichtMathObservationMarker = function (marker) {
+  const markerInput = document.getElementById("unterrichtMathObservationMarker");
+  const markerDirectionInput = document.getElementById("unterrichtMathObservationMarkerDirection");
+  const markerQualityInput = document.getElementById("unterrichtMathObservationMarkerQuality");
+
+  if (markerInput) {
+    markerInput.value = normalizeMathObservationMarkerValue(marker);
+  }
+  if (markerDirectionInput) {
+    markerDirectionInput.value = "";
+  }
+  if (markerQualityInput) {
+    markerQualityInput.value = "";
+  }
+
+  syncUnterrichtMathObservationUi();
+  return false;
+};
+window.UnterrichtsassistentApp.selectUnterrichtMathObservationMarkerDirection = function (direction) {
+  const input = document.getElementById("unterrichtMathObservationMarkerDirection");
+  const nextDirection = normalizeMathObservationMarkerDirectionValue(direction);
+
+  if (input) {
+    input.value = input.value === nextDirection ? "" : nextDirection;
+  }
+
+  syncUnterrichtMathObservationUi();
+  return false;
+};
+window.UnterrichtsassistentApp.selectUnterrichtMathObservationMarkerQuality = function (quality) {
+  const input = document.getElementById("unterrichtMathObservationMarkerQuality");
+  const nextQuality = normalizeOptionalMathObservationMarkerQualityValue(quality);
+
+  if (input) {
+    input.value = String(input.value || "") === String(nextQuality) ? "" : String(nextQuality);
+  }
+
+  syncUnterrichtMathObservationUi();
+  return false;
+};
+window.UnterrichtsassistentApp.selectUnterrichtMathObservationSituationType = function (situationType) {
+  const input = document.getElementById("unterrichtMathObservationSituationType");
+  const nextSituationType = normalizeMathObservationSituationTypeValue(situationType);
+
+  if (input) {
+    input.value = input.value === nextSituationType ? "" : nextSituationType;
+  }
+
+  syncUnterrichtMathObservationUi();
+  return false;
+};
+window.UnterrichtsassistentApp.selectUnterrichtMathObservationDemandLevel = function (demandLevel) {
+  const input = document.getElementById("unterrichtMathObservationDemandLevel");
+  const nextDemandLevel = normalizeMathObservationDemandLevelValue(demandLevel);
+
+  if (input) {
+    input.value = input.value === nextDemandLevel ? "" : nextDemandLevel;
+  }
+
+  syncUnterrichtMathObservationUi();
+  return false;
+};
+window.UnterrichtsassistentApp.submitUnterrichtMathObservationModal = function (event) {
+  const currentRawSnapshot = schoolService && serializeSnapshot ? serializeSnapshot(schoolService.snapshot) : null;
+  const draft = activeUnterrichtMathObservationDraft;
+  const primaryInput = document.getElementById("unterrichtMathObservationPrimaryCompetency");
+  const competencyIdsInput = document.getElementById("unterrichtMathObservationCompetencyIds");
+  const processQualityInput = document.getElementById("unterrichtMathObservationProcessQuality");
+  const markerInput = document.getElementById("unterrichtMathObservationMarker");
+  const markerDirectionInput = document.getElementById("unterrichtMathObservationMarkerDirection");
+  const markerQualityInput = document.getElementById("unterrichtMathObservationMarkerQuality");
+  const situationInput = document.getElementById("unterrichtMathObservationSituationType");
+  const demandLevelInput = document.getElementById("unterrichtMathObservationDemandLevel");
+  const noteInput = document.getElementById("unterrichtMathObservationNote");
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  if (!currentRawSnapshot || !draft) {
+    return window.UnterrichtsassistentApp.closeUnterrichtMathObservationModal();
+  }
+
+  appendUnterrichtMathObservationRecord(currentRawSnapshot, draft, {
+    primaryCompetency: primaryInput && primaryInput.value,
+    competencyIds: competencyIdsInput && competencyIdsInput.value,
+    processQuality: processQualityInput && processQualityInput.value,
+    marker: markerInput && markerInput.value,
+    markerDirection: markerDirectionInput && markerDirectionInput.value,
+    markerQuality: markerQualityInput && markerQualityInput.value,
+    situationType: situationInput && situationInput.value,
+    demandLevel: demandLevelInput && demandLevelInput.value,
+    note: String(noteInput && noteInput.value || "").trim()
+  });
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
+  return window.UnterrichtsassistentApp.closeUnterrichtMathObservationModal();
+};
 window.UnterrichtsassistentApp.openUnterrichtAssessmentModal = function () {
   const modal = getUnterrichtAssessmentModal();
   const header = document.getElementById("unterrichtAssessmentStudent");
@@ -16640,6 +17956,7 @@ window.UnterrichtsassistentApp.getClassAnalysisEnabledTypes = function () {
     homework: classAnalysisEnabledTypes.homework !== false,
     warning: classAnalysisEnabledTypes.warning !== false,
     assessment: classAnalysisEnabledTypes.assessment !== false,
+    mathObservation: classAnalysisEnabledTypes.mathObservation !== false,
     completedEvaluation: classAnalysisEnabledTypes.completedEvaluation !== false
   };
 };
@@ -16692,7 +18009,7 @@ window.UnterrichtsassistentApp.setClassAnalysisCriterion = function (criterionKe
 window.UnterrichtsassistentApp.toggleClassAnalysisType = function (typeKey) {
   const normalizedType = String(typeKey || "").trim();
 
-  if (["attendance", "homework", "warning", "assessment", "completedEvaluation"].indexOf(normalizedType) < 0) {
+  if (["attendance", "homework", "warning", "assessment", "mathObservation", "completedEvaluation"].indexOf(normalizedType) < 0) {
     return false;
   }
 
@@ -16898,6 +18215,10 @@ window.UnterrichtsassistentApp.deleteClassAnalysisRecord = function (recordType,
     currentRawSnapshot.warningRecords = getWarningRecordsCollection(currentRawSnapshot).filter(function (record) {
       return String(record.id || "") !== normalizedId;
     });
+  } else if (normalizedType === "mathObservation") {
+    currentRawSnapshot.mathObservationRecords = getMathObservationRecordsCollection(currentRawSnapshot).filter(function (record) {
+      return String(record.id || "") !== normalizedId;
+    });
   } else {
     return false;
   }
@@ -17035,6 +18356,8 @@ window.UnterrichtsassistentApp.submitClassAnalysisRecordEditModal = function (ev
     noteValue = String(document.getElementById("classAnalysisWarningNote") && document.getElementById("classAnalysisWarningNote").value || "").trim();
     record.category = categoryValue;
     record.note = categoryValue === "andere" ? noteValue : "";
+  } else if (draft.recordType === "mathObservation") {
+    record.note = String(document.getElementById("classAnalysisMathObservationNote") && document.getElementById("classAnalysisMathObservationNote").value || "").trim();
   } else if (draft.recordType === "assessment") {
     record.category = String(document.getElementById("classAnalysisAssessmentCategory") && document.getElementById("classAnalysisAssessmentCategory").value || "").trim();
     record.afb1 = String(document.getElementById("classAnalysisAssessmentAfb1") && document.getElementById("classAnalysisAssessmentAfb1").value || "").trim() === "" ? "" : Number(document.getElementById("classAnalysisAssessmentAfb1").value);
@@ -20183,6 +21506,9 @@ window.UnterrichtsassistentApp.deleteStudent = function (studentId) {
   currentRawSnapshot.warningRecords = getWarningRecordsCollection(currentRawSnapshot).filter(function (record) {
     return record.studentId !== studentId;
   });
+  currentRawSnapshot.mathObservationRecords = getMathObservationRecordsCollection(currentRawSnapshot).filter(function (record) {
+    return record.studentId !== studentId;
+  });
   currentRawSnapshot.seatPlans = getSeatPlansCollection(currentRawSnapshot).map(function (seatPlan) {
     seatPlan.seats = (seatPlan.seats || []).filter(function (seat) {
       return seat.studentId !== studentId;
@@ -20403,6 +21729,9 @@ window.UnterrichtsassistentApp.deleteActiveClass = function () {
     return record.classId !== activeClass.id && !studentIdsToDelete[record.studentId];
   });
   currentRawSnapshot.warningRecords = getWarningRecordsCollection(currentRawSnapshot).filter(function (record) {
+    return record.classId !== activeClass.id && !studentIdsToDelete[record.studentId];
+  });
+  currentRawSnapshot.mathObservationRecords = getMathObservationRecordsCollection(currentRawSnapshot).filter(function (record) {
     return record.classId !== activeClass.id && !studentIdsToDelete[record.studentId];
   });
   currentRawSnapshot.todos = currentRawSnapshot.todos.filter(function (todo) {

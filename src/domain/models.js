@@ -277,6 +277,83 @@ class WarningRecord {
   }
 }
 
+class MathObservationRecord {
+  constructor({
+    id,
+    studentId,
+    classId,
+    lessonId = "",
+    lessonDate = "",
+    room = "",
+    recordedAt = "",
+    primaryCompetency = "",
+    competencyIds = [],
+    processQuality = 0,
+    marker = "beitrag",
+    markerDirection = "",
+    markerQuality = "",
+    situationType = "",
+    demandLevel = "",
+    note = ""
+  }) {
+    const allowedCompetencies = ["k1", "k2", "k3", "k4", "k5", "k6"];
+    const allowedMarkers = [
+      "frage",
+      "vermutung",
+      "begruendung_widerlegung",
+      "beitrag",
+      "strategie",
+      "loesungsweg_praesentiert",
+      "fehlende_information",
+      "plausibilitaet_geprueft",
+      "darstellung",
+      "symbolisiert_formalisiert",
+      "werkzeug_funktional",
+      "modell_geprueft",
+      "anderer_beitrag",
+      "fachsprache",
+      "fehler",
+      "vorgehen_reflektiert"
+    ];
+    const normalizedPrimary = String(primaryCompetency || "").trim().toLowerCase();
+    const effectivePrimary = allowedCompetencies.indexOf(normalizedPrimary) >= 0
+      ? normalizedPrimary
+      : "";
+    const numericProcessQuality = Number(processQuality);
+    const normalizedMarker = String(marker || "").trim().toLowerCase();
+    const numericMarkerQuality = Number(markerQuality);
+    const normalizedSituationType = String(situationType || "").trim().toLowerCase();
+    const normalizedDemandLevel = String(demandLevel || "").trim().toLowerCase();
+
+    this.id = id;
+    this.studentId = studentId;
+    this.classId = classId;
+    this.lessonId = lessonId;
+    this.lessonDate = lessonDate;
+    this.room = room;
+    this.recordedAt = recordedAt;
+    this.primaryCompetency = effectivePrimary;
+    this.competencyIds = Array.from(new Set((effectivePrimary ? [effectivePrimary] : []).concat(Array.isArray(competencyIds) ? competencyIds : []).map(function (competencyId) {
+      return String(competencyId || "").trim().toLowerCase();
+    }).filter(function (competencyId) {
+      return allowedCompetencies.indexOf(competencyId) >= 0;
+    })));
+    this.processQuality = Number.isFinite(numericProcessQuality)
+      ? Math.max(-2, Math.min(2, Math.round(numericProcessQuality)))
+      : 0;
+    this.marker = allowedMarkers.indexOf(normalizedMarker) >= 0 ? normalizedMarker : "beitrag";
+    this.markerDirection = ["left", "right"].indexOf(String(markerDirection || "").trim().toLowerCase()) >= 0
+      ? String(markerDirection || "").trim().toLowerCase()
+      : "";
+    this.markerQuality = String(markerQuality || "").trim() === ""
+      ? ""
+      : (Number.isFinite(numericMarkerQuality) ? Math.max(-2, Math.min(2, Math.round(numericMarkerQuality))) : "");
+    this.situationType = ["lernen", "leisten"].indexOf(normalizedSituationType) >= 0 ? normalizedSituationType : "";
+    this.demandLevel = ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(normalizedDemandLevel) >= 0 ? normalizedDemandLevel : "";
+    this.note = String(note || "").trim();
+  }
+}
+
 class TodoItem {
   constructor({ id, title = "", description = "", category = "", dueDate = "", relatedClassId = "", assignedStudentIds = [], assignedStudentStatuses = [], priority = "niedrig", type = "standard", checklistItems = [], done = false, completedAt = "" }) {
     this.id = id;
@@ -690,6 +767,7 @@ window.Unterrichtsassistent.domain.PerformedEvaluation = PerformedEvaluation;
 window.Unterrichtsassistent.domain.AttendanceRecord = AttendanceRecord;
 window.Unterrichtsassistent.domain.HomeworkRecord = HomeworkRecord;
 window.Unterrichtsassistent.domain.WarningRecord = WarningRecord;
+window.Unterrichtsassistent.domain.MathObservationRecord = MathObservationRecord;
 window.Unterrichtsassistent.domain.TodoItem = TodoItem;
 window.Unterrichtsassistent.domain.SeatPlan = SeatPlan;
 window.Unterrichtsassistent.domain.SeatOrder = SeatOrder;

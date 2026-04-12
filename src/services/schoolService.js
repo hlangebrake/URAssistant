@@ -157,6 +157,29 @@ function normalizeWarningRecord(warningRecord) {
   };
 }
 
+function normalizeMathObservationRecord(observationRecord) {
+  const source = observationRecord || {};
+
+  return {
+    id: source.id || "",
+    studentId: source.studentId || "",
+    classId: source.classId || "",
+    lessonId: source.lessonId || "",
+    lessonDate: source.lessonDate || "",
+    room: source.room || "",
+    recordedAt: source.recordedAt || "",
+    primaryCompetency: source.primaryCompetency || "",
+    competencyIds: Array.isArray(source.competencyIds) ? source.competencyIds.slice() : [],
+    processQuality: Number.isFinite(Number(source.processQuality)) ? Number(source.processQuality) : 0,
+    marker: source.marker || "beitrag",
+    markerDirection: source.markerDirection || "",
+    markerQuality: String(source.markerQuality || "").trim() === "" ? "" : Number(source.markerQuality),
+    situationType: source.situationType || "",
+    demandLevel: source.demandLevel || "",
+    note: String(source.note || "").trim()
+  };
+}
+
 function normalizeDateValue(value) {
   return String(value || "").slice(0, 10);
 }
@@ -798,6 +821,10 @@ class SchoolService {
     return (this.snapshot.warningRecords || []).map(normalizeWarningRecord);
   }
 
+  getAllMathObservationRecords() {
+    return (this.snapshot.mathObservationRecords || []).map(normalizeMathObservationRecord);
+  }
+
   getAttendanceRecordsForLessonOccurrence(classId, lessonId, lessonDate, studentId) {
     return this.getAllAttendanceRecords().filter(function (record) {
       const matchesClass = record.classId === classId;
@@ -877,6 +904,19 @@ class SchoolService {
     });
   }
 
+  getMathObservationRecordsForLessonOccurrence(classId, lessonId, lessonDate, studentId) {
+    return this.getAllMathObservationRecords().filter(function (record) {
+      const matchesClass = record.classId === classId;
+      const matchesLesson = record.lessonId === lessonId;
+      const matchesDate = normalizeDateValue(record.lessonDate) === normalizeDateValue(lessonDate);
+      const matchesStudent = !studentId || record.studentId === studentId;
+
+      return matchesClass && matchesLesson && matchesDate && matchesStudent;
+    }).sort(function (left, right) {
+      return String(left.recordedAt || "").localeCompare(String(right.recordedAt || ""));
+    });
+  }
+
   getHomeworkStateForStudent(studentId, classId, date) {
     const effectiveDate = date || this.getReferenceDate();
     const context = this.getAttendanceContextForClass(classId, effectiveDate);
@@ -902,6 +942,17 @@ class SchoolService {
     }
 
     return this.getWarningRecordsForLessonOccurrence(classId, context.id, context.lessonDate, studentId).length;
+  }
+
+  getMathObservationCountForStudent(studentId, classId, date) {
+    const effectiveDate = date || this.getReferenceDate();
+    const context = this.getAttendanceContextForClass(classId, effectiveDate);
+
+    if (!studentId || !context) {
+      return 0;
+    }
+
+    return this.getMathObservationRecordsForLessonOccurrence(classId, context.id, context.lessonDate, studentId).length;
   }
 
   getNextLesson(date) {
