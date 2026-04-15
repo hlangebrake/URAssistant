@@ -4889,6 +4889,9 @@ button {
 
 .unterricht-seatplan-student.is-interactive {
   cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .unterricht-seatplan-student.is-absent {
@@ -4943,10 +4946,6 @@ button {
   transform: rotate(180deg);
 }
 
-.unterricht-seatplan-student.is-interactive {
-  touch-action: pan-y;
-}
-
 .unterricht-layout--live .unterricht-seatplan,
 .unterricht-layout--live .unterricht-seatplan-frame,
 .unterricht-layout--live .unterricht-seatplan-canvas-shell,
@@ -4957,6 +4956,18 @@ button {
 .unterricht-layout--live .seat-order-slot--readonly .seat-order-desk__label,
 .unterricht-layout--live .seat-order-desk__label--readonly {
   touch-action: pan-y pinch-zoom;
+}
+
+.unterricht-layout--live .seat-order-slot--readonly.unterricht-seatplan-student.is-interactive {
+  touch-action: none;
+}
+
+.unterricht-seatplan-student.is-interactive .unterricht-seatplan-slot__content,
+.unterricht-seatplan-student.is-interactive .unterricht-seatplan-slot__content * {
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
 }
 
 .unterricht-seatplan-student {
