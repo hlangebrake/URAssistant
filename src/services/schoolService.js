@@ -171,7 +171,7 @@ function normalizeMathObservationRecord(observationRecord) {
     primaryCompetency: source.primaryCompetency || "",
     competencyIds: Array.isArray(source.competencyIds) ? source.competencyIds.slice() : [],
     processQuality: Number.isFinite(Number(source.processQuality)) ? Number(source.processQuality) : 0,
-    marker: source.marker || "beitrag",
+    marker: source.marker || "",
     markerDirection: source.markerDirection || "",
     markerQuality: String(source.markerQuality || "").trim() === "" ? "" : Number(source.markerQuality),
     situationType: source.situationType || "",

@@ -1247,6 +1247,12 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       const mathObservationPointerdown = isMathObservationInteractive
         ? ' onpointerdown="return window.UnterrichtsassistentApp.startUnterrichtMathObservationPointer(event, \'' + escapeValue(student.id) + '\', \'' + escapeValue(currentClassLesson.id) + '\', \'' + escapeValue(currentClassLesson.startTime || "") + '\', \'' + escapeValue(currentClassLesson.room || "") + '\')" oncontextmenu="return false"'
         : "";
+      const mathObservationDataAttributes = isMathObservationInteractive
+        ? ' data-math-observation-seat="true" data-math-observation-student-id="' + escapeValue(student.id) + '" data-math-observation-lesson-id="' + escapeValue(currentClassLesson.id) + '" data-math-observation-lesson-start-time="' + escapeValue(currentClassLesson.startTime || "") + '" data-math-observation-lesson-room="' + escapeValue(currentClassLesson.room || "") + '"'
+        : "";
+      const mathObservationHitbox = isMathObservationInteractive
+        ? '<div class="unterricht-seatplan-touch-hitbox" aria-hidden="true" data-math-observation-seat="true" data-math-observation-student-id="' + escapeValue(student.id) + '" data-math-observation-lesson-id="' + escapeValue(currentClassLesson.id) + '" data-math-observation-lesson-start-time="' + escapeValue(currentClassLesson.startTime || "") + '" data-math-observation-lesson-room="' + escapeValue(currentClassLesson.room || "") + '" onpointerdown="return window.UnterrichtsassistentApp.startUnterrichtMathObservationPointer(event, \'' + escapeValue(student.id) + '\', \'' + escapeValue(currentClassLesson.id) + '\', \'' + escapeValue(currentClassLesson.startTime || "") + '\', \'' + escapeValue(currentClassLesson.room || "") + '\')" oncontextmenu="return false"></div>'
+        : "";
       const homeworkBadge = student && currentClassLesson && showStatusInfo
         ? '<span class="unterricht-seatplan-homework-badge ' + getHomeworkBadgeClass(homeworkState) + (toolMode === "homework" ? ' is-emphasized' : ' is-muted') + '">H</span>'
         : "";
@@ -1281,7 +1287,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         classes.push(toolMode === "attendance" ? "is-absent" : "is-muted");
       }
 
-      return '<div class="' + classes.join(" ") + '"' + onclick + pointerdown + warningPointerdown + assessmentPointerdown + mathObservationPointerdown + '><div class="unterricht-seatplan-slot__content">' + assessmentBadge + (student ? '<span class="seat-order-desk__label seat-order-desk__label--readonly">' + escapeValue(getStudentShortLabel(student)) + "</span>" : "") + symbolRow + "</div></div>";
+      return '<div class="' + classes.join(" ") + '"' + mathObservationDataAttributes + onclick + pointerdown + warningPointerdown + assessmentPointerdown + mathObservationPointerdown + '><div class="unterricht-seatplan-slot__content">' + assessmentBadge + (student ? '<span class="seat-order-desk__label seat-order-desk__label--readonly">' + escapeValue(getStudentShortLabel(student)) + "</span>" : "") + symbolRow + "</div>" + mathObservationHitbox + "</div>";
     }
 
     function getDeskItemMetrics(item) {

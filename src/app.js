@@ -170,6 +170,7 @@ let unterrichtMathObservationQuickMenu = null;
 let unterrichtMathObservationProcessOverlay = null;
 let unterrichtMathObservationMarkerMenu = null;
 let unterrichtMathObservationMarkerOverlay = null;
+let lastUnterrichtMathObservationTouchStartAt = 0;
 let activeClassAnalysisDragScroll = null;
 let activePlanningCurriculumDragScroll = null;
 let activePlanningCurriculumAutoScroll = null;
@@ -6159,6 +6160,10 @@ function normalizeMathObservationQualityValue(qualityValue) {
 function normalizeMathObservationMarkerValue(markerValue) {
   const normalized = String(markerValue || "").trim().toLowerCase();
 
+  if (!normalized) {
+    return "";
+  }
+
   return MATH_OBSERVATION_MARKERS.some(function (entry) {
     return entry.key === normalized;
   }) ? normalized : "beitrag";
@@ -7057,6 +7062,7 @@ function ensureUnterrichtMathObservationMarkerMenu() {
   unterrichtMathObservationMarkerMenu = document.createElement("div");
   unterrichtMathObservationMarkerMenu.className = "unterricht-math-observation-marker-menu";
   unterrichtMathObservationMarkerMenu.setAttribute("aria-hidden", "true");
+  unterrichtMathObservationMarkerMenu.setAttribute("onpointerdown", "return window.UnterrichtsassistentApp.handleUnterrichtMathObservationMarkerBackdropPointer(event)");
   unterrichtMathObservationMarkerMenu.innerHTML = [
     '<div class="unterricht-math-observation-marker-menu__outer">',
     MATH_OBSERVATION_MARKERS.filter(function (marker) {
@@ -7105,6 +7111,9 @@ function clearUnterrichtMathObservationPressListeners() {
   window.removeEventListener("pointermove", window.UnterrichtsassistentApp.handleUnterrichtMathObservationPointerMove);
   window.removeEventListener("pointerup", window.UnterrichtsassistentApp.handleUnterrichtMathObservationPointerEnd);
   window.removeEventListener("pointercancel", window.UnterrichtsassistentApp.handleUnterrichtMathObservationPointerEnd);
+  window.removeEventListener("touchmove", window.UnterrichtsassistentApp.handleUnterrichtMathObservationTouchMove);
+  window.removeEventListener("touchend", window.UnterrichtsassistentApp.handleUnterrichtMathObservationTouchEnd);
+  window.removeEventListener("touchcancel", window.UnterrichtsassistentApp.handleUnterrichtMathObservationTouchEnd);
 }
 
 function clearUnterrichtMathObservationMarkerPressListeners() {
@@ -7185,22 +7194,43 @@ function showUnterrichtMathObservationQuickMenu(clientX, clientY, label) {
 
 function clampOverlayCenter(anchorX, anchorY, overlayWidth, overlayHeight) {
   const margin = 12;
-  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1024;
-  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 768;
+  const visualViewport = window.visualViewport || null;
+  const viewportLeft = visualViewport ? Number(visualViewport.offsetLeft) || 0 : 0;
+  const viewportTop = visualViewport ? Number(visualViewport.offsetTop) || 0 : 0;
+  const viewportWidth = visualViewport
+    ? (Number(visualViewport.width) || window.innerWidth || document.documentElement.clientWidth || 1024)
+    : (window.innerWidth || document.documentElement.clientWidth || 1024);
+  const viewportHeight = visualViewport
+    ? (Number(visualViewport.height) || window.innerHeight || document.documentElement.clientHeight || 768)
+    : (window.innerHeight || document.documentElement.clientHeight || 768);
   const width = Math.min(Number(overlayWidth) || 0, Math.max(0, viewportWidth - (margin * 2)));
   const height = Math.min(Number(overlayHeight) || 0, Math.max(0, viewportHeight - (margin * 2)));
-  const minX = margin + (width / 2);
-  const maxX = viewportWidth - margin - (width / 2);
-  const minY = margin + (height / 2);
-  const maxY = viewportHeight - margin - (height / 2);
+  const minX = viewportLeft + margin + (width / 2);
+  const maxX = viewportLeft + viewportWidth - margin - (width / 2);
+  const minY = viewportTop + margin + (height / 2);
+  const maxY = viewportTop + viewportHeight - margin - (height / 2);
 
   return {
     x: maxX >= minX
       ? Math.max(minX, Math.min(maxX, Number(anchorX) || 0))
-      : viewportWidth / 2,
+      : viewportLeft + (viewportWidth / 2),
     y: maxY >= minY
       ? Math.max(minY, Math.min(maxY, Number(anchorY) || 0))
-      : viewportHeight / 2
+      : viewportTop + (viewportHeight / 2)
+  };
+}
+
+function getOverlayOrigin(anchorX, anchorY, centerX, centerY, overlayWidth, overlayHeight) {
+  const width = Number(overlayWidth) || 0;
+  const height = Number(overlayHeight) || 0;
+  const left = Number(centerX) - (width / 2);
+  const top = Number(centerY) - (height / 2);
+  const originX = Number(anchorX) - left;
+  const originY = Number(anchorY) - top;
+
+  return {
+    x: Math.max(0, Math.min(width, originX)),
+    y: Math.max(0, Math.min(height, originY))
   };
 }
 
@@ -7257,11 +7287,16 @@ function syncUnterrichtMathObservationMarkerOverlayLabels(markerValue) {
 
 function showUnterrichtMathObservationProcessOverlay(anchorX, anchorY, selection) {
   const overlay = ensureUnterrichtMathObservationProcessOverlay();
+  const overlayWidth = overlay.offsetWidth || 620;
+  const overlayHeight = overlay.offsetHeight || 300;
   const center = getUnterrichtMathObservationProcessOverlayCenter(anchorX, anchorY);
+  const origin = getOverlayOrigin(anchorX, anchorY, center.x, center.y, overlayWidth, overlayHeight);
   const activeQuality = String(normalizeMathObservationQualityValue(selection && selection.processQuality));
 
   overlay.style.left = String(center.x) + "px";
   overlay.style.top = String(center.y) + "px";
+  overlay.style.setProperty("--math-observation-origin-x", String(origin.x) + "px");
+  overlay.style.setProperty("--math-observation-origin-y", String(origin.y) + "px");
   overlay.classList.add("is-visible");
   overlay.setAttribute("aria-hidden", "false");
   overlay.querySelectorAll("[data-observation-process-quality-value]").forEach(function (item) {
@@ -7311,13 +7346,19 @@ function getUnterrichtMathObservationProcessSelection(clientX, clientY, anchorX,
   const qualityMax = Math.max(40, overlayHeight / 2);
   const qualityZoneHalf = qualityMax * 0.2;
   const qualityOuterHalf = qualityMax * 0.6;
+  const qualityTolerance = 120;
   const competencyCenterHalf = Math.max(28, Math.min(42, overlayWidth * 0.07));
   const competencyMax = Math.max(120, (overlayWidth / 2) - 30);
+  const competencyTolerance = 120;
   const clampedDx = Math.max(-competencyMax, Math.min(competencyMax, dx));
   const clampedDy = Math.max(-qualityMax, Math.min(qualityMax, dy));
   const zoneWidth = (competencyMax - competencyCenterHalf) / 3;
   let competency = null;
   let processQuality = 0;
+
+  if (Math.abs(dy) > qualityMax + qualityTolerance || Math.abs(dx) > competencyMax + competencyTolerance) {
+    return null;
+  }
 
   if (clampedDx < -competencyCenterHalf) {
     competency = MATH_OBSERVATION_COMPETENCIES[Math.max(0, Math.min(2, Math.floor((clampedDx + competencyMax) / zoneWidth)))];
@@ -7391,6 +7432,131 @@ function formatMathObservationQualityLabel(value) {
   }) || null;
 
   return quality ? quality.label : formatAssessmentQuickQuality(normalizedValue);
+}
+
+function getMathObservationTouchPoint(event, useChangedTouches) {
+  const sourceTouches = useChangedTouches && event && event.changedTouches && event.changedTouches.length
+    ? event.changedTouches
+    : (event && event.touches && event.touches.length ? event.touches : null);
+
+  if (!sourceTouches || !sourceTouches.length) {
+    return null;
+  }
+
+  return sourceTouches[0];
+}
+
+function getUnterrichtMathObservationSeatFromPoint(clientX, clientY) {
+  const selector = "[data-math-observation-seat='true']";
+  const x = Number(clientX) || 0;
+  const y = Number(clientY) || 0;
+  const elementsAtPoint = typeof document.elementsFromPoint === "function"
+    ? document.elementsFromPoint(x, y)
+    : [];
+  let index;
+  let candidates;
+  let bestSeat = null;
+  let bestArea = Infinity;
+
+  for (index = 0; index < elementsAtPoint.length; index += 1) {
+    if (elementsAtPoint[index] && typeof elementsAtPoint[index].closest === "function") {
+      const seat = elementsAtPoint[index].closest(selector);
+      if (seat) {
+        return seat;
+      }
+    }
+  }
+
+  candidates = Array.from(document.querySelectorAll(selector));
+  candidates.forEach(function (seat) {
+    const rect = seat && typeof seat.getBoundingClientRect === "function"
+      ? seat.getBoundingClientRect()
+      : null;
+    const area = rect ? Math.max(0, rect.width) * Math.max(0, rect.height) : Infinity;
+
+    if (!rect || rect.width <= 0 || rect.height <= 0) {
+      return;
+    }
+
+    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom && area < bestArea) {
+      bestSeat = seat;
+      bestArea = area;
+    }
+  });
+
+  return bestSeat;
+}
+
+function handleUnterrichtMathObservationDocumentTouchStart(event) {
+  const point = getMathObservationTouchPoint(event, false);
+  const target = event && event.target ? event.target : null;
+  const seat = point ? getUnterrichtMathObservationSeatFromPoint(point.clientX, point.clientY) : null;
+
+  if (!point || !seat || activeViewId !== "unterricht" || unterrichtToolMode !== "mathObservation") {
+    return;
+  }
+
+  if (activeUnterrichtMathObservationPress || activeUnterrichtMathObservationDraft || activeUnterrichtMathObservationMarkerPress) {
+    return;
+  }
+
+  if (target && typeof target.closest === "function" && target.closest(".unterricht-math-observation-marker-menu, .unterricht-assessment-quick-overlay")) {
+    return;
+  }
+
+  window.UnterrichtsassistentApp.startUnterrichtMathObservationTouch(
+    event,
+    seat.getAttribute("data-math-observation-student-id"),
+    seat.getAttribute("data-math-observation-lesson-id"),
+    seat.getAttribute("data-math-observation-lesson-start-time"),
+    seat.getAttribute("data-math-observation-lesson-room")
+  );
+}
+
+function updateUnterrichtMathObservationPressPosition(clientX, clientY) {
+  if (!activeUnterrichtMathObservationPress) {
+    return;
+  }
+
+  activeUnterrichtMathObservationPress.clientX = Number(clientX) || 0;
+  activeUnterrichtMathObservationPress.clientY = Number(clientY) || 0;
+
+  if (Math.abs(activeUnterrichtMathObservationPress.clientX - activeUnterrichtMathObservationPress.anchorX) >= 8
+    || Math.abs(activeUnterrichtMathObservationPress.clientY - activeUnterrichtMathObservationPress.anchorY) >= 8) {
+    activeUnterrichtMathObservationPress.moved = true;
+  }
+
+  if (!activeUnterrichtMathObservationPress.menuVisible && activeUnterrichtMathObservationPress.moved) {
+    if (activeUnterrichtMathObservationPress.timerId) {
+      window.clearTimeout(activeUnterrichtMathObservationPress.timerId);
+      activeUnterrichtMathObservationPress.timerId = 0;
+    }
+    activeUnterrichtMathObservationPress.menuVisible = true;
+  }
+
+  if (activeUnterrichtMathObservationPress.menuVisible) {
+    activeUnterrichtMathObservationPress.selection = getUnterrichtMathObservationProcessSelection(
+      activeUnterrichtMathObservationPress.clientX,
+      activeUnterrichtMathObservationPress.clientY,
+      activeUnterrichtMathObservationPress.anchorX,
+      activeUnterrichtMathObservationPress.anchorY
+    );
+
+    if (activeUnterrichtMathObservationPress.selection) {
+      showUnterrichtMathObservationQuickMenu(
+        activeUnterrichtMathObservationPress.clientX,
+        activeUnterrichtMathObservationPress.clientY,
+        activeUnterrichtMathObservationPress.selection.label
+      );
+      showUnterrichtMathObservationProcessOverlay(
+        activeUnterrichtMathObservationPress.anchorX,
+        activeUnterrichtMathObservationPress.anchorY,
+        activeUnterrichtMathObservationPress.selection
+      );
+    } else {
+      hideUnterrichtMathObservationProcessOverlay();
+    }
+  }
 }
 
 function showUnterrichtMathObservationMarkerMenu(anchorX, anchorY) {
@@ -12369,6 +12535,12 @@ window.UnterrichtsassistentApp.handleUnterrichtAssessmentPointerEnd = function (
   return false;
 };
 window.UnterrichtsassistentApp.startUnterrichtMathObservationPointer = function (event, studentId, lessonId, lessonStartTime, lessonRoom) {
+  if (event && event.pointerType === "touch" && Date.now() - lastUnterrichtMathObservationTouchStartAt < 700) {
+    if (typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
+    return false;
+  }
   if (unterrichtToolMode !== "mathObservation" || !studentId || !lessonId) {
     return false;
   }
@@ -12443,46 +12615,7 @@ window.UnterrichtsassistentApp.handleUnterrichtMathObservationPointerMove = func
     return false;
   }
 
-  activeUnterrichtMathObservationPress.clientX = Number(event.clientX) || 0;
-  activeUnterrichtMathObservationPress.clientY = Number(event.clientY) || 0;
-
-  if (Math.abs(activeUnterrichtMathObservationPress.clientX - activeUnterrichtMathObservationPress.anchorX) >= 8
-    || Math.abs(activeUnterrichtMathObservationPress.clientY - activeUnterrichtMathObservationPress.anchorY) >= 8) {
-    activeUnterrichtMathObservationPress.moved = true;
-  }
-
-  if (!activeUnterrichtMathObservationPress.menuVisible && activeUnterrichtMathObservationPress.moved) {
-    if (activeUnterrichtMathObservationPress.timerId) {
-      window.clearTimeout(activeUnterrichtMathObservationPress.timerId);
-      activeUnterrichtMathObservationPress.timerId = 0;
-    }
-    activeUnterrichtMathObservationPress.menuVisible = true;
-  }
-
-  if (activeUnterrichtMathObservationPress.menuVisible) {
-    activeUnterrichtMathObservationPress.selection = getUnterrichtMathObservationProcessSelection(
-      activeUnterrichtMathObservationPress.clientX,
-      activeUnterrichtMathObservationPress.clientY,
-      activeUnterrichtMathObservationPress.anchorX,
-      activeUnterrichtMathObservationPress.anchorY
-    );
-
-    if (activeUnterrichtMathObservationPress.selection) {
-      showUnterrichtMathObservationQuickMenu(
-        activeUnterrichtMathObservationPress.clientX,
-        activeUnterrichtMathObservationPress.clientY,
-        activeUnterrichtMathObservationPress.selection.label
-      );
-      showUnterrichtMathObservationProcessOverlay(
-        activeUnterrichtMathObservationPress.anchorX,
-        activeUnterrichtMathObservationPress.anchorY,
-        activeUnterrichtMathObservationPress.selection
-      );
-    } else {
-      hideUnterrichtMathObservationProcessOverlay();
-    }
-  }
-
+  updateUnterrichtMathObservationPressPosition(event.clientX, event.clientY);
   event.preventDefault();
   return false;
 };
@@ -12522,6 +12655,153 @@ window.UnterrichtsassistentApp.handleUnterrichtMathObservationPointerEnd = funct
 
   hideUnterrichtMathObservationProcessOverlay();
   event.preventDefault();
+  return false;
+};
+window.UnterrichtsassistentApp.startUnterrichtMathObservationTouch = function (event, studentId, lessonId, lessonStartTime, lessonRoom) {
+  const point = getMathObservationTouchPoint(event, false);
+
+  lastUnterrichtMathObservationTouchStartAt = Date.now();
+  if (unterrichtToolMode !== "mathObservation" || !studentId || !lessonId || !point) {
+    return false;
+  }
+
+  if (activeUnterrichtMathObservationPress && activeUnterrichtMathObservationPress.timerId) {
+    window.clearTimeout(activeUnterrichtMathObservationPress.timerId);
+  }
+
+  clearUnterrichtMathObservationPressListeners();
+  clearUnterrichtMathObservationMarkerPressListeners();
+  hideUnterrichtMathObservationUi();
+
+  activeUnterrichtMathObservationPress = {
+    pointerId: "touch",
+    studentId: String(studentId),
+    lessonId: String(lessonId),
+    lessonStartTime: String(lessonStartTime || ""),
+    lessonRoom: String(lessonRoom || ""),
+    anchorX: Number(point.clientX) || 0,
+    anchorY: Number(point.clientY) || 0,
+    overlayAnchorX: 0,
+    overlayAnchorY: 0,
+    clientX: Number(point.clientX) || 0,
+    clientY: Number(point.clientY) || 0,
+    menuVisible: false,
+    moved: false,
+    selection: null,
+    timerId: window.setTimeout(function () {
+      if (!activeUnterrichtMathObservationPress || activeUnterrichtMathObservationPress.menuVisible) {
+        return;
+      }
+
+      activeUnterrichtMathObservationPress.menuVisible = true;
+      updateUnterrichtMathObservationPressPosition(
+        activeUnterrichtMathObservationPress.clientX,
+        activeUnterrichtMathObservationPress.clientY
+      );
+    }, ASSESSMENT_LONG_PRESS_DELAY_MS)
+  };
+  (function () {
+    const center = getUnterrichtMathObservationProcessOverlayCenter(
+      activeUnterrichtMathObservationPress.anchorX,
+      activeUnterrichtMathObservationPress.anchorY
+    );
+    activeUnterrichtMathObservationPress.overlayAnchorX = center.x;
+    activeUnterrichtMathObservationPress.overlayAnchorY = center.y;
+  }());
+
+  window.addEventListener("touchmove", window.UnterrichtsassistentApp.handleUnterrichtMathObservationTouchMove, { passive: false });
+  window.addEventListener("touchend", window.UnterrichtsassistentApp.handleUnterrichtMathObservationTouchEnd, { passive: false });
+  window.addEventListener("touchcancel", window.UnterrichtsassistentApp.handleUnterrichtMathObservationTouchEnd, { passive: false });
+  event.preventDefault();
+  return false;
+};
+window.UnterrichtsassistentApp.handleUnterrichtMathObservationTouchMove = function (event) {
+  const point = getMathObservationTouchPoint(event, false);
+
+  if (!activeUnterrichtMathObservationPress || activeUnterrichtMathObservationPress.pointerId !== "touch" || !point) {
+    return false;
+  }
+
+  updateUnterrichtMathObservationPressPosition(point.clientX, point.clientY);
+  event.preventDefault();
+  return false;
+};
+window.UnterrichtsassistentApp.handleUnterrichtMathObservationTouchEnd = function (event) {
+  const point = getMathObservationTouchPoint(event, true);
+  const pressState = activeUnterrichtMathObservationPress;
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const lessonDate = normalizeDateValue(getReferenceDateValue());
+
+  if (!pressState || pressState.pointerId !== "touch") {
+    return false;
+  }
+
+  if (point) {
+    updateUnterrichtMathObservationPressPosition(point.clientX, point.clientY);
+  }
+
+  if (pressState.timerId) {
+    window.clearTimeout(pressState.timerId);
+  }
+
+  clearUnterrichtMathObservationPressListeners();
+  activeUnterrichtMathObservationPress = null;
+
+  if (pressState.menuVisible && pressState.selection && activeClass) {
+    activeUnterrichtMathObservationDraft = {
+      studentId: pressState.studentId,
+      classId: activeClass.id,
+      lessonId: pressState.lessonId,
+      lessonDate: lessonDate,
+      lessonStartTime: pressState.lessonStartTime,
+      lessonRoom: pressState.lessonRoom,
+      primaryCompetency: pressState.selection.primaryCompetency,
+      competencyIds: pressState.selection.competencyIds,
+      processQuality: pressState.selection.processQuality
+    };
+    hideUnterrichtMathObservationProcessOverlay();
+    showUnterrichtMathObservationMarkerMenu(pressState.anchorX, pressState.anchorY);
+    event.preventDefault();
+    return false;
+  }
+
+  hideUnterrichtMathObservationProcessOverlay();
+  event.preventDefault();
+  return false;
+};
+window.UnterrichtsassistentApp.handleUnterrichtMathObservationMarkerBackdropPointer = function (event) {
+  const target = event && event.target ? event.target : null;
+  const clickedMarkerButton = target && typeof target.closest === "function"
+    ? target.closest("[data-observation-marker-button]")
+    : null;
+  const currentRawSnapshot = schoolService && serializeSnapshot ? serializeSnapshot(schoolService.snapshot) : null;
+  const draft = activeUnterrichtMathObservationDraft;
+
+  if (clickedMarkerButton || activeUnterrichtMathObservationMarkerPress) {
+    return false;
+  }
+
+  if (currentRawSnapshot && draft) {
+    appendUnterrichtMathObservationRecord(currentRawSnapshot, draft, {
+      primaryCompetency: draft.primaryCompetency,
+      competencyIds: draft.competencyIds,
+      processQuality: draft.processQuality,
+      marker: "",
+      markerDirection: "",
+      markerQuality: "",
+      situationType: "",
+      demandLevel: "",
+      note: ""
+    });
+    saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
+  }
+
+  activeUnterrichtMathObservationDraft = null;
+  hideUnterrichtMathObservationUi();
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
   return false;
 };
 window.UnterrichtsassistentApp.startUnterrichtMathObservationMarkerPointer = function (event, marker) {
@@ -22024,6 +22304,8 @@ document.addEventListener("touchstart", function (event) {
 
   lastTouchClientY = Number(touch.clientY) || 0;
 }, { passive: true });
+
+document.addEventListener("touchstart", handleUnterrichtMathObservationDocumentTouchStart, { capture: true, passive: false });
 
 document.addEventListener("submit", preventLocalOnlyFormSubmit, true);
 

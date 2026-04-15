@@ -289,7 +289,7 @@ class MathObservationRecord {
     primaryCompetency = "",
     competencyIds = [],
     processQuality = 0,
-    marker = "beitrag",
+    marker = "",
     markerDirection = "",
     markerQuality = "",
     situationType = "",
@@ -341,7 +341,7 @@ class MathObservationRecord {
     this.processQuality = Number.isFinite(numericProcessQuality)
       ? Math.max(-2, Math.min(2, Math.round(numericProcessQuality)))
       : 0;
-    this.marker = allowedMarkers.indexOf(normalizedMarker) >= 0 ? normalizedMarker : "beitrag";
+    this.marker = !normalizedMarker ? "" : (allowedMarkers.indexOf(normalizedMarker) >= 0 ? normalizedMarker : "beitrag");
     this.markerDirection = ["left", "right"].indexOf(String(markerDirection || "").trim().toLowerCase()) >= 0
       ? String(markerDirection || "").trim().toLowerCase()
       : "";
