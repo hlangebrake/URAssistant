@@ -7311,19 +7311,13 @@ function getUnterrichtMathObservationProcessSelection(clientX, clientY, anchorX,
   const qualityMax = Math.max(40, overlayHeight / 2);
   const qualityZoneHalf = qualityMax * 0.2;
   const qualityOuterHalf = qualityMax * 0.6;
-  const qualityTolerance = 120;
   const competencyCenterHalf = Math.max(28, Math.min(42, overlayWidth * 0.07));
   const competencyMax = Math.max(120, (overlayWidth / 2) - 30);
-  const competencyTolerance = 120;
   const clampedDx = Math.max(-competencyMax, Math.min(competencyMax, dx));
   const clampedDy = Math.max(-qualityMax, Math.min(qualityMax, dy));
   const zoneWidth = (competencyMax - competencyCenterHalf) / 3;
   let competency = null;
   let processQuality = 0;
-
-  if (Math.abs(dy) > qualityMax + qualityTolerance || Math.abs(dx) > competencyMax + competencyTolerance) {
-    return null;
-  }
 
   if (clampedDx < -competencyCenterHalf) {
     competency = MATH_OBSERVATION_COMPETENCIES[Math.max(0, Math.min(2, Math.floor((clampedDx + competencyMax) / zoneWidth)))];
@@ -12411,8 +12405,8 @@ window.UnterrichtsassistentApp.startUnterrichtMathObservationPointer = function 
       activeUnterrichtMathObservationPress.selection = getUnterrichtMathObservationProcessSelection(
         activeUnterrichtMathObservationPress.clientX,
         activeUnterrichtMathObservationPress.clientY,
-        activeUnterrichtMathObservationPress.overlayAnchorX,
-        activeUnterrichtMathObservationPress.overlayAnchorY
+        activeUnterrichtMathObservationPress.anchorX,
+        activeUnterrichtMathObservationPress.anchorY
       );
       if (activeUnterrichtMathObservationPress.selection) {
         showUnterrichtMathObservationQuickMenu(
@@ -12469,8 +12463,8 @@ window.UnterrichtsassistentApp.handleUnterrichtMathObservationPointerMove = func
     activeUnterrichtMathObservationPress.selection = getUnterrichtMathObservationProcessSelection(
       activeUnterrichtMathObservationPress.clientX,
       activeUnterrichtMathObservationPress.clientY,
-      activeUnterrichtMathObservationPress.overlayAnchorX,
-      activeUnterrichtMathObservationPress.overlayAnchorY
+      activeUnterrichtMathObservationPress.anchorX,
+      activeUnterrichtMathObservationPress.anchorY
     );
 
     if (activeUnterrichtMathObservationPress.selection) {
