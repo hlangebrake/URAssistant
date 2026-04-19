@@ -12715,6 +12715,21 @@ window.UnterrichtsassistentApp.startUnterrichtMathObservationTouch = function (e
   event.preventDefault();
   return false;
 };
+window.UnterrichtsassistentApp.startUnterrichtMathObservationCanvasPointer = function (event) {
+  const seat = event ? getUnterrichtMathObservationSeatFromPoint(event.clientX, event.clientY) : null;
+
+  if (!seat) {
+    return false;
+  }
+
+  return window.UnterrichtsassistentApp.startUnterrichtMathObservationPointer(
+    event,
+    seat.getAttribute("data-math-observation-student-id"),
+    seat.getAttribute("data-math-observation-lesson-id"),
+    seat.getAttribute("data-math-observation-lesson-start-time"),
+    seat.getAttribute("data-math-observation-lesson-room")
+  );
+};
 window.UnterrichtsassistentApp.handleUnterrichtMathObservationTouchMove = function (event) {
   const point = getMathObservationTouchPoint(event, false);
 

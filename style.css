@@ -4945,6 +4945,31 @@ button {
   -webkit-touch-callout: none;
 }
 
+.unterricht-seatplan-touch-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 80;
+  display: block;
+  background: transparent;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.unterricht-seatplan-touch-layer__seat {
+  position: absolute;
+  z-index: 1;
+  display: block;
+  background: transparent;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
 .unterricht-seatplan.is-rotated-180 .unterricht-seatplan-slot__content {
   transform: rotate(180deg);
 }

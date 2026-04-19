@@ -1415,6 +1415,50 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       const canvasClassName = isSeatPlanRotated
         ? "desk-layout-builder__canvas desk-layout-builder__canvas--readonly desk-layout-builder__canvas--tight unterricht-seatplan-canvas is-rotated-180"
         : "desk-layout-builder__canvas desk-layout-builder__canvas--readonly desk-layout-builder__canvas--tight unterricht-seatplan-canvas";
+      const mathObservationCanvasLayer = toolMode === "mathObservation"
+        ? '<div class="unterricht-seatplan-touch-layer" aria-hidden="true" onpointerdown="return window.UnterrichtsassistentApp.startUnterrichtMathObservationCanvasPointer(event)" oncontextmenu="return false">' + deskLayoutItems.map(function (item) {
+          const metrics = getDeskItemMetrics(item);
+          const itemLeft = (Number(item.x) || 0) - offsetX;
+          const itemTop = (Number(item.y) || 0) - offsetY;
+
+          function renderLayerHitbox(student, left, top, width, height) {
+            const attendanceState = student ? getAttendanceStateForStudent(student.id) : "present";
+            const isMathObservationInteractive = Boolean(student && currentClassLesson && attendanceState !== "absent");
+            const hitboxStyle = [
+              "left:" + String(left) + "px",
+              "top:" + String(top) + "px",
+              "width:" + String(width) + "px",
+              "height:" + String(height) + "px"
+            ].join(";");
+
+            return isMathObservationInteractive
+              ? '<div class="unterricht-seatplan-touch-layer__seat" style="' + hitboxStyle + '" data-math-observation-seat="true" data-math-observation-student-id="' + escapeValue(student.id) + '" data-math-observation-lesson-id="' + escapeValue(currentClassLesson.id) + '" data-math-observation-lesson-start-time="' + escapeValue(currentClassLesson.startTime || "") + '" data-math-observation-lesson-room="' + escapeValue(currentClassLesson.room || "") + '"></div>'
+              : "";
+          }
+
+          if (metrics.type === "single") {
+            const singleAssignment = getSeatAssignmentByDeskSlot(item.id, "single");
+            const singleStudent = singleAssignment ? getStudentById(singleAssignment.studentId) : null;
+
+            return renderLayerHitbox(singleStudent, itemLeft, itemTop, metrics.width, metrics.height);
+          }
+
+          {
+            const doubleDeskLayout = getDoubleDeskSlotLayout(item, offsetX, offsetY, canvasWidth, canvasHeight);
+
+            return doubleDeskLayout.orderedSlots.map(function (slotName, slotIndex) {
+              const assignment = getSeatAssignmentByDeskSlot(item.id, slotName);
+              const student = assignment ? getStudentById(assignment.studentId) : null;
+
+              if (doubleDeskLayout.axis === "horizontal") {
+                return renderLayerHitbox(student, itemLeft + (slotIndex * (metrics.width / 2)), itemTop, metrics.width / 2, metrics.height);
+              }
+
+              return renderLayerHitbox(student, itemLeft, itemTop + (slotIndex * (metrics.height / 2)), metrics.width, metrics.height / 2);
+            }).join("");
+          }
+        }).join("") + '</div>'
+        : "";
 
       if (!activeClass) {
         return '<div class="seat-plan-placeholder">Noch keine aktive Lerngruppe vorhanden.</div>';
@@ -1468,6 +1512,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
             return '<div class="desk-layout-item desk-layout-item--double desk-layout-item--seat-order" style="' + inlineStyle + '"><div class="' + slotGridClass + '">' + doubleSlotsHtml + "</div></div>";
           }
         }).join(""),
+        mathObservationCanvasLayer,
         '</div>',
         '</div>',
         '<div class="unterricht-seatplan-actions" aria-label="Unterrichtsaktionen">',
