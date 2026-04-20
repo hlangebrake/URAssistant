@@ -29,7 +29,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
       : { key: "name", direction: "asc" };
     const analysisEnabledTypes = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getClassAnalysisEnabledTypes === "function"
       ? window.UnterrichtsassistentApp.getClassAnalysisEnabledTypes()
-      : { attendance: true, homework: true, warning: true, assessment: true, completedEvaluation: true };
+      : { attendance: true, homework: true, warning: true, assessment: true, mathObservation: true, knowledgeGap: true, completedEvaluation: true };
     const analysisGrouping = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getClassAnalysisGrouping === "function"
       ? window.UnterrichtsassistentApp.getClassAnalysisGrouping()
       : "day";
@@ -225,6 +225,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
         workBehavior: "AV",
         socialBehavior: "SV",
         knowledgeGap: "Wissensluecke",
+        content: "Inhalt",
         primaryCompetency: "Kompetenz",
         competencyIds: "Komplex",
         processQuality: "Qualitaet",
@@ -232,7 +233,10 @@ window.Unterrichtsassistent.ui.views.klasse = {
         markerDirection: "Richtung",
         markerQuality: "Marker-Stufe",
         situationType: "Situation",
-        demandLevel: "AFB"
+        demandLevel: "AFB",
+        lessonPlanId: "Plan-Stunde",
+        lessonPhaseId: "Phase",
+        lessonStepId: "Schritt"
       }[key] || key;
     }
 
@@ -362,7 +366,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
     }
 
     function buildAnalysisDetailSummary(record) {
-      const orderedKeys = ["status", "quality", "category", "primaryCompetency", "competencyIds", "processQuality", "marker", "markerDirection", "markerQuality", "situationType", "demandLevel", "note", "afb1", "afb2", "afb3", "workBehavior", "socialBehavior", "knowledgeGap"];
+      const orderedKeys = ["status", "quality", "category", "content", "primaryCompetency", "competencyIds", "processQuality", "marker", "markerDirection", "markerQuality", "situationType", "demandLevel", "lessonPlanId", "lessonPhaseId", "lessonStepId", "note", "afb1", "afb2", "afb3", "workBehavior", "socialBehavior", "knowledgeGap"];
 
       return orderedKeys.filter(function (key) {
         const value = record[key];
@@ -559,6 +563,18 @@ window.Unterrichtsassistent.ui.views.klasse = {
           raw: record
         };
       }))
+      .concat((service.snapshot.knowledgeGapRecords || []).filter(function (record) {
+        return record.classId === schoolClass.id;
+      }).map(function (record, index) {
+        return {
+          studentId: record.studentId,
+          date: normalizeDateValue(record.lessonDate),
+          type: "knowledgeGap",
+          symbol: "B",
+          sortKey: getAnalysisRecordCreatedAt(record) + "|" + String(record.id || index).padStart(6, "0"),
+          raw: record
+        };
+      }))
       .concat((service.snapshot.mathObservationRecords || []).filter(function (record) {
         return record.classId === schoolClass.id;
       }).map(function (record, index) {
@@ -645,6 +661,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
           warning: 0,
           assessment: 0,
           mathObservation: 0,
+          knowledgeGap: 0,
           completedEvaluation: 0
         };
       }
@@ -815,6 +832,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
       const typeCounts = analysisTypeCountsByStudentDate[studentId + "|" + groupInfo.key] || {};
       const typeItems = [
         { key: "mathObservation", symbol: "K" },
+        { key: "knowledgeGap", symbol: "B" },
         { key: "attendance", symbol: "✓" },
         { key: "homework", symbol: "H" },
         { key: "warning", symbol: "⚠" },
@@ -1000,6 +1018,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
         '<button class="unterricht-seatplan-action class-analysis-tool', analysisEnabledTypes.warning !== false ? ' is-active' : "", '" type="button" aria-label="Verwarnungen filtern" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisType(\'warning\')">&#9888;</button>',
         '<button class="unterricht-seatplan-action class-analysis-tool', analysisEnabledTypes.assessment !== false ? ' is-active' : "", '" type="button" aria-label="Bewertungen filtern" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisType(\'assessment\')">&#128269;</button>',
         '<button class="unterricht-seatplan-action class-analysis-tool', analysisEnabledTypes.mathObservation !== false ? ' is-active' : "", '" type="button" aria-label="Mathematik-Beobachtungen filtern" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisType(\'mathObservation\')">K</button>',
+        '<button class="unterricht-seatplan-action class-analysis-tool', analysisEnabledTypes.knowledgeGap !== false ? ' is-active' : "", '" type="button" aria-label="Wissensluecken filtern" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisType(\'knowledgeGap\')">B</button>',
         '<button class="unterricht-seatplan-action class-analysis-tool', analysisEnabledTypes.completedEvaluation !== false ? ' is-active' : "", '" type="button" aria-label="Abgeschlossene Bewertungen filtern" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisType(\'completedEvaluation\')">&#9733;</button>',
         '</div>',
         '</div>',
@@ -1088,6 +1107,10 @@ window.Unterrichtsassistent.ui.views.klasse = {
         analysisEditRecord && analysisEditRecord.type === "mathObservation" ? [
           '<div class="import-modal__field"><span>Beobachtung</span><input type="text" readonly value="', escapeValue(buildAnalysisDetailSummary(analysisEditRecord.raw || {})), '"></div>',
           '<label class="import-modal__field"><span>Notiz</span><input id="classAnalysisMathObservationNote" type="text" maxlength="240" value="', escapeValue(analysisEditRecord.raw && analysisEditRecord.raw.note || ""), '" placeholder="Freie Notiz zur Beobachtung" autocomplete="off" autocapitalize="none" spellcheck="false"></label>'
+        ].join("") : "",
+        analysisEditRecord && analysisEditRecord.type === "knowledgeGap" ? [
+          '<label class="import-modal__field import-modal__field--knowledge-gap"><span>Inhalt</span><input id="classAnalysisKnowledgeGapContent" type="text" maxlength="180" value="', escapeValue(analysisEditRecord.raw && analysisEditRecord.raw.content || ""), '" placeholder="Wissensluecke beschreiben" autocomplete="off" autocapitalize="none" spellcheck="false" onfocus="return window.UnterrichtsassistentApp.handleKnowledgeGapInputFocus(\'classAnalysisKnowledgeGapContent\', \'classAnalysisKnowledgeGapSuggestions\')" oninput="return window.UnterrichtsassistentApp.handleKnowledgeGapInput(event, \'classAnalysisKnowledgeGapSuggestions\')" onblur="return window.UnterrichtsassistentApp.handleKnowledgeGapInputBlur(\'classAnalysisKnowledgeGapSuggestions\')"><div class="knowledge-gap-suggestions" id="classAnalysisKnowledgeGapSuggestions" hidden onpointerdown="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerDown(event, \'classAnalysisKnowledgeGapSuggestions\')" onpointermove="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerMove(event, \'classAnalysisKnowledgeGapSuggestions\')" onpointerup="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerUp(event, \'classAnalysisKnowledgeGapSuggestions\')" onpointercancel="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerUp(event, \'classAnalysisKnowledgeGapSuggestions\')"></div></label>',
+          '<label class="import-modal__field"><span>Status</span><select id="classAnalysisKnowledgeGapStatus" class="student-table__input student-table__select"><option value="offen"', analysisEditRecord.raw && analysisEditRecord.raw.status === "offen" ? " selected" : "", '>offen</option><option value="in arbeit"', analysisEditRecord.raw && analysisEditRecord.raw.status === "in arbeit" ? " selected" : "", '>in Arbeit</option><option value="geschlossen"', analysisEditRecord.raw && analysisEditRecord.raw.status === "geschlossen" ? " selected" : "", '>geschlossen</option></select></label>'
         ].join("") : "",
         analysisEditRecord && analysisEditRecord.type === "assessment" ? [
           '<div class="assessment-columns">',

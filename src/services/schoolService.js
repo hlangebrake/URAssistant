@@ -157,6 +157,23 @@ function normalizeWarningRecord(warningRecord) {
   };
 }
 
+function normalizeKnowledgeGapRecord(knowledgeGapRecord) {
+  const source = knowledgeGapRecord || {};
+  const normalizedStatus = String(source.status || "").trim().toLowerCase();
+
+  return {
+    id: source.id || "",
+    studentId: source.studentId || "",
+    classId: source.classId || "",
+    lessonId: source.lessonId || "",
+    lessonDate: source.lessonDate || "",
+    room: source.room || "",
+    recordedAt: source.recordedAt || "",
+    content: String(source.content || "").trim(),
+    status: ["offen", "in arbeit", "geschlossen"].indexOf(normalizedStatus) >= 0 ? normalizedStatus : "offen"
+  };
+}
+
 function normalizeMathObservationRecord(observationRecord) {
   const source = observationRecord || {};
 
@@ -176,6 +193,9 @@ function normalizeMathObservationRecord(observationRecord) {
     markerQuality: String(source.markerQuality || "").trim() === "" ? "" : Number(source.markerQuality),
     situationType: source.situationType || "",
     demandLevel: source.demandLevel || "",
+    lessonPlanId: source.lessonPlanId || "",
+    lessonPhaseId: source.lessonPhaseId || "",
+    lessonStepId: source.lessonStepId || "",
     note: String(source.note || "").trim()
   };
 }
@@ -821,6 +841,10 @@ class SchoolService {
     return (this.snapshot.warningRecords || []).map(normalizeWarningRecord);
   }
 
+  getAllKnowledgeGapRecords() {
+    return (this.snapshot.knowledgeGapRecords || []).map(normalizeKnowledgeGapRecord);
+  }
+
   getAllMathObservationRecords() {
     return (this.snapshot.mathObservationRecords || []).map(normalizeMathObservationRecord);
   }
@@ -1044,6 +1068,79 @@ class SchoolService {
     }
 
     return this.getAssessmentStatusForStudent(studentId, classId, date).currentCount;
+  }
+
+  getRecentEvidenceCountsForClass(classId, date, days) {
+    const effectiveDate = date || this.getReferenceDate();
+    const thresholdDays = Number(days) || 14;
+    const endDateValue = getLocalDateValue(effectiveDate);
+    const startDate = new Date(effectiveDate);
+    const countsByStudentId = {};
+    let startValue;
+
+    startDate.setHours(0, 0, 0, 0);
+    startDate.setDate(startDate.getDate() - thresholdDays);
+    startValue = getLocalDateValue(startDate);
+
+    function getRecordDateValue(record) {
+      return normalizeDateValue(record && (record.recordedAt || record.lessonDate || record.date));
+    }
+
+    function isInWindow(record) {
+      const recordDate = getRecordDateValue(record);
+
+      return Boolean(recordDate) && compareDateValues(recordDate, startValue) >= 0 && compareDateValues(recordDate, endDateValue) <= 0;
+    }
+
+    this.getStudentsForClass(classId).forEach(function (student) {
+      countsByStudentId[student.id] = 0;
+    });
+
+    this.getAssessmentsForClass(classId).forEach(function (assessment) {
+      const isUnterrichtAssessment = String(assessment && assessment.type || "").trim() === "unterricht"
+        || Boolean(String(assessment && assessment.lessonId || "").trim());
+
+      if (isUnterrichtAssessment && countsByStudentId[assessment.studentId] !== undefined && isInWindow(assessment)) {
+        countsByStudentId[assessment.studentId] += 1;
+      }
+    });
+
+    this.getAllMathObservationRecords().forEach(function (record) {
+      if (record.classId === classId && countsByStudentId[record.studentId] !== undefined && isInWindow(record)) {
+        countsByStudentId[record.studentId] += 1;
+      }
+    });
+
+    return countsByStudentId;
+  }
+
+  getLowEvidenceStudentIdsForClass(classId, date, limit, days) {
+    const countsByStudentId = this.getRecentEvidenceCountsForClass(classId, date, days);
+    const effectiveLimit = Math.max(0, Number(limit) || 5);
+
+    if (!classId || !effectiveLimit) {
+      return [];
+    }
+
+    return this.getStudentsForClass(classId)
+      .map(function (student, index) {
+        return {
+          studentId: student.id,
+          count: Number(countsByStudentId[student.id]) || 0,
+          index: index
+        };
+      })
+      .sort(function (left, right) {
+        if (left.count !== right.count) {
+          return left.count - right.count;
+        }
+
+        return left.index - right.index;
+      })
+      .slice(0, effectiveLimit)
+      .map(function (entry) {
+        return entry.studentId;
+      });
   }
 
   isLastAssessmentOlderThanDays(studentId, classId, date, days) {

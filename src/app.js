@@ -69,6 +69,7 @@ let classAnalysisEnabledTypes = {
   warning: true,
   assessment: true,
   mathObservation: true,
+  knowledgeGap: true,
   completedEvaluation: true
 };
 let timetableViewMode = "ansicht";
@@ -112,6 +113,7 @@ let activeCurriculumLessonFlowViewPhaseIds = [];
 let expandedCurriculumSeriesIds = [];
 let expandedCurriculumSequenceIds = [];
 let collapsedUnterrichtLiveLessonIds = [];
+let isUnterrichtLiveTodosCollapsed = false;
 let activeUnterrichtLiveLessonInfoLessonId = "";
 let activeCurriculumSeriesDrag = null;
 let activeCurriculumSeriesDropIndicator = null;
@@ -158,16 +160,19 @@ let activeUnterrichtWarningPress = null;
 let unterrichtWarningRadialMenu = null;
 let activeUnterrichtWarningOtherDraft = null;
 let activeUnterrichtAssessmentDraft = null;
+let activeUnterrichtKnowledgeGapDraft = null;
 let activeUnterrichtAssessmentGridDrag = null;
 let activeUnterrichtAssessmentPress = null;
 let unterrichtAssessmentQuickMenu = null;
 let unterrichtAssessmentQuickOverlay = null;
+let isUnterrichtKnowledgeGapModalOpen = false;
 let isUnterrichtMathObservationModalOpen = false;
 let activeUnterrichtMathObservationDraft = null;
 let activeUnterrichtMathObservationPress = null;
 let activeUnterrichtMathObservationMarkerPress = null;
 let unterrichtMathObservationQuickMenu = null;
 let unterrichtMathObservationProcessOverlay = null;
+let unterrichtMathObservationProcessInfo = null;
 let unterrichtMathObservationMarkerMenu = null;
 let unterrichtMathObservationMarkerOverlay = null;
 let lastUnterrichtMathObservationTouchStartAt = 0;
@@ -246,6 +251,65 @@ const MATH_OBSERVATION_QUALITY_LABELS = [
   { value: -1, label: "- ansatzweise tragfaehig, aber unvollstaendig" },
   { value: -2, label: "-- fachlich nicht tragfaehig" }
 ];
+const MATH_OBSERVATION_COMPETENCY_INFO = {
+  k1: "Fragen stellen, Vermutungen formulieren, Beispiele und Gegenbeispiele nutzen, schluessig begruenden, Widerlegungen pruefen, Argumentationen bewerten.",
+  k2: "Probleme erfassen, fehlende Informationen beschaffen, Strategien auswaehlen und anpassen, Loesungswege pruefen, Vorgehen reflektieren.",
+  k3: "Realsituationen strukturieren, Annahmen treffen, mathematische Modelle bilden, Ergebnisse zurueckuebersetzen, Modelle pruefen und ggf. modifizieren.",
+  k4: "Darstellungen auswaehlen, erzeugen, interpretieren, zwischen Darstellungen wechseln und Darstellungen begruendet bewerten.",
+  k5: "Symbolisieren, formale Verfahren anwenden, mit mathematischen Objekten verstaendig umgehen, Werkzeuge und digitale Mathematikwerkzeuge zielgerichtet einsetzen.",
+  k6: "Gedankengaenge verstaendlich darstellen, Fachsprache verwenden, auf Beitraege anderer eingehen, Argumentationen pruefen, konstruktiv mit Fehlern und Kritik umgehen."
+};
+const MATH_OBSERVATION_QUALITY_INFO = {
+  "-2": "Die beobachtete Handlung verfehlt den mathematischen Kern oder bleibt deutlich unzureichend.",
+  "-1": "Ein tragfaehiger Kern ist erkennbar, bleibt aber bruchstueckhaft, unsicher oder stark fremdgesteuert.",
+  "0": "Die Handlung ist grundsaetzlich korrekt und angemessen, aber noch nicht deutlich verknuepfend oder reflektiert.",
+  "1": "Die Kompetenz ist belastbar verfuegbar; der Beitrag zeigt Eigenstaendigkeit, Struktur und Verbindung von Aspekten.",
+  "2": "Die Handlung geht ueber das bloss Sachgerechte hinaus und zeigt Reflexion, Bewertung, Generalisierung oder bewusstes Weiterdenken."
+};
+const MATH_OBSERVATION_PROCESS_EXAMPLES = {
+  k1: {
+    "-2": "Ein Schueler behauptet bei einer Gleichungsumformung, zwei Terme seien offensichtlich gleich, kann aber weder einen Zusammenhang nennen noch ein Beispiel korrekt pruefen.",
+    "-1": "Eine Schuelerin versucht zu begruenden, warum zwei Brueche gleichwertig sind, bleibt aber auf einem unpassenden Einzelbeispiel stehen.",
+    "0": "Ein Schueler erklaert sachgerecht, dass zwei lineare Funktionen parallel sind, weil ihre Steigungen uebereinstimmen.",
+    "1": "Eine Schuelerin begruendet nachvollziehbar, warum beim Ausklammern ein gemeinsamer Faktor vorliegt, und knuepft dabei an eine vorherige Umformung an.",
+    "2": "Ein Schueler prueft eine allgemeine Behauptung mit Beispiel und Gegenbeispiel, grenzt den Gueltigkeitsbereich ein und formuliert die Aussage praeziser neu."
+  },
+  k2: {
+    "-2": "Eine Schuelerin startet bei einer geometrischen Problemaufgabe ohne Plan, probiert zufaellige Rechnungen und verliert den mathematischen Kern aus dem Blick.",
+    "-1": "Ein Schueler erkennt zwar, dass eine Tabelle helfen koennte, fuellt sie aber unsystematisch und ohne Bezug zur eigentlichen Fragestellung.",
+    "0": "Eine Schuelerin waehlt bei einer vertrauten Zahlenfolge eine brauchbare Strategie, etwa das geordnete Fortsetzen und Pruefen von Mustern.",
+    "1": "Ein Schueler wechselt nach einem stockenden ersten Ansatz selbststaendig zu einer Skizze und kombiniert diese mit einer Fallunterscheidung.",
+    "2": "Eine Schuelerin vergleicht zwei Loesungsstrategien, entscheidet sich begruendet fuer die effizientere und erlaeutert anschliessend, warum der gewaehlte Weg tragfaehiger war."
+  },
+  k3: {
+    "-2": "Ein Schueler uebernimmt Zahlen aus einer Sachsituation direkt in eine Rechnung, ohne zu klaeren, ob Groessen, Einheiten oder Beziehungen ueberhaupt passen.",
+    "-1": "Eine Schuelerin trifft eine Annahme zur Bewegung eines Fahrzeugs, formuliert diese aber unklar und kann ihre Rolle im Modell nicht erlaeutern.",
+    "0": "Ein Schueler setzt eine alltagsnahe Situation sachgerecht in eine lineare Beziehung um und deutet das Ergebnis passend im Kontext.",
+    "1": "Eine Schuelerin macht eine Modellannahme explizit, rechnet im Modell korrekt weiter und ueberprueft anschliessend die Plausibilitaet des Ergebnisses an der Realsituation.",
+    "2": "Ein Schueler erkennt eine Grenze des gewaehlten Modells, modifiziert die Annahmen und begruendet, warum die ueberarbeitete Modellierung die Situation besser erfasst."
+  },
+  k4: {
+    "-2": "Eine Schuelerin liest einen Graphen fachlich falsch und verwechselt etwa y-Achsenabschnitt und Steigung.",
+    "-1": "Ein Schueler entnimmt einer Tabelle einzelne Werte, nutzt die Darstellung aber nur oberflaechlich und ohne erkennbaren mathematischen Mehrwert.",
+    "0": "Eine Schuelerin nutzt eine passende Skizze, um Seitenbeziehungen in einer geometrischen Aufgabe sachgerecht zu ordnen.",
+    "1": "Ein Schueler erstellt aus einem Text selbststaendig eine Wertetabelle und ueberfuehrt sie nachvollziehbar in einen Graphen.",
+    "2": "Eine Schuelerin vergleicht Graph, Term und Tabelle bewusst, benennt den Erkenntnisgewinn jeder Darstellung und entscheidet begruendet, welche hier am aufschlussreichsten ist."
+  },
+  k5: {
+    "-2": "Ein Schueler uebersetzt einen Sachverhalt in eine Gleichung, verwechselt dabei aber die Bedeutung der Variablen grundlegend.",
+    "-1": "Eine Schuelerin fuehrt ein bekanntes Umformungsverfahren teilweise korrekt aus, verliert aber Zwischenschritte oder Regeln aus dem Blick.",
+    "0": "Ein Schueler formalisiert einen funktionalen Zusammenhang sachgerecht in einem Term und rechnet im vertrauten Format korrekt weiter.",
+    "1": "Eine Schuelerin setzt ein digitales Werkzeug passend zur Kontrolle eines Ergebnisses ein und verbindet dies mit einer nachvollziehbaren formalen Bearbeitung.",
+    "2": "Ein Schueler reflektiert bewusst, wann ein CAS-Rechner hier hilfreich ist und wann das Verstaendnis der symbolischen Struktur ohne Werkzeug entscheidend bleibt."
+  },
+  k6: {
+    "-2": "Eine Schuelerin nennt nur ein Ergebnis, kann auf Rueckfragen aber weder ihren Weg erklaeren noch auf andere Beitraege sachlich eingehen.",
+    "-1": "Ein Schueler bringt einen knappen Teilbeitrag ein, der fachlich anschlussfaehig ist, aber sprachlich unklar und kaum strukturierend bleibt.",
+    "0": "Eine Schuelerin erlaeutert ihren Loesungsweg in Grundzuegen verstaendlich und nutzt einfache Fachsprache passend.",
+    "1": "Ein Schueler praesentiert einen Loesungsweg geordnet, greift eine Rueckfrage auf und praezisiert daraufhin seine Aussage nachvollziehbar.",
+    "2": "Eine Schuelerin buendelt mehrere Beitraege aus dem Unterrichtsgespraech, setzt sie in Beziehung und fuehrt den mathematischen Diskurs erkennbar weiter."
+  }
+};
 const MATH_OBSERVATION_MARKERS = [
   { key: "frage", label: "Frage", swipable: true },
   { key: "vermutung", label: "Vermutung", swipable: true },
@@ -341,6 +405,260 @@ const MATH_OBSERVATION_MARKER_QUALIFIERS = {
       { value: -1, label: "- oberflaechlich oder unvollstaendig bearbeitet" },
       { value: -2, label: "-- blockierend oder fachlich nicht verstanden" }
     ]
+  }
+};
+const MATH_OBSERVATION_MARKER_INFO = {
+  frage: {
+    tap: {
+      meaning: "Eine fachlich relevante Frage wurde gestellt.",
+      example: "Ein Schueler fragt in der Erarbeitung: Warum darf man hier ueberhaupt kuerzen?"
+    },
+    left: {
+      meaning: "Reaktive Anschlussfrage oder Rueckfrage auf Impuls / fremden Beitrag.",
+      example: "Nach dem Hinweis einer Mitschuelerin fragt ein Schueler: Meinst du dann, dass beide Steigungen gleich sein muessen?"
+    },
+    right: {
+      meaning: "Selbst initiierte Frage aus dem eigenen Denkprozess.",
+      example: "Ohne aeusseren Impuls fragt eine Schuelerin: Gilt diese Umformung auch noch bei negativen Exponenten?"
+    },
+    qualities: {
+      "-2": {
+        meaning: "Unklare oder fachlich kaum brauchbare Frage.",
+        example: "Ein Schueler fragt mehrfach sehr allgemein: Ist das jetzt richtig?, ohne auf den mathematischen Kern Bezug zu nehmen."
+      },
+      "-1": {
+        meaning: "Reine Klaerungsfrage zum Arbeitsauftrag.",
+        example: "Eine Schuelerin fragt: Sollen wir nur Aufgabe 3 oder auch Aufgabe 4 bearbeiten?"
+      },
+      "0": {
+        meaning: "Sachgerechte Verstaendnisfrage zum mathematischen Gegenstand.",
+        example: "Ein Schueler fragt: Was bedeutet hier, dass die Funktion streng monoton ist?"
+      },
+      "1": {
+        meaning: "Fachliche Rueckfrage zu Zusammenhang, Regel oder Vorgehen.",
+        example: "Eine Schuelerin fragt: Warum folgt aus dem Vorzeichenwechsel an dieser Stelle schon eine Nullstelle?"
+      },
+      "2": {
+        meaning: "Weiterfuehrende mathematische Frage mit erkennbarem Erkenntniswert.",
+        example: "Ein Schueler fragt: Kann man daran erkennen, unter welchen Bedingungen das immer gilt?"
+      }
+    }
+  },
+  vermutung: {
+    tap: {
+      meaning: "Eine mathematische Vermutung oder Hypothese wurde geaeussert.",
+      example: "Eine Schuelerin sagt bei einer Aufgabenreihe zu Potenzen: Ich vermute, das gilt fuer alle geraden Exponenten."
+    },
+    left: {
+      meaning: "Vermutung an Impuls, Beispiel oder fremden Beitrag angeschlossen.",
+      example: "Nach der Skizze eines Mitschuelers sagt ein Schueler: Dann muesste das doch immer symmetrisch sein."
+    },
+    right: {
+      meaning: "Selbst initiierte Vermutung oder Hypothese.",
+      example: "Ohne aeusseren Impuls vermutet eine Schuelerin: Ich glaube, dass hier immer dieselbe Differenz herauskommt."
+    },
+    qualities: {
+      "-2": {
+        meaning: "Fachlich unplausible oder ungerichtete Vermutung.",
+        example: "Ein Schueler behauptet ohne Bezug zur Aufgabe, das Ergebnis muesse bestimmt negativ sein."
+      },
+      "-1": {
+        meaning: "Vage Vermutung ohne tragfaehige Begruendungsrichtung.",
+        example: "Eine Schuelerin sagt nur: Irgendwie ist das bestimmt immer so."
+      },
+      "0": {
+        meaning: "Sachgerechte, pruefbare Vermutung.",
+        example: "Ein Schueler vermutet bei mehreren Beispielen einen linearen Zusammenhang und schlaegt vor, dies zu pruefen."
+      },
+      "1": {
+        meaning: "Tragfaehige Vermutung mit erkennbarem Begruendungsansatz oder Beispielbezug.",
+        example: "Eine Schuelerin begruendet ihre Vermutung mit einem systematischen Beispielmuster."
+      },
+      "2": {
+        meaning: "Weiterfuehrende, verallgemeinernde oder bewusst kontrastierende Vermutung.",
+        example: "Ein Schueler formuliert eine allgemeine Vermutung und grenzt zugleich einen Gegenfall bewusst ab."
+      }
+    }
+  },
+  begruendung_widerlegung: {
+    tap: {
+      meaning: "Ein mathematischer Zusammenhang wurde begruendet oder eine Aussage widerlegt.",
+      example: "Ein Schueler widerlegt die Behauptung, alle Vierecke mit gleich langen Seiten seien Quadrate, durch den Hinweis auf die Raute."
+    },
+    left: {
+      meaning: "Begruendung oder Widerlegung als Reaktion auf Nachfrage oder fremden Beitrag.",
+      example: "Nach einer Rueckfrage ergaenzt eine Schuelerin, warum der naechste Umformungsschritt zulaessig ist."
+    },
+    right: {
+      meaning: "Eigenstaendig initiierte Begruendung oder Widerlegung.",
+      example: "Ein Schueler bringt ohne Aufforderung ein Gegenbeispiel ein und begruendet es knapp, aber schluessig."
+    },
+    qualities: {
+      "-2": {
+        meaning: "Fachlich nicht tragfaehige Begruendung oder Scheinwiderlegung.",
+        example: "Eine Schuelerin behauptet, etwas sei klar, ohne mathematisch tragfaehigen Zusammenhang."
+      },
+      "-1": {
+        meaning: "Ansatzweise Begruendung mit Luecken oder unsauberem Schluss.",
+        example: "Ein Schueler nennt ein passendes Beispiel, zieht daraus aber vorschnell eine allgemeine Folgerung."
+      },
+      "0": {
+        meaning: "Sachgerechte, nachvollziehbare Begruendung oder Widerlegung im vertrauten Rahmen.",
+        example: "Eine Schuelerin begruendet mit einer einfachen Skizze korrekt, warum zwei Winkel gleich gross sind."
+      },
+      "1": {
+        meaning: "Strukturierte, schluessige und anschlussfaehige Begruendung oder Widerlegung.",
+        example: "Ein Schueler fuehrt einen klaren Argumentationsgang mit passender Darstellung und Gegenbezug aus."
+      },
+      "2": {
+        meaning: "Reflektierte, verallgemeinernde oder Gegenbeispiele bewusst einbeziehende Begruendung oder Widerlegung.",
+        example: "Eine Schuelerin begruendet nicht nur den Einzelfall, sondern grenzt zugleich die Reichweite der Aussage ab."
+      }
+    }
+  },
+  beitrag: {
+    tap: {
+      meaning: "Ein sachbezogener mathematischer Beitrag wurde eingebracht.",
+      example: "Eine Schuelerin nennt im Gespraech einen passenden Zwischenschritt zur Loesung."
+    },
+    left: {
+      meaning: "Anschliessender Beitrag auf einen fremden Gedanken.",
+      example: "Ein Schueler greift einen Mitschuelerbeitrag auf und ergaenzt, dass die Gerade dann auch den Punkt (0|2) treffen muesste."
+    },
+    right: {
+      meaning: "Eigenstaendiger Denkbeitrag.",
+      example: "Eine Schuelerin bringt aus eigener Initiative eine alternative Deutung des Graphen ein."
+    },
+    qualities: {
+      "-2": {
+        meaning: "Fachlich unklar oder bloss nachsprechend.",
+        example: "Ein Schueler wiederholt nur den letzten Satz der Lehrkraft, ohne mathematischen Eigengehalt."
+      },
+      "-1": {
+        meaning: "Kurzer Ergebnis- oder Teilbeitrag ohne groessere Tragweite.",
+        example: "Eine Schuelerin sagt lediglich: Die Loesung ist 5."
+      },
+      "0": {
+        meaning: "Nachvollziehbarer Sachbeitrag.",
+        example: "Ein Schueler nennt einen sinnvollen Zwischenschritt und verbindet ihn mit der Fragestellung."
+      },
+      "1": {
+        meaning: "Strukturierter, eigenstaendiger und anschlussfaehiger Beitrag.",
+        example: "Eine Schuelerin erklaert ihren Gedanken klar, ordnet ihn in die bisherige Bearbeitung ein und macht ihn fuer andere nutzbar."
+      },
+      "2": {
+        meaning: "Ordnender, begruendender oder diskursiv weiterfuehrender Beitrag.",
+        example: "Ein Schueler fasst zwei unterschiedliche Loesungswege zusammen und zeigt, warum sie letztlich dasselbe Ergebnis begruenden."
+      }
+    }
+  },
+  strategie: {
+    tap: {
+      meaning: "Ein Loesungsansatz bzw. eine Strategie wurde gewaehlt oder angepasst.",
+      example: "Eine Schuelerin beginnt bei einer Problemaufgabe mit einer Tabelle statt mit unsystematischem Probieren."
+    },
+    left: {
+      meaning: "Strategie auf Impuls uebernommen oder nach aussen angestossen veraendert.",
+      example: "Nach einem Hinweis uebernimmt ein Schueler die Idee, zunaechst eine Skizze anzulegen."
+    },
+    right: {
+      meaning: "Strategie selbst gewaehlt oder selbststaendig umgestellt.",
+      example: "Eine Schuelerin merkt, dass das Rueckwaertsarbeiten hier guenstiger ist, und wechselt eigenstaendig den Ansatz."
+    },
+    qualities: {
+      "-2": {
+        meaning: "Planloser oder fachlich ungeeigneter Ansatz.",
+        example: "Ein Schueler startet mehrfach neue Rechnungen, ohne die Informationen der Aufgabe zu ordnen."
+      },
+      "-1": {
+        meaning: "Erster, noch schwacher Ansatz.",
+        example: "Eine Schuelerin hat einen moeglichen Zugang, verfolgt ihn aber noch unsystematisch und ohne klare Pruefung."
+      },
+      "0": {
+        meaning: "Brauchbare Strategie fuer die konkrete Aufgabe.",
+        example: "Ein Schueler nutzt eine Fallunterscheidung, die zur Aufgabenstruktur passt."
+      },
+      "1": {
+        meaning: "Selbststaendig angepasste oder kombinierte Strategie.",
+        example: "Eine Schuelerin verbindet Skizze und Tabellenansatz, nachdem der erste Weg allein nicht ausreichte."
+      },
+      "2": {
+        meaning: "Bewusst reflektierte, verglichene oder begruendet gewaehlte Strategie.",
+        example: "Ein Schueler erlaeutert, warum er hier ein Gleichungssystem dem graphischen Verfahren vorzieht."
+      }
+    }
+  },
+  darstellung: {
+    tap: {
+      meaning: "Eine mathematische Darstellung wurde funktional genutzt.",
+      example: "Eine Schuelerin markiert in einer Skizze relevante Winkel und nutzt sie fuer die Bearbeitung."
+    },
+    left: {
+      meaning: "Vorgegebene Darstellung aufgenommen.",
+      example: "Ein Schueler arbeitet mit dem bereits im Buch gegebenen Graphen weiter und entnimmt ihm passende Informationen."
+    },
+    right: {
+      meaning: "Darstellung selbst erzeugt oder selbststaendig gewechselt.",
+      example: "Eine Schuelerin erstellt aus dem Text eine Tabelle und ueberfuehrt diese anschliessend in einen Graphen."
+    },
+    qualities: {
+      "-2": {
+        meaning: "Unpassende oder missverstandene Darstellung.",
+        example: "Ein Schueler deutet in einem Koordinatensystem die x-Achse als Ergebnisachse und zieht falsche Schluesse."
+      },
+      "-1": {
+        meaning: "Basale Nutzung / blosses Ablesen.",
+        example: "Eine Schuelerin liest nur einzelne Werte aus einer Tabelle ab, ohne die Struktur zu nutzen."
+      },
+      "0": {
+        meaning: "Passende sachgerechte Nutzung der Darstellung.",
+        example: "Ein Schueler verwendet einen Graphen, um den Schnittpunkt zweier Geraden korrekt zu bestimmen."
+      },
+      "1": {
+        meaning: "Zielgerichtete Erzeugung oder Transformation einer Darstellung.",
+        example: "Eine Schuelerin ueberfuehrt eine verbale Beschreibung planvoll in eine Skizze und danach in eine Funktionsgleichung."
+      },
+      "2": {
+        meaning: "Bewusstes Vernetzen, Bewerten oder begruendetes Auswaehlen von Darstellungen.",
+        example: "Ein Schueler erklaert, warum eine Tabelle hier uebersichtlicher ist als ein Graph, und nutzt anschliessend beide Darstellungen gezielt."
+      }
+    }
+  },
+  fehler: {
+    tap: {
+      meaning: "Ein Fehler wurde als relevanter Lern- oder Leistungsaspekt erfasst.",
+      example: "Eine Schuelerin streicht einen falschen Rechenschritt an und arbeitet daran weiter."
+    },
+    left: {
+      meaning: "Fehler nach Hinweis erkannt / bearbeitet.",
+      example: "Nach einer Rueckfrage der Lehrkraft erkennt ein Schueler, dass er beim Einsetzen das Vorzeichen verwechselt hat."
+    },
+    right: {
+      meaning: "Fehler selbst erkannt / selbst bearbeitet.",
+      example: "Eine Schuelerin stoppt ihre Rechnung, entdeckt eigenstaendig einen Uebertragungsfehler und korrigiert ihn."
+    },
+    qualities: {
+      "-2": {
+        meaning: "Fehler bleibt blockierend oder wird fachlich nicht verstanden.",
+        example: "Ein Schueler sieht trotz mehrerer Hinweise nicht, warum seine Umformung unzulaessig ist."
+      },
+      "-1": {
+        meaning: "Fehler nur oberflaechlich oder unvollstaendig bearbeitet.",
+        example: "Eine Schuelerin verbessert zwar das Ergebnis, kann aber den zugrunde liegenden Denkfehler nicht erklaeren."
+      },
+      "0": {
+        meaning: "Fehler sachgerecht korrigiert.",
+        example: "Ein Schueler berichtigt eine fehlerhafte Termumformung nachvollziehbar."
+      },
+      "1": {
+        meaning: "Fehler eigenstaendig erkannt und korrigiert.",
+        example: "Eine Schuelerin entdeckt beim Pruefen selbst, dass sie zwei Faelle verwechselt hat, und berichtigt dies richtig."
+      },
+      "2": {
+        meaning: "Fehler produktiv genutzt, z. B. zur Begruendung, Kontrolle oder Verallgemeinerung.",
+        example: "Ein Schueler zeigt anhand seines Irrtums, warum eine bestimmte Umformungsregel nur unter einer Zusatzbedingung gilt."
+      }
+    }
   }
 };
 
@@ -769,7 +1087,7 @@ function isEditingFocusableInput() {
 }
 
 function syncLiveDateTimeUi() {
-  if (!schoolService || !isLiveDateTimeMode() || activeDeskLayoutDrag || activeDeskLayoutResize || activeUnterrichtMathObservationPress || activeUnterrichtMathObservationMarkerPress || isClassImportModalOpen || isClassAnalysisDetailModalOpen || isClassAnalysisRecordEditModalOpen || isUnterrichtAssessmentModalOpen || isUnterrichtMathObservationModalOpen || isEditingFocusableInput()) {
+  if (!schoolService || !isLiveDateTimeMode() || activeDeskLayoutDrag || activeDeskLayoutResize || activeUnterrichtMathObservationPress || activeUnterrichtMathObservationMarkerPress || isClassImportModalOpen || isClassAnalysisDetailModalOpen || isClassAnalysisRecordEditModalOpen || isUnterrichtAssessmentModalOpen || isUnterrichtKnowledgeGapModalOpen || isUnterrichtMathObservationModalOpen || isEditingFocusableInput()) {
     return;
   }
 
@@ -918,6 +1236,7 @@ function stripNonPersistentUiState(rawSnapshot) {
   snapshot.activeSeatPlanRoom = "";
   snapshot.activeDateTime = "";
   snapshot.activeDateTimeMode = "live";
+  snapshot.knowledgeGapRecords = Array.isArray(snapshot.knowledgeGapRecords) ? snapshot.knowledgeGapRecords : [];
 
   return snapshot;
 }
@@ -1002,6 +1321,10 @@ function closeOpenTransientUi() {
 
   if (typeof window.UnterrichtsassistentApp.closeUnterrichtAssessmentModal === "function") {
     window.UnterrichtsassistentApp.closeUnterrichtAssessmentModal();
+  }
+
+  if (typeof window.UnterrichtsassistentApp.closeUnterrichtKnowledgeGapModal === "function") {
+    window.UnterrichtsassistentApp.closeUnterrichtKnowledgeGapModal();
   }
 
   if (typeof window.UnterrichtsassistentApp.closeUnterrichtMathObservationModal === "function") {
@@ -3091,6 +3414,11 @@ function getKnowledgeGapSuggestionSubject(inputId) {
 
   if (inputId === "unterrichtAssessmentKnowledgeGap" && activeUnterrichtAssessmentDraft) {
     classId = String(activeUnterrichtAssessmentDraft.classId || "").trim();
+  } else if (inputId === "unterrichtKnowledgeGapContent" && activeUnterrichtKnowledgeGapDraft) {
+    classId = String(activeUnterrichtKnowledgeGapDraft.classId || "").trim();
+  } else if (inputId === "classAnalysisKnowledgeGapContent" && activeClassAnalysisRecordEditDraft) {
+    record = getClassAnalysisRecordByDraft(sourceSnapshot, activeClassAnalysisRecordEditDraft);
+    classId = String(record && record.classId || "").trim();
   } else if (inputId === "classAnalysisAssessmentKnowledgeGap" && activeClassAnalysisRecordEditDraft) {
     record = getClassAnalysisRecordByDraft(sourceSnapshot, activeClassAnalysisRecordEditDraft);
     classId = String(record && record.classId || "").trim();
@@ -3108,20 +3436,28 @@ function getKnowledgeGapSuggestions(prefix, inputId) {
   const sourceSnapshot = getMutableRawSnapshot();
   const lowerPrefix = String(prefix || "").trim().toLowerCase();
   const currentSubject = String(getKnowledgeGapSuggestionSubject(inputId) || "").trim().toLowerCase();
+  const currentStudentId = inputId === "unterrichtKnowledgeGapContent" && activeUnterrichtKnowledgeGapDraft
+    ? String(activeUnterrichtKnowledgeGapDraft.studentId || "").trim()
+    : "";
   const countsByKey = {};
   const subjectByClassId = {};
 
-  if (!sourceSnapshot || !Array.isArray(sourceSnapshot.assessments)) {
+  if (!sourceSnapshot || (!Array.isArray(sourceSnapshot.assessments) && !Array.isArray(sourceSnapshot.knowledgeGapRecords))) {
     return [];
   }
 
-  sourceSnapshot.assessments.forEach(function (record) {
-    const rawValue = String(record && record.knowledgeGap || "").trim();
+  function addSuggestionRecord(record, value) {
+    const rawValue = String(value || "").trim();
     const normalizedKey = rawValue.toLowerCase();
     const recordClassId = String(record && record.classId || "").trim();
+    const recordStudentId = String(record && record.studentId || "").trim();
     let recordSubject = "";
 
     if (!rawValue) {
+      return;
+    }
+
+    if (currentStudentId && recordStudentId === currentStudentId) {
       return;
     }
 
@@ -3144,15 +3480,33 @@ function getKnowledgeGapSuggestions(prefix, inputId) {
     if (!countsByKey[normalizedKey]) {
       countsByKey[normalizedKey] = {
         value: rawValue,
-        count: 0
+        count: 0,
+        studentIds: {}
       };
     }
 
-    countsByKey[normalizedKey].count += 1;
+    if (recordStudentId) {
+      countsByKey[normalizedKey].studentIds[recordStudentId] = true;
+    } else {
+      countsByKey[normalizedKey].count += 1;
+    }
+  }
+
+  (Array.isArray(sourceSnapshot.assessments) ? sourceSnapshot.assessments : []).forEach(function (record) {
+    addSuggestionRecord(record, record && record.knowledgeGap);
+  });
+  (Array.isArray(sourceSnapshot.knowledgeGapRecords) ? sourceSnapshot.knowledgeGapRecords : []).forEach(function (record) {
+    addSuggestionRecord(record, record && record.content);
   });
 
   return Object.keys(countsByKey).map(function (key) {
-    return countsByKey[key];
+    const entry = countsByKey[key];
+    const distinctStudentCount = Object.keys(entry.studentIds || {}).length;
+
+    return {
+      value: entry.value,
+      count: distinctStudentCount || entry.count || 0
+    };
   }).sort(function (leftItem, rightItem) {
     if (rightItem.count !== leftItem.count) {
       return rightItem.count - leftItem.count;
@@ -5696,6 +6050,7 @@ function setActiveView(viewId) {
       warning: true,
       assessment: true,
       mathObservation: true,
+      knowledgeGap: true,
       completedEvaluation: true
     };
   }
@@ -6077,6 +6432,10 @@ function createAssessmentRecordId() {
   return "assessment-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
 }
 
+function createKnowledgeGapRecordId() {
+  return "knowledge-gap-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+}
+
 function createMathObservationRecordId() {
   return "math-observation-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
 }
@@ -6202,6 +6561,28 @@ function normalizeMathObservationDemandLevelValue(demandValue) {
   return ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(normalized) >= 0 ? normalized : "";
 }
 
+function getUnterrichtLiveObservationContextForRecord() {
+  const contextElement = document.getElementById("unterrichtLiveObservationContext");
+
+  if (!contextElement) {
+    return {
+      situationType: "",
+      demandLevel: "",
+      lessonPlanId: "",
+      lessonPhaseId: "",
+      lessonStepId: ""
+    };
+  }
+
+  return {
+    situationType: normalizeMathObservationSituationTypeValue(contextElement.getAttribute("data-situation-type")),
+    demandLevel: normalizeMathObservationDemandLevelValue(contextElement.getAttribute("data-demand-level")),
+    lessonPlanId: String(contextElement.getAttribute("data-lesson-plan-id") || "").trim(),
+    lessonPhaseId: String(contextElement.getAttribute("data-lesson-phase-id") || "").trim(),
+    lessonStepId: String(contextElement.getAttribute("data-lesson-step-id") || "").trim()
+  };
+}
+
 function getDeskSeatSlots(deskType) {
   if (deskType === "double") {
     return ["left", "right"];
@@ -6315,6 +6696,22 @@ function getMutableMathObservationRecordsCollection(rawSnapshot) {
   }
 
   return rawSnapshot.mathObservationRecords;
+}
+
+function getKnowledgeGapRecordsCollection(rawSnapshot) {
+  return Array.isArray(rawSnapshot && rawSnapshot.knowledgeGapRecords) ? rawSnapshot.knowledgeGapRecords : [];
+}
+
+function getMutableKnowledgeGapRecordsCollection(rawSnapshot) {
+  if (!rawSnapshot) {
+    return [];
+  }
+
+  if (!Array.isArray(rawSnapshot.knowledgeGapRecords)) {
+    rawSnapshot.knowledgeGapRecords = [];
+  }
+
+  return rawSnapshot.knowledgeGapRecords;
 }
 
 function getTodosCollection(rawSnapshot) {
@@ -7054,6 +7451,32 @@ function ensureUnterrichtMathObservationProcessOverlay() {
   return unterrichtMathObservationProcessOverlay;
 }
 
+function ensureUnterrichtMathObservationProcessInfo() {
+  if (unterrichtMathObservationProcessInfo && document.body.contains(unterrichtMathObservationProcessInfo)) {
+    return unterrichtMathObservationProcessInfo;
+  }
+
+  unterrichtMathObservationProcessInfo = document.createElement("div");
+  unterrichtMathObservationProcessInfo.className = "unterricht-math-observation-process-info";
+  unterrichtMathObservationProcessInfo.setAttribute("aria-hidden", "true");
+  unterrichtMathObservationProcessInfo.innerHTML = [
+    '<section class="unterricht-math-observation-process-info__card unterricht-math-observation-process-info__card--competency">',
+    '<h3 data-observation-process-info-title="competency"></h3>',
+    '<p data-observation-process-info-text="competency"></p>',
+    '</section>',
+    '<section class="unterricht-math-observation-process-info__card unterricht-math-observation-process-info__card--quality">',
+    '<h3 data-observation-process-info-title="quality"></h3>',
+    '<p data-observation-process-info-text="quality"></p>',
+    '</section>',
+    '<section class="unterricht-math-observation-process-info__card unterricht-math-observation-process-info__card--example">',
+    '<h3 data-observation-process-info-title="example"></h3>',
+    '<p data-observation-process-info-text="example"></p>',
+    '</section>'
+  ].join("");
+  document.body.appendChild(unterrichtMathObservationProcessInfo);
+  return unterrichtMathObservationProcessInfo;
+}
+
 function ensureUnterrichtMathObservationMarkerMenu() {
   if (unterrichtMathObservationMarkerMenu && document.body.contains(unterrichtMathObservationMarkerMenu)) {
     return unterrichtMathObservationMarkerMenu;
@@ -7125,12 +7548,15 @@ function clearUnterrichtMathObservationMarkerPressListeners() {
 function hideUnterrichtMathObservationProcessOverlay() {
   const menu = ensureUnterrichtMathObservationQuickMenu();
   const overlay = ensureUnterrichtMathObservationProcessOverlay();
+  const info = ensureUnterrichtMathObservationProcessInfo();
 
   menu.classList.remove("is-visible");
   menu.setAttribute("aria-hidden", "true");
   menu.textContent = "";
   overlay.classList.remove("is-visible", "is-flash");
   overlay.setAttribute("aria-hidden", "true");
+  info.classList.remove("is-visible");
+  info.setAttribute("aria-hidden", "true");
   overlay.querySelectorAll("[data-observation-process-quality-value], [data-observation-process-competency]").forEach(function (item) {
     item.classList.remove("is-active");
   });
@@ -7139,12 +7565,15 @@ function hideUnterrichtMathObservationProcessOverlay() {
 function hideUnterrichtMathObservationMarkerOverlay() {
   const menu = ensureUnterrichtMathObservationQuickMenu();
   const overlay = ensureUnterrichtMathObservationMarkerOverlay();
+  const info = ensureUnterrichtMathObservationProcessInfo();
 
   menu.classList.remove("is-visible");
   menu.setAttribute("aria-hidden", "true");
   menu.textContent = "";
   overlay.classList.remove("is-visible", "is-flash");
   overlay.setAttribute("aria-hidden", "true");
+  info.classList.remove("is-visible");
+  info.setAttribute("aria-hidden", "true");
   overlay.querySelectorAll("[data-observation-marker-quality-value], [data-observation-marker-direction-label]").forEach(function (item) {
     item.classList.remove("is-active");
   });
@@ -7285,6 +7714,108 @@ function syncUnterrichtMathObservationMarkerOverlayLabels(markerValue) {
   });
 }
 
+function getMathObservationCompetencyLabel(competencyKey) {
+  const normalizedKey = normalizeMathObservationCompetencyValue(competencyKey);
+  const competency = MATH_OBSERVATION_COMPETENCIES.find(function (entry) {
+    return entry.key === normalizedKey;
+  }) || null;
+
+  return competency ? competency.label : "";
+}
+
+function getMathObservationMarkerLabel(markerValue) {
+  const normalizedMarker = normalizeMathObservationMarkerValue(markerValue);
+  const marker = MATH_OBSERVATION_MARKERS.find(function (entry) {
+    return entry.key === normalizedMarker;
+  }) || null;
+
+  return marker ? marker.label : "";
+}
+
+function setUnterrichtMathObservationProcessInfoCard(info, cardKey, title, text) {
+  const titleElement = info.querySelector('[data-observation-process-info-title="' + cardKey + '"]');
+  const textElement = info.querySelector('[data-observation-process-info-text="' + cardKey + '"]');
+
+  if (titleElement) {
+    titleElement.textContent = title;
+  }
+  if (textElement) {
+    textElement.textContent = text;
+  }
+}
+
+function syncUnterrichtMathObservationProcessInfo(selection) {
+  const info = ensureUnterrichtMathObservationProcessInfo();
+  const competencyKey = normalizeMathObservationCompetencyValue(selection && selection.primaryCompetency);
+  const qualityValue = normalizeMathObservationQualityValue(selection && selection.processQuality);
+  const qualityKey = String(qualityValue);
+  const qualityLabel = formatMathObservationQualityLabel(qualityValue);
+  const competencyLabel = getMathObservationCompetencyLabel(competencyKey);
+  const competencyText = competencyKey
+    ? MATH_OBSERVATION_COMPETENCY_INFO[competencyKey]
+    : "Es wird nur die globale Qualitaet des beobachteten Beitrags gespeichert; ein Kompetenzbereich wird nicht zugeordnet.";
+  const exampleText = competencyKey
+    ? ((MATH_OBSERVATION_PROCESS_EXAMPLES[competencyKey] || {})[qualityKey] || "Zu dieser Kombination ist kein Unterrichtsbeispiel hinterlegt.")
+    : "Ohne Kompetenzbereich gibt es kein kompetenzspezifisches Unterrichtsbeispiel.";
+
+  setUnterrichtMathObservationProcessInfoCard(
+    info,
+    "competency",
+    competencyLabel || "Keine Kompetenz",
+    competencyText
+  );
+  setUnterrichtMathObservationProcessInfoCard(
+    info,
+    "quality",
+    qualityLabel,
+    MATH_OBSERVATION_QUALITY_INFO[qualityKey] || ""
+  );
+  setUnterrichtMathObservationProcessInfoCard(
+    info,
+    "example",
+    competencyLabel ? "Beispiel " + competencyLabel + " " + formatAssessmentQuickQuality(qualityValue) : "Beispiel",
+    exampleText
+  );
+  info.classList.add("is-visible");
+  info.setAttribute("aria-hidden", "false");
+}
+
+function syncUnterrichtMathObservationMarkerInfo(selection, markerValue) {
+  const info = ensureUnterrichtMathObservationProcessInfo();
+  const markerKey = normalizeMathObservationMarkerValue(markerValue);
+  const markerLabel = getMathObservationMarkerLabel(markerKey) || "Marker";
+  const markerInfo = MATH_OBSERVATION_MARKER_INFO[markerKey] || {};
+  const directionKey = selection && selection.markerDirection ? selection.markerDirection : "tap";
+  const directionInfo = markerInfo[directionKey] || markerInfo.tap || {};
+  const qualityValue = normalizeMathObservationQualityValue(selection && selection.markerQuality);
+  const qualityKey = String(qualityValue);
+  const qualityInfo = markerInfo.qualities && markerInfo.qualities[qualityKey] ? markerInfo.qualities[qualityKey] : {};
+  const directionTitle = directionKey === "left"
+    ? markerLabel + " links"
+    : (directionKey === "right" ? markerLabel + " rechts" : markerLabel + " neutral");
+
+  setUnterrichtMathObservationProcessInfoCard(
+    info,
+    "competency",
+    directionTitle,
+    directionInfo.meaning || "Keine Links/Rechts-Qualifizierung gewaehlt."
+  );
+  setUnterrichtMathObservationProcessInfoCard(
+    info,
+    "quality",
+    markerLabel + " " + formatAssessmentQuickQuality(qualityValue),
+    qualityInfo.meaning || ""
+  );
+  setUnterrichtMathObservationProcessInfoCard(
+    info,
+    "example",
+    "Beispiel " + markerLabel,
+    "Qualitaet: " + (qualityInfo.example || "Kein Beispiel fuer diese Qualitaet hinterlegt.") + "\nRichtung: " + (directionInfo.example || "Kein Beispiel fuer diese Richtung hinterlegt.")
+  );
+  info.classList.add("is-visible");
+  info.setAttribute("aria-hidden", "false");
+}
+
 function showUnterrichtMathObservationProcessOverlay(anchorX, anchorY, selection) {
   const overlay = ensureUnterrichtMathObservationProcessOverlay();
   const overlayWidth = overlay.offsetWidth || 620;
@@ -7305,6 +7836,7 @@ function showUnterrichtMathObservationProcessOverlay(anchorX, anchorY, selection
   overlay.querySelectorAll("[data-observation-process-competency]").forEach(function (item) {
     item.classList.toggle("is-active", item.getAttribute("data-observation-process-competency") === String(selection && selection.primaryCompetency || ""));
   });
+  syncUnterrichtMathObservationProcessInfo(selection);
 }
 
 function showUnterrichtMathObservationMarkerOverlay(anchorX, anchorY, selection, markerValue) {
@@ -7324,6 +7856,7 @@ function showUnterrichtMathObservationMarkerOverlay(anchorX, anchorY, selection,
   overlay.querySelectorAll("[data-observation-marker-direction-label]").forEach(function (item) {
     item.classList.toggle("is-active", item.getAttribute("data-observation-marker-direction-label") === activeDirection);
   });
+  syncUnterrichtMathObservationMarkerInfo(selection, markerValue);
 }
 
 function flashUnterrichtMathObservationMarkerOverlay() {
@@ -7653,6 +8186,10 @@ function getUnterrichtAssessmentModal() {
   return document.getElementById("unterrichtAssessmentModal");
 }
 
+function getUnterrichtKnowledgeGapModal() {
+  return document.getElementById("unterrichtKnowledgeGapModal");
+}
+
 function getUnterrichtMathObservationModal() {
   return document.getElementById("unterrichtMathObservationModal");
 }
@@ -7713,6 +8250,33 @@ function appendUnterrichtAssessmentRecord(rawSnapshot, draft, values) {
   });
 }
 
+function normalizeKnowledgeGapStatusValue(statusValue) {
+  const normalized = String(statusValue || "").trim().toLowerCase();
+
+  return ["offen", "in arbeit", "geschlossen"].indexOf(normalized) >= 0 ? normalized : "offen";
+}
+
+function appendUnterrichtKnowledgeGapRecord(rawSnapshot, draft, values) {
+  const recordedAt = String(values && values.recordedAt || getReferenceDateTimeValue()).trim();
+  const content = String(values && values.content || "").trim();
+
+  if (!rawSnapshot || !draft || !content) {
+    return;
+  }
+
+  getMutableKnowledgeGapRecordsCollection(rawSnapshot).push({
+    id: createKnowledgeGapRecordId(),
+    studentId: draft.studentId,
+    classId: draft.classId,
+    lessonId: draft.lessonId,
+    lessonDate: draft.lessonDate,
+    room: draft.lessonRoom,
+    recordedAt: recordedAt,
+    content: content,
+    status: normalizeKnowledgeGapStatusValue(values && values.status)
+  });
+}
+
 function appendUnterrichtMathObservationRecord(rawSnapshot, draft, values) {
   const recordedAt = String(values && values.recordedAt || getReferenceDateTimeValue()).trim();
   const primaryCompetency = normalizeMathObservationCompetencyValue(values && values.primaryCompetency);
@@ -7740,6 +8304,9 @@ function appendUnterrichtMathObservationRecord(rawSnapshot, draft, values) {
     markerQuality: isSwipableMarker ? normalizeOptionalMathObservationMarkerQualityValue(values && values.markerQuality) : "",
     situationType: normalizeMathObservationSituationTypeValue(values && values.situationType),
     demandLevel: normalizeMathObservationDemandLevelValue(values && values.demandLevel),
+    lessonPlanId: String(values && values.lessonPlanId || "").trim(),
+    lessonPhaseId: String(values && values.lessonPhaseId || "").trim(),
+    lessonStepId: String(values && values.lessonStepId || "").trim(),
     note: String(values && values.note || "").trim()
   });
 }
@@ -8136,7 +8703,9 @@ function getClassAnalysisRecordByDraft(rawSnapshot, draft) {
         ? getHomeworkRecordsCollection(rawSnapshot)
         : (type === "warning"
           ? getWarningRecordsCollection(rawSnapshot)
-          : (type === "mathObservation" ? getMathObservationRecordsCollection(rawSnapshot) : []))));
+          : (type === "knowledgeGap"
+            ? getKnowledgeGapRecordsCollection(rawSnapshot)
+            : (type === "mathObservation" ? getMathObservationRecordsCollection(rawSnapshot) : [])))));
 
   return collection.find(function (record) {
     return String(record.id || "") === recordId;
@@ -11935,7 +12504,7 @@ window.UnterrichtsassistentApp.getUnterrichtSeatPlanRotation = function () {
   return unterrichtSeatPlanRotation === 180 ? 180 : 0;
 };
 window.UnterrichtsassistentApp.setUnterrichtToolMode = function (nextMode) {
-  const allowedModes = ["attendance", "homework", "warning", "assessment", "mathObservation"];
+  const allowedModes = ["attendance", "homework", "warning", "assessment", "mathObservation", "knowledgeGap"];
   cancelUnterrichtMathObservationInteraction();
   unterrichtToolMode = allowedModes.indexOf(nextMode) >= 0 ? nextMode : "attendance";
 
@@ -12142,6 +12711,19 @@ window.UnterrichtsassistentApp.handleUnterrichtSeatClick = function (studentId, 
       lessonRoom: String(lesson.room || "").trim()
     };
     window.UnterrichtsassistentApp.openUnterrichtAssessmentModal();
+    return false;
+  }
+
+  if (unterrichtToolMode === "knowledgeGap") {
+    activeUnterrichtKnowledgeGapDraft = {
+      studentId: String(studentId),
+      classId: activeClass.id,
+      lessonId: lesson.id,
+      lessonDate: lessonDate,
+      lessonStartTime: String(lesson.startTime || ""),
+      lessonRoom: String(lesson.room || "").trim()
+    };
+    window.UnterrichtsassistentApp.openUnterrichtKnowledgeGapModal();
     return false;
   }
 
@@ -12636,6 +13218,8 @@ window.UnterrichtsassistentApp.handleUnterrichtMathObservationPointerEnd = funct
   activeUnterrichtMathObservationPress = null;
 
   if (pressState.menuVisible && pressState.selection && activeClass) {
+    const liveObservationContext = getUnterrichtLiveObservationContextForRecord();
+
     activeUnterrichtMathObservationDraft = {
       studentId: pressState.studentId,
       classId: activeClass.id,
@@ -12645,7 +13229,12 @@ window.UnterrichtsassistentApp.handleUnterrichtMathObservationPointerEnd = funct
       lessonRoom: pressState.lessonRoom,
       primaryCompetency: pressState.selection.primaryCompetency,
       competencyIds: pressState.selection.competencyIds,
-      processQuality: pressState.selection.processQuality
+      processQuality: pressState.selection.processQuality,
+      situationType: liveObservationContext.situationType,
+      demandLevel: liveObservationContext.demandLevel,
+      lessonPlanId: liveObservationContext.lessonPlanId,
+      lessonPhaseId: liveObservationContext.lessonPhaseId,
+      lessonStepId: liveObservationContext.lessonStepId
     };
     hideUnterrichtMathObservationProcessOverlay();
     showUnterrichtMathObservationMarkerMenu(pressState.anchorX, pressState.anchorY);
@@ -12763,6 +13352,8 @@ window.UnterrichtsassistentApp.handleUnterrichtMathObservationTouchEnd = functio
   activeUnterrichtMathObservationPress = null;
 
   if (pressState.menuVisible && pressState.selection && activeClass) {
+    const liveObservationContext = getUnterrichtLiveObservationContextForRecord();
+
     activeUnterrichtMathObservationDraft = {
       studentId: pressState.studentId,
       classId: activeClass.id,
@@ -12772,7 +13363,12 @@ window.UnterrichtsassistentApp.handleUnterrichtMathObservationTouchEnd = functio
       lessonRoom: pressState.lessonRoom,
       primaryCompetency: pressState.selection.primaryCompetency,
       competencyIds: pressState.selection.competencyIds,
-      processQuality: pressState.selection.processQuality
+      processQuality: pressState.selection.processQuality,
+      situationType: liveObservationContext.situationType,
+      demandLevel: liveObservationContext.demandLevel,
+      lessonPlanId: liveObservationContext.lessonPlanId,
+      lessonPhaseId: liveObservationContext.lessonPhaseId,
+      lessonStepId: liveObservationContext.lessonStepId
     };
     hideUnterrichtMathObservationProcessOverlay();
     showUnterrichtMathObservationMarkerMenu(pressState.anchorX, pressState.anchorY);
@@ -12804,8 +13400,11 @@ window.UnterrichtsassistentApp.handleUnterrichtMathObservationMarkerBackdropPoin
       marker: "",
       markerDirection: "",
       markerQuality: "",
-      situationType: "",
-      demandLevel: "",
+      situationType: draft.situationType,
+      demandLevel: draft.demandLevel,
+      lessonPlanId: draft.lessonPlanId,
+      lessonPhaseId: draft.lessonPhaseId,
+      lessonStepId: draft.lessonStepId,
       note: ""
     });
     saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
@@ -12933,8 +13532,11 @@ window.UnterrichtsassistentApp.handleUnterrichtMathObservationMarkerPointerEnd =
       marker: pressState.marker,
       markerDirection: selection.markerDirection,
       markerQuality: selection.markerQuality,
-      situationType: "",
-      demandLevel: "",
+      situationType: draft.situationType,
+      demandLevel: draft.demandLevel,
+      lessonPlanId: draft.lessonPlanId,
+      lessonPhaseId: draft.lessonPhaseId,
+      lessonStepId: draft.lessonStepId,
       note: ""
     });
     saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
@@ -17730,6 +18332,7 @@ window.UnterrichtsassistentApp.openUnterrichtMathObservationModal = function () 
   const situationInput = document.getElementById("unterrichtMathObservationSituationType");
   const demandLevelInput = document.getElementById("unterrichtMathObservationDemandLevel");
   const noteInput = document.getElementById("unterrichtMathObservationNote");
+  const liveObservationContext = getUnterrichtLiveObservationContextForRecord();
   const firstFocusable = document.querySelector("[data-observation-primary-competency]");
 
   if (!modal || !activeUnterrichtMathObservationDraft) {
@@ -17937,8 +18540,11 @@ window.UnterrichtsassistentApp.submitUnterrichtMathObservationModal = function (
     marker: markerInput && markerInput.value,
     markerDirection: markerDirectionInput && markerDirectionInput.value,
     markerQuality: markerQualityInput && markerQualityInput.value,
-    situationType: situationInput && situationInput.value,
-    demandLevel: demandLevelInput && demandLevelInput.value,
+    situationType: situationInput && situationInput.value || liveObservationContext.situationType,
+    demandLevel: demandLevelInput && demandLevelInput.value || liveObservationContext.demandLevel,
+    lessonPlanId: liveObservationContext.lessonPlanId,
+    lessonPhaseId: liveObservationContext.lessonPhaseId,
+    lessonStepId: liveObservationContext.lessonStepId,
     note: String(noteInput && noteInput.value || "").trim()
   });
 
@@ -18062,6 +18668,105 @@ window.UnterrichtsassistentApp.closeUnterrichtAssessmentModal = function () {
   isUnterrichtAssessmentModalOpen = false;
   activeUnterrichtAssessmentGridDrag = null;
   activeUnterrichtAssessmentDraft = null;
+  return false;
+};
+window.UnterrichtsassistentApp.openUnterrichtKnowledgeGapModal = function () {
+  const modal = getUnterrichtKnowledgeGapModal();
+  const header = document.getElementById("unterrichtKnowledgeGapStudent");
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const student = schoolService && activeUnterrichtKnowledgeGapDraft
+    ? schoolService.snapshot.students.find(function (entry) {
+        return entry.id === activeUnterrichtKnowledgeGapDraft.studentId;
+      }) || null
+    : null;
+  const dateLabel = document.getElementById("unterrichtKnowledgeGapDate");
+  const contentInput = document.getElementById("unterrichtKnowledgeGapContent");
+  const statusInput = document.getElementById("unterrichtKnowledgeGapStatus");
+
+  if (!modal || !activeUnterrichtKnowledgeGapDraft) {
+    return false;
+  }
+
+  isUnterrichtKnowledgeGapModalOpen = true;
+  modal.hidden = false;
+  modal.classList.add("is-open");
+
+  if (header) {
+    header.textContent = student
+      ? [String(student.firstName || "").trim(), String(student.lastName || "").trim()].filter(Boolean).join(" ")
+      : "Schueler";
+  }
+
+  if (dateLabel) {
+    dateLabel.textContent = [activeClass ? ((activeClass.name || "") + " " + (activeClass.subject || "")).trim() : "", formatDateLabel(activeUnterrichtKnowledgeGapDraft.lessonDate)].filter(Boolean).join(" - ");
+  }
+
+  if (contentInput) {
+    contentInput.value = "";
+  }
+  if (statusInput) {
+    statusInput.value = "offen";
+  }
+  closeKnowledgeGapSuggestions();
+
+  if (contentInput) {
+    window.setTimeout(function () {
+      contentInput.focus();
+    }, 0);
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.closeUnterrichtKnowledgeGapModal = function () {
+  const modal = getUnterrichtKnowledgeGapModal();
+
+  closeKnowledgeGapSuggestions();
+
+  if (modal) {
+    modal.hidden = true;
+    modal.classList.remove("is-open");
+  }
+
+  isUnterrichtKnowledgeGapModalOpen = false;
+  activeUnterrichtKnowledgeGapDraft = null;
+  return false;
+};
+window.UnterrichtsassistentApp.submitUnterrichtKnowledgeGapModal = function (event) {
+  const currentRawSnapshot = schoolService && serializeSnapshot ? serializeSnapshot(schoolService.snapshot) : null;
+  const draft = activeUnterrichtKnowledgeGapDraft;
+  const contentInput = document.getElementById("unterrichtKnowledgeGapContent");
+  const statusInput = document.getElementById("unterrichtKnowledgeGapStatus");
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  if (!currentRawSnapshot || !draft || !String(contentInput && contentInput.value || "").trim()) {
+    return window.UnterrichtsassistentApp.closeUnterrichtKnowledgeGapModal();
+  }
+
+  appendUnterrichtKnowledgeGapRecord(currentRawSnapshot, draft, {
+    content: String(contentInput && contentInput.value || "").trim(),
+    status: statusInput && statusInput.value
+  });
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
+  return window.UnterrichtsassistentApp.closeUnterrichtKnowledgeGapModal();
+};
+window.UnterrichtsassistentApp.updateLiveKnowledgeGapStatus = function (recordId, nextStatus) {
+  const currentRawSnapshot = schoolService && serializeSnapshot ? serializeSnapshot(schoolService.snapshot) : null;
+  const normalizedRecordId = String(recordId || "").trim();
+  const record = getKnowledgeGapRecordsCollection(currentRawSnapshot).find(function (entry) {
+    return String(entry && entry.id || "").trim() === normalizedRecordId;
+  }) || null;
+
+  if (!currentRawSnapshot || !normalizedRecordId || !record) {
+    return false;
+  }
+
+  record.status = normalizeKnowledgeGapStatusValue(nextStatus);
+  record.updatedAt = getCurrentTimestamp();
+  saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
   return false;
 };
 window.UnterrichtsassistentApp.startUnterrichtAssessmentGridPointer = function (event) {
@@ -18246,6 +18951,7 @@ window.UnterrichtsassistentApp.getClassAnalysisEnabledTypes = function () {
     warning: classAnalysisEnabledTypes.warning !== false,
     assessment: classAnalysisEnabledTypes.assessment !== false,
     mathObservation: classAnalysisEnabledTypes.mathObservation !== false,
+    knowledgeGap: classAnalysisEnabledTypes.knowledgeGap !== false,
     completedEvaluation: classAnalysisEnabledTypes.completedEvaluation !== false
   };
 };
@@ -18298,7 +19004,7 @@ window.UnterrichtsassistentApp.setClassAnalysisCriterion = function (criterionKe
 window.UnterrichtsassistentApp.toggleClassAnalysisType = function (typeKey) {
   const normalizedType = String(typeKey || "").trim();
 
-  if (["attendance", "homework", "warning", "assessment", "mathObservation", "completedEvaluation"].indexOf(normalizedType) < 0) {
+  if (["attendance", "homework", "warning", "assessment", "mathObservation", "knowledgeGap", "completedEvaluation"].indexOf(normalizedType) < 0) {
     return false;
   }
 
@@ -18504,6 +19210,10 @@ window.UnterrichtsassistentApp.deleteClassAnalysisRecord = function (recordType,
     currentRawSnapshot.warningRecords = getWarningRecordsCollection(currentRawSnapshot).filter(function (record) {
       return String(record.id || "") !== normalizedId;
     });
+  } else if (normalizedType === "knowledgeGap") {
+    currentRawSnapshot.knowledgeGapRecords = getKnowledgeGapRecordsCollection(currentRawSnapshot).filter(function (record) {
+      return String(record.id || "") !== normalizedId;
+    });
   } else if (normalizedType === "mathObservation") {
     currentRawSnapshot.mathObservationRecords = getMathObservationRecordsCollection(currentRawSnapshot).filter(function (record) {
       return String(record.id || "") !== normalizedId;
@@ -18645,6 +19355,9 @@ window.UnterrichtsassistentApp.submitClassAnalysisRecordEditModal = function (ev
     noteValue = String(document.getElementById("classAnalysisWarningNote") && document.getElementById("classAnalysisWarningNote").value || "").trim();
     record.category = categoryValue;
     record.note = categoryValue === "andere" ? noteValue : "";
+  } else if (draft.recordType === "knowledgeGap") {
+    record.content = String(document.getElementById("classAnalysisKnowledgeGapContent") && document.getElementById("classAnalysisKnowledgeGapContent").value || "").trim();
+    record.status = normalizeKnowledgeGapStatusValue(document.getElementById("classAnalysisKnowledgeGapStatus") && document.getElementById("classAnalysisKnowledgeGapStatus").value);
   } else if (draft.recordType === "mathObservation") {
     record.note = String(document.getElementById("classAnalysisMathObservationNote") && document.getElementById("classAnalysisMathObservationNote").value || "").trim();
   } else if (draft.recordType === "assessment") {
@@ -18858,6 +19571,9 @@ window.UnterrichtsassistentApp.getExpandedCurriculumSequenceIds = function () {
 };
 window.UnterrichtsassistentApp.getCollapsedUnterrichtLiveLessonIds = function () {
   return collapsedUnterrichtLiveLessonIds.slice();
+};
+window.UnterrichtsassistentApp.isUnterrichtLiveTodosCollapsed = function () {
+  return Boolean(isUnterrichtLiveTodosCollapsed);
 };
 window.UnterrichtsassistentApp.getActiveUnterrichtLiveLessonInfoLessonId = function () {
   return activeUnterrichtLiveLessonInfoLessonId;
@@ -19118,6 +19834,15 @@ window.UnterrichtsassistentApp.togglePlanningAdminMode = function () {
     setActiveView("planung");
   } else {
     updateHeaderUtility(activeViewId);
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.toggleUnterrichtLiveTodosCollapsed = function () {
+  isUnterrichtLiveTodosCollapsed = !isUnterrichtLiveTodosCollapsed;
+
+  if (activeViewId === "unterricht") {
+    setActiveView("unterricht");
   }
 
   return false;
@@ -21795,6 +22520,9 @@ window.UnterrichtsassistentApp.deleteStudent = function (studentId) {
   currentRawSnapshot.warningRecords = getWarningRecordsCollection(currentRawSnapshot).filter(function (record) {
     return record.studentId !== studentId;
   });
+  currentRawSnapshot.knowledgeGapRecords = getKnowledgeGapRecordsCollection(currentRawSnapshot).filter(function (record) {
+    return record.studentId !== studentId;
+  });
   currentRawSnapshot.mathObservationRecords = getMathObservationRecordsCollection(currentRawSnapshot).filter(function (record) {
     return record.studentId !== studentId;
   });
@@ -22018,6 +22746,9 @@ window.UnterrichtsassistentApp.deleteActiveClass = function () {
     return record.classId !== activeClass.id && !studentIdsToDelete[record.studentId];
   });
   currentRawSnapshot.warningRecords = getWarningRecordsCollection(currentRawSnapshot).filter(function (record) {
+    return record.classId !== activeClass.id && !studentIdsToDelete[record.studentId];
+  });
+  currentRawSnapshot.knowledgeGapRecords = getKnowledgeGapRecordsCollection(currentRawSnapshot).filter(function (record) {
     return record.classId !== activeClass.id && !studentIdsToDelete[record.studentId];
   });
   currentRawSnapshot.mathObservationRecords = getMathObservationRecordsCollection(currentRawSnapshot).filter(function (record) {

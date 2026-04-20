@@ -277,6 +277,22 @@ class WarningRecord {
   }
 }
 
+class KnowledgeGapRecord {
+  constructor({ id, studentId, classId, lessonId = "", lessonDate = "", room = "", recordedAt = "", content = "", status = "offen" }) {
+    const normalizedStatus = String(status || "").trim().toLowerCase();
+
+    this.id = id;
+    this.studentId = studentId;
+    this.classId = classId;
+    this.lessonId = lessonId;
+    this.lessonDate = lessonDate;
+    this.room = room;
+    this.recordedAt = recordedAt;
+    this.content = String(content || "").trim();
+    this.status = ["offen", "in arbeit", "geschlossen"].indexOf(normalizedStatus) >= 0 ? normalizedStatus : "offen";
+  }
+}
+
 class MathObservationRecord {
   constructor({
     id,
@@ -294,6 +310,9 @@ class MathObservationRecord {
     markerQuality = "",
     situationType = "",
     demandLevel = "",
+    lessonPlanId = "",
+    lessonPhaseId = "",
+    lessonStepId = "",
     note = ""
   }) {
     const allowedCompetencies = ["k1", "k2", "k3", "k4", "k5", "k6"];
@@ -350,6 +369,9 @@ class MathObservationRecord {
       : (Number.isFinite(numericMarkerQuality) ? Math.max(-2, Math.min(2, Math.round(numericMarkerQuality))) : "");
     this.situationType = ["lernen", "leisten"].indexOf(normalizedSituationType) >= 0 ? normalizedSituationType : "";
     this.demandLevel = ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(normalizedDemandLevel) >= 0 ? normalizedDemandLevel : "";
+    this.lessonPlanId = String(lessonPlanId || "").trim();
+    this.lessonPhaseId = String(lessonPhaseId || "").trim();
+    this.lessonStepId = String(lessonStepId || "").trim();
     this.note = String(note || "").trim();
   }
 }
@@ -767,6 +789,7 @@ window.Unterrichtsassistent.domain.PerformedEvaluation = PerformedEvaluation;
 window.Unterrichtsassistent.domain.AttendanceRecord = AttendanceRecord;
 window.Unterrichtsassistent.domain.HomeworkRecord = HomeworkRecord;
 window.Unterrichtsassistent.domain.WarningRecord = WarningRecord;
+window.Unterrichtsassistent.domain.KnowledgeGapRecord = KnowledgeGapRecord;
 window.Unterrichtsassistent.domain.MathObservationRecord = MathObservationRecord;
 window.Unterrichtsassistent.domain.TodoItem = TodoItem;
 window.Unterrichtsassistent.domain.SeatPlan = SeatPlan;

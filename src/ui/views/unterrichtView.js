@@ -32,6 +32,9 @@ window.Unterrichtsassistent.ui.views.unterricht = {
           return String(entry || "").trim();
         }).filter(Boolean)
       : [];
+    const isLiveTodosCollapsed = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.isUnterrichtLiveTodosCollapsed === "function"
+      ? window.UnterrichtsassistentApp.isUnterrichtLiveTodosCollapsed()
+      : false;
     const activeRoom = activeClass ? service.getRelevantRoomForClass(activeClass.id, referenceDate) : "";
     const currentSeatOrder = activeClass && typeof service.getCurrentSeatOrder === "function"
       ? service.getCurrentSeatOrder(activeClass.id, activeRoom, referenceDate)
@@ -40,6 +43,13 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       ? service.getCurrentSeatPlan(activeClass.id, activeRoom, referenceDate)
       : null;
     const students = activeClass ? service.getStudentsForClass(activeClass.id) : [];
+    const lowEvidenceStudentIds = activeClass && viewMode === "live" && typeof service.getLowEvidenceStudentIdsForClass === "function"
+      ? service.getLowEvidenceStudentIdsForClass(activeClass.id, referenceDate, 5, 14)
+      : [];
+    const lowEvidenceStudentIdLookup = lowEvidenceStudentIds.reduce(function (lookup, studentId) {
+      lookup[studentId] = true;
+      return lookup;
+    }, {});
     const schoolYearStart = String(snapshot.schoolYearStart || "").slice(0, 10);
     const schoolYearEnd = String(snapshot.schoolYearEnd || "").slice(0, 10);
     const planningEvents = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningEventsForDisplay === "function"
@@ -699,12 +709,20 @@ window.Unterrichtsassistent.ui.views.unterricht = {
           : null);
       const normalizedSituation = String(liveOverride && liveOverride.situationType || activePhase && activePhase.situationType || "").trim().toLowerCase();
       const normalizedDemandLevel = String(liveOverride && liveOverride.demandLevel || activePhase && activePhase.demandLevel || "").trim().toLowerCase();
+      const activePhaseSteps = activePhaseId ? getOrderedCurriculumLessonStepsForPhase(activePhaseId) : [];
+      const activeStep = activePhaseSteps.find(function (stepItem) {
+        const stepId = String(stepItem && stepItem.id || "").trim();
+        const stepStatus = lessonStepStatusLookup[[String(activeClass && activeClass.id || "").trim(), String(activeSegment && activeSegment.lessonPlan && activeSegment.lessonPlan.id || "").trim(), activePhaseId, stepId].join("::")] || lessonStepStatusLookup[[String(activeClass && activeClass.id || "").trim(), String(lessonFlowData && lessonFlowData.lessonDate || "").trim(), String(activeSegment && activeSegment.lessonPlan && activeSegment.lessonPlan.id || "").trim(), activePhaseId, stepId].join("::")] || null;
+
+        return stepId && !(stepStatus && stepStatus.isCompleted);
+      }) || activePhaseSteps[activePhaseSteps.length - 1] || null;
 
       return {
         classId: String(activeClass && activeClass.id || "").trim(),
         lessonDate: String(lessonFlowData && lessonFlowData.lessonDate || toIsoDate(referenceDate) || "").trim(),
         lessonPlanId: fallbackLessonPlanId,
         phaseId: fallbackPhaseId,
+        stepId: String(activeStep && activeStep.id || "").trim(),
         situationType: normalizedSituation === "leisten" ? "leisten" : "lernen",
         demandLevel: ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(normalizedDemandLevel) >= 0
           ? normalizedDemandLevel
@@ -764,6 +782,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
 
       return [
         '<div class="unterricht-live-controls" aria-label="Aktuelle Phasenattribute">',
+        '<div id="unterrichtLiveObservationContext" hidden data-situation-type="' + escapeValue(controlState.situationType) + '" data-demand-level="' + escapeValue(controlState.demandLevel) + '" data-lesson-plan-id="' + escapeValue(controlState.lessonPlanId) + '" data-lesson-phase-id="' + escapeValue(controlState.phaseId) + '" data-lesson-step-id="' + escapeValue(controlState.stepId || "") + '"></div>',
         '<div class="unterricht-live-controls__switch" role="group" aria-label="Situation">',
         '<button class="unterricht-live-controls__switch-option' + (controlState.situationType === "lernen" ? ' is-active' : '') + '" type="button"' + (isDisabled ? ' disabled' : '') + ' onclick="return window.UnterrichtsassistentApp.updateCurriculumLessonPhaseLiveField(\'' + escapeValue(normalizedClassId) + '\', \'' + escapeValue(normalizedLessonDate) + '\', \'' + escapeValue(normalizedLessonPlanId) + '\', \'' + escapeValue(normalizedPhaseId) + '\', \'liveSituationType\', \'lernen\')">Lernen</button>',
         '<button class="unterricht-live-controls__switch-option' + (controlState.situationType === "leisten" ? ' is-active' : '') + '" type="button"' + (isDisabled ? ' disabled' : '') + ' onclick="return window.UnterrichtsassistentApp.updateCurriculumLessonPhaseLiveField(\'' + escapeValue(normalizedClassId) + '\', \'' + escapeValue(normalizedLessonDate) + '\', \'' + escapeValue(normalizedLessonPlanId) + '\', \'' + escapeValue(normalizedPhaseId) + '\', \'liveSituationType\', \'leisten\')">Leisten</button>',
@@ -1231,8 +1250,12 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       const isWarningInteractive = Boolean(student && currentClassLesson && toolMode === "warning" && attendanceState !== "absent");
       const isAssessmentInteractive = Boolean(student && currentClassLesson && toolMode === "assessment" && attendanceState !== "absent");
       const isMathObservationInteractive = Boolean(student && currentClassLesson && toolMode === "mathObservation" && attendanceState !== "absent");
-      const isInteractive = isAttendanceInteractive || isHomeworkInteractive || isWarningInteractive || isAssessmentInteractive || isMathObservationInteractive;
+      const isKnowledgeGapInteractive = Boolean(student && currentClassLesson && toolMode === "knowledgeGap" && attendanceState !== "absent");
+      const isInteractive = isAttendanceInteractive || isHomeworkInteractive || isWarningInteractive || isAssessmentInteractive || isMathObservationInteractive || isKnowledgeGapInteractive;
       const onclick = isAttendanceInteractive
+        ? ' onclick="return window.UnterrichtsassistentApp.handleUnterrichtSeatClick(\'' + escapeValue(student.id) + '\', \'' + escapeValue(currentClassLesson.id) + '\', \'' + escapeValue(currentClassLesson.startTime || "") + '\', \'' + escapeValue(currentClassLesson.room || "") + '\')"'
+        : "";
+      const knowledgeGapClick = isKnowledgeGapInteractive
         ? ' onclick="return window.UnterrichtsassistentApp.handleUnterrichtSeatClick(\'' + escapeValue(student.id) + '\', \'' + escapeValue(currentClassLesson.id) + '\', \'' + escapeValue(currentClassLesson.startTime || "") + '\', \'' + escapeValue(currentClassLesson.room || "") + '\')"'
         : "";
       const pointerdown = isHomeworkInteractive
@@ -1278,6 +1301,9 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         if (isInteractive) {
           classes.push("is-interactive");
         }
+        if (lowEvidenceStudentIdLookup[student.id]) {
+          classes.push("is-low-evidence");
+        }
         classes.push("is-homework-" + getHomeworkBadgeClass(homeworkState).replace("is-", ""));
       } else {
         classes.push("seat-order-slot--readonly");
@@ -1287,7 +1313,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         classes.push(toolMode === "attendance" ? "is-absent" : "is-muted");
       }
 
-      return '<div class="' + classes.join(" ") + '"' + mathObservationDataAttributes + onclick + pointerdown + warningPointerdown + assessmentPointerdown + mathObservationPointerdown + '><div class="unterricht-seatplan-slot__content">' + assessmentBadge + (student ? '<span class="seat-order-desk__label seat-order-desk__label--readonly">' + escapeValue(getStudentShortLabel(student)) + "</span>" : "") + symbolRow + "</div>" + mathObservationHitbox + "</div>";
+      return '<div class="' + classes.join(" ") + '"' + mathObservationDataAttributes + onclick + knowledgeGapClick + pointerdown + warningPointerdown + assessmentPointerdown + mathObservationPointerdown + '><div class="unterricht-seatplan-slot__content">' + assessmentBadge + (student ? '<span class="seat-order-desk__label seat-order-desk__label--readonly">' + escapeValue(getStudentShortLabel(student)) + "</span>" : "") + symbolRow + "</div>" + mathObservationHitbox + "</div>";
     }
 
     function getDeskItemMetrics(item) {
@@ -1521,6 +1547,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         '<button class="' + getToolButtonClass("warning") + '" type="button" aria-label="Warnung vergeben" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'warning\')">&#9888;</button>',
         '<button class="' + getToolButtonClass("assessment") + '" type="button" aria-label="Bewertung oeffnen" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'assessment\')">&#128269;</button>',
         '<button class="' + getToolButtonClass("mathObservation") + '" type="button" aria-label="Mathematik-Beobachtung erfassen" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'mathObservation\')">K</button>',
+        '<button class="' + getToolButtonClass("knowledgeGap") + '" type="button" aria-label="Wissensluecke erfassen" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'knowledgeGap\')">&#128214;</button>',
         '<button class="' + getRotationButtonClass() + '" type="button" aria-label="Sitzplan um 180 Grad drehen" aria-pressed="' + (isSeatPlanRotated ? "true" : "false") + '" onclick="return window.UnterrichtsassistentApp.toggleUnterrichtSeatPlanRotation()">180&deg;</button>',
         '</div>',
         '</div>',
@@ -2413,6 +2440,21 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       ].join("");
     }
 
+    function buildLiveTodoPanelHeader(activeClassDisplayName, count) {
+      return [
+        '<button class="unterricht-live-todos__header-toggle" type="button" aria-expanded="', isLiveTodosCollapsed ? 'false' : 'true', '" onclick="return window.UnterrichtsassistentApp.toggleUnterrichtLiveTodosCollapsed()">',
+        '<span>',
+        '<span class="unterricht-live-todos__title">Offene TODOs</span>',
+        '<span class="unterricht-live-todos__subtitle">', escapeValue(activeClassDisplayName), '</span>',
+        '</span>',
+        '<span class="unterricht-live-todos__header-meta">',
+        '<span>', escapeValue(String(count)), '</span>',
+        '<span class="unterricht-live-todos__indicator" aria-hidden="true">', isLiveTodosCollapsed ? '&#9656;' : '&#9662;', '</span>',
+        '</span>',
+        '</button>'
+      ].join("");
+    }
+
     function buildLiveCurrentClassTodoPanel() {
       const activeClassDisplayName = activeClass
         ? [String(activeClass.name || "").trim(), String(activeClass.subject || "").trim()].filter(Boolean).join(" ")
@@ -2472,12 +2514,11 @@ window.Unterrichtsassistent.ui.views.unterricht = {
 
       if (!categoryOrder.length) {
         return [
-          '<article class="panel unterricht-layout__live-todos">',
+          '<article class="panel unterricht-layout__live-todos', isLiveTodosCollapsed ? ' is-collapsed' : '', '">',
           '<div class="unterricht-live-todos__header">',
-          '<h2 class="unterricht-live-todos__title">Offene TODOs</h2>',
-          '<div class="unterricht-live-todos__subtitle">', escapeValue(activeClassDisplayName), '</div>',
+          buildLiveTodoPanelHeader(activeClassDisplayName, 0),
           '</div>',
-          '<p class="empty-message todos-view__empty">Keine offenen TODOs fuer die aktuelle Lerngruppe.</p>',
+          isLiveTodosCollapsed ? '' : '<p class="empty-message todos-view__empty">Keine offenen TODOs fuer die aktuelle Lerngruppe.</p>',
           '</article>'
         ].join("");
       }
@@ -2547,11 +2588,11 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       });
 
       return [
-        '<article class="panel unterricht-layout__live-todos">',
+        '<article class="panel unterricht-layout__live-todos', isLiveTodosCollapsed ? ' is-collapsed' : '', '">',
         '<div class="unterricht-live-todos__header">',
-        '<h2 class="unterricht-live-todos__title">Offene TODOs</h2>',
-        '<div class="unterricht-live-todos__subtitle">', escapeValue(activeClassDisplayName), '</div>',
+        buildLiveTodoPanelHeader(activeClassDisplayName, relevantTodos.length),
         '</div>',
+        isLiveTodosCollapsed ? '' : [
         '<div class="todos-view__section-rows unterricht-live-todos__rows">',
         rows.map(function (row) {
           return [
@@ -2582,6 +2623,108 @@ window.Unterrichtsassistent.ui.views.unterricht = {
           ].join("");
         }).join(""),
         '</div>',
+        ].join(""),
+        '</article>'
+      ].join("");
+    }
+
+    function getKnowledgeGapStatusRank(statusValue) {
+      const normalizedStatus = String(statusValue || "").trim().toLowerCase();
+
+      if (normalizedStatus === "offen") {
+        return 0;
+      }
+
+      if (normalizedStatus === "in arbeit") {
+        return 1;
+      }
+
+      if (normalizedStatus === "geschlossen") {
+        return 2;
+      }
+
+      return 3;
+    }
+
+    function getKnowledgeGapSortDateValue(record) {
+      return String(record && (record.recordedAt || record.lessonDate || record.createdAt || "") || "").trim();
+    }
+
+    function buildLiveKnowledgeGapRow(record) {
+      const student = getStudentById(record && record.studentId);
+      const studentLabel = student
+        ? getStudentCompactDisplayName(student, students)
+        : "Unbekannt";
+      const status = String(record && record.status || "offen").trim() || "offen";
+      const content = String(record && record.content || "").trim() || "Ohne Inhalt";
+      const dateLabel = formatTodoDateLabel(record && (record.lessonDate || record.recordedAt));
+      const normalizedRecordId = String(record && record.id || "").trim();
+
+      return [
+        '<div class="unterricht-live-knowledge-gaps__row">',
+        '<div class="unterricht-live-knowledge-gaps__main">',
+        '<div class="unterricht-live-knowledge-gaps__content">', escapeValue(content), '</div>',
+        '<div class="unterricht-live-knowledge-gaps__meta">',
+        '<span>', escapeValue(studentLabel), '</span>',
+        dateLabel ? '<span>' + escapeValue(dateLabel) + '</span>' : '',
+        '</div>',
+        '</div>',
+        '<label class="unterricht-live-knowledge-gaps__status-control">',
+        '<span>Status</span>',
+        '<select class="unterricht-live-knowledge-gaps__status-select unterricht-live-knowledge-gaps__status-select--', escapeValue(status.toLowerCase().replace(/\s+/g, "-")), '" onchange="return window.UnterrichtsassistentApp.updateLiveKnowledgeGapStatus(\'', escapeValue(normalizedRecordId), '\', this.value)">',
+        '<option value="offen"', status.toLowerCase() === "offen" ? " selected" : "", '>offen</option>',
+        '<option value="in arbeit"', status.toLowerCase() === "in arbeit" ? " selected" : "", '>in Arbeit</option>',
+        '<option value="geschlossen"', status.toLowerCase() === "geschlossen" ? " selected" : "", '>geschlossen</option>',
+        '</select>',
+        '</label>',
+        '</div>'
+      ].join("");
+    }
+
+    function buildLiveKnowledgeGapPanel() {
+      const normalizedActiveClassId = String(activeClass && activeClass.id || "").trim();
+      const knowledgeGapRecords = (Array.isArray(snapshot.knowledgeGapRecords) ? snapshot.knowledgeGapRecords : []).filter(function (record) {
+        return normalizedActiveClassId && String(record && record.classId || "").trim() === normalizedActiveClassId;
+      }).sort(function (leftRecord, rightRecord) {
+        const statusDifference = getKnowledgeGapStatusRank(leftRecord && leftRecord.status) - getKnowledgeGapStatusRank(rightRecord && rightRecord.status);
+        const leftDate = getKnowledgeGapSortDateValue(leftRecord);
+        const rightDate = getKnowledgeGapSortDateValue(rightRecord);
+
+        if (statusDifference !== 0) {
+          return statusDifference;
+        }
+
+        if (leftDate && rightDate && leftDate !== rightDate) {
+          return leftDate.localeCompare(rightDate);
+        }
+
+        if (leftDate !== rightDate) {
+          return leftDate ? -1 : 1;
+        }
+
+        return String(leftRecord && leftRecord.id || "").localeCompare(String(rightRecord && rightRecord.id || ""));
+      });
+      const isScrollable = knowledgeGapRecords.length > 5;
+
+      if (!activeClass) {
+        return "";
+      }
+
+      return [
+        '<article class="panel unterricht-layout__live-knowledge-gaps">',
+        '<div class="unterricht-live-knowledge-gaps__header">',
+        '<div>',
+        '<h2 class="unterricht-live-knowledge-gaps__title">Wissensluecken</h2>',
+        '<div class="unterricht-live-knowledge-gaps__subtitle">offen zuerst, aelteste zuerst</div>',
+        '</div>',
+        '<span class="unterricht-live-knowledge-gaps__count">', escapeValue(String(knowledgeGapRecords.length)), '</span>',
+        '</div>',
+        knowledgeGapRecords.length ? [
+          '<div class="unterricht-live-knowledge-gaps__list', isScrollable ? ' is-scrollable' : '', '">',
+          knowledgeGapRecords.map(buildLiveKnowledgeGapRow).join(""),
+          '</div>',
+          isScrollable ? '<div class="todos-view__scroll-indicator">Weitere Wissensluecken per Scrollen</div>' : ''
+        ].join("") : '<p class="empty-message todos-view__empty">Keine Wissensluecken fuer die aktuelle Lerngruppe.</p>',
         '</article>'
       ].join("");
     }
@@ -2611,6 +2754,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         renderCompactSeatPlan(),
         '</article>',
         buildLiveCurrentClassTodoPanel(),
+        buildLiveKnowledgeGapPanel(),
         '</div>',
         renderLiveLessonFlowPanel(liveLessonFlowData),
         '<div class="import-modal" id="unterrichtWarningOtherModal" hidden>',
@@ -2629,6 +2773,36 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         '<button class="circle-action circle-action--danger" type="button" onclick="return window.UnterrichtsassistentApp.closeUnterrichtWarningOtherModal()">Abbrechen</button>',
         '<button class="circle-action" type="submit">OK</button>',
         '</div>',
+        '</form>',
+        '</div>',
+        '</div>',
+        '<div class="import-modal" id="unterrichtKnowledgeGapModal" hidden>',
+        '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeUnterrichtKnowledgeGapModal()"></div>',
+        '<div class="import-modal__dialog import-modal__dialog--knowledge-gap" role="dialog" aria-modal="true" aria-labelledby="unterrichtKnowledgeGapStudent">',
+        '<div class="import-modal__header">',
+        '<div>',
+        '<h3 id="unterrichtKnowledgeGapStudent">Schueler</h3>',
+        '<div class="import-modal__meta" id="unterrichtKnowledgeGapDate"></div>',
+        '</div>',
+        '<div class="import-modal__icon-actions">',
+        '<button class="import-modal__icon-button import-modal__icon-button--confirm" type="submit" form="unterrichtKnowledgeGapForm" aria-label="Wissensluecke speichern">&#10003;</button>',
+        '<button class="import-modal__icon-button import-modal__icon-button--cancel" type="button" aria-label="Wissensluecke verwerfen" onclick="return window.UnterrichtsassistentApp.closeUnterrichtKnowledgeGapModal()">&#10005;</button>',
+        '</div>',
+        '</div>',
+        '<form class="import-modal__form" id="unterrichtKnowledgeGapForm" autocomplete="off" method="post" action="about:blank" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitUnterrichtKnowledgeGapModal(event)">',
+        '<label class="import-modal__field import-modal__field--knowledge-gap">',
+        '<span>Inhalt</span>',
+        '<input id="unterrichtKnowledgeGapContent" type="text" maxlength="180" placeholder="Wissensluecke beschreiben" autocomplete="off" autocapitalize="none" spellcheck="false" onfocus="return window.UnterrichtsassistentApp.handleKnowledgeGapInputFocus(\'unterrichtKnowledgeGapContent\', \'unterrichtKnowledgeGapSuggestions\')" oninput="return window.UnterrichtsassistentApp.handleKnowledgeGapInput(event, \'unterrichtKnowledgeGapSuggestions\')" onblur="return window.UnterrichtsassistentApp.handleKnowledgeGapInputBlur(\'unterrichtKnowledgeGapSuggestions\')">',
+        '<div class="knowledge-gap-suggestions" id="unterrichtKnowledgeGapSuggestions" hidden onpointerdown="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerDown(event, \'unterrichtKnowledgeGapSuggestions\')" onpointermove="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerMove(event, \'unterrichtKnowledgeGapSuggestions\')" onpointerup="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerUp(event, \'unterrichtKnowledgeGapSuggestions\')" onpointercancel="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerUp(event, \'unterrichtKnowledgeGapSuggestions\')"></div>',
+        '</label>',
+        '<label class="import-modal__field">',
+        '<span>Status</span>',
+        '<select id="unterrichtKnowledgeGapStatus">',
+        '<option value="offen">offen</option>',
+        '<option value="in arbeit">in Arbeit</option>',
+        '<option value="geschlossen">geschlossen</option>',
+        '</select>',
+        '</label>',
         '</form>',
         '</div>',
         '</div>',
