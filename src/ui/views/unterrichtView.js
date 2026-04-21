@@ -1004,6 +1004,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       const currentLessonStartMinutes = timeToMinutes(currentClassLesson && currentClassLesson.startTime || "");
       const currentLessonEndMinutes = timeToMinutes(currentClassLesson && currentClassLesson.endTime || "");
       const currentMinutes = (referenceDate.getHours() * 60) + referenceDate.getMinutes();
+      const lessonFlowMinutes = Math.max(currentLessonStartMinutes, Math.min(currentLessonEndMinutes, currentMinutes));
       let matchingSlots = lessonSlots.filter(function (slot) {
         return String(slot && slot.lessonDate || "").trim() === lessonDate
           && String(slot && slot.sourceRowId || "").trim() === currentSourceRowId;
@@ -1043,7 +1044,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         })();
         const segmentSize = Math.max((endMinutes - startMinutes) / matchingSlots.length, 1);
 
-        slotIndex = Math.max(0, Math.min(matchingSlots.length - 1, Math.floor((currentMinutes - startMinutes) / segmentSize)));
+        slotIndex = Math.max(0, Math.min(matchingSlots.length - 1, Math.floor((lessonFlowMinutes - startMinutes) / segmentSize)));
       }
 
       segments = matchingSlots.reduce(function (result, slot, currentIndex) {
@@ -1090,7 +1091,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       }
 
       const blockStartMinutes = segments[0].startMinutes;
-      const blockElapsedMinutes = Math.max(0, currentMinutes - blockStartMinutes);
+      const blockElapsedMinutes = Math.max(0, lessonFlowMinutes - blockStartMinutes);
       let consumedCompletedSegmentMinutes = 0;
 
       // If earlier single lessons are already fully checked off, the next single lesson
@@ -1101,7 +1102,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
 
       if (activeSegmentIndex < 0) {
         activeSegmentIndex = segments.findIndex(function (segmentItem) {
-          return currentMinutes >= segmentItem.startMinutes && currentMinutes < segmentItem.endMinutes;
+          return lessonFlowMinutes >= segmentItem.startMinutes && lessonFlowMinutes < segmentItem.endMinutes;
         });
       }
 
