@@ -20,8 +20,8 @@ window.Unterrichtsassistent.ui.views.unterricht = {
     const referenceDate = service && typeof service.getReferenceDate === "function"
       ? service.getReferenceDate()
       : new Date();
-    let currentClassLesson = activeClass && typeof service.getCurrentLessonForClass === "function"
-      ? service.getCurrentLessonForClass(activeClass.id, referenceDate)
+    let currentClassLesson = activeClass && typeof service.getRelevantLessonForClass === "function"
+      ? service.getRelevantLessonForClass(activeClass.id, referenceDate)
       : null;
     const activeDateTimeMode = service && service.snapshot
       ? String(service.snapshot.activeDateTimeMode || "live")

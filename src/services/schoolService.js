@@ -644,7 +644,7 @@ class SchoolService {
 
   getActiveClass() {
     if ((this.snapshot.activeDateTimeMode || "live") === "live") {
-      const liveLesson = this.getMostRecentLesson(this.getReferenceDate());
+      const liveLesson = this.getCurrentLesson(this.getReferenceDate());
 
       if (liveLesson) {
         return this.getClassById(liveLesson.classId);
@@ -766,7 +766,7 @@ class SchoolService {
         return timeToMinutes(left.startTime) - timeToMinutes(right.startTime);
       });
 
-    return startedLessons[0] || upcomingLessons[0] || pastLessons[0] || futureLessons[0] || null;
+    return upcomingLessons[0] || futureLessons[0] || startedLessons[0] || pastLessons[0] || null;
   }
 
   getLessonUnitsForClass(classId, date) {
