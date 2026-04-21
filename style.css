@@ -2729,6 +2729,9 @@ button {
   --todo-category-color: rgba(23, 49, 62, 0.14);
   display: block;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   padding: 0.62rem 0.78rem;
   border: 1px solid rgba(23, 49, 62, 0.12);
   border-left: 4px solid var(--todo-category-color);
@@ -2777,26 +2780,34 @@ button {
   display: flex;
   align-items: center;
   gap: 0.42rem;
+  min-width: 0;
 }
 
 .todos-view__title {
+  min-width: 0;
   font-weight: 400;
   font-size: 0.92rem;
   color: var(--text-strong);
   line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
 .todos-view__title-meta {
+  min-width: 0;
   color: var(--text-soft);
   font-size: 0.72rem;
   font-weight: 500;
   letter-spacing: 0.01em;
+  overflow-wrap: anywhere;
 }
 
 .todos-view__title-wrap {
+  flex: 1 1 auto;
   min-width: 0;
-  display: inline-flex;
+  max-width: 100%;
+  display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.42rem;
 }
 
@@ -2880,6 +2891,7 @@ button {
 
 .todos-view__summary {
   min-width: 0;
+  max-width: 100%;
   flex: 1 1 auto;
   display: flex;
   align-items: center;

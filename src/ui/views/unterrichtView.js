@@ -2392,7 +2392,6 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         categoryColor ? '<span class="todos-view__category-marker" aria-hidden="true"></span>' : '',
         '<span class="todos-view__title">', escapeValue(title), '</span>',
         assignedStudentProgressLabel ? '<span class="todos-view__title-meta">' + escapeValue(assignedStudentProgressLabel) + '</span>' : '',
-        isEspeciallyUrgentTodo(todoItem) ? '<span class="todos-view__urgency-badge">Dringend</span>' : '',
         '</span>',
         '<span class="todos-view__indicator" aria-hidden="true">', isExpanded ? '&#9662;' : '&#9656;', '</span>',
         '</button>',
