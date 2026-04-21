@@ -141,11 +141,22 @@ function serializeDomainSnapshot(snapshot) {
   }
 
   function clonePerformedEvaluations(items) {
-    return cloneItems(items || [], ["id", "plannedEvaluationId", "classId", "studentId", "evaluationSheetId", "subtaskResults", "overallNote", "isCompleted", "completedAt", "createdAt", "updatedAt"]).map(function (item) {
+    return cloneItems(items || [], ["id", "plannedEvaluationId", "classId", "studentId", "evaluationSheetId", "subtaskResults", "competencyResults", "overallNote", "isCompleted", "completedAt", "createdAt", "updatedAt"]).map(function (item) {
       return Object.assign({}, item, {
         subtaskResults: Array.isArray(item.subtaskResults)
           ? item.subtaskResults.map(function (entry) {
               return Object.assign({}, entry);
+            })
+          : [],
+        competencyResults: Array.isArray(item.competencyResults)
+          ? item.competencyResults.map(function (entry) {
+              return Object.assign({}, entry, {
+                evidences: Array.isArray(entry && entry.evidences)
+                  ? entry.evidences.map(function (evidence) {
+                      return evidence && typeof evidence === "object" ? Object.assign({}, evidence) : evidence;
+                    })
+                  : []
+              });
             })
           : []
       });
@@ -209,7 +220,7 @@ function serializeDomainSnapshot(snapshot) {
     attendanceRecords: cloneItems(snapshot.attendanceRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "status", "recordedAt", "effectiveAt"]),
     homeworkRecords: cloneItems(snapshot.homeworkRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "quality"]),
     warningRecords: cloneItems(snapshot.warningRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "category", "note"]),
-    knowledgeGapRecords: cloneItems(snapshot.knowledgeGapRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "content", "status"]),
+    knowledgeGapRecords: cloneItems(snapshot.knowledgeGapRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "content", "status", "note"]),
     mathObservationRecords: cloneItems(snapshot.mathObservationRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "primaryCompetency", "competencyIds", "processQuality", "marker", "markerDirection", "markerQuality", "situationType", "demandLevel", "lessonPlanId", "lessonPhaseId", "lessonStepId", "note"]).map(function (item) {
       return Object.assign({}, item, {
         competencyIds: Array.isArray(item.competencyIds) ? item.competencyIds.slice() : []

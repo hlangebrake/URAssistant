@@ -146,9 +146,68 @@ class EvaluationSheet {
     }
 
     function normalizeCompetencyGrid(rawCompetencyGrid) {
-      return rawCompetencyGrid && typeof rawCompetencyGrid === "object"
-        ? JSON.parse(JSON.stringify(rawCompetencyGrid))
-        : {};
+      const source = rawCompetencyGrid && typeof rawCompetencyGrid === "object" ? rawCompetencyGrid : {};
+      const rows = Array.isArray(source.rows) ? source.rows : [];
+      const columns = Array.isArray(source.columns) ? source.columns : [];
+      const cells = source.cells && typeof source.cells === "object" ? source.cells : {};
+      const normalizedRows = rows.map(function (row) {
+        const rowSource = row && typeof row === "object" ? row : {};
+
+        return {
+          id: String(rowSource.id || "").trim(),
+          title: String(rowSource.title || "").trim(),
+          weight: Math.max(0, Number.isFinite(Number(rowSource.weight)) ? Math.round(Number(rowSource.weight)) : 0)
+        };
+      }).filter(function (row) {
+        return Boolean(row.id);
+      });
+      const normalizedColumns = columns.map(function (column) {
+        const columnSource = column && typeof column === "object" ? column : {};
+
+        return {
+          id: String(columnSource.id || "").trim(),
+          title: String(columnSource.title || "").trim()
+        };
+      }).filter(function (column) {
+        return Boolean(column.id);
+      });
+      const rowLookup = normalizedRows.reduce(function (lookup, row) {
+        lookup[row.id] = true;
+        return lookup;
+      }, {});
+      const columnLookup = normalizedColumns.reduce(function (lookup, column) {
+        lookup[column.id] = true;
+        return lookup;
+      }, {});
+      const normalizedCells = {};
+
+      Object.keys(cells).forEach(function (rowId) {
+        const normalizedRowId = String(rowId || "").trim();
+
+        if (!rowLookup[normalizedRowId] || !cells[rowId] || typeof cells[rowId] !== "object") {
+          return;
+        }
+
+        Object.keys(cells[rowId]).forEach(function (columnId) {
+          const normalizedColumnId = String(columnId || "").trim();
+          const textValue = String(cells[rowId][columnId] || "").trim();
+
+          if (!columnLookup[normalizedColumnId] || !textValue) {
+            return;
+          }
+
+          if (!normalizedCells[normalizedRowId]) {
+            normalizedCells[normalizedRowId] = {};
+          }
+          normalizedCells[normalizedRowId][normalizedColumnId] = textValue;
+        });
+      });
+
+      return {
+        rows: normalizedRows,
+        columns: normalizedColumns,
+        cells: normalizedCells
+      };
     }
 
     this.id = id;
@@ -203,7 +262,7 @@ class PlannedEvaluation {
 }
 
 class PerformedEvaluation {
-  constructor({ id, plannedEvaluationId = "", classId = "", studentId = "", evaluationSheetId = "", subtaskResults = [], overallNote = "", isCompleted = false, completedAt = "", createdAt = "", updatedAt = "" }) {
+  constructor({ id, plannedEvaluationId = "", classId = "", studentId = "", evaluationSheetId = "", subtaskResults = [], competencyResults = [], overallNote = "", isCompleted = false, completedAt = "", createdAt = "", updatedAt = "" }) {
     this.id = id;
     this.plannedEvaluationId = String(plannedEvaluationId || "").trim();
     this.classId = String(classId || "").trim();
@@ -226,6 +285,31 @@ class PerformedEvaluation {
           };
         }).filter(function (entry) {
           return Boolean(entry.subtaskId);
+        })
+      : [];
+    this.competencyResults = Array.isArray(competencyResults)
+      ? competencyResults.map(function (entry) {
+          const source = entry && typeof entry === "object" ? entry : {};
+
+          return {
+            rowId: String(source.rowId || "").trim(),
+            columnId: String(source.columnId || "").trim(),
+            evidences: Array.isArray(source.evidences)
+              ? source.evidences.map(function (evidence) {
+                  const evidenceSource = evidence && typeof evidence === "object" ? evidence : {};
+
+                  return {
+                    type: String(evidenceSource.type || "").trim(),
+                    text: String(evidenceSource.text || "").trim()
+                  };
+                }).filter(function (evidence) {
+                  return Boolean(evidence.type || evidence.text);
+                })
+              : [],
+            nextStep: String(source.nextStep || "").trim()
+          };
+        }).filter(function (entry) {
+          return Boolean(entry.rowId);
         })
       : [];
     this.overallNote = String(overallNote || "").trim();
@@ -278,7 +362,7 @@ class WarningRecord {
 }
 
 class KnowledgeGapRecord {
-  constructor({ id, studentId, classId, lessonId = "", lessonDate = "", room = "", recordedAt = "", content = "", status = "offen" }) {
+  constructor({ id, studentId, classId, lessonId = "", lessonDate = "", room = "", recordedAt = "", content = "", status = "offen", note = "" }) {
     const normalizedStatus = String(status || "").trim().toLowerCase();
 
     this.id = id;
@@ -290,6 +374,7 @@ class KnowledgeGapRecord {
     this.recordedAt = recordedAt;
     this.content = String(content || "").trim();
     this.status = ["offen", "in arbeit", "geschlossen"].indexOf(normalizedStatus) >= 0 ? normalizedStatus : "offen";
+    this.note = String(note || "").trim();
   }
 }
 

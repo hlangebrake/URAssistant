@@ -170,7 +170,8 @@ function normalizeKnowledgeGapRecord(knowledgeGapRecord) {
     room: source.room || "",
     recordedAt: source.recordedAt || "",
     content: String(source.content || "").trim(),
-    status: ["offen", "in arbeit", "geschlossen"].indexOf(normalizedStatus) >= 0 ? normalizedStatus : "offen"
+    status: ["offen", "in arbeit", "geschlossen"].indexOf(normalizedStatus) >= 0 ? normalizedStatus : "offen",
+    note: String(source.note || "").trim()
   };
 }
 

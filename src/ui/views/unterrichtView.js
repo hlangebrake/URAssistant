@@ -2657,6 +2657,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         : "Unbekannt";
       const status = String(record && record.status || "offen").trim() || "offen";
       const content = String(record && record.content || "").trim() || "Ohne Inhalt";
+      const note = String(record && record.note || "").trim();
       const dateLabel = formatTodoDateLabel(record && (record.lessonDate || record.recordedAt));
       const normalizedRecordId = String(record && record.id || "").trim();
 
@@ -2664,6 +2665,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         '<div class="unterricht-live-knowledge-gaps__row">',
         '<div class="unterricht-live-knowledge-gaps__main">',
         '<div class="unterricht-live-knowledge-gaps__content">', escapeValue(content), '</div>',
+        note ? '<div class="unterricht-live-knowledge-gaps__note">' + escapeValue(note) + '</div>' : '',
         '<div class="unterricht-live-knowledge-gaps__meta">',
         '<span>', escapeValue(studentLabel), '</span>',
         dateLabel ? '<span>' + escapeValue(dateLabel) + '</span>' : '',
@@ -2802,6 +2804,10 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         '<option value="in arbeit">in Arbeit</option>',
         '<option value="geschlossen">geschlossen</option>',
         '</select>',
+        '</label>',
+        '<label class="import-modal__field">',
+        '<span>Notiz</span>',
+        '<input id="unterrichtKnowledgeGapNote" type="text" maxlength="240" placeholder="Freie Notiz" autocomplete="off" autocapitalize="none" spellcheck="false">',
         '</label>',
         '</form>',
         '</div>',

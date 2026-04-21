@@ -85,12 +85,14 @@ let bewertungPlannedEvaluationDetailsExpanded = false;
 let activePerformedPlannedEvaluationId = "";
 let activePerformedEvaluationStudentId = "";
 let activePerformedEvaluationStudentFilter = "alle";
+let performedCompetencyGridMode = "kompakt";
 let activePerformedEvaluationDetailModal = null;
 let isClassAnalysisPerformedEvaluationModalOpen = false;
 let activeClassAnalysisPerformedEvaluationDraft = null;
 let planningAvailableLessonsExpanded = true;
 let planningAdminMode = false;
 let activeEvaluationSheetDraft = null;
+let activeCompetencyGridPointerDrag = null;
 let activePlannedEvaluationDraft = null;
 let activePlanningEventDraft = null;
 let activeTodoDraft = null;
@@ -6312,6 +6314,14 @@ function createEvaluationSubtaskId() {
   return "evaluation-subtask-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
 }
 
+function createEvaluationCompetencyGridRowId() {
+  return "competency-row-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+}
+
+function createEvaluationCompetencyGridColumnId() {
+  return "competency-column-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+}
+
 function createPlannedEvaluationId() {
   return "planned-evaluation-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
 }
@@ -8273,7 +8283,8 @@ function appendUnterrichtKnowledgeGapRecord(rawSnapshot, draft, values) {
     room: draft.lessonRoom,
     recordedAt: recordedAt,
     content: content,
-    status: normalizeKnowledgeGapStatusValue(values && values.status)
+    status: normalizeKnowledgeGapStatusValue(values && values.status),
+    note: String(values && values.note || "").trim()
   });
 }
 
@@ -11410,7 +11421,7 @@ function createEvaluationSheetRecord(classId, typeValue, titleValue) {
     curriculumSequenceIds: [],
     curriculumLessonIds: [],
     taskSheet: normalizedType === "aufgabenbogen" ? { tasks: [] } : { tasks: [] },
-    competencyGrid: normalizedType === "kompetenzraster" ? {} : {}
+    competencyGrid: normalizedType === "kompetenzraster" ? { rows: [], columns: [], cells: {} } : {}
   };
 }
 
@@ -11696,6 +11707,7 @@ function createPerformedEvaluationRecord(plannedEvaluation, studentId) {
     studentId: String(studentId || "").trim(),
     evaluationSheetId: evaluationSheetId,
     subtaskResults: [],
+    competencyResults: [],
     overallNote: "",
     isCompleted: false,
     completedAt: "",
@@ -11723,6 +11735,41 @@ function normalizePerformedEvaluationFeedbackList(items) {
     seen[key] = true;
     return true;
   });
+}
+
+function getOrCreatePerformedEvaluationCompetencyResult(performedEvaluation, rowId) {
+  const normalizedRowId = String(rowId || "").trim();
+  let result = null;
+
+  if (!performedEvaluation || !normalizedRowId) {
+    return null;
+  }
+
+  if (!Array.isArray(performedEvaluation.competencyResults)) {
+    performedEvaluation.competencyResults = [];
+  }
+
+  result = performedEvaluation.competencyResults.find(function (entry) {
+    return String(entry && entry.rowId || "").trim() === normalizedRowId;
+  }) || null;
+
+  if (!result) {
+    result = {
+      rowId: normalizedRowId,
+      columnId: "",
+      evidences: [],
+      nextStep: ""
+    };
+    performedEvaluation.competencyResults.push(result);
+  }
+
+  if (!Array.isArray(result.evidences)) {
+    result.evidences = [];
+  }
+
+  result.nextStep = String(result.nextStep || "").trim();
+  result.columnId = String(result.columnId || "").trim();
+  return result;
 }
 
 function getPerformedEvaluationFeedbackSuggestionGroups(filterValue) {
@@ -11951,6 +11998,76 @@ function getMutableEvaluationTaskSheet(evaluationSheet) {
   return evaluationSheet.taskSheet;
 }
 
+function normalizeEvaluationCompetencyGrid(rawCompetencyGrid) {
+  const source = rawCompetencyGrid && typeof rawCompetencyGrid === "object" ? rawCompetencyGrid : {};
+  const rows = Array.isArray(source.rows) ? source.rows : [];
+  const columns = Array.isArray(source.columns) ? source.columns : [];
+  const cells = source.cells && typeof source.cells === "object" ? source.cells : {};
+  const normalizedRows = rows.map(function (row) {
+    const rowSource = row && typeof row === "object" ? row : {};
+
+    return {
+      id: String(rowSource.id || createEvaluationCompetencyGridRowId()).trim(),
+      title: String(rowSource.title || "").trim(),
+      weight: Math.max(0, Number.isFinite(Number(rowSource.weight)) ? Math.round(Number(rowSource.weight)) : 0)
+    };
+  });
+  const normalizedColumns = columns.map(function (column) {
+    const columnSource = column && typeof column === "object" ? column : {};
+
+    return {
+      id: String(columnSource.id || createEvaluationCompetencyGridColumnId()).trim(),
+      title: String(columnSource.title || "").trim()
+    };
+  });
+  const rowLookup = normalizedRows.reduce(function (lookup, row) {
+    lookup[String(row.id || "").trim()] = true;
+    return lookup;
+  }, {});
+  const columnLookup = normalizedColumns.reduce(function (lookup, column) {
+    lookup[String(column.id || "").trim()] = true;
+    return lookup;
+  }, {});
+  const normalizedCells = {};
+
+  Object.keys(cells).forEach(function (rowId) {
+    const normalizedRowId = String(rowId || "").trim();
+
+    if (!rowLookup[normalizedRowId] || !cells[rowId] || typeof cells[rowId] !== "object") {
+      return;
+    }
+
+    Object.keys(cells[rowId]).forEach(function (columnId) {
+      const normalizedColumnId = String(columnId || "").trim();
+      const textValue = String(cells[rowId][columnId] || "").trim();
+
+      if (!columnLookup[normalizedColumnId] || !textValue) {
+        return;
+      }
+
+      if (!normalizedCells[normalizedRowId]) {
+        normalizedCells[normalizedRowId] = {};
+      }
+      normalizedCells[normalizedRowId][normalizedColumnId] = textValue;
+    });
+  });
+
+  return {
+    rows: normalizedRows,
+    columns: normalizedColumns,
+    cells: normalizedCells
+  };
+}
+
+function getMutableEvaluationCompetencyGrid(evaluationSheet) {
+  if (!evaluationSheet || typeof evaluationSheet !== "object") {
+    return { rows: [], columns: [], cells: {} };
+  }
+
+  evaluationSheet.competencyGrid = normalizeEvaluationCompetencyGrid(evaluationSheet.competencyGrid);
+  return evaluationSheet.competencyGrid;
+}
+
 function createEvaluationTaskRecord() {
   return {
     id: createEvaluationTaskId(),
@@ -11966,6 +12083,21 @@ function createEvaluationSubtaskRecord() {
     topics: "",
     afb: "afb1",
     be: 0
+  };
+}
+
+function createEvaluationCompetencyGridRowRecord() {
+  return {
+    id: createEvaluationCompetencyGridRowId(),
+    title: "",
+    weight: 0
+  };
+}
+
+function createEvaluationCompetencyGridColumnRecord() {
+  return {
+    id: createEvaluationCompetencyGridColumnId(),
+    title: ""
   };
 }
 
@@ -18682,6 +18814,7 @@ window.UnterrichtsassistentApp.openUnterrichtKnowledgeGapModal = function () {
   const dateLabel = document.getElementById("unterrichtKnowledgeGapDate");
   const contentInput = document.getElementById("unterrichtKnowledgeGapContent");
   const statusInput = document.getElementById("unterrichtKnowledgeGapStatus");
+  const noteInput = document.getElementById("unterrichtKnowledgeGapNote");
 
   if (!modal || !activeUnterrichtKnowledgeGapDraft) {
     return false;
@@ -18706,6 +18839,9 @@ window.UnterrichtsassistentApp.openUnterrichtKnowledgeGapModal = function () {
   }
   if (statusInput) {
     statusInput.value = "offen";
+  }
+  if (noteInput) {
+    noteInput.value = "";
   }
   closeKnowledgeGapSuggestions();
 
@@ -18736,6 +18872,7 @@ window.UnterrichtsassistentApp.submitUnterrichtKnowledgeGapModal = function (eve
   const draft = activeUnterrichtKnowledgeGapDraft;
   const contentInput = document.getElementById("unterrichtKnowledgeGapContent");
   const statusInput = document.getElementById("unterrichtKnowledgeGapStatus");
+  const noteInput = document.getElementById("unterrichtKnowledgeGapNote");
 
   if (event && typeof event.preventDefault === "function") {
     event.preventDefault();
@@ -18747,7 +18884,8 @@ window.UnterrichtsassistentApp.submitUnterrichtKnowledgeGapModal = function (eve
 
   appendUnterrichtKnowledgeGapRecord(currentRawSnapshot, draft, {
     content: String(contentInput && contentInput.value || "").trim(),
-    status: statusInput && statusInput.value
+    status: statusInput && statusInput.value,
+    note: String(noteInput && noteInput.value || "").trim()
   });
 
   saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
@@ -19358,6 +19496,7 @@ window.UnterrichtsassistentApp.submitClassAnalysisRecordEditModal = function (ev
   } else if (draft.recordType === "knowledgeGap") {
     record.content = String(document.getElementById("classAnalysisKnowledgeGapContent") && document.getElementById("classAnalysisKnowledgeGapContent").value || "").trim();
     record.status = normalizeKnowledgeGapStatusValue(document.getElementById("classAnalysisKnowledgeGapStatus") && document.getElementById("classAnalysisKnowledgeGapStatus").value);
+    record.note = String(document.getElementById("classAnalysisKnowledgeGapNote") && document.getElementById("classAnalysisKnowledgeGapNote").value || "").trim();
   } else if (draft.recordType === "mathObservation") {
     record.note = String(document.getElementById("classAnalysisMathObservationNote") && document.getElementById("classAnalysisMathObservationNote").value || "").trim();
   } else if (draft.recordType === "assessment") {
@@ -19514,6 +19653,20 @@ window.UnterrichtsassistentApp.getActivePerformedEvaluationStudentId = function 
 };
 window.UnterrichtsassistentApp.getActivePerformedEvaluationStudentFilter = function () {
   return activePerformedEvaluationStudentFilter;
+};
+window.UnterrichtsassistentApp.getPerformedCompetencyGridMode = function () {
+  return performedCompetencyGridMode === "ausfuehrlich" ? "ausfuehrlich" : "kompakt";
+};
+window.UnterrichtsassistentApp.setPerformedCompetencyGridMode = function (nextMode) {
+  performedCompetencyGridMode = String(nextMode || "").trim().toLowerCase() === "ausfuehrlich"
+    ? "ausfuehrlich"
+    : "kompakt";
+
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
+  }
+
+  return false;
 };
 window.UnterrichtsassistentApp.getActivePerformedEvaluationDetailModal = function () {
   return activePerformedEvaluationDetailModal
@@ -19909,6 +20062,24 @@ window.UnterrichtsassistentApp.openLinkedEvaluationSheetFromPlannedEvaluation = 
 };
 window.UnterrichtsassistentApp.closeEvaluationSheetModal = function () {
   activeEvaluationSheetDraft = null;
+
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.updateEvaluationSheetDraftType = function (nextType) {
+  const normalizedType = String(nextType || "").trim().toLowerCase() === "kompetenzraster"
+    ? "kompetenzraster"
+    : "aufgabenbogen";
+
+  if (!activeEvaluationSheetDraft) {
+    return false;
+  }
+
+  activeEvaluationSheetDraft.type = normalizedType;
+  activeEvaluationSheetDraft.copyFromId = "";
 
   if (activeViewId === "bewertung") {
     setActiveView("bewertung");
@@ -20448,6 +20619,137 @@ window.UnterrichtsassistentApp.updatePerformedEvaluationSubtaskField = function 
   saveAndRefreshSnapshot(currentRawSnapshot, "bewertung");
   return false;
 };
+window.UnterrichtsassistentApp.updatePerformedCompetencyGridSelection = function (rowId, columnId) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const normalizedPlannedEvaluationId = String(activePerformedPlannedEvaluationId || "").trim();
+  const normalizedStudentId = String(activePerformedEvaluationStudentId || "").trim();
+  const normalizedRowId = String(rowId || "").trim();
+  const normalizedColumnId = String(columnId || "").trim();
+  const plannedEvaluation = currentRawSnapshot
+    ? getPlannedEvaluationsCollection(currentRawSnapshot).find(function (item) {
+        return String(item && item.id || "").trim() === normalizedPlannedEvaluationId;
+      }) || null
+    : null;
+  let performedEvaluation = null;
+  let competencyResult = null;
+
+  if (!repository || !schoolService || !currentRawSnapshot || !plannedEvaluation || !normalizedStudentId || !normalizedRowId || !normalizedColumnId) {
+    return false;
+  }
+
+  performedEvaluation = getPerformedEvaluationForStudent(currentRawSnapshot, normalizedPlannedEvaluationId, normalizedStudentId);
+
+  if (!performedEvaluation) {
+    performedEvaluation = createPerformedEvaluationRecord(plannedEvaluation, normalizedStudentId);
+    getMutablePerformedEvaluationsCollection(currentRawSnapshot).push(performedEvaluation);
+  }
+
+  competencyResult = getOrCreatePerformedEvaluationCompetencyResult(performedEvaluation, normalizedRowId);
+
+  if (!competencyResult) {
+    return false;
+  }
+
+  competencyResult.columnId = normalizedColumnId;
+  performedEvaluation.updatedAt = getCurrentTimestamp();
+  saveAndRefreshSnapshot(currentRawSnapshot, "bewertung");
+  return false;
+};
+window.UnterrichtsassistentApp.openPerformedCompetencyGridDetailModal = function (rowId, detailType) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const normalizedRowId = String(rowId || "").trim();
+  const normalizedDetailType = String(detailType || "").trim().toLowerCase();
+  const performedEvaluation = currentRawSnapshot
+    ? getPerformedEvaluationForStudent(currentRawSnapshot, activePerformedPlannedEvaluationId, activePerformedEvaluationStudentId)
+    : null;
+  const competencyResult = performedEvaluation && Array.isArray(performedEvaluation.competencyResults)
+    ? performedEvaluation.competencyResults.find(function (entry) {
+        return String(entry && entry.rowId || "").trim() === normalizedRowId;
+      }) || null
+    : null;
+
+  if (!normalizedRowId || ["evidence", "nextstep"].indexOf(normalizedDetailType) === -1) {
+    return false;
+  }
+
+  activePerformedEvaluationDetailModal = {
+    subtaskId: normalizedRowId,
+    detailType: normalizedDetailType === "nextstep" ? "competencyNextStep" : "competencyEvidence",
+    mode: "add",
+    draftValue: normalizedDetailType === "nextstep" ? String(competencyResult && competencyResult.nextStep || "").trim() : "",
+    draftEvidenceType: ""
+  };
+
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
+  }
+
+  window.setTimeout(function () {
+    const input = document.getElementById(normalizedDetailType === "nextstep" ? "performedCompetencyNextStepInput" : "performedCompetencyEvidenceTypeInput");
+
+    if (input && typeof input.focus === "function") {
+      input.focus();
+    }
+  }, 0);
+
+  return false;
+};
+window.UnterrichtsassistentApp.updatePerformedCompetencyEvidenceTypeDraft = function (nextValue) {
+  if (!activePerformedEvaluationDetailModal) {
+    return false;
+  }
+
+  activePerformedEvaluationDetailModal.draftEvidenceType = String(nextValue || "");
+  return false;
+};
+window.UnterrichtsassistentApp.submitPerformedCompetencyGridDetail = function () {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const normalizedPlannedEvaluationId = String(activePerformedPlannedEvaluationId || "").trim();
+  const normalizedStudentId = String(activePerformedEvaluationStudentId || "").trim();
+  const modal = activePerformedEvaluationDetailModal;
+  const normalizedRowId = String(modal && modal.subtaskId || "").trim();
+  const modalType = String(modal && modal.detailType || "").trim();
+  const textValue = normalizePerformedEvaluationText(modal && modal.draftValue || "");
+  const evidenceType = normalizePerformedEvaluationText(modal && modal.draftEvidenceType || "");
+  const plannedEvaluation = currentRawSnapshot
+    ? getPlannedEvaluationsCollection(currentRawSnapshot).find(function (item) {
+        return String(item && item.id || "").trim() === normalizedPlannedEvaluationId;
+      }) || null
+    : null;
+  let performedEvaluation = null;
+  let competencyResult = null;
+
+  if (!repository || !schoolService || !currentRawSnapshot || !plannedEvaluation || !normalizedStudentId || !normalizedRowId || !textValue || ["competencyEvidence", "competencyNextStep"].indexOf(modalType) === -1) {
+    return false;
+  }
+
+  performedEvaluation = getPerformedEvaluationForStudent(currentRawSnapshot, normalizedPlannedEvaluationId, normalizedStudentId);
+
+  if (!performedEvaluation) {
+    performedEvaluation = createPerformedEvaluationRecord(plannedEvaluation, normalizedStudentId);
+    getMutablePerformedEvaluationsCollection(currentRawSnapshot).push(performedEvaluation);
+  }
+
+  competencyResult = getOrCreatePerformedEvaluationCompetencyResult(performedEvaluation, normalizedRowId);
+
+  if (!competencyResult) {
+    return false;
+  }
+
+  if (modalType === "competencyEvidence") {
+    competencyResult.evidences.push({
+      type: evidenceType || "Evidenz",
+      text: textValue
+    });
+  } else {
+    competencyResult.nextStep = textValue;
+  }
+
+  performedEvaluation.updatedAt = getCurrentTimestamp();
+  activePerformedEvaluationDetailModal = null;
+  saveAndRefreshSnapshot(currentRawSnapshot, "bewertung");
+  return false;
+};
 window.UnterrichtsassistentApp.openPerformedEvaluationDetailModal = function (subtaskId, detailType, mode) {
   const normalizedSubtaskId = String(subtaskId || "").trim();
   const normalizedDetailType = String(detailType || "").trim().toLowerCase();
@@ -20829,8 +21131,8 @@ window.UnterrichtsassistentApp.submitEvaluationSheetModal = function (event) {
     nextSheet.taskSheet = normalizedType === "aufgabenbogen"
       ? normalizeEvaluationTaskSheet(nextSheet.taskSheet)
       : { tasks: [] };
-    nextSheet.competencyGrid = normalizedType === "kompetenzraster" && nextSheet.competencyGrid && typeof nextSheet.competencyGrid === "object"
-      ? nextSheet.competencyGrid
+    nextSheet.competencyGrid = normalizedType === "kompetenzraster"
+      ? normalizeEvaluationCompetencyGrid(nextSheet.competencyGrid)
       : {};
     currentRawSnapshot.activeEvaluationSheetId = nextSheet.id;
   } else {
@@ -20903,8 +21205,8 @@ window.UnterrichtsassistentApp.updateActiveEvaluationSheetField = function (fiel
     activeSheet.taskSheet = activeSheet.type === "aufgabenbogen"
       ? getMutableEvaluationTaskSheet(activeSheet)
       : { tasks: [] };
-    activeSheet.competencyGrid = activeSheet.type === "kompetenzraster" && activeSheet.competencyGrid && typeof activeSheet.competencyGrid === "object"
-      ? activeSheet.competencyGrid
+    activeSheet.competencyGrid = activeSheet.type === "kompetenzraster"
+      ? normalizeEvaluationCompetencyGrid(activeSheet.competencyGrid)
       : {};
   }
 
@@ -21063,6 +21365,354 @@ window.UnterrichtsassistentApp.updateEvaluationSubtaskField = function (taskId, 
   saveAndRefreshSnapshot(currentRawSnapshot, "bewertung");
   return false;
 };
+function getActiveCompetencyGridEditContext() {
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeSheet = currentRawSnapshot && activeClass
+    ? getActiveEvaluationSheetForSnapshot(currentRawSnapshot, activeClass)
+    : null;
+  const grid = activeSheet && String(activeSheet.type || "").trim() === "kompetenzraster"
+    ? getMutableEvaluationCompetencyGrid(activeSheet)
+    : null;
+
+  return {
+    activeClass: activeClass,
+    currentRawSnapshot: currentRawSnapshot,
+    activeSheet: activeSheet,
+    grid: grid
+  };
+}
+function saveActiveCompetencyGridEditContext(context) {
+  if (!context || !context.currentRawSnapshot || !context.activeSheet) {
+    return false;
+  }
+
+  context.currentRawSnapshot.activeEvaluationSheetId = context.activeSheet.id;
+  saveAndRefreshSnapshot(context.currentRawSnapshot, "bewertung");
+  return false;
+}
+window.UnterrichtsassistentApp.addCompetencyGridRow = function () {
+  const context = getActiveCompetencyGridEditContext();
+
+  if (!repository || !schoolService || !context.currentRawSnapshot || !context.activeSheet || !context.grid) {
+    return false;
+  }
+
+  context.grid.rows.push(createEvaluationCompetencyGridRowRecord());
+  return saveActiveCompetencyGridEditContext(context);
+};
+window.UnterrichtsassistentApp.addCompetencyGridColumn = function () {
+  const context = getActiveCompetencyGridEditContext();
+
+  if (!repository || !schoolService || !context.currentRawSnapshot || !context.activeSheet || !context.grid) {
+    return false;
+  }
+
+  context.grid.columns.push(createEvaluationCompetencyGridColumnRecord());
+  return saveActiveCompetencyGridEditContext(context);
+};
+window.UnterrichtsassistentApp.deleteCompetencyGridRow = function (rowId) {
+  const context = getActiveCompetencyGridEditContext();
+  const normalizedRowId = String(rowId || "").trim();
+
+  if (!repository || !schoolService || !context.currentRawSnapshot || !context.activeSheet || !context.grid || !normalizedRowId) {
+    return false;
+  }
+
+  context.grid.rows = context.grid.rows.filter(function (row) {
+    return String(row && row.id || "").trim() !== normalizedRowId;
+  });
+  if (context.grid.cells && typeof context.grid.cells === "object") {
+    delete context.grid.cells[normalizedRowId];
+  }
+  return saveActiveCompetencyGridEditContext(context);
+};
+window.UnterrichtsassistentApp.deleteCompetencyGridColumn = function (columnId) {
+  const context = getActiveCompetencyGridEditContext();
+  const normalizedColumnId = String(columnId || "").trim();
+
+  if (!repository || !schoolService || !context.currentRawSnapshot || !context.activeSheet || !context.grid || !normalizedColumnId) {
+    return false;
+  }
+
+  context.grid.columns = context.grid.columns.filter(function (column) {
+    return String(column && column.id || "").trim() !== normalizedColumnId;
+  });
+  Object.keys(context.grid.cells || {}).forEach(function (rowId) {
+    if (context.grid.cells[rowId] && typeof context.grid.cells[rowId] === "object") {
+      delete context.grid.cells[rowId][normalizedColumnId];
+    }
+  });
+  return saveActiveCompetencyGridEditContext(context);
+};
+window.UnterrichtsassistentApp.updateCompetencyGridRowField = function (rowId, fieldName, nextValue) {
+  const context = getActiveCompetencyGridEditContext();
+  const normalizedRowId = String(rowId || "").trim();
+  const normalizedFieldName = String(fieldName || "").trim();
+  const row = context.grid && Array.isArray(context.grid.rows)
+    ? context.grid.rows.find(function (item) {
+        return String(item && item.id || "").trim() === normalizedRowId;
+      }) || null
+    : null;
+
+  if (!repository || !schoolService || !context.currentRawSnapshot || !context.activeSheet || !context.grid || !row) {
+    return false;
+  }
+
+  if (normalizedFieldName === "title") {
+    row.title = String(nextValue || "").trim();
+  } else if (normalizedFieldName === "weight") {
+    row.weight = Math.max(0, Number.isFinite(Number(nextValue)) ? Math.round(Number(nextValue)) : 0);
+  } else {
+    return false;
+  }
+
+  return saveActiveCompetencyGridEditContext(context);
+};
+window.UnterrichtsassistentApp.updateCompetencyGridColumnField = function (columnId, nextValue) {
+  const context = getActiveCompetencyGridEditContext();
+  const normalizedColumnId = String(columnId || "").trim();
+  const column = context.grid && Array.isArray(context.grid.columns)
+    ? context.grid.columns.find(function (item) {
+        return String(item && item.id || "").trim() === normalizedColumnId;
+      }) || null
+    : null;
+
+  if (!repository || !schoolService || !context.currentRawSnapshot || !context.activeSheet || !context.grid || !column) {
+    return false;
+  }
+
+  column.title = String(nextValue || "").trim();
+  return saveActiveCompetencyGridEditContext(context);
+};
+window.UnterrichtsassistentApp.updateCompetencyGridCell = function (rowId, columnId, nextValue) {
+  const context = getActiveCompetencyGridEditContext();
+  const normalizedRowId = String(rowId || "").trim();
+  const normalizedColumnId = String(columnId || "").trim();
+  const textValue = String(nextValue || "").trim();
+
+  if (!repository || !schoolService || !context.currentRawSnapshot || !context.activeSheet || !context.grid || !normalizedRowId || !normalizedColumnId) {
+    return false;
+  }
+
+  if (!context.grid.cells || typeof context.grid.cells !== "object") {
+    context.grid.cells = {};
+  }
+  if (!context.grid.cells[normalizedRowId]) {
+    context.grid.cells[normalizedRowId] = {};
+  }
+  if (textValue) {
+    context.grid.cells[normalizedRowId][normalizedColumnId] = textValue;
+  } else {
+    delete context.grid.cells[normalizedRowId][normalizedColumnId];
+  }
+  return saveActiveCompetencyGridEditContext(context);
+};
+window.UnterrichtsassistentApp.moveCompetencyGridItem = function (itemType, sourceId, targetId) {
+  const context = getActiveCompetencyGridEditContext();
+  const normalizedItemType = String(itemType || "").trim().toLowerCase();
+  const normalizedSourceId = String(sourceId || "").trim();
+  const normalizedTargetId = String(targetId || "").trim();
+  const list = normalizedItemType === "column"
+    ? context.grid && context.grid.columns
+    : context.grid && context.grid.rows;
+  let sourceIndex = -1;
+  let targetIndex = -1;
+  let movedItem = null;
+
+  if (!repository || !schoolService || !context.currentRawSnapshot || !context.activeSheet || !context.grid || !Array.isArray(list) || !normalizedSourceId || !normalizedTargetId || normalizedSourceId === normalizedTargetId) {
+    return false;
+  }
+
+  sourceIndex = list.findIndex(function (item) {
+    return String(item && item.id || "").trim() === normalizedSourceId;
+  });
+  targetIndex = list.findIndex(function (item) {
+    return String(item && item.id || "").trim() === normalizedTargetId;
+  });
+
+  if (sourceIndex < 0 || targetIndex < 0) {
+    return false;
+  }
+
+  movedItem = list.splice(sourceIndex, 1)[0];
+  if (sourceIndex < targetIndex) {
+    targetIndex -= 1;
+  }
+  list.splice(targetIndex, 0, movedItem);
+  return saveActiveCompetencyGridEditContext(context);
+};
+window.UnterrichtsassistentApp.handleCompetencyGridDragStart = function (event, itemType, itemId) {
+  if (!event || !event.dataTransfer) {
+    return true;
+  }
+
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", JSON.stringify({
+    type: String(itemType || "").trim().toLowerCase(),
+    id: String(itemId || "").trim()
+  }));
+  return true;
+};
+window.UnterrichtsassistentApp.handleCompetencyGridDragOver = function (event) {
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+  if (event && event.dataTransfer) {
+    event.dataTransfer.dropEffect = "move";
+  }
+  return false;
+};
+window.UnterrichtsassistentApp.handleCompetencyGridDrop = function (event, itemType, targetId) {
+  let payload = null;
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  try {
+    payload = event && event.dataTransfer
+      ? JSON.parse(event.dataTransfer.getData("text/plain") || "{}")
+      : null;
+  } catch (error) {
+    payload = null;
+  }
+
+  if (!payload || String(payload.type || "").trim() !== String(itemType || "").trim().toLowerCase()) {
+    return false;
+  }
+
+  return window.UnterrichtsassistentApp.moveCompetencyGridItem(itemType, payload.id, targetId);
+};
+window.UnterrichtsassistentApp.startCompetencyGridPointerDrag = function (event, itemType, itemId) {
+  const target = event && event.currentTarget ? event.currentTarget : null;
+  const normalizedItemType = String(itemType || "").trim().toLowerCase();
+  const normalizedItemId = String(itemId || "").trim();
+
+  if (!event || !target || ["row", "column"].indexOf(normalizedItemType) === -1 || !normalizedItemId) {
+    return false;
+  }
+
+  activeCompetencyGridPointerDrag = {
+    type: normalizedItemType,
+    id: normalizedItemId,
+    pointerId: event.pointerId,
+    target: target,
+    lastTargetId: ""
+  };
+
+  if (typeof target.setPointerCapture === "function" && event.pointerId !== undefined) {
+    try {
+      target.setPointerCapture(event.pointerId);
+    } catch (error) {
+      // Safari can reject pointer capture if the pointer has already moved.
+    }
+  }
+
+  target.classList.add("is-dragging");
+  if (document && document.body) {
+    document.body.classList.add("is-competency-grid-dragging");
+  }
+
+  if (typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+  return false;
+};
+window.UnterrichtsassistentApp.handleCompetencyGridPointerMove = function (event) {
+  const dragState = activeCompetencyGridPointerDrag;
+  const hitElement = dragState && event && typeof document.elementFromPoint === "function"
+    ? document.elementFromPoint(event.clientX, event.clientY)
+    : null;
+  const dropTarget = hitElement && typeof hitElement.closest === "function"
+    ? hitElement.closest('[data-competency-grid-type="' + dragState.type + '"]')
+    : null;
+  const targetId = dropTarget ? String(dropTarget.getAttribute("data-competency-grid-id") || "").trim() : "";
+
+  if (!dragState) {
+    return true;
+  }
+
+  if (dragState.lastTargetId && dragState.lastTargetId !== targetId) {
+    const previousTarget = document.querySelector('[data-competency-grid-type="' + dragState.type + '"][data-competency-grid-id="' + dragState.lastTargetId.replace(/"/g, '\\"') + '"]');
+    if (previousTarget) {
+      previousTarget.classList.remove("is-pointer-drag-target");
+    }
+  }
+
+  dragState.lastTargetId = targetId;
+  if (dropTarget && targetId && targetId !== dragState.id) {
+    dropTarget.classList.add("is-pointer-drag-target");
+  }
+
+  if (typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+  return false;
+};
+window.UnterrichtsassistentApp.finishCompetencyGridPointerDrag = function (event) {
+  const dragState = activeCompetencyGridPointerDrag;
+  const hitElement = dragState && event && typeof document.elementFromPoint === "function"
+    ? document.elementFromPoint(event.clientX, event.clientY)
+    : null;
+  const dropTarget = hitElement && typeof hitElement.closest === "function"
+    ? hitElement.closest('[data-competency-grid-type="' + dragState.type + '"]')
+    : null;
+  const targetId = dropTarget ? String(dropTarget.getAttribute("data-competency-grid-id") || "").trim() : "";
+
+  if (!dragState) {
+    return true;
+  }
+
+  if (dragState.target) {
+    dragState.target.classList.remove("is-dragging");
+    if (typeof dragState.target.releasePointerCapture === "function" && dragState.pointerId !== undefined) {
+      try {
+        dragState.target.releasePointerCapture(dragState.pointerId);
+      } catch (error) {
+        // Pointer capture may already be gone after a cancelled gesture.
+      }
+    }
+  }
+  if (document && document.body) {
+    document.body.classList.remove("is-competency-grid-dragging");
+  }
+  Array.prototype.slice.call(document.querySelectorAll(".is-pointer-drag-target")).forEach(function (item) {
+    item.classList.remove("is-pointer-drag-target");
+  });
+  activeCompetencyGridPointerDrag = null;
+
+  if (typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  if (!targetId || targetId === dragState.id) {
+    return false;
+  }
+
+  return window.UnterrichtsassistentApp.moveCompetencyGridItem(dragState.type, dragState.id, targetId);
+};
+window.addEventListener("pointermove", function (event) {
+  if (!activeCompetencyGridPointerDrag) {
+    return true;
+  }
+
+  return window.UnterrichtsassistentApp.handleCompetencyGridPointerMove(event);
+}, { passive: false });
+window.addEventListener("pointerup", function (event) {
+  if (!activeCompetencyGridPointerDrag) {
+    return true;
+  }
+
+  return window.UnterrichtsassistentApp.finishCompetencyGridPointerDrag(event);
+}, { passive: false });
+window.addEventListener("pointercancel", function (event) {
+  if (!activeCompetencyGridPointerDrag) {
+    return true;
+  }
+
+  return window.UnterrichtsassistentApp.finishCompetencyGridPointerDrag(event);
+}, { passive: false });
 window.UnterrichtsassistentApp.toggleEvaluationSheetCurriculumAssignment = function (level, seriesId, sequenceId, lessonId) {
   const activeClass = schoolService ? schoolService.getActiveClass() : null;
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;

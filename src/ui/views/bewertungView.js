@@ -62,6 +62,9 @@ window.Unterrichtsassistent.ui.views.bewertung = {
     const activePerformedEvaluationDetailModal = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActivePerformedEvaluationDetailModal === "function"
       ? window.UnterrichtsassistentApp.getActivePerformedEvaluationDetailModal()
       : null;
+    const performedCompetencyGridMode = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPerformedCompetencyGridMode === "function"
+      ? window.UnterrichtsassistentApp.getPerformedCompetencyGridMode()
+      : "kompakt";
 
     function escapeValue(value) {
       return String(value === undefined || value === null ? "" : value)
@@ -226,6 +229,84 @@ window.Unterrichtsassistent.ui.views.bewertung = {
 
         return rightCreatedAt.localeCompare(leftCreatedAt);
       });
+    }
+
+    function getClassLabel(classId) {
+      const normalizedClassId = String(classId || "").trim();
+      const classEntry = Array.isArray(snapshot.classes)
+        ? snapshot.classes.find(function (item) {
+            return String(item && item.id || "").trim() === normalizedClassId;
+          }) || null
+        : null;
+      const labelParts = [
+        String(classEntry && classEntry.name || "").trim(),
+        String(classEntry && classEntry.subject || "").trim()
+      ].filter(Boolean);
+
+      return labelParts.join(" ") || "Andere Lerngruppe";
+    }
+
+    function buildEvaluationSheetCopyOptions(draftValue) {
+      const allSheets = Array.isArray(snapshot.evaluationSheets) ? snapshot.evaluationSheets : [];
+      const activeClassId = String(activeClass && activeClass.id || "").trim();
+      const selectedCopyId = String(draftValue && draftValue.copyFromId || "").trim();
+      const selectedType = String(draftValue && draftValue.type || "aufgabenbogen").trim().toLowerCase() === "kompetenzraster"
+        ? "kompetenzraster"
+        : "aufgabenbogen";
+      const filteredSheets = allSheets.filter(function (sheet) {
+        return String(sheet && sheet.type || "aufgabenbogen").trim().toLowerCase() === selectedType
+          && String(sheet && sheet.id || "").trim() !== String(draftValue && draftValue.id || "").trim();
+      });
+      const currentClassSheets = filteredSheets.filter(function (sheet) {
+        return String(sheet && sheet.classId || "").trim() === activeClassId;
+      });
+      const otherClassSheets = filteredSheets.filter(function (sheet) {
+        return String(sheet && sheet.classId || "").trim() !== activeClassId;
+      });
+
+      function sortSheets(left, right) {
+        const leftCreatedAt = String(left && left.createdAt || "").trim();
+        const rightCreatedAt = String(right && right.createdAt || "").trim();
+
+        if (leftCreatedAt === rightCreatedAt) {
+          return String(left && left.title || "").localeCompare(String(right && right.title || ""), "de-DE");
+        }
+
+        return rightCreatedAt.localeCompare(leftCreatedAt);
+      }
+
+      function renderSheetOption(sheet, includeClassLabel) {
+        const sheetId = String(sheet && sheet.id || "").trim();
+        const title = String(sheet && sheet.title || "").trim() || "Ohne Titel";
+        const classLabel = includeClassLabel ? getClassLabel(sheet && sheet.classId) + " | " : "";
+        const label = classLabel + title + " | " + formatDateTimeLabel(sheet && sheet.createdAt);
+        const selected = selectedCopyId === sheetId ? ' selected' : '';
+
+        return '<option value="' + escapeValue(sheetId) + '"' + selected + '>' + escapeValue(label) + '</option>';
+      }
+
+      return [
+        '<option value="">Keine Kopie</option>',
+        currentClassSheets.length
+          ? '<optgroup label="Aktuelle Lerngruppe">' + currentClassSheets.slice().sort(sortSheets).map(function (sheet) {
+              return renderSheetOption(sheet, false);
+            }).join("") + '</optgroup>'
+          : '',
+        otherClassSheets.length
+          ? '<optgroup label="Andere Lerngruppen">' + otherClassSheets.slice().sort(function (left, right) {
+              const leftClass = getClassLabel(left && left.classId);
+              const rightClass = getClassLabel(right && right.classId);
+
+              if (leftClass === rightClass) {
+                return sortSheets(left, right);
+              }
+
+              return leftClass.localeCompare(rightClass, "de-DE");
+            }).map(function (sheet) {
+              return renderSheetOption(sheet, true);
+            }).join("") + '</optgroup>'
+          : ''
+      ].join("");
     }
 
     function getStudentsForActiveClass() {
@@ -1477,6 +1558,17 @@ window.Unterrichtsassistent.ui.views.bewertung = {
             return lookup;
           }, {})
         : {};
+      const selectedCompetencyResultLookup = selectedPerformedEvaluation && Array.isArray(selectedPerformedEvaluation.competencyResults)
+        ? selectedPerformedEvaluation.competencyResults.reduce(function (lookup, entry) {
+            const rowId = String(entry && entry.rowId || "").trim();
+
+            if (rowId) {
+              lookup[rowId] = entry;
+            }
+
+            return lookup;
+          }, {})
+        : {};
       const selectedPerformanceSummary = selectedStudent
         ? studentPerformanceSummaries[String(selectedStudent && selectedStudent.id || "").trim()] || null
         : null;
@@ -1762,6 +1854,84 @@ window.Unterrichtsassistent.ui.views.bewertung = {
         ].join("");
       }
 
+      function buildCompetencyGridPerformanceEditor(isCompleted) {
+        const grid = selectedEvaluationSheet && selectedEvaluationSheet.competencyGrid && typeof selectedEvaluationSheet.competencyGrid === "object"
+          ? selectedEvaluationSheet.competencyGrid
+          : {};
+        const rows = Array.isArray(grid.rows) ? grid.rows : [];
+        const columns = Array.isArray(grid.columns) ? grid.columns : [];
+        const cells = grid.cells && typeof grid.cells === "object" ? grid.cells : {};
+        const isDetailedMode = performedCompetencyGridMode === "ausfuehrlich";
+
+        if (!rows.length || !columns.length) {
+          return '<div class="bewertung-editor__placeholder">Das verknuepfte Kompetenzraster braucht mindestens eine Teilkompetenz und eine Niveaustufe.</div>';
+        }
+
+        return [
+          '<div class="bewertung-durchfuehrung__student-header">',
+          '<h3 class="bewertung-durchfuehrung__student-title">', escapeValue(String(selectedStudent && selectedStudent.fullName || selectedStudent && selectedStudent.firstName || "").trim() || "Ohne Namen"), '</h3>',
+          '<div class="bewertung-durchfuehrung__student-header-actions">',
+          '<div class="bewertung-durchfuehrung__student-meta">', escapeValue(getPlannedEvaluationTypeLabel(selectedPlannedEvaluation && selectedPlannedEvaluation.type)), '</div>',
+          isCompleted
+            ? '<button class="bewertung-durchfuehrung__completed-badge" type="button" onclick="return window.UnterrichtsassistentApp.togglePerformedEvaluationCompletionForSelectedStudent()">Abgeschlossen</button>'
+            : '<button class="header-utility-button" type="button" onclick="return window.UnterrichtsassistentApp.togglePerformedEvaluationCompletionForSelectedStudent()">Fertig</button>',
+          '<button class="header-utility-button" type="button" onclick="return window.UnterrichtsassistentApp.setPerformedCompetencyGridMode(\'', isDetailedMode ? 'kompakt' : 'ausfuehrlich', '\')">',
+          escapeValue(isDetailedMode ? "Kompakt" : "Ausfuehrlich"),
+          '</button>',
+          '</div>',
+          '</div>',
+          '<div class="bewertung-raster-evaluation', isDetailedMode ? ' bewertung-raster-evaluation--detailed' : '', '">',
+          rows.map(function (row) {
+            const rowId = String(row && row.id || "").trim();
+            const rowTitle = String(row && row.title || "").trim() || "Teilkompetenz";
+            const result = selectedCompetencyResultLookup[rowId] || null;
+            const selectedColumnId = String(result && result.columnId || "").trim();
+            const evidences = Array.isArray(result && result.evidences) ? result.evidences : [];
+            const nextStep = String(result && result.nextStep || "").trim();
+
+            return [
+              '<div class="bewertung-raster-evaluation__row">',
+              '<div class="bewertung-raster-evaluation__title">', escapeValue(rowTitle), '</div>',
+              '<div class="bewertung-raster-evaluation__levels">',
+              columns.map(function (column, columnIndex) {
+                const columnId = String(column && column.id || "").trim();
+                const columnTitle = String(column && column.title || "").trim() || ("Niveau " + String(columnIndex + 1));
+                const cellText = cells[rowId] && cells[rowId][columnId] !== undefined
+                  ? String(cells[rowId][columnId] || "").trim()
+                  : "";
+                const levelText = isDetailedMode
+                  ? (cellText || columnTitle)
+                  : String(columnIndex + 1);
+                const checked = selectedColumnId === columnId;
+
+                return [
+                  '<label class="bewertung-raster-evaluation__level', isDetailedMode ? ' bewertung-raster-evaluation__level--text' : '', '" title="', escapeValue(columnTitle), '">',
+                  '<input type="checkbox"', checked ? ' checked' : '', isCompleted ? ' disabled' : '', ' onchange="return window.UnterrichtsassistentApp.updatePerformedCompetencyGridSelection(\'', escapeValue(rowId), '\', \'', escapeValue(columnId), '\')">',
+                  '<span>', escapeValue(levelText), '</span>',
+                  '</label>'
+                ].join("");
+              }).join(""),
+              '</div>',
+              '<div class="bewertung-raster-evaluation__actions">',
+              '<button class="bewertung-raster-evaluation__add" type="button" aria-label="Evidenz hinzufuegen" title="Evidenz hinzufuegen" onclick="return window.UnterrichtsassistentApp.openPerformedCompetencyGridDetailModal(\'', escapeValue(rowId), '\', \'evidence\')"', isCompleted ? ' disabled' : '', '>+</button>',
+              '<button class="bewertung-raster-evaluation__add" type="button" aria-label="Naechsten Schritt hinzufuegen" title="Naechsten Schritt hinzufuegen" onclick="return window.UnterrichtsassistentApp.openPerformedCompetencyGridDetailModal(\'', escapeValue(rowId), '\', \'nextstep\')"', isCompleted ? ' disabled' : '', '>+</button>',
+              '</div>',
+              '<div class="bewertung-raster-evaluation__notes">',
+              evidences.length ? evidences.map(function (evidence) {
+                return '<span class="bewertung-raster-evaluation__note"><strong>' + escapeValue(String(evidence && evidence.type || "").trim() || "Evidenz") + ':</strong> ' + escapeValue(String(evidence && evidence.text || "").trim()) + '</span>';
+              }).join("") : '',
+              nextStep ? '<span class="bewertung-raster-evaluation__note"><strong>Naechster Schritt:</strong> ' + escapeValue(nextStep) + '</span>' : '',
+              '</div>',
+              '</div>'
+            ].join("");
+          }).join(""),
+          '</div>',
+          isCompleted
+            ? '<div class="bewertung-durchfuehrung__overall-note"><span>Anmerkung zur gesamten Bewertung</span><div>' + escapeValue(String(selectedPerformedEvaluation && selectedPerformedEvaluation.overallNote || "").trim() || "Keine") + '</div></div>'
+            : '<label class="bewertung-durchfuehrung__field bewertung-durchfuehrung__field--overall"><span>Anmerkung zur gesamten Bewertung</span><textarea rows="4" onchange="return window.UnterrichtsassistentApp.updatePerformedEvaluationOverallNote(this.value)">' + escapeValue(String(selectedPerformedEvaluation && selectedPerformedEvaluation.overallNote || "").trim()) + '</textarea></label>'
+        ].join("");
+      }
+
       function buildPerformedEvaluationPanel() {
         if (!selectedPlannedEvaluation) {
           return [
@@ -1836,7 +2006,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
           '<div class="bewertung-durchfuehrung__workspace">',
           !selectedStudent ? '<div class="bewertung-editor__placeholder">Waehle links einen Schueler aus.</div>' : (
             String(selectedEvaluationSheet && selectedEvaluationSheet.type || "").trim() !== "aufgabenbogen"
-              ? '<div class="bewertung-editor__placeholder">Die Durchfuehrung fuer Kompetenzraster folgt in einem spaeteren Schritt.</div>'
+              ? buildCompetencyGridPerformanceEditor(Boolean(selectedPerformanceSummary && selectedPerformanceSummary.isCompleted))
               : (function () {
                   const tasks = getTaskSheetTasks(selectedEvaluationSheet);
                   const isCompleted = Boolean(selectedPerformanceSummary && selectedPerformanceSummary.isCompleted);
@@ -1970,6 +2140,58 @@ window.Unterrichtsassistent.ui.views.bewertung = {
 
         if (!modal || !modalSubtaskId) {
           return "";
+        }
+
+        if (modalType === "competencyevidence") {
+          return [
+            '<div class="import-modal">',
+            '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closePerformedEvaluationDetailModal()"></div>',
+            '<div class="import-modal__dialog import-modal__dialog--performed-feedback" role="dialog" aria-modal="true">',
+            '<div class="import-modal__header">',
+            '<div><h3>Evidenz hinzufuegen</h3></div>',
+            '<button class="import-modal__close" type="button" aria-label="Pop-up schliessen" onclick="return window.UnterrichtsassistentApp.closePerformedEvaluationDetailModal()">x</button>',
+            '</div>',
+            '<form class="performed-feedback-modal" autocomplete="off" method="post" action="about:blank" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitPerformedCompetencyGridDetail()">',
+            '<label class="import-modal__field">',
+            '<span>Evidenzart</span>',
+            '<input id="performedCompetencyEvidenceTypeInput" type="text" value="', escapeValue(String(modal && modal.draftEvidenceType || "")), '" autocomplete="off" spellcheck="false" oninput="return window.UnterrichtsassistentApp.updatePerformedCompetencyEvidenceTypeDraft(this.value)">',
+            '</label>',
+            '<label class="import-modal__field">',
+            '<span>Text</span>',
+            '<textarea id="performedCompetencyEvidenceTextInput" rows="5" oninput="return window.UnterrichtsassistentApp.updatePerformedEvaluationDetailDraft(this.value)">', escapeValue(modalDraft), '</textarea>',
+            '</label>',
+            '<div class="import-modal__actions">',
+            '<button class="circle-action circle-action--danger" type="button" onclick="return window.UnterrichtsassistentApp.closePerformedEvaluationDetailModal()">Abbrechen</button>',
+            '<button class="circle-action" type="submit">Speichern</button>',
+            '</div>',
+            '</form>',
+            '</div>',
+            '</div>'
+          ].join("");
+        }
+
+        if (modalType === "competencynextstep") {
+          return [
+            '<div class="import-modal">',
+            '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closePerformedEvaluationDetailModal()"></div>',
+            '<div class="import-modal__dialog import-modal__dialog--performed-feedback" role="dialog" aria-modal="true">',
+            '<div class="import-modal__header">',
+            '<div><h3>Naechster Schritt</h3></div>',
+            '<button class="import-modal__close" type="button" aria-label="Pop-up schliessen" onclick="return window.UnterrichtsassistentApp.closePerformedEvaluationDetailModal()">x</button>',
+            '</div>',
+            '<form class="performed-feedback-modal" autocomplete="off" method="post" action="about:blank" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitPerformedCompetencyGridDetail()">',
+            '<label class="import-modal__field">',
+            '<span>Naechster Schritt</span>',
+            '<textarea id="performedCompetencyNextStepInput" rows="6" oninput="return window.UnterrichtsassistentApp.updatePerformedEvaluationDetailDraft(this.value)">', escapeValue(modalDraft || String(selectedCompetencyResultLookup[modalSubtaskId] && selectedCompetencyResultLookup[modalSubtaskId].nextStep || "").trim()), '</textarea>',
+            '</label>',
+            '<div class="import-modal__actions">',
+            '<button class="circle-action circle-action--danger" type="button" onclick="return window.UnterrichtsassistentApp.closePerformedEvaluationDetailModal()">Abbrechen</button>',
+            '<button class="circle-action" type="submit">Speichern</button>',
+            '</div>',
+            '</form>',
+            '</div>',
+            '</div>'
+          ].join("");
         }
 
         if (modalType === "note") {
@@ -2244,15 +2466,104 @@ window.Unterrichtsassistent.ui.views.bewertung = {
       ].join("");
     }
 
-    function buildTaskSheetEditor(activeSheet) {
-      const tasks = getTaskSheetTasks(activeSheet);
+    function buildCompetencyGridEditor(activeSheet) {
+      const grid = activeSheet && activeSheet.competencyGrid && typeof activeSheet.competencyGrid === "object"
+        ? activeSheet.competencyGrid
+        : {};
+      const rows = Array.isArray(grid.rows) ? grid.rows : [];
+      const columns = Array.isArray(grid.columns) ? grid.columns : [];
+      const cells = grid.cells && typeof grid.cells === "object" ? grid.cells : {};
+      const columnCount = Math.max(1, columns.length);
 
-      if (String(activeSheet && activeSheet.type || "").trim() !== "aufgabenbogen") {
+      if (String(activeSheet && activeSheet.type || "").trim() !== "kompetenzraster") {
         return [
           '<div class="bewertung-editor__placeholder">',
           escapeValue("Spezifische Attribute fuer diesen Bewertungsbogen folgen im naechsten Schritt."),
           '</div>'
         ].join("");
+      }
+
+      return [
+        '<section class="bewertung-task-sheet bewertung-competency-grid">',
+        buildSectionHeader("Kompetenzraster", "tasksheet", isTaskSheetSectionExpanded),
+        isTaskSheetSectionExpanded ? [
+        '<div class="bewertung-task-sheet__header">',
+        '<p class="bewertung-task-sheet__hint">Teilkompetenzen stehen in den Zeilen, Niveaustufen in den Spalten. Zellen koennen per Klick beschrieben werden.</p>',
+        '</div>',
+        '<div class="bewertung-competency-grid__wrap">',
+        '<table class="bewertung-competency-grid__table" style="--competency-grid-columns:', escapeValue(String(columnCount)), '">',
+        '<thead>',
+        '<tr>',
+        '<th class="bewertung-competency-grid__corner">Teilkompetenz</th>',
+        columns.map(function (column, columnIndex) {
+          const columnId = String(column && column.id || "").trim();
+
+          return [
+            '<th class="bewertung-competency-grid__column" data-competency-grid-type="column" data-competency-grid-id="', escapeValue(columnId), '" draggable="true" ondragstart="return window.UnterrichtsassistentApp.handleCompetencyGridDragStart(event, \'column\', \'', escapeValue(columnId), '\')" ondragover="return window.UnterrichtsassistentApp.handleCompetencyGridDragOver(event)" ondrop="return window.UnterrichtsassistentApp.handleCompetencyGridDrop(event, \'column\', \'', escapeValue(columnId), '\')">',
+            '<div class="bewertung-competency-grid__header-cell">',
+            '<span class="bewertung-competency-grid__drag" aria-hidden="true" onpointerdown="return window.UnterrichtsassistentApp.startCompetencyGridPointerDrag(event, \'column\', \'', escapeValue(columnId), '\')">::</span>',
+            '<input type="text" value="', escapeValue(String(column && column.title || "").trim()), '" placeholder="Niveau ', escapeValue(String(columnIndex + 1)), '" onchange="return window.UnterrichtsassistentApp.updateCompetencyGridColumnField(\'', escapeValue(columnId), '\', this.value)">',
+            '<button class="bewertung-competency-grid__remove" type="button" aria-label="Spalte loeschen" title="Spalte loeschen" onclick="return window.UnterrichtsassistentApp.deleteCompetencyGridColumn(\'', escapeValue(columnId), '\')">-</button>',
+            '</div>',
+            '</th>'
+          ].join("");
+        }).join(""),
+        '<th class="bewertung-competency-grid__add-column">',
+        '<button class="bewertung-task-sheet__add-row bewertung-competency-grid__add-column-button" type="button" aria-label="Spalte hinzufuegen" onclick="return window.UnterrichtsassistentApp.addCompetencyGridColumn()">+</button>',
+        '</th>',
+        '<th class="bewertung-competency-grid__weight">Punkte</th>',
+        '</tr>',
+        '</thead>',
+        '<tbody>',
+        rows.map(function (row, rowIndex) {
+          const rowId = String(row && row.id || "").trim();
+
+          return [
+            '<tr>',
+            '<th class="bewertung-competency-grid__row" data-competency-grid-type="row" data-competency-grid-id="', escapeValue(rowId), '" draggable="true" ondragstart="return window.UnterrichtsassistentApp.handleCompetencyGridDragStart(event, \'row\', \'', escapeValue(rowId), '\')" ondragover="return window.UnterrichtsassistentApp.handleCompetencyGridDragOver(event)" ondrop="return window.UnterrichtsassistentApp.handleCompetencyGridDrop(event, \'row\', \'', escapeValue(rowId), '\')">',
+            '<div class="bewertung-competency-grid__row-head">',
+            '<span class="bewertung-competency-grid__drag" aria-hidden="true" onpointerdown="return window.UnterrichtsassistentApp.startCompetencyGridPointerDrag(event, \'row\', \'', escapeValue(rowId), '\')">::</span>',
+            '<input type="text" value="', escapeValue(String(row && row.title || "").trim()), '" placeholder="Teilkompetenz ', escapeValue(String(rowIndex + 1)), '" onchange="return window.UnterrichtsassistentApp.updateCompetencyGridRowField(\'', escapeValue(rowId), '\', \'title\', this.value)">',
+            '<button class="bewertung-competency-grid__remove" type="button" aria-label="Zeile loeschen" title="Zeile loeschen" onclick="return window.UnterrichtsassistentApp.deleteCompetencyGridRow(\'', escapeValue(rowId), '\')">-</button>',
+            '</div>',
+            '</th>',
+            columns.map(function (column) {
+              const columnId = String(column && column.id || "").trim();
+              const cellValue = cells[rowId] && cells[rowId][columnId] !== undefined
+                ? String(cells[rowId][columnId] || "").trim()
+                : "";
+
+              return [
+                '<td class="bewertung-competency-grid__cell">',
+                '<textarea placeholder="Beschreibung" onchange="return window.UnterrichtsassistentApp.updateCompetencyGridCell(\'', escapeValue(rowId), '\', \'', escapeValue(columnId), '\', this.value)">', escapeValue(cellValue), '</textarea>',
+                '</td>'
+              ].join("");
+            }).join(""),
+            '<td class="bewertung-competency-grid__add-column-cell"></td>',
+            '<td class="bewertung-competency-grid__points">',
+            '<input type="number" min="0" step="1" value="', escapeValue(String(Number(row && row.weight) || 0)), '" onchange="return window.UnterrichtsassistentApp.updateCompetencyGridRowField(\'', escapeValue(rowId), '\', \'weight\', this.value)">',
+            '</td>',
+            '</tr>'
+          ].join("");
+        }).join(""),
+        '<tr class="bewertung-competency-grid__add-row">',
+        '<td colspan="', escapeValue(String(columns.length + 3)), '">',
+        '<button class="bewertung-task-sheet__add-row bewertung-task-sheet__add-row--task" type="button" aria-label="Zeile hinzufuegen" onclick="return window.UnterrichtsassistentApp.addCompetencyGridRow()">+</button>',
+        '</td>',
+        '</tr>',
+        '</tbody>',
+        '</table>',
+        '</div>',
+        ].join("") : '',
+        '</section>'
+      ].join("");
+    }
+
+    function buildTaskSheetEditor(activeSheet) {
+      const tasks = getTaskSheetTasks(activeSheet);
+
+      if (String(activeSheet && activeSheet.type || "").trim() !== "aufgabenbogen") {
+        return buildCompetencyGridEditor(activeSheet);
       }
 
       return [
@@ -2386,14 +2697,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
           '</article>'
         ].join(""),
         draft ? (function () {
-          const copyOptions = ['<option value="">Keine Kopie</option>'].concat(sheets.map(function (sheet) {
-            const sheetId = String(sheet && sheet.id || "").trim();
-            const label = (String(sheet && sheet.title || "").trim() || "Ohne Titel") + " | " + formatDateTimeLabel(sheet && sheet.createdAt);
-            const selected = String(draft && draft.copyFromId || "").trim() === sheetId ? ' selected' : '';
-
-            return '<option value="' + escapeValue(sheetId) + '"' + selected + '>' + escapeValue(label) + '</option>';
-          })).join("");
-
+          const copyOptions = buildEvaluationSheetCopyOptions(draft);
           return [
             '<div class="import-modal" id="evaluationSheetModal">',
             '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeEvaluationSheetModal()"></div>',
@@ -2408,13 +2712,13 @@ window.Unterrichtsassistent.ui.views.bewertung = {
             '<form class="import-modal__form" autocomplete="off" method="post" action="about:blank" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitEvaluationSheetModal(event)">',
             '<label class="import-modal__field">',
             '<span>Kopie von</span>',
-            '<select id="evaluationSheetCopyFromInput" onchange="return window.UnterrichtsassistentApp.selectEvaluationSheetCopySource(this.value)">',
+            '<select id="evaluationSheetCopyFromInput" class="evaluation-sheet-copy-select" onchange="return window.UnterrichtsassistentApp.selectEvaluationSheetCopySource(this.value)">',
             copyOptions,
             '</select>',
             '</label>',
             '<label class="import-modal__field">',
             '<span>Art des Bewertungsbogens</span>',
-            '<select id="evaluationSheetTypeInput">',
+            '<select id="evaluationSheetTypeInput" onchange="return window.UnterrichtsassistentApp.updateEvaluationSheetDraftType(this.value)">',
             '<option value="aufgabenbogen"', String(draft && draft.type || "aufgabenbogen").trim() === "aufgabenbogen" ? ' selected' : '', '>Aufgabenbogen</option>',
             '<option value="kompetenzraster"', String(draft && draft.type || "").trim() === "kompetenzraster" ? ' selected' : '', '>Kompetenzraster</option>',
             '</select>',
