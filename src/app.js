@@ -94,6 +94,9 @@ let planningAdminMode = false;
 let activeEvaluationSheetDraft = null;
 let activeCompetencyGridPointerDrag = null;
 let activePlannedEvaluationDraft = null;
+let activeClasstimeImportDraft = null;
+let activeClasstimeImportPointerDrag = null;
+let lastClasstimeImportPointerDropAt = 0;
 let activePlanningEventDraft = null;
 let activeTodoDraft = null;
 let expandedTodoIds = [];
@@ -11716,6 +11719,569 @@ function createPerformedEvaluationRecord(plannedEvaluation, studentId) {
   };
 }
 
+function normalizeClasstimeMatchValue(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function tokenizeClasstimeMatchValue(value) {
+  return normalizeClasstimeMatchValue(value).split(" ").filter(Boolean);
+}
+
+function calculateLevenshteinDistance(leftValue, rightValue) {
+  const left = String(leftValue || "");
+  const right = String(rightValue || "");
+  const leftLength = left.length;
+  const rightLength = right.length;
+  const distances = [];
+  let rowIndex;
+  let columnIndex;
+
+  if (!leftLength) {
+    return rightLength;
+  }
+
+  if (!rightLength) {
+    return leftLength;
+  }
+
+  for (columnIndex = 0; columnIndex <= rightLength; columnIndex += 1) {
+    distances[columnIndex] = columnIndex;
+  }
+
+  for (rowIndex = 1; rowIndex <= leftLength; rowIndex += 1) {
+    let previousDiagonal = distances[0];
+    distances[0] = rowIndex;
+
+    for (columnIndex = 1; columnIndex <= rightLength; columnIndex += 1) {
+      const previousDistance = distances[columnIndex];
+      const substitutionCost = left.charAt(rowIndex - 1) === right.charAt(columnIndex - 1) ? 0 : 1;
+
+      distances[columnIndex] = Math.min(
+        distances[columnIndex] + 1,
+        distances[columnIndex - 1] + 1,
+        previousDiagonal + substitutionCost
+      );
+      previousDiagonal = previousDistance;
+    }
+  }
+
+  return distances[rightLength];
+}
+
+function calculateClasstimeStringSimilarity(leftValue, rightValue) {
+  const left = normalizeClasstimeMatchValue(leftValue);
+  const right = normalizeClasstimeMatchValue(rightValue);
+  const maxLength = Math.max(left.length, right.length);
+
+  if (!left || !right) {
+    return 0;
+  }
+
+  if (left === right) {
+    return 1;
+  }
+
+  if (left.indexOf(right) >= 0 || right.indexOf(left) >= 0) {
+    return Math.min(left.length, right.length) / maxLength;
+  }
+
+  return 1 - (calculateLevenshteinDistance(left, right) / maxLength);
+}
+
+function scoreClasstimeStudentMatch(importedName, student) {
+  const normalizedImported = normalizeClasstimeMatchValue(importedName);
+  const firstName = String(student && student.firstName || "").trim();
+  const lastName = String(student && student.lastName || "").trim();
+  const fullName = getStudentDisplayName(student);
+  const variants = [
+    firstName,
+    lastName,
+    fullName,
+    [firstName, lastName].filter(Boolean).join(""),
+    [lastName, firstName].filter(Boolean).join(" "),
+    [lastName, firstName].filter(Boolean).join("")
+  ].map(function (entry) {
+    return normalizeClasstimeMatchValue(entry);
+  }).filter(Boolean);
+  const importedTokens = tokenizeClasstimeMatchValue(importedName);
+  const studentTokens = tokenizeClasstimeMatchValue(fullName);
+  let bestSimilarity = 0;
+  let tokenSimilarityTotal = 0;
+  let tokenSimilarityCount = 0;
+
+  if (!normalizedImported) {
+    return 0;
+  }
+
+  variants.forEach(function (variant) {
+    bestSimilarity = Math.max(bestSimilarity, calculateClasstimeStringSimilarity(normalizedImported, variant));
+  });
+
+  importedTokens.forEach(function (token) {
+    let bestTokenSimilarity = 0;
+
+    studentTokens.forEach(function (studentToken) {
+      bestTokenSimilarity = Math.max(bestTokenSimilarity, calculateClasstimeStringSimilarity(token, studentToken));
+    });
+
+    if (studentTokens.length) {
+      tokenSimilarityTotal += bestTokenSimilarity;
+      tokenSimilarityCount += 1;
+    }
+  });
+
+  if (tokenSimilarityCount) {
+    bestSimilarity = Math.max(bestSimilarity, tokenSimilarityTotal / tokenSimilarityCount);
+  }
+
+  if (firstName && normalizedImported === normalizeClasstimeMatchValue(firstName)) {
+    bestSimilarity = 1;
+  } else if (firstName && normalizeClasstimeMatchValue(firstName).indexOf(normalizedImported) === 0) {
+    bestSimilarity = Math.max(bestSimilarity, 0.96);
+  }
+
+  if (importedTokens.length > 1 && studentTokens.length > 1) {
+    const allTokensMatch = importedTokens.every(function (token) {
+      return studentTokens.some(function (studentToken) {
+        return calculateClasstimeStringSimilarity(token, studentToken) >= 0.82;
+      });
+    });
+
+    if (allTokensMatch) {
+      bestSimilarity = Math.max(bestSimilarity, 0.98);
+    }
+  }
+
+  return Math.max(0, Math.min(1, bestSimilarity));
+}
+
+function createClasstimeImportedStudentId(rowNumber) {
+  return "classtime-imported-student-" + String(rowNumber || "0");
+}
+
+function decodeClasstimeSharedStringItem(sharedStringItem) {
+  return Array.prototype.slice.call(sharedStringItem && sharedStringItem.getElementsByTagNameNS
+    ? sharedStringItem.getElementsByTagNameNS("*", "t")
+    : [])
+    .map(function (textNode) {
+      return String(textNode && textNode.textContent || "");
+    })
+    .join("");
+}
+
+function parseClasstimeXmlDocument(xmlText, fileLabel) {
+  const parser = new DOMParser();
+  const documentNode = parser.parseFromString(String(xmlText || ""), "application/xml");
+  const parserErrors = documentNode.getElementsByTagName("parsererror");
+
+  if (parserErrors && parserErrors.length) {
+    throw new Error("Die Datei " + String(fileLabel || "XML") + " konnte nicht gelesen werden.");
+  }
+
+  return documentNode;
+}
+
+function readClasstimeZipUInt16(bytes, offset) {
+  return bytes[offset] | (bytes[offset + 1] << 8);
+}
+
+function readClasstimeZipUInt32(bytes, offset) {
+  return (bytes[offset])
+    | (bytes[offset + 1] << 8)
+    | (bytes[offset + 2] << 16)
+    | (bytes[offset + 3] << 24);
+}
+
+function decodeClasstimeZipText(bytes, useUtf8) {
+  const decoder = useUtf8
+    ? new TextDecoder("utf-8")
+    : new TextDecoder("latin1");
+
+  return decoder.decode(bytes);
+}
+
+async function inflateClasstimeZipEntry(compressedBytes) {
+  if (typeof DecompressionStream !== "function") {
+    throw new Error("XLSX-Import wird in diesem Browser nicht unterstuetzt.");
+  }
+
+  return new Uint8Array(await new Response(
+    new Blob([compressedBytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"))
+  ).arrayBuffer());
+}
+
+async function unzipClasstimeWorkbook(arrayBuffer) {
+  const bytes = new Uint8Array(arrayBuffer || 0);
+  const minimumSearchOffset = Math.max(0, bytes.length - 65557);
+  const entries = {};
+  let eocdOffset = -1;
+  let cursor;
+  let totalEntries;
+  let centralDirectoryOffset;
+
+  for (cursor = bytes.length - 22; cursor >= minimumSearchOffset; cursor -= 1) {
+    if (readClasstimeZipUInt32(bytes, cursor) === 0x06054b50) {
+      eocdOffset = cursor;
+      break;
+    }
+  }
+
+  if (eocdOffset < 0) {
+    throw new Error("Die XLSX-Datei ist kein gueltiges ZIP-Archiv.");
+  }
+
+  totalEntries = readClasstimeZipUInt16(bytes, eocdOffset + 10);
+  centralDirectoryOffset = readClasstimeZipUInt32(bytes, eocdOffset + 16);
+  cursor = centralDirectoryOffset;
+
+  for (let entryIndex = 0; entryIndex < totalEntries; entryIndex += 1) {
+    const signature = readClasstimeZipUInt32(bytes, cursor);
+    const generalPurposeBitFlag = readClasstimeZipUInt16(bytes, cursor + 8);
+    const compressionMethod = readClasstimeZipUInt16(bytes, cursor + 10);
+    const compressedSize = readClasstimeZipUInt32(bytes, cursor + 20);
+    const fileNameLength = readClasstimeZipUInt16(bytes, cursor + 28);
+    const extraFieldLength = readClasstimeZipUInt16(bytes, cursor + 30);
+    const commentLength = readClasstimeZipUInt16(bytes, cursor + 32);
+    const localHeaderOffset = readClasstimeZipUInt32(bytes, cursor + 42);
+    const fileNameStart = cursor + 46;
+    const fileNameEnd = fileNameStart + fileNameLength;
+    const fileName = decodeClasstimeZipText(bytes.slice(fileNameStart, fileNameEnd), (generalPurposeBitFlag & 0x800) === 0x800);
+    const localFileNameLength = readClasstimeZipUInt16(bytes, localHeaderOffset + 26);
+    const localExtraFieldLength = readClasstimeZipUInt16(bytes, localHeaderOffset + 28);
+    const dataStart = localHeaderOffset + 30 + localFileNameLength + localExtraFieldLength;
+    let fileBytes = bytes.slice(dataStart, dataStart + compressedSize);
+
+    if (signature !== 0x02014b50) {
+      throw new Error("Die XLSX-Datei enthaelt einen ungueltigen ZIP-Eintrag.");
+    }
+
+    if (compressionMethod === 8) {
+      fileBytes = await inflateClasstimeZipEntry(fileBytes);
+    } else if (compressionMethod !== 0) {
+      throw new Error("Die XLSX-Datei verwendet ein nicht unterstuetztes ZIP-Format.");
+    }
+
+    entries[fileName] = fileBytes;
+    cursor = fileNameEnd + extraFieldLength + commentLength;
+  }
+
+  return entries;
+}
+
+function parseClasstimeWorkbookRelationships(documentNode) {
+  const relationshipNodes = Array.prototype.slice.call(documentNode.getElementsByTagNameNS("*", "Relationship"));
+
+  return relationshipNodes.reduce(function (lookup, relationshipNode) {
+    const relationshipId = String(relationshipNode && relationshipNode.getAttribute("Id") || "").trim();
+    const target = String(relationshipNode && relationshipNode.getAttribute("Target") || "").trim();
+
+    if (relationshipId && target) {
+      lookup[relationshipId] = target.indexOf("xl/") === 0 ? target : "xl/" + target.replace(/^\/+/, "");
+    }
+
+    return lookup;
+  }, {});
+}
+
+function parseClasstimeWorkbookMetadata(workbookDocument, relationships) {
+  return Array.prototype.slice.call(workbookDocument.getElementsByTagNameNS("*", "sheet")).map(function (sheetNode) {
+    const name = String(sheetNode && sheetNode.getAttribute("name") || "").trim();
+    const relationId = String(sheetNode && sheetNode.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id") || "").trim();
+    const target = relationships[relationId] || "";
+
+    return {
+      name: name,
+      relationId: relationId,
+      target: target
+    };
+  }).filter(function (entry) {
+    return entry.name && entry.target;
+  });
+}
+
+function parseClasstimeWorksheetDocument(worksheetDocument, sharedStrings) {
+  const cells = {};
+  const rows = {};
+
+  Array.prototype.slice.call(worksheetDocument.getElementsByTagNameNS("*", "row")).forEach(function (rowNode) {
+    const rowNumber = Number(rowNode && rowNode.getAttribute("r"));
+    const rowCells = {};
+
+    Array.prototype.slice.call(rowNode && rowNode.getElementsByTagNameNS ? rowNode.getElementsByTagNameNS("*", "c") : []).forEach(function (cellNode) {
+      const cellReference = String(cellNode && cellNode.getAttribute("r") || "").trim();
+      const cellType = String(cellNode && cellNode.getAttribute("t") || "").trim();
+      const valueNode = cellNode && cellNode.getElementsByTagNameNS
+        ? cellNode.getElementsByTagNameNS("*", "v")[0]
+        : null;
+      const inlineStringNode = cellNode && cellNode.getElementsByTagNameNS
+        ? cellNode.getElementsByTagNameNS("*", "is")[0]
+        : null;
+      const cellValue = valueNode ? String(valueNode.textContent || "") : "";
+      let resolvedValue = "";
+      let columnKey = "";
+
+      if (!cellReference) {
+        return;
+      }
+
+      if (cellType === "s") {
+        resolvedValue = sharedStrings[Number(cellValue)] || "";
+      } else if (cellType === "inlineStr") {
+        resolvedValue = inlineStringNode ? decodeClasstimeSharedStringItem(inlineStringNode) : "";
+      } else if (cellType === "b") {
+        resolvedValue = cellValue === "1";
+      } else {
+        resolvedValue = cellValue;
+      }
+
+      columnKey = cellReference.replace(/[0-9]/g, "");
+      cells[cellReference] = resolvedValue;
+      rowCells[columnKey] = resolvedValue;
+    });
+
+    if (Number.isFinite(rowNumber) && rowNumber > 0) {
+      rows[rowNumber] = rowCells;
+    }
+  });
+
+  return {
+    cells: cells,
+    rows: rows
+  };
+}
+
+function parseClasstimeWorksheetNumber(value) {
+  const normalizedValue = String(value === undefined || value === null ? "" : value).trim().replace(",", ".");
+  const numericValue = Number(normalizedValue);
+
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+function resolveClasstimeOverviewSheetName(workbookSheets) {
+  return workbookSheets.find(function (entry) {
+    return normalizeClasstimeMatchValue(entry && entry.name || "") === "ubersicht";
+  }) || workbookSheets.find(function (entry) {
+    return normalizeClasstimeMatchValue(entry && entry.name || "").indexOf("ubersicht") >= 0;
+  }) || null;
+}
+
+function buildClasstimeWorkbookData(parsedSheets) {
+  const workbookSheets = parsedSheets.workbookSheets || [];
+  const overviewSheetMeta = resolveClasstimeOverviewSheetName(workbookSheets);
+  const overviewSheet = overviewSheetMeta ? parsedSheets.worksheetsByName[overviewSheetMeta.name] : null;
+  const questionSheets = workbookSheets.filter(function (entry) {
+    return /^Q\d+$/i.test(String(entry && entry.name || "").trim());
+  }).sort(function (left, right) {
+    const leftOrder = Number(String(left && left.name || "").trim().replace(/[^0-9]/g, "")) || 0;
+    const rightOrder = Number(String(right && right.name || "").trim().replace(/[^0-9]/g, "")) || 0;
+    return leftOrder - rightOrder;
+  }).map(function (entry, index) {
+    const worksheet = parsedSheets.worksheetsByName[entry.name] || { cells: {}, rows: {} };
+    const importedStudentsByRow = {};
+
+    Object.keys(worksheet.rows || {}).forEach(function (rowKey) {
+      const rowNumber = Number(rowKey);
+      const rowData = worksheet.rows[rowNumber] || {};
+      const studentName = String(rowData.A || "").trim();
+      const scoreValue = parseClasstimeWorksheetNumber(rowData.B);
+      const normalizedStudentName = normalizeClasstimeMatchValue(studentName);
+
+      if (rowNumber < 5) {
+        return;
+      }
+
+      if (!studentName && scoreValue === null) {
+        return;
+      }
+
+      if (["vorname", "vornamen", "name des lernenden", "lernende", "nachname"].indexOf(normalizedStudentName) >= 0) {
+        return;
+      }
+
+      importedStudentsByRow[rowNumber] = {
+        id: createClasstimeImportedStudentId(rowNumber),
+        rowNumber: rowNumber,
+        sourceName: studentName || ("Zeile " + String(rowNumber)),
+        points: scoreValue
+      };
+    });
+
+    return {
+      key: String(entry && entry.name || "").trim(),
+      order: Number(String(entry && entry.name || "").trim().replace(/[^0-9]/g, "")) || (index + 1),
+      title: String(worksheet.cells.C1 || "").trim() || ("Aufgabe " + String(index + 1)),
+      maxPoints: Math.max(0, parseClasstimeWorksheetNumber(worksheet.cells.B4) || 0),
+      importedStudentsByRow: importedStudentsByRow
+    };
+  });
+  const importedStudents = {};
+
+  questionSheets.forEach(function (questionSheet) {
+    Object.keys(questionSheet.importedStudentsByRow || {}).forEach(function (rowKey) {
+      const rowNumber = Number(rowKey);
+      const rowEntry = questionSheet.importedStudentsByRow[rowKey];
+
+      if (!importedStudents[rowNumber]) {
+        importedStudents[rowNumber] = {
+          id: createClasstimeImportedStudentId(rowNumber),
+          rowNumber: rowNumber,
+          sourceName: String(rowEntry && rowEntry.sourceName || "").trim(),
+          scoresByQuestionKey: {}
+        };
+      }
+
+      if (String(rowEntry && rowEntry.sourceName || "").trim().length > String(importedStudents[rowNumber].sourceName || "").trim().length) {
+        importedStudents[rowNumber].sourceName = String(rowEntry && rowEntry.sourceName || "").trim();
+      }
+
+      importedStudents[rowNumber].scoresByQuestionKey[questionSheet.key] = rowEntry ? rowEntry.points : null;
+    });
+  });
+
+  return {
+    evaluationSheetTitle: "Classtime " + (String(overviewSheet && overviewSheet.cells && overviewSheet.cells.A1 || "").trim() || "Import"),
+    questions: questionSheets.map(function (questionSheet, index) {
+      return {
+        key: questionSheet.key,
+        order: questionSheet.order,
+        title: questionSheet.title,
+        maxPoints: questionSheet.maxPoints,
+        taskTitle: "Aufgabe " + String(index + 1)
+      };
+    }),
+    importedStudents: Object.keys(importedStudents).map(function (rowKey) {
+      const entry = importedStudents[rowKey];
+      const totalPoints = questionSheets.reduce(function (sum, questionSheet) {
+        const scoreValue = entry && entry.scoresByQuestionKey
+          ? entry.scoresByQuestionKey[questionSheet.key]
+          : null;
+        return sum + (scoreValue === null ? 0 : Math.max(0, Number(scoreValue) || 0));
+      }, 0);
+
+      return Object.assign({}, entry, {
+        totalPoints: totalPoints
+      });
+    }).sort(function (left, right) {
+      return Number(left.rowNumber) - Number(right.rowNumber);
+    })
+  };
+}
+
+async function parseClasstimeWorkbookFile(file) {
+  const arrayBuffer = await file.arrayBuffer();
+  const zipEntries = await unzipClasstimeWorkbook(arrayBuffer);
+  const workbookText = zipEntries["xl/workbook.xml"] ? decodeClasstimeZipText(zipEntries["xl/workbook.xml"], true) : "";
+  const workbookRelationshipsText = zipEntries["xl/_rels/workbook.xml.rels"] ? decodeClasstimeZipText(zipEntries["xl/_rels/workbook.xml.rels"], true) : "";
+  const sharedStringsText = zipEntries["xl/sharedStrings.xml"] ? decodeClasstimeZipText(zipEntries["xl/sharedStrings.xml"], true) : "";
+  const workbookDocument = parseClasstimeXmlDocument(workbookText, "workbook.xml");
+  const workbookRelationshipsDocument = parseClasstimeXmlDocument(workbookRelationshipsText, "workbook.xml.rels");
+  const workbookRelationships = parseClasstimeWorkbookRelationships(workbookRelationshipsDocument);
+  const workbookSheets = parseClasstimeWorkbookMetadata(workbookDocument, workbookRelationships);
+  const sharedStrings = sharedStringsText
+    ? Array.prototype.slice.call(parseClasstimeXmlDocument(sharedStringsText, "sharedStrings.xml").getElementsByTagNameNS("*", "si")).map(decodeClasstimeSharedStringItem)
+    : [];
+  const worksheetsByName = {};
+
+  workbookSheets.forEach(function (sheetMeta) {
+    const worksheetBytes = zipEntries[sheetMeta.target];
+    const worksheetText = worksheetBytes ? decodeClasstimeZipText(worksheetBytes, true) : "";
+
+    if (!worksheetText) {
+      return;
+    }
+
+    worksheetsByName[sheetMeta.name] = parseClasstimeWorksheetDocument(
+      parseClasstimeXmlDocument(worksheetText, sheetMeta.target),
+      sharedStrings
+    );
+  });
+
+  if (!workbookSheets.length) {
+    throw new Error("In der XLSX-Datei wurden keine Arbeitsblaetter gefunden.");
+  }
+
+  return buildClasstimeWorkbookData({
+    workbookSheets: workbookSheets,
+    worksheetsByName: worksheetsByName
+  });
+}
+
+function computeClasstimeAutoAssignments(students, importedStudents) {
+  const classStudents = Array.isArray(students) ? students.slice() : [];
+  const sourceImportedStudents = Array.isArray(importedStudents) ? importedStudents.slice() : [];
+  const assignmentPairs = [];
+  const assignedStudentIds = {};
+  const assignedImportedIds = {};
+  const assignmentsByStudentId = {};
+  const scoresByStudentId = {};
+
+  classStudents.forEach(function (student) {
+    sourceImportedStudents.forEach(function (importedStudent) {
+      const similarity = scoreClasstimeStudentMatch(importedStudent && importedStudent.sourceName, student);
+
+      if (similarity >= 0.45) {
+        assignmentPairs.push({
+          studentId: String(student && student.id || "").trim(),
+          importedStudentId: String(importedStudent && importedStudent.id || "").trim(),
+          similarity: similarity
+        });
+      }
+    });
+  });
+
+  assignmentPairs.sort(function (left, right) {
+    if (right.similarity === left.similarity) {
+      return String(left.studentId || "").localeCompare(String(right.studentId || ""), "de-DE");
+    }
+
+    return right.similarity - left.similarity;
+  });
+
+  assignmentPairs.forEach(function (pair) {
+    if (assignedStudentIds[pair.studentId] || assignedImportedIds[pair.importedStudentId]) {
+      return;
+    }
+
+    assignedStudentIds[pair.studentId] = true;
+    assignedImportedIds[pair.importedStudentId] = true;
+    assignmentsByStudentId[pair.studentId] = pair.importedStudentId;
+    scoresByStudentId[pair.studentId] = pair.similarity;
+  });
+
+  return {
+    assignmentsByStudentId: assignmentsByStudentId,
+    scoresByStudentId: scoresByStudentId
+  };
+}
+
+function buildClasstimeImportDraft(activeClass, importedWorkbookData) {
+  const students = activeClass && schoolService && typeof schoolService.getStudentsForClass === "function"
+    ? schoolService.getStudentsForClass(activeClass.id).slice()
+    : [];
+  const importedStudents = Array.isArray(importedWorkbookData && importedWorkbookData.importedStudents)
+    ? importedWorkbookData.importedStudents.slice()
+    : [];
+  const autoAssignments = computeClasstimeAutoAssignments(students, importedStudents);
+
+  return {
+    classId: String(activeClass && activeClass.id || "").trim(),
+    evaluationSheetTitle: String(importedWorkbookData && importedWorkbookData.evaluationSheetTitle || "").trim() || "Classtime Import",
+    questions: Array.isArray(importedWorkbookData && importedWorkbookData.questions)
+      ? importedWorkbookData.questions.slice()
+      : [],
+    importedStudents: importedStudents,
+    assignmentsByStudentId: Object.assign({}, autoAssignments.assignmentsByStudentId),
+    matchScoresByStudentId: Object.assign({}, autoAssignments.scoresByStudentId),
+    sourceFileName: String(importedWorkbookData && importedWorkbookData.sourceFileName || "").trim()
+  };
+}
+
 function normalizePerformedEvaluationText(value) {
   return String(value || "").trim();
 }
@@ -19645,6 +20211,53 @@ window.UnterrichtsassistentApp.getActiveEvaluationSheetDraft = function () {
 window.UnterrichtsassistentApp.getActivePlannedEvaluationDraft = function () {
   return activePlannedEvaluationDraft;
 };
+window.UnterrichtsassistentApp.getActiveClasstimeImportDraft = function () {
+  return activeClasstimeImportDraft
+    ? JSON.parse(JSON.stringify(activeClasstimeImportDraft))
+    : null;
+};
+function clearClasstimeImportPointerDragState() {
+  if (activeClasstimeImportPointerDrag && activeClasstimeImportPointerDrag.target) {
+    activeClasstimeImportPointerDrag.target.classList.remove("is-dragging");
+    activeClasstimeImportPointerDrag.target.style.transform = "";
+    activeClasstimeImportPointerDrag.target.style.zIndex = "";
+    activeClasstimeImportPointerDrag.target.style.pointerEvents = "";
+    if (typeof activeClasstimeImportPointerDrag.target.releasePointerCapture === "function" && activeClasstimeImportPointerDrag.pointerId !== undefined) {
+      try {
+        activeClasstimeImportPointerDrag.target.releasePointerCapture(activeClasstimeImportPointerDrag.pointerId);
+      } catch (error) {
+        // Pointer capture may already be gone after the gesture finished.
+      }
+    }
+  }
+
+  if (document && document.body) {
+    document.body.classList.remove("is-classtime-import-dragging");
+  }
+
+  Array.prototype.slice.call(document.querySelectorAll(".classtime-import .is-pointer-drag-target")).forEach(function (item) {
+    item.classList.remove("is-pointer-drag-target");
+  });
+  activeClasstimeImportPointerDrag = null;
+}
+function getClasstimeImportDropTargetFromPoint(clientX, clientY) {
+  const hitElement = typeof document.elementFromPoint === "function"
+    ? document.elementFromPoint(clientX, clientY)
+    : null;
+  const dropTarget = hitElement && typeof hitElement.closest === "function"
+    ? hitElement.closest("[data-classtime-import-drop-target]")
+    : null;
+  const dropTargetType = dropTarget ? String(dropTarget.getAttribute("data-classtime-import-drop-target") || "").trim() : "";
+  const studentId = dropTarget && dropTargetType === "student"
+    ? String(dropTarget.getAttribute("data-classtime-import-student-id") || "").trim()
+    : "";
+
+  return {
+    element: dropTarget,
+    type: dropTargetType,
+    studentId: studentId
+  };
+}
 window.UnterrichtsassistentApp.getActivePerformedPlannedEvaluationId = function () {
   return activePerformedPlannedEvaluationId;
 };
@@ -20134,12 +20747,418 @@ window.UnterrichtsassistentApp.openPlannedEvaluationModal = function (plannedEva
   return false;
 };
 window.UnterrichtsassistentApp.closePlannedEvaluationModal = function () {
+  clearClasstimeImportPointerDragState();
   activePlannedEvaluationDraft = null;
+  activeClasstimeImportDraft = null;
 
   if (activeViewId === "bewertung") {
     setActiveView("bewertung");
   }
 
+  return false;
+};
+window.UnterrichtsassistentApp.openClasstimeImportFilePicker = function () {
+  const fileInput = document.getElementById("classtimeImportInput");
+
+  if (!activePlannedEvaluationDraft || !fileInput) {
+    return false;
+  }
+
+  fileInput.value = "";
+  fileInput.click();
+  return false;
+};
+window.UnterrichtsassistentApp.importClasstimeFromFile = function (event) {
+  const input = event && event.target ? event.target : document.getElementById("classtimeImportInput");
+  const file = input && input.files ? input.files[0] : null;
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+
+  if (!file || !activeClass || !activePlannedEvaluationDraft) {
+    return false;
+  }
+
+  parseClasstimeWorkbookFile(file)
+    .then(function (importedWorkbookData) {
+      if (!importedWorkbookData || !Array.isArray(importedWorkbookData.questions) || !importedWorkbookData.questions.length) {
+        throw new Error("Es wurden keine Frageblaetter Q1, Q2, Q3 ... gefunden.");
+      }
+
+      importedWorkbookData.sourceFileName = String(file.name || "").trim();
+      activeClasstimeImportDraft = buildClasstimeImportDraft(activeClass, importedWorkbookData);
+
+      if (activeViewId === "bewertung") {
+        setActiveView("bewertung");
+      }
+    })
+    .catch(function (error) {
+      console.error("Classtime-Import fehlgeschlagen.", error);
+      window.alert(error && error.message
+        ? error.message
+        : "Die Classtime-Datei konnte nicht importiert werden.");
+    })
+    .finally(function () {
+      if (input) {
+        input.value = "";
+      }
+    });
+
+  return false;
+};
+window.UnterrichtsassistentApp.closeClasstimeImportModal = function () {
+  clearClasstimeImportPointerDragState();
+  activeClasstimeImportDraft = null;
+
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.startClasstimeImportAssignmentDrag = function (event, importedStudentId) {
+  const normalizedImportedStudentId = String(importedStudentId || "").trim();
+
+  if (!event || !event.dataTransfer || !activeClasstimeImportDraft || !normalizedImportedStudentId) {
+    return true;
+  }
+
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", JSON.stringify({
+    type: "classtime-import-assignment",
+    importedStudentId: normalizedImportedStudentId
+  }));
+  return true;
+};
+window.UnterrichtsassistentApp.startClasstimeImportPointerDrag = function (event, importedStudentId) {
+  const normalizedImportedStudentId = String(importedStudentId || "").trim();
+  const target = event && event.currentTarget ? event.currentTarget : null;
+  const pointerType = String(event && event.pointerType || "").trim().toLowerCase();
+
+  if (!event || !target || !activeClasstimeImportDraft || !normalizedImportedStudentId || !pointerType || pointerType === "mouse") {
+    return true;
+  }
+
+  activeClasstimeImportPointerDrag = {
+    importedStudentId: normalizedImportedStudentId,
+    pointerId: event.pointerId,
+    target: target,
+    startX: Number(event.clientX) || 0,
+    startY: Number(event.clientY) || 0,
+    moved: false
+  };
+
+  if (typeof target.setPointerCapture === "function" && event.pointerId !== undefined) {
+    try {
+      target.setPointerCapture(event.pointerId);
+    } catch (error) {
+      // Safari can reject pointer capture if the pointer has already moved.
+    }
+  }
+
+  target.classList.add("is-dragging");
+  target.style.pointerEvents = "none";
+  if (document && document.body) {
+    document.body.classList.add("is-classtime-import-dragging");
+  }
+
+  if (typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+  return false;
+};
+window.UnterrichtsassistentApp.handleClasstimeImportPointerMove = function (event) {
+  const dragState = activeClasstimeImportPointerDrag;
+  const targetInfo = dragState ? getClasstimeImportDropTargetFromPoint(event.clientX, event.clientY) : null;
+  const deltaX = dragState ? (Number(event.clientX) || 0) - dragState.startX : 0;
+  const deltaY = dragState ? (Number(event.clientY) || 0) - dragState.startY : 0;
+
+  if (!dragState) {
+    return true;
+  }
+  if (dragState.pointerId !== undefined && event && event.pointerId !== undefined && dragState.pointerId !== event.pointerId) {
+    return true;
+  }
+
+  if (!dragState.moved && ((Math.abs(deltaX) + Math.abs(deltaY)) >= 8)) {
+    dragState.moved = true;
+  }
+
+  Array.prototype.slice.call(document.querySelectorAll(".classtime-import .is-pointer-drag-target")).forEach(function (item) {
+    item.classList.remove("is-pointer-drag-target");
+  });
+
+  if (dragState.moved && dragState.target) {
+    dragState.target.style.transform = "translate(" + deltaX + "px, " + deltaY + "px)";
+    dragState.target.style.zIndex = "3";
+  }
+
+  if (dragState.moved && targetInfo && targetInfo.element && (targetInfo.type === "pool" || (targetInfo.type === "student" && targetInfo.studentId))) {
+    targetInfo.element.classList.add("is-pointer-drag-target");
+  }
+
+  if (typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+  return false;
+};
+window.UnterrichtsassistentApp.finishClasstimeImportPointerDrag = function (event) {
+  const dragState = activeClasstimeImportPointerDrag;
+  const targetInfo = dragState ? getClasstimeImportDropTargetFromPoint(event.clientX, event.clientY) : null;
+
+  if (!dragState) {
+    return true;
+  }
+  if (dragState.pointerId !== undefined && event && event.pointerId !== undefined && dragState.pointerId !== event.pointerId) {
+    return true;
+  }
+
+  clearClasstimeImportPointerDragState();
+
+  if (typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  if (!dragState.moved) {
+    return false;
+  }
+
+  lastClasstimeImportPointerDropAt = Date.now();
+  if (targetInfo && targetInfo.type === "student" && targetInfo.studentId) {
+    return window.UnterrichtsassistentApp.assignClasstimeImportedStudent(targetInfo.studentId, dragState.importedStudentId);
+  }
+  if (targetInfo && targetInfo.type === "pool") {
+    return window.UnterrichtsassistentApp.unassignClasstimeImportedStudent(dragState.importedStudentId);
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.allowClasstimeImportAssignmentDrop = function (event) {
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  if (event && event.dataTransfer) {
+    event.dataTransfer.dropEffect = "move";
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.handleClasstimeImportChipClick = function (event, importedStudentId) {
+  if ((Date.now() - lastClasstimeImportPointerDropAt) < 400) {
+    if (event && typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
+    return false;
+  }
+
+  return window.UnterrichtsassistentApp.unassignClasstimeImportedStudent(importedStudentId);
+};
+window.UnterrichtsassistentApp.assignClasstimeImportedStudent = function (studentId, importedStudentId) {
+  const normalizedStudentId = String(studentId || "").trim();
+  const normalizedImportedStudentId = String(importedStudentId || "").trim();
+  const nextAssignments = activeClasstimeImportDraft && activeClasstimeImportDraft.assignmentsByStudentId
+    ? Object.assign({}, activeClasstimeImportDraft.assignmentsByStudentId)
+    : {};
+
+  if (!activeClasstimeImportDraft || !normalizedStudentId || !normalizedImportedStudentId) {
+    return false;
+  }
+
+  Object.keys(nextAssignments).forEach(function (currentStudentId) {
+    if (String(nextAssignments[currentStudentId] || "").trim() === normalizedImportedStudentId) {
+      delete nextAssignments[currentStudentId];
+    }
+  });
+
+  nextAssignments[normalizedStudentId] = normalizedImportedStudentId;
+  activeClasstimeImportDraft.assignmentsByStudentId = nextAssignments;
+
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.dropClasstimeImportAssignmentOnStudent = function (event, studentId) {
+  let payload = null;
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  try {
+    payload = event && event.dataTransfer
+      ? JSON.parse(event.dataTransfer.getData("text/plain") || "{}")
+      : null;
+  } catch (error) {
+    payload = null;
+  }
+
+  if (!payload || payload.type !== "classtime-import-assignment") {
+    return false;
+  }
+
+  return window.UnterrichtsassistentApp.assignClasstimeImportedStudent(studentId, payload.importedStudentId);
+};
+window.UnterrichtsassistentApp.unassignClasstimeImportedStudent = function (importedStudentId) {
+  const normalizedImportedStudentId = String(importedStudentId || "").trim();
+  const nextAssignments = activeClasstimeImportDraft && activeClasstimeImportDraft.assignmentsByStudentId
+    ? Object.assign({}, activeClasstimeImportDraft.assignmentsByStudentId)
+    : {};
+
+  if (!activeClasstimeImportDraft || !normalizedImportedStudentId) {
+    return false;
+  }
+
+  Object.keys(nextAssignments).forEach(function (studentId) {
+    if (String(nextAssignments[studentId] || "").trim() === normalizedImportedStudentId) {
+      delete nextAssignments[studentId];
+    }
+  });
+
+  activeClasstimeImportDraft.assignmentsByStudentId = nextAssignments;
+
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.dropClasstimeImportAssignmentToPool = function (event) {
+  let payload = null;
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  try {
+    payload = event && event.dataTransfer
+      ? JSON.parse(event.dataTransfer.getData("text/plain") || "{}")
+      : null;
+  } catch (error) {
+    payload = null;
+  }
+
+  if (!payload || payload.type !== "classtime-import-assignment") {
+    return false;
+  }
+
+  return window.UnterrichtsassistentApp.unassignClasstimeImportedStudent(payload.importedStudentId);
+};
+window.UnterrichtsassistentApp.confirmClasstimeImport = function () {
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const draft = activeClasstimeImportDraft;
+  const plannedDraft = activePlannedEvaluationDraft;
+  const dateInput = document.getElementById("plannedEvaluationDateInput");
+  const createPlanningEventInput = document.getElementById("plannedEvaluationCreatePlanningEvent");
+  const normalizedDate = String(dateInput && dateInput.value || plannedDraft && plannedDraft.date || "").slice(0, 10);
+  const shouldCreatePlanningEvent = Boolean(createPlanningEventInput ? createPlanningEventInput.checked : plannedDraft && plannedDraft.createPlanningEvent);
+  const normalizedType = String(plannedDraft && plannedDraft.type || "").trim().toLowerCase() === "schriftliche"
+    ? "schriftliche"
+    : "sonstige";
+  const importedStudentsById = (draft && Array.isArray(draft.importedStudents) ? draft.importedStudents : []).reduce(function (lookup, entry) {
+    const entryId = String(entry && entry.id || "").trim();
+
+    if (entryId) {
+      lookup[entryId] = entry;
+    }
+
+    return lookup;
+  }, {});
+  const classStudents = activeClass && schoolService && typeof schoolService.getStudentsForClass === "function"
+    ? schoolService.getStudentsForClass(activeClass.id).slice()
+    : [];
+  let evaluationSheet = null;
+  let plannedEvaluation = null;
+  let questionSubtaskIds = {};
+  let assignedStudentIds = [];
+
+  if (!repository || !schoolService || !activeClass || !currentRawSnapshot || !draft || !Array.isArray(draft.questions) || !draft.questions.length) {
+    return false;
+  }
+
+  clearClasstimeImportPointerDragState();
+
+  if (!normalizedDate) {
+    window.alert("Bitte waehle zuerst ein Datum fuer die Bewertung aus.");
+    return false;
+  }
+
+  evaluationSheet = createEvaluationSheetRecord(activeClass.id, "aufgabenbogen", draft.evaluationSheetTitle);
+  evaluationSheet.taskSheet = normalizeEvaluationTaskSheet({
+    tasks: draft.questions.map(function (question, index) {
+      const subtaskId = createEvaluationSubtaskId();
+
+      questionSubtaskIds[String(question && question.key || "").trim()] = subtaskId;
+      return {
+        id: createEvaluationTaskId(),
+        title: String(question && question.taskTitle || "Aufgabe " + String(index + 1)).trim(),
+        subtasks: [{
+          id: subtaskId,
+          title: String(question && question.title || "Aufgabe " + String(index + 1)).trim(),
+          topics: "",
+          afb: "afb1",
+          be: Math.max(0, Math.round(Number(question && question.maxPoints) || 0))
+        }]
+      };
+    })
+  });
+  getMutableEvaluationSheetsCollection(currentRawSnapshot).unshift(evaluationSheet);
+  currentRawSnapshot.activeEvaluationSheetId = evaluationSheet.id;
+
+  assignedStudentIds = classStudents.map(function (student) {
+    return String(student && student.id || "").trim();
+  }).filter(function (studentId) {
+    return Boolean(draft.assignmentsByStudentId && draft.assignmentsByStudentId[studentId]);
+  });
+
+  if (!assignedStudentIds.length) {
+    window.alert("Es ist aktuell kein Classtime-Name einem Schueler zugeordnet.");
+    return false;
+  }
+
+  plannedEvaluation = createPlannedEvaluationRecord(activeClass.id, normalizedType, evaluationSheet.id, normalizedDate, assignedStudentIds);
+  plannedEvaluation.createPlanningEvent = shouldCreatePlanningEvent;
+  getMutablePlannedEvaluationsCollection(currentRawSnapshot).push(plannedEvaluation);
+
+  assignedStudentIds.forEach(function (studentId) {
+    const importedStudent = importedStudentsById[String(draft.assignmentsByStudentId[studentId] || "").trim()] || null;
+    const performedEvaluation = createPerformedEvaluationRecord(plannedEvaluation, studentId);
+
+    performedEvaluation.subtaskResults = draft.questions.map(function (question) {
+      const questionKey = String(question && question.key || "").trim();
+      const scoreValue = importedStudent && importedStudent.scoresByQuestionKey
+        ? importedStudent.scoresByQuestionKey[questionKey]
+        : null;
+      const maxValue = Math.max(0, Number(question && question.maxPoints) || 0);
+
+      if (scoreValue === null || scoreValue === undefined || !questionSubtaskIds[questionKey]) {
+        return null;
+      }
+
+      return {
+        subtaskId: questionSubtaskIds[questionKey],
+        points: normalizePerformedEvaluationPoints(scoreValue, maxValue),
+        negativeNotes: [],
+        positiveNotes: [],
+        generalNote: ""
+      };
+    }).filter(function (entry) {
+      return Boolean(entry);
+    });
+    performedEvaluation.isCompleted = true;
+    performedEvaluation.completedAt = getCurrentTimestamp();
+    performedEvaluation.updatedAt = getCurrentTimestamp();
+    getMutablePerformedEvaluationsCollection(currentRawSnapshot).push(performedEvaluation);
+  });
+
+  syncPlanningEventForPlannedEvaluation(currentRawSnapshot, plannedEvaluation);
+
+  activePerformedPlannedEvaluationId = String(plannedEvaluation.id || "").trim();
+  activePerformedEvaluationStudentId = assignedStudentIds[0] || "";
+  activeClasstimeImportDraft = null;
+  activePlannedEvaluationDraft = null;
+  saveAndRefreshSnapshot(currentRawSnapshot, "bewertung", { forcePersist: true });
   return false;
 };
 window.UnterrichtsassistentApp.selectPlannedEvaluationForExecution = function (plannedEvaluationId) {
@@ -21692,6 +22711,27 @@ window.UnterrichtsassistentApp.finishCompetencyGridPointerDrag = function (event
 
   return window.UnterrichtsassistentApp.moveCompetencyGridItem(dragState.type, dragState.id, targetId);
 };
+window.addEventListener("pointermove", function (event) {
+  if (!activeClasstimeImportPointerDrag) {
+    return true;
+  }
+
+  return window.UnterrichtsassistentApp.handleClasstimeImportPointerMove(event);
+}, { passive: false });
+window.addEventListener("pointerup", function (event) {
+  if (!activeClasstimeImportPointerDrag) {
+    return true;
+  }
+
+  return window.UnterrichtsassistentApp.finishClasstimeImportPointerDrag(event);
+}, { passive: false });
+window.addEventListener("pointercancel", function (event) {
+  if (!activeClasstimeImportPointerDrag) {
+    return true;
+  }
+
+  return window.UnterrichtsassistentApp.finishClasstimeImportPointerDrag(event);
+}, { passive: false });
 window.addEventListener("pointermove", function (event) {
   if (!activeCompetencyGridPointerDrag) {
     return true;

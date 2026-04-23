@@ -18,6 +18,9 @@ window.Unterrichtsassistent.ui.views.bewertung = {
     const plannedEvaluationDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActivePlannedEvaluationDraft === "function"
       ? window.UnterrichtsassistentApp.getActivePlannedEvaluationDraft()
       : null;
+    const classtimeImportDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveClasstimeImportDraft === "function"
+      ? window.UnterrichtsassistentApp.getActiveClasstimeImportDraft()
+      : null;
     const snapshot = service && service.snapshot ? service.snapshot : {};
     const schoolYearStart = String(snapshot.schoolYearStart || "").slice(0, 10);
     const schoolYearEnd = String(snapshot.schoolYearEnd || "").slice(0, 10);
@@ -1462,6 +1465,13 @@ window.Unterrichtsassistent.ui.views.bewertung = {
       return rows;
     }
 
+    function getStudentDisplayName(student) {
+      return [String(student && student.firstName || "").trim(), String(student && student.lastName || "").trim()]
+        .filter(Boolean)
+        .join(" ")
+        .trim() || String(student && student.firstName || "").trim() || "Ohne Namen";
+    }
+
     function renderBewertenMode() {
       const sheets = getSheetsForActiveClass();
       const students = getStudentsForActiveClass();
@@ -2343,6 +2353,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
           const createPlanningEvent = !plannedEvaluationDraft || plannedEvaluationDraft.createPlanningEvent !== false;
           const hasSelectableSheet = sheets.length || Boolean(selectedSheetId);
           const hasSelectableDate = availableDates.length || Boolean(selectedDate);
+          const showClasstimeImportButton = !String(plannedEvaluationDraft && plannedEvaluationDraft.id || "").trim();
           const sheetOptions = (function () {
             const options = sheets.map(function (sheet, index) {
               const sheetId = String(sheet && sheet.id || "").trim();
@@ -2420,6 +2431,16 @@ window.Unterrichtsassistent.ui.views.bewertung = {
             '<input id="plannedEvaluationCreatePlanningEvent" type="checkbox"', createPlanningEvent ? ' checked' : '', ' onchange="return window.UnterrichtsassistentApp.updatePlannedEvaluationDraftField(\'createPlanningEvent\', this.checked)">',
             '<span>Als Termin setzen</span>',
             '</label>',
+            showClasstimeImportButton ? [
+              '<div class="bewertung-planung-modal__import">',
+              '<div class="bewertung-planung-modal__import-copy">',
+              '<strong>Classtime Import</strong>',
+              '<span>XLSX importieren, Aufgabenbogen erzeugen und Punkte den Schuelern zuordnen.</span>',
+              '</div>',
+              '<button class="circle-action" type="button" onclick="return window.UnterrichtsassistentApp.openClasstimeImportFilePicker()">Classtime Import</button>',
+              '<input id="classtimeImportInput" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onchange="return window.UnterrichtsassistentApp.importClasstimeFromFile(event)">',
+              '</div>'
+            ].join("") : '',
             '<div class="bewertung-planung-modal__student-header">',
             '<span class="bewertung-planung-modal__student-title">Schueler zuordnen</span>',
             '<div class="bewertung-planung-modal__student-actions">',
@@ -2457,6 +2478,107 @@ window.Unterrichtsassistent.ui.views.bewertung = {
             '<button class="circle-action" type="submit"', (!hasSelectableSheet || !hasSelectableDate) ? ' disabled' : '', '>Speichern</button>',
             '</div>',
             '</form>',
+            '</div>',
+            '</div>'
+          ].join("");
+        }()) : '',
+        classtimeImportDraft ? (function () {
+          const importedStudents = Array.isArray(classtimeImportDraft && classtimeImportDraft.importedStudents)
+            ? classtimeImportDraft.importedStudents.slice()
+            : [];
+          const importedStudentsById = importedStudents.reduce(function (lookup, entry) {
+            const entryId = String(entry && entry.id || "").trim();
+
+            if (entryId) {
+              lookup[entryId] = entry;
+            }
+
+            return lookup;
+          }, {});
+          const assignedImportedIds = Object.keys(classtimeImportDraft && classtimeImportDraft.assignmentsByStudentId || {}).reduce(function (lookup, studentId) {
+            const importedId = String(classtimeImportDraft.assignmentsByStudentId[studentId] || "").trim();
+
+            if (importedId) {
+              lookup[importedId] = true;
+            }
+
+            return lookup;
+          }, {});
+          const unassignedImportedStudents = importedStudents.filter(function (entry) {
+            return !assignedImportedIds[String(entry && entry.id || "").trim()];
+          });
+          const assignedStudentCount = students.filter(function (student) {
+            return Boolean(classtimeImportDraft && classtimeImportDraft.assignmentsByStudentId && classtimeImportDraft.assignmentsByStudentId[String(student && student.id || "").trim()]);
+          }).length;
+
+          function renderImportedChip(importedStudent, isAssigned) {
+            const importedId = String(importedStudent && importedStudent.id || "").trim();
+            const totalPoints = formatPointsLabel(importedStudent && importedStudent.totalPoints);
+            const label = String(importedStudent && importedStudent.sourceName || "").trim() || "Ohne Namen";
+
+            return [
+              '<button class="classtime-import__chip', isAssigned ? ' is-assigned' : '', '" type="button" draggable="true" ondragstart="return window.UnterrichtsassistentApp.startClasstimeImportAssignmentDrag(event, \'', escapeValue(importedId), '\')" onpointerdown="return window.UnterrichtsassistentApp.startClasstimeImportPointerDrag(event, \'', escapeValue(importedId), '\')"',
+              isAssigned ? ' onclick="return window.UnterrichtsassistentApp.handleClasstimeImportChipClick(event, \'' + escapeValue(importedId) + '\')"' : '',
+              '>',
+              '<span class="classtime-import__chip-name">', escapeValue(label), '</span>',
+              '<span class="classtime-import__chip-meta">', escapeValue(totalPoints), ' P.</span>',
+              '</button>'
+            ].join("");
+          }
+
+          return [
+            '<div class="import-modal" id="classtimeImportModal">',
+            '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeClasstimeImportModal()"></div>',
+            '<div class="import-modal__dialog import-modal__dialog--classtime-import" role="dialog" aria-modal="true" aria-labelledby="classtimeImportModalTitle">',
+            '<div class="import-modal__header">',
+            '<div>',
+            '<h3 id="classtimeImportModalTitle">Classtime zuordnen</h3>',
+            '<div class="import-modal__meta">', escapeValue(String(classtimeImportDraft && classtimeImportDraft.evaluationSheetTitle || "").trim()), ' | ', escapeValue(String(classtimeImportDraft && classtimeImportDraft.sourceFileName || "").trim()), '</div>',
+            '</div>',
+            '<div class="import-modal__icon-actions">',
+            '<button class="import-modal__icon-button import-modal__icon-button--cancel" type="button" aria-label="Import abbrechen" onclick="return window.UnterrichtsassistentApp.closeClasstimeImportModal()">x</button>',
+            '<button class="import-modal__icon-button import-modal__icon-button--confirm" type="button" aria-label="Import uebernehmen" onclick="return window.UnterrichtsassistentApp.confirmClasstimeImport()">&#10003;</button>',
+            '</div>',
+            '</div>',
+            '<div class="classtime-import">',
+            '<div class="classtime-import__summary">',
+            '<div class="classtime-import__summary-card"><strong>', escapeValue(String(classtimeImportDraft && classtimeImportDraft.questions && classtimeImportDraft.questions.length || 0)), '</strong><span>Aufgaben</span></div>',
+            '<div class="classtime-import__summary-card"><strong>', escapeValue(String(importedStudents.length)), '</strong><span>Classtime-Namen</span></div>',
+            '<div class="classtime-import__summary-card"><strong>', escapeValue(String(assignedStudentCount)), ' / ', escapeValue(String(students.length)), '</strong><span>Zugeordnet</span></div>',
+            '</div>',
+            '<div class="classtime-import__pool" data-classtime-import-drop-target="pool" ondragover="return window.UnterrichtsassistentApp.allowClasstimeImportAssignmentDrop(event)" ondrop="return window.UnterrichtsassistentApp.dropClasstimeImportAssignmentToPool(event)">',
+            '<div class="classtime-import__section-title">Nicht zugeordnet</div>',
+            '<div class="classtime-import__pool-list">',
+            unassignedImportedStudents.length
+              ? unassignedImportedStudents.map(function (entry) {
+                  return renderImportedChip(entry, false);
+                }).join("")
+              : '<div class="classtime-import__empty">Alle importierten Namen sind aktuell zugeordnet.</div>',
+            '</div>',
+            '</div>',
+            '<div class="classtime-import__assignments">',
+            students.map(function (student) {
+              const studentId = String(student && student.id || "").trim();
+              const importedId = String(classtimeImportDraft && classtimeImportDraft.assignmentsByStudentId && classtimeImportDraft.assignmentsByStudentId[studentId] || "").trim();
+              const importedStudent = importedStudentsById[importedId] || null;
+              const matchScore = Number(classtimeImportDraft && classtimeImportDraft.matchScoresByStudentId && classtimeImportDraft.matchScoresByStudentId[studentId]) || 0;
+
+              return [
+                '<div class="classtime-import__assignment-row" data-classtime-import-drop-target="student" data-classtime-import-student-id="', escapeValue(studentId), '" ondragover="return window.UnterrichtsassistentApp.allowClasstimeImportAssignmentDrop(event)" ondrop="return window.UnterrichtsassistentApp.dropClasstimeImportAssignmentOnStudent(event, \'', escapeValue(studentId), '\')">',
+                '<div class="classtime-import__student">',
+                '<span class="classtime-import__student-name">', escapeValue(getStudentDisplayName(student)), '</span>',
+                matchScore ? '<span class="classtime-import__student-match">Auto-Match ' + escapeValue(String(Math.round(matchScore * 100))) + '%</span>' : '',
+                '</div>',
+                '<div class="classtime-import__dropzone', importedStudent ? ' has-assignment' : '', '">',
+                importedStudent
+                  ? renderImportedChip(importedStudent, true)
+                  : '<span class="classtime-import__placeholder">Namen hierhin ziehen</span>',
+                '</div>',
+                '</div>'
+              ].join("");
+            }).join(""),
+            '</div>',
+            '</div>',
             '</div>',
             '</div>'
           ].join("");

@@ -8643,6 +8643,44 @@ body.is-desk-dragging {
 .import-modal__dialog--planning-evaluation {
   width: min(980px, calc(100% - 2rem));
   max-width: none;
+  max-height: min(86vh, 920px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.import-modal__dialog--planning-evaluation .import-modal__form {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.2rem;
+}
+
+.bewertung-planung-modal__import {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.9rem;
+  align-items: center;
+  padding: 0.95rem 1rem;
+  border: 1px solid rgba(23, 49, 62, 0.1);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.bewertung-planung-modal__import-copy {
+  display: grid;
+  gap: 0.22rem;
+}
+
+.bewertung-planung-modal__import-copy strong {
+  color: var(--sidebar);
+  font-size: 0.95rem;
+}
+
+.bewertung-planung-modal__import-copy span {
+  color: var(--text-soft);
+  font-size: 0.86rem;
+  line-height: 1.4;
 }
 
 .bewertung-planung-modal__student-header {
@@ -8723,6 +8761,163 @@ body.is-desk-dragging {
   width: 16px;
   height: 16px;
   margin: 0;
+}
+
+.import-modal__dialog--classtime-import {
+  width: min(1080px, calc(100% - 2rem));
+  max-width: 1080px;
+  max-height: min(88vh, 960px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.classtime-import {
+  display: grid;
+  gap: 1rem;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.2rem;
+}
+
+.classtime-import__summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.classtime-import__summary-card {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.95rem 1rem;
+  border: 1px solid rgba(23, 49, 62, 0.1);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.classtime-import__summary-card strong {
+  color: var(--sidebar);
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.classtime-import__summary-card span {
+  color: var(--text-soft);
+  font-size: 0.82rem;
+}
+
+.classtime-import__pool,
+.classtime-import__assignments {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.95rem 1rem;
+  border: 1px solid rgba(23, 49, 62, 0.1);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.classtime-import__section-title {
+  color: var(--sidebar);
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.classtime-import__pool-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  min-height: 56px;
+}
+
+.classtime-import__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 42px;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid rgba(23, 49, 62, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: none;
+}
+
+.classtime-import__chip.is-assigned {
+  background: rgba(37, 76, 93, 0.1);
+}
+
+.classtime-import__chip.is-dragging {
+  cursor: grabbing;
+  opacity: 0.96;
+  box-shadow: 0 14px 28px rgba(23, 49, 62, 0.18);
+}
+
+.classtime-import__chip-name {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.classtime-import__chip-meta {
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.classtime-import__assignment-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.85fr) minmax(0, 1.15fr);
+  gap: 0.85rem;
+  align-items: center;
+}
+
+.classtime-import__pool.is-pointer-drag-target,
+.classtime-import__assignment-row.is-pointer-drag-target .classtime-import__dropzone {
+  outline: 2px solid rgba(57, 117, 171, 0.42);
+  outline-offset: -2px;
+  background: rgba(244, 249, 255, 0.98);
+}
+
+.classtime-import__student {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.classtime-import__student-name {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.classtime-import__student-match {
+  color: var(--text-soft);
+  font-size: 0.8rem;
+}
+
+.classtime-import__dropzone {
+  display: flex;
+  align-items: center;
+  min-height: 58px;
+  padding: 0.5rem 0.6rem;
+  border: 1px dashed rgba(23, 49, 62, 0.18);
+  border-radius: 16px;
+  background: rgba(251, 248, 241, 0.7);
+}
+
+.classtime-import__dropzone.has-assignment {
+  border-style: solid;
+}
+
+.classtime-import__placeholder,
+.classtime-import__empty {
+  color: var(--text-soft);
+  font-size: 0.86rem;
 }
 
 .bewertung-planung-details {
@@ -10003,6 +10198,17 @@ body.is-competency-grid-dragging {
 
   .bewertung-planung-modal__student-header {
     align-items: flex-start;
+  }
+
+  .bewertung-planung-modal__import,
+  .classtime-import__assignment-row,
+  .classtime-import__summary {
+    grid-template-columns: 1fr;
+  }
+
+  .classtime-import__chip {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .bewertung-analysis__task-row,
