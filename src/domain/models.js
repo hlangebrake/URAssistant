@@ -595,6 +595,44 @@ class MathObservationRecord {
   }
 }
 
+class EvidenceObservationRecord {
+  constructor({ id, studentId, classId, lessonId = "", lessonDate = "", room = "", recordedAt = "", toolId = "", situationType = "", demandLevel = "", selections = [] }) {
+    this.id = id;
+    this.studentId = String(studentId || "").trim();
+    this.classId = String(classId || "").trim();
+    this.lessonId = String(lessonId || "").trim();
+    this.lessonDate = String(lessonDate || "").slice(0, 10);
+    this.room = String(room || "").trim();
+    this.recordedAt = String(recordedAt || "").trim();
+    this.toolId = String(toolId || "").trim();
+    this.situationType = ["lernen", "leisten"].indexOf(String(situationType || "").trim().toLowerCase()) >= 0
+      ? String(situationType || "").trim().toLowerCase()
+      : "";
+    this.demandLevel = ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(String(demandLevel || "").trim().toLowerCase()) >= 0
+      ? String(demandLevel || "").trim().toLowerCase()
+      : "";
+    this.selections = (Array.isArray(selections) ? selections : []).map(function (selection) {
+      const source = selection && typeof selection === "object" ? selection : {};
+
+      return {
+        aspectId: String(source.aspectId || "").trim(),
+        stages: (Array.isArray(source.stages) ? source.stages : []).map(function (stage) {
+          const stageSource = stage && typeof stage === "object" ? stage : {};
+
+          return {
+            dimensionId: String(stageSource.dimensionId || "").trim(),
+            stageId: String(stageSource.stageId || "").trim()
+          };
+        }).filter(function (stage) {
+          return Boolean(stage.dimensionId && stage.stageId);
+        })
+      };
+    }).filter(function (selection) {
+      return Boolean(selection.aspectId);
+    });
+  }
+}
+
 class TodoItem {
   constructor({ id, title = "", description = "", category = "", dueDate = "", relatedClassId = "", assignedStudentIds = [], assignedStudentStatuses = [], priority = "niedrig", type = "standard", checklistItems = [], done = false, completedAt = "" }) {
     this.id = id;
@@ -1011,6 +1049,7 @@ window.Unterrichtsassistent.domain.HomeworkRecord = HomeworkRecord;
 window.Unterrichtsassistent.domain.WarningRecord = WarningRecord;
 window.Unterrichtsassistent.domain.KnowledgeGapRecord = KnowledgeGapRecord;
 window.Unterrichtsassistent.domain.MathObservationRecord = MathObservationRecord;
+window.Unterrichtsassistent.domain.EvidenceObservationRecord = EvidenceObservationRecord;
 window.Unterrichtsassistent.domain.TodoItem = TodoItem;
 window.Unterrichtsassistent.domain.SeatPlan = SeatPlan;
 window.Unterrichtsassistent.domain.SeatOrder = SeatOrder;

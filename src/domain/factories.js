@@ -6,6 +6,7 @@ function createDomainSnapshot(rawData) {
     Assessment,
     EvaluationSheet,
     EvidenceTool,
+    EvidenceObservationRecord,
     PlannedEvaluation,
     PerformedEvaluation,
     AttendanceRecord,
@@ -58,6 +59,7 @@ function createDomainSnapshot(rawData) {
     activeSeatPlanRoom: rawData.activeSeatPlanRoom || "",
     activeDateTime: rawData.activeDateTime || "",
     activeDateTimeMode: rawData.activeDateTimeMode || "live",
+    unterrichtLiveEnabledTools: rawData.unterrichtLiveEnabledTools && typeof rawData.unterrichtLiveEnabledTools === "object" ? Object.assign({}, rawData.unterrichtLiveEnabledTools) : {},
     schoolYearStart: rawData.schoolYearStart || "",
     schoolHalfYearStart: rawData.schoolHalfYearStart || "",
     schoolYearEnd: rawData.schoolYearEnd || "",
@@ -70,6 +72,7 @@ function createDomainSnapshot(rawData) {
     assessments: rawData.assessments.map((item) => new Assessment(item)),
     evaluationSheets: (Array.isArray(rawData.evaluationSheets) ? rawData.evaluationSheets : []).map((item) => new EvaluationSheet(item)),
     evidenceTools: (Array.isArray(rawData.evidenceTools) ? rawData.evidenceTools : []).map((item) => new EvidenceTool(item)),
+    evidenceObservations: (Array.isArray(rawData.evidenceObservations) ? rawData.evidenceObservations : []).map((item) => new EvidenceObservationRecord(item)),
     plannedEvaluations: (Array.isArray(rawData.plannedEvaluations) ? rawData.plannedEvaluations : []).map((item) => new PlannedEvaluation(item)),
     performedEvaluations: (Array.isArray(rawData.performedEvaluations) ? rawData.performedEvaluations : []).map((item) => new PerformedEvaluation(item)),
     attendanceRecords: (Array.isArray(rawData.attendanceRecords) ? rawData.attendanceRecords : []).map((item) => new AttendanceRecord(item)),
@@ -247,6 +250,24 @@ function serializeDomainSnapshot(snapshot) {
     });
   }
 
+  function cloneEvidenceObservations(items) {
+    return cloneItems(items || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "toolId", "situationType", "demandLevel", "selections"]).map(function (item) {
+      return Object.assign({}, item, {
+        selections: Array.isArray(item.selections)
+          ? item.selections.map(function (selection) {
+              return Object.assign({}, selection, {
+                stages: Array.isArray(selection && selection.stages)
+                  ? selection.stages.map(function (stage) {
+                      return Object.assign({}, stage);
+                    })
+                  : []
+              });
+            })
+          : []
+      });
+    });
+  }
+
   function cloneTimetable(timetable) {
     const source = timetable || {};
     const rows = Array.isArray(source.rows) ? source.rows : [];
@@ -289,6 +310,7 @@ function serializeDomainSnapshot(snapshot) {
     activeSeatPlanRoom: snapshot.activeSeatPlanRoom || "",
     activeDateTime: snapshot.activeDateTime || "",
     activeDateTimeMode: snapshot.activeDateTimeMode || "live",
+    unterrichtLiveEnabledTools: snapshot.unterrichtLiveEnabledTools && typeof snapshot.unterrichtLiveEnabledTools === "object" ? Object.assign({}, snapshot.unterrichtLiveEnabledTools) : {},
     schoolYearStart: snapshot.schoolYearStart || "",
     schoolHalfYearStart: snapshot.schoolHalfYearStart || "",
     schoolYearEnd: snapshot.schoolYearEnd || "",
@@ -301,6 +323,7 @@ function serializeDomainSnapshot(snapshot) {
     assessments: cloneItems(snapshot.assessments, ["id", "studentId", "classId", "type", "score", "maxScore", "date", "lessonId", "lessonDate", "room", "recordedAt", "category", "afb1", "afb2", "afb3", "workBehavior", "socialBehavior", "knowledgeGap", "note"]),
     evaluationSheets: cloneEvaluationSheets(snapshot.evaluationSheets || []),
     evidenceTools: cloneEvidenceTools(snapshot.evidenceTools || []),
+    evidenceObservations: cloneEvidenceObservations(snapshot.evidenceObservations || []),
     plannedEvaluations: clonePlannedEvaluations(snapshot.plannedEvaluations || []),
     performedEvaluations: clonePerformedEvaluations(snapshot.performedEvaluations || []),
     attendanceRecords: cloneItems(snapshot.attendanceRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "status", "recordedAt", "effectiveAt"]),

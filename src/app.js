@@ -70,6 +70,7 @@ let classAnalysisEnabledTypes = {
   assessment: true,
   mathObservation: true,
   knowledgeGap: true,
+  evidenceObservation: true,
   completedEvaluation: true
 };
 let timetableViewMode = "ansicht";
@@ -94,6 +95,7 @@ let isClassAnalysisPerformedEvaluationModalOpen = false;
 let activeClassAnalysisPerformedEvaluationDraft = null;
 let planningAvailableLessonsExpanded = true;
 let planningAdminMode = false;
+let unterrichtLiveManageMode = false;
 let activeEvaluationSheetDraft = null;
 let activeCompetencyGridPointerDrag = null;
 let activePlannedEvaluationDraft = null;
@@ -183,6 +185,8 @@ let unterrichtMathObservationProcessOverlay = null;
 let unterrichtMathObservationProcessInfo = null;
 let unterrichtMathObservationMarkerMenu = null;
 let unterrichtMathObservationMarkerOverlay = null;
+let unterrichtEvidenceOverlay = null;
+let activeUnterrichtEvidenceDrag = null;
 let lastUnterrichtMathObservationTouchStartAt = 0;
 let activeClassAnalysisDragScroll = null;
 let activePlanningCurriculumDragScroll = null;
@@ -5715,6 +5719,11 @@ function updateHeaderUtility(viewId) {
     return;
   }
 
+  if (viewId === "unterricht" && unterrichtViewMode === "live") {
+    viewHeaderUtility.innerHTML = '<button class="header-utility-button' + (unterrichtLiveManageMode ? ' is-active' : '') + '" type="button" aria-label="Live-Werkzeuge verwalten" title="Verwalten" onclick="return window.UnterrichtsassistentApp.toggleUnterrichtLiveManageMode()">Verwalten</button>';
+    return;
+  }
+
   viewHeaderUtility.innerHTML = "";
 }
 
@@ -6092,6 +6101,7 @@ function setActiveView(viewId) {
       assessment: true,
       mathObservation: true,
       knowledgeGap: true,
+      evidenceObservation: true,
       completedEvaluation: true
     };
   }
@@ -6505,6 +6515,10 @@ function createMathObservationRecordId() {
   return "math-observation-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
 }
 
+function createEvidenceObservationRecordId() {
+  return "evidence-observation-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+}
+
 function timeStringToMinutes(timeValue) {
   const parts = String(timeValue || "").split(":");
   const hours = Number(parts[0]);
@@ -6777,6 +6791,22 @@ function getMutableKnowledgeGapRecordsCollection(rawSnapshot) {
   }
 
   return rawSnapshot.knowledgeGapRecords;
+}
+
+function getEvidenceObservationRecordsCollection(rawSnapshot) {
+  return Array.isArray(rawSnapshot && rawSnapshot.evidenceObservations) ? rawSnapshot.evidenceObservations : [];
+}
+
+function getMutableEvidenceObservationRecordsCollection(rawSnapshot) {
+  if (!rawSnapshot) {
+    return [];
+  }
+
+  if (!Array.isArray(rawSnapshot.evidenceObservations)) {
+    rawSnapshot.evidenceObservations = [];
+  }
+
+  return rawSnapshot.evidenceObservations;
 }
 
 function getTodosCollection(rawSnapshot) {
@@ -8771,7 +8801,9 @@ function getClassAnalysisRecordByDraft(rawSnapshot, draft) {
           ? getWarningRecordsCollection(rawSnapshot)
           : (type === "knowledgeGap"
             ? getKnowledgeGapRecordsCollection(rawSnapshot)
-            : (type === "mathObservation" ? getMathObservationRecordsCollection(rawSnapshot) : [])))));
+            : (type === "mathObservation"
+              ? getMathObservationRecordsCollection(rawSnapshot)
+              : (type === "evidenceObservation" ? getEvidenceObservationRecordsCollection(rawSnapshot) : []))))));
 
   return collection.find(function (record) {
     return String(record.id || "") === recordId;
@@ -10916,6 +10948,33 @@ function getMutableEvidenceToolsCollection(rawSnapshot) {
   }
 
   return rawSnapshot.evidenceTools;
+}
+
+const UNTERRICHT_STANDARD_TOOL_KEYS = ["attendance", "homework", "warning", "assessment", "mathObservation", "knowledgeGap"];
+function getUnterrichtLiveEnabledTools(rawSnapshot) {
+  const source = rawSnapshot && rawSnapshot.unterrichtLiveEnabledTools && typeof rawSnapshot.unterrichtLiveEnabledTools === "object"
+    ? rawSnapshot.unterrichtLiveEnabledTools
+    : {};
+  const result = {};
+
+  UNTERRICHT_STANDARD_TOOL_KEYS.forEach(function (toolKey) {
+    result[toolKey] = source[toolKey] !== false;
+  });
+  getEvidenceToolsCollection(rawSnapshot).forEach(function (tool) {
+    const toolId = String(tool && tool.id || "").trim();
+
+    if (toolId) {
+      result["evidence:" + toolId] = source["evidence:" + toolId] === true;
+    }
+  });
+
+  return result;
+}
+
+function isUnterrichtLiveToolEnabled(toolKey) {
+  const enabledTools = getUnterrichtLiveEnabledTools(schoolService ? schoolService.snapshot : null);
+
+  return enabledTools[String(toolKey || "").trim()] !== false;
 }
 
 function getSortedEvidenceTools(rawSnapshot) {
@@ -13465,14 +13524,51 @@ window.UnterrichtsassistentApp.getUnterrichtSeatPlanRotation = function () {
   return unterrichtSeatPlanRotation === 180 ? 180 : 0;
 };
 window.UnterrichtsassistentApp.setUnterrichtToolMode = function (nextMode) {
+  const normalizedMode = String(nextMode || "").trim();
   const allowedModes = ["attendance", "homework", "warning", "assessment", "mathObservation", "knowledgeGap"];
   cancelUnterrichtMathObservationInteraction();
-  unterrichtToolMode = allowedModes.indexOf(nextMode) >= 0 ? nextMode : "attendance";
+  unterrichtToolMode = allowedModes.indexOf(normalizedMode) >= 0 || normalizedMode.indexOf("evidence:") === 0
+    ? normalizedMode
+    : "attendance";
 
   if (activeViewId === "unterricht") {
     setActiveView("unterricht");
   }
 
+  return false;
+};
+window.UnterrichtsassistentApp.toggleUnterrichtLiveManageMode = function () {
+  unterrichtLiveManageMode = !unterrichtLiveManageMode;
+
+  if (activeViewId === "unterricht") {
+    setActiveView("unterricht");
+  } else {
+    updateHeaderUtility(activeViewId);
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.updateUnterrichtLiveToolEnabled = function (toolKey, isChecked) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const normalizedToolKey = String(toolKey || "").trim();
+
+  if (!currentRawSnapshot || !normalizedToolKey) {
+    return false;
+  }
+
+  currentRawSnapshot.unterrichtLiveEnabledTools = currentRawSnapshot.unterrichtLiveEnabledTools && typeof currentRawSnapshot.unterrichtLiveEnabledTools === "object"
+    ? currentRawSnapshot.unterrichtLiveEnabledTools
+    : {};
+  currentRawSnapshot.unterrichtLiveEnabledTools[normalizedToolKey] = Boolean(isChecked);
+  if (!isChecked && unterrichtToolMode === normalizedToolKey) {
+    const enabledTools = getUnterrichtLiveEnabledTools(currentRawSnapshot);
+    unterrichtToolMode = UNTERRICHT_STANDARD_TOOL_KEYS.concat(Object.keys(enabledTools).filter(function (key) {
+      return key.indexOf("evidence:") === 0;
+    })).find(function (key) {
+      return enabledTools[key];
+    }) || "attendance";
+  }
+  saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
   return false;
 };
 window.UnterrichtsassistentApp.toggleAllPlanningSidebarCategoryFilters = function () {
@@ -14521,6 +14617,393 @@ window.UnterrichtsassistentApp.handleUnterrichtMathObservationMarkerPointerEnd =
 
   activeUnterrichtMathObservationDraft = null;
   event.preventDefault();
+  return false;
+};
+
+function removeUnterrichtEvidenceOverlay() {
+  if (unterrichtEvidenceOverlay && unterrichtEvidenceOverlay.parentNode) {
+    unterrichtEvidenceOverlay.parentNode.removeChild(unterrichtEvidenceOverlay);
+  }
+  unterrichtEvidenceOverlay = null;
+}
+
+function getEvidenceLevelLayoutRects(tool, level) {
+  const layout = level && level.layout && typeof level.layout === "object" ? level.layout : {};
+  const positions = layout.aspectPositions && typeof layout.aspectPositions === "object" ? layout.aspectPositions : {};
+  const aspectSizes = layout.aspectSizes && typeof layout.aspectSizes === "object" ? layout.aspectSizes : {};
+  const stageSizes = layout.stageSizes && typeof layout.stageSizes === "object" ? layout.stageSizes : {};
+  const ids = Array.isArray(level && level.ebenenAspekte) ? level.ebenenAspekte : [];
+  const rects = [];
+
+  ids.forEach(function (aspectId, index) {
+    const aspect = getEvidenceAspectById(tool, aspectId);
+    const position = positions[aspectId] || { x: Math.round((index - ((ids.length - 1) / 2)) * 170), y: 0 };
+    const defaultSize = getDefaultEvidenceDesignerRectSize(aspect && aspect.titel || "Aspekt");
+    const size = aspectSizes[aspectId] || {};
+
+    rects.push({
+      aspect: aspect,
+      aspectId: aspectId,
+      x: Number(position.x) || 0,
+      y: Number(position.y) || 0,
+      width: Math.max(24, Number(size.width) || defaultSize.width),
+      height: Math.max(18, Number(size.height) || defaultSize.height),
+      stageSizes: stageSizes
+    });
+  });
+
+  return rects;
+}
+
+function getEvidenceLevelBoundingFromRects(rects) {
+  let minX = 0;
+  let minY = 0;
+  let maxX = 0;
+  let maxY = 0;
+  let hasRect = false;
+
+  function includeRect(x, y, width, height) {
+    if (!hasRect) {
+      minX = x;
+      minY = y;
+      maxX = x + width;
+      maxY = y + height;
+      hasRect = true;
+      return;
+    }
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x + width);
+    maxY = Math.max(maxY, y + height);
+  }
+
+  rects.forEach(function (rect) {
+    includeRect(rect.x, rect.y, rect.width, rect.height);
+    (Array.isArray(rect.aspect && rect.aspect.aspektDimensionen) ? rect.aspect.aspektDimensionen : []).forEach(function (dimension, dimensionIndex) {
+      const stages = Array.isArray(dimension && dimension.stufen) ? dimension.stufen : [];
+      const direction = dimensionIndex % 4;
+      let dimensionWidth = 0;
+      let dimensionHeight = 0;
+
+      stages.forEach(function (stage) {
+        const stageId = String(stage && stage.id || "").trim();
+        const stageSize = rect.stageSizes[stageId] || {};
+        const stageWidth = Math.max(24, Number(stageSize.width) || rect.width);
+        const stageHeight = Math.max(18, Number(stageSize.height) || rect.height);
+
+        if (direction === 0 || direction === 2) {
+          dimensionHeight += stageHeight;
+          dimensionWidth = Math.max(dimensionWidth, stageWidth);
+        } else {
+          dimensionWidth += stageWidth;
+          dimensionHeight = Math.max(dimensionHeight, stageHeight);
+        }
+      });
+
+      if (direction === 0) {
+        includeRect(rect.x, rect.y - dimensionHeight, Math.max(rect.width, dimensionWidth), dimensionHeight);
+      } else if (direction === 1) {
+        includeRect(rect.x + rect.width, rect.y, dimensionWidth, Math.max(rect.height, dimensionHeight));
+      } else if (direction === 2) {
+        includeRect(rect.x, rect.y + rect.height, Math.max(rect.width, dimensionWidth), dimensionHeight);
+      } else {
+        includeRect(rect.x - dimensionWidth, rect.y, dimensionWidth, Math.max(rect.height, dimensionHeight));
+      }
+    });
+  });
+
+  return hasRect ? { x: minX, y: minY, width: maxX - minX, height: maxY - minY } : { x: 0, y: 0, width: 0, height: 0 };
+}
+
+function positionUnterrichtEvidenceOverlay(overlay, startX, startY, bounds) {
+  const margin = 12;
+  let originX = Number(startX) || 0;
+  let originY = Number(startY) || 0;
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1024;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 768;
+
+  if (originX + bounds.x < margin) {
+    originX = margin - bounds.x;
+  }
+  if (originY + bounds.y < margin) {
+    originY = margin - bounds.y;
+  }
+  if (originX + bounds.x + bounds.width > viewportWidth - margin) {
+    originX = viewportWidth - margin - bounds.x - bounds.width;
+  }
+  if (originY + bounds.y + bounds.height > viewportHeight - margin) {
+    originY = viewportHeight - margin - bounds.y - bounds.height;
+  }
+
+  overlay.dataset.originX = String(Math.round(originX));
+  overlay.dataset.originY = String(Math.round(originY));
+}
+
+function renderUnterrichtEvidenceOverlay(drag, level, startX, startY) {
+  const tool = drag.tool;
+  const rects = getEvidenceLevelLayoutRects(tool, level);
+  const bounds = getEvidenceLevelBoundingFromRects(rects);
+  const overlay = document.createElement("div");
+
+  removeUnterrichtEvidenceOverlay();
+  overlay.className = "unterricht-evidence-overlay";
+  overlay.setAttribute("onpointerdown", "return window.UnterrichtsassistentApp.handleUnterrichtEvidenceOverlayBackgroundPointer(event)");
+  overlay.innerHTML = '<div class="unterricht-evidence-overlay__bounds"></div>' + rects.map(function (rect) {
+    const title = String(rect.aspect && rect.aspect.titel || "").trim() || "Aspekt";
+
+    return '<button class="unterricht-evidence-overlay__aspect" type="button" data-evidence-aspect-id="' + escapeHtml(rect.aspectId) + '" style="left:calc(var(--origin-x) + ' + escapeHtml(String(rect.x)) + 'px);top:calc(var(--origin-y) + ' + escapeHtml(String(rect.y)) + 'px);width:' + escapeHtml(String(rect.width)) + 'px;height:' + escapeHtml(String(rect.height)) + 'px" onpointerdown="return window.UnterrichtsassistentApp.startUnterrichtEvidenceOverlayAspectPointer(event, \'' + escapeHtml(rect.aspectId) + '\')">' + escapeHtml(title) + '</button>';
+  }).join("") + '<div class="unterricht-evidence-overlay__dimensions"></div>';
+  document.body.appendChild(overlay);
+  positionUnterrichtEvidenceOverlay(overlay, startX, startY, bounds);
+  overlay.style.setProperty("--origin-x", overlay.dataset.originX + "px");
+  overlay.style.setProperty("--origin-y", overlay.dataset.originY + "px");
+  overlay.querySelector(".unterricht-evidence-overlay__bounds").setAttribute("style", "left:calc(var(--origin-x) + " + String(Math.round(bounds.x)) + "px);top:calc(var(--origin-y) + " + String(Math.round(bounds.y)) + "px);width:" + String(Math.round(bounds.width)) + "px;height:" + String(Math.round(bounds.height)) + "px");
+  unterrichtEvidenceOverlay = overlay;
+  drag.level = level;
+  drag.levelRects = rects;
+  drag.bounds = bounds;
+  drag.originX = Number(overlay.dataset.originX) || 0;
+  drag.originY = Number(overlay.dataset.originY) || 0;
+  drag.activeAspectId = "";
+  drag.activeStages = [];
+}
+
+function updateUnterrichtEvidenceOverlaySelection(clientX, clientY) {
+  const drag = activeUnterrichtEvidenceDrag;
+  const overlay = unterrichtEvidenceOverlay;
+  let nearestAspect = null;
+  let nearestDistance = Infinity;
+  let dimensionsWrap;
+  let stageCandidates = [];
+
+  if (!drag || !overlay) {
+    return;
+  }
+
+  const expandedLeft = drag.originX + drag.bounds.x - (drag.bounds.width * 2);
+  const expandedRight = drag.originX + drag.bounds.x + drag.bounds.width + (drag.bounds.width * 2);
+  const expandedTop = drag.originY + drag.bounds.y - (drag.bounds.height * 2);
+  const expandedBottom = drag.originY + drag.bounds.y + drag.bounds.height + (drag.bounds.height * 2);
+  drag.isHidden = clientX < expandedLeft || clientX > expandedRight || clientY < expandedTop || clientY > expandedBottom;
+  overlay.classList.toggle("is-hidden", drag.isHidden);
+
+  if (drag.isHidden) {
+    drag.activeAspectId = "";
+    drag.activeStages = [];
+    return;
+  }
+
+  drag.levelRects.forEach(function (rect) {
+    const centerX = drag.originX + rect.x + (rect.width / 2);
+    const centerY = drag.originY + rect.y + (rect.height / 2);
+    const distance = Math.hypot(clientX - centerX, clientY - centerY);
+
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestAspect = rect;
+    }
+  });
+
+  drag.activeAspectId = nearestAspect ? nearestAspect.aspectId : "";
+  Array.prototype.slice.call(overlay.querySelectorAll(".unterricht-evidence-overlay__aspect")).forEach(function (element) {
+    element.classList.toggle("is-active", element.getAttribute("data-evidence-aspect-id") === drag.activeAspectId);
+  });
+
+  dimensionsWrap = overlay.querySelector(".unterricht-evidence-overlay__dimensions");
+  if (!dimensionsWrap || !nearestAspect) {
+    return;
+  }
+
+  dimensionsWrap.innerHTML = (Array.isArray(nearestAspect.aspect && nearestAspect.aspect.aspektDimensionen) ? nearestAspect.aspect.aspektDimensionen : []).map(function (dimension, dimensionIndex) {
+    const stages = Array.isArray(dimension && dimension.stufen) ? dimension.stufen : [];
+    const direction = dimensionIndex % 4;
+    const stageRects = stages.map(function (stage) {
+      const stageId = String(stage && stage.id || "").trim();
+      const stageSize = nearestAspect.stageSizes[stageId] || {};
+
+      return {
+        stage: stage,
+        stageId: stageId,
+        width: Math.max(24, Number(stageSize.width) || nearestAspect.width),
+        height: Math.max(18, Number(stageSize.height) || nearestAspect.height)
+      };
+    });
+    const totalStageWidth = stageRects.reduce(function (sum, item) { return sum + item.width; }, 0);
+    const totalStageHeight = stageRects.reduce(function (sum, item) { return sum + item.height; }, 0);
+    let offsetX = nearestAspect.x;
+    let offsetY = nearestAspect.y;
+
+    if (direction === 0) {
+      offsetY -= totalStageHeight;
+    } else if (direction === 1) {
+      offsetX += nearestAspect.width;
+    } else if (direction === 2) {
+      offsetY += nearestAspect.height;
+    } else {
+      offsetX -= totalStageWidth;
+    }
+
+    return stageRects.map(function (stageRect, stageIndex) {
+      const x = direction === 1 || direction === 3
+        ? offsetX + stageRects.slice(0, stageIndex).reduce(function (sum, item) { return sum + item.width; }, 0)
+        : offsetX;
+      const y = direction === 0 || direction === 2
+        ? offsetY + stageRects.slice(0, stageIndex).reduce(function (sum, item) { return sum + item.height; }, 0)
+        : offsetY;
+      const stageWidth = stageRect.width;
+      const stageHeight = stageRect.height;
+      const centerX = drag.originX + x + (stageWidth / 2);
+      const centerY = drag.originY + y + (stageHeight / 2);
+      const distance = Math.hypot(clientX - centerX, clientY - centerY);
+
+      stageCandidates.push({ dimensionId: String(dimension && dimension.id || "").trim(), stageId: stageRect.stageId, distance: distance });
+      return '<div class="unterricht-evidence-overlay__stage" data-dimension-id="' + escapeHtml(String(dimension && dimension.id || "").trim()) + '" data-stage-id="' + escapeHtml(stageRect.stageId) + '" style="left:calc(var(--origin-x) + ' + escapeHtml(String(x)) + 'px);top:calc(var(--origin-y) + ' + escapeHtml(String(y)) + 'px);width:' + escapeHtml(String(stageWidth)) + 'px;height:' + escapeHtml(String(stageHeight)) + 'px">' + escapeHtml(String(stageRect.stage && stageRect.stage.bezeichnung || "").trim() || "Stufe") + '</div>';
+    }).join("");
+  }).join("");
+
+  drag.activeStages = stageCandidates.sort(function (left, right) {
+    return left.distance - right.distance;
+  }).reduce(function (items, candidate) {
+    if (items.length >= 2 || items.some(function (item) { return item.dimensionId === candidate.dimensionId; })) {
+      return items;
+    }
+    return items.concat([{ dimensionId: candidate.dimensionId, stageId: candidate.stageId }]);
+  }, []);
+
+  Array.prototype.slice.call(dimensionsWrap.querySelectorAll(".unterricht-evidence-overlay__stage")).forEach(function (element) {
+    const dimensionId = element.getAttribute("data-dimension-id");
+    const stageId = element.getAttribute("data-stage-id");
+    element.classList.toggle("is-active", drag.activeStages.some(function (item) {
+      return item.dimensionId === dimensionId && item.stageId === stageId;
+    }));
+  });
+}
+
+function finishUnterrichtEvidenceSelection() {
+  const drag = activeUnterrichtEvidenceDrag;
+  const aspect = drag ? getEvidenceAspectById(drag.tool, drag.activeAspectId) : null;
+  const followLevel = aspect && aspect.folgeEbene && Array.isArray(aspect.folgeEbene.ebenenAspekte) && aspect.folgeEbene.ebenenAspekte.length
+    ? aspect.folgeEbene
+    : null;
+
+  if (!drag || drag.isHidden || !aspect) {
+    activeUnterrichtEvidenceDrag = null;
+    removeUnterrichtEvidenceOverlay();
+    return false;
+  }
+
+  drag.selections.push({
+    aspectId: String(aspect.id || "").trim(),
+    stages: drag.activeStages.slice()
+  });
+
+  if (followLevel) {
+    renderUnterrichtEvidenceOverlay(drag, followLevel, drag.lastClientX || drag.startX, drag.lastClientY || drag.startY);
+    return false;
+  }
+
+  appendUnterrichtEvidenceObservationRecord(drag);
+  if (unterrichtEvidenceOverlay) {
+    unterrichtEvidenceOverlay.classList.add("is-confirmed");
+    window.setTimeout(removeUnterrichtEvidenceOverlay, 220);
+  }
+  activeUnterrichtEvidenceDrag = null;
+  return false;
+}
+
+function appendUnterrichtEvidenceObservationRecord(drag) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const context = getUnterrichtLiveObservationContextForRecord();
+
+  if (!currentRawSnapshot || !activeClass || !drag || !drag.selections.length) {
+    return false;
+  }
+
+  getMutableEvidenceObservationRecordsCollection(currentRawSnapshot).push({
+    id: createEvidenceObservationRecordId(),
+    studentId: String(drag.studentId || "").trim(),
+    classId: String(activeClass.id || "").trim(),
+    lessonId: String(drag.lessonId || "").trim(),
+    lessonDate: normalizeDateValue(drag.lessonDate || getReferenceDateValue()),
+    room: String(drag.lessonRoom || "").trim(),
+    recordedAt: getCurrentTimestamp(),
+    toolId: String(drag.tool && drag.tool.id || "").trim(),
+    situationType: context.situationType,
+    demandLevel: context.demandLevel,
+    selections: drag.selections
+  });
+  saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
+  return false;
+}
+
+window.UnterrichtsassistentApp.startUnterrichtEvidencePointer = function (event, studentId, lessonId, lessonStartTime, lessonRoom, toolId) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const tool = getEvidenceToolsCollection(currentRawSnapshot).find(function (item) {
+    return String(item && item.id || "").trim() === String(toolId || "").trim();
+  }) || null;
+
+  if (!event || !tool || !tool.hauptebene) {
+    return false;
+  }
+
+  event.preventDefault();
+  activeUnterrichtEvidenceDrag = {
+    studentId: String(studentId || "").trim(),
+    lessonId: String(lessonId || "").trim(),
+    lessonDate: getReferenceDateValue(),
+    lessonStartTime: String(lessonStartTime || "").trim(),
+    lessonRoom: String(lessonRoom || "").trim(),
+    tool: tool,
+    startX: Number(event.clientX) || 0,
+    startY: Number(event.clientY) || 0,
+    lastClientX: Number(event.clientX) || 0,
+    lastClientY: Number(event.clientY) || 0,
+    selections: []
+  };
+  renderUnterrichtEvidenceOverlay(activeUnterrichtEvidenceDrag, tool.hauptebene, event.clientX, event.clientY);
+  updateUnterrichtEvidenceOverlaySelection(event.clientX, event.clientY);
+  window.addEventListener("pointermove", window.UnterrichtsassistentApp.handleUnterrichtEvidencePointerMove);
+  window.addEventListener("pointerup", window.UnterrichtsassistentApp.handleUnterrichtEvidencePointerEnd);
+  window.addEventListener("pointercancel", window.UnterrichtsassistentApp.handleUnterrichtEvidencePointerEnd);
+  return false;
+};
+
+window.UnterrichtsassistentApp.startUnterrichtEvidenceOverlayAspectPointer = function (event) {
+  if (!activeUnterrichtEvidenceDrag) {
+    return false;
+  }
+  event.preventDefault();
+  updateUnterrichtEvidenceOverlaySelection(event.clientX, event.clientY);
+  window.addEventListener("pointermove", window.UnterrichtsassistentApp.handleUnterrichtEvidencePointerMove);
+  window.addEventListener("pointerup", window.UnterrichtsassistentApp.handleUnterrichtEvidencePointerEnd);
+  window.addEventListener("pointercancel", window.UnterrichtsassistentApp.handleUnterrichtEvidencePointerEnd);
+  return false;
+};
+
+window.UnterrichtsassistentApp.handleUnterrichtEvidencePointerMove = function (event) {
+  if (!activeUnterrichtEvidenceDrag) {
+    return false;
+  }
+  activeUnterrichtEvidenceDrag.lastClientX = Number(event.clientX) || 0;
+  activeUnterrichtEvidenceDrag.lastClientY = Number(event.clientY) || 0;
+  updateUnterrichtEvidenceOverlaySelection(event.clientX, event.clientY);
+  return false;
+};
+
+window.UnterrichtsassistentApp.handleUnterrichtEvidencePointerEnd = function () {
+  window.removeEventListener("pointermove", window.UnterrichtsassistentApp.handleUnterrichtEvidencePointerMove);
+  window.removeEventListener("pointerup", window.UnterrichtsassistentApp.handleUnterrichtEvidencePointerEnd);
+  window.removeEventListener("pointercancel", window.UnterrichtsassistentApp.handleUnterrichtEvidencePointerEnd);
+  return finishUnterrichtEvidenceSelection();
+};
+
+window.UnterrichtsassistentApp.handleUnterrichtEvidenceOverlayBackgroundPointer = function (event) {
+  if (event && event.target && event.target.closest && event.target.closest(".unterricht-evidence-overlay__aspect, .unterricht-evidence-overlay__stage")) {
+    return false;
+  }
+  activeUnterrichtEvidenceDrag = null;
+  removeUnterrichtEvidenceOverlay();
   return false;
 };
 window.UnterrichtsassistentApp.openUnterrichtWarningOtherModal = function () {
@@ -19919,6 +20402,7 @@ window.UnterrichtsassistentApp.getClassAnalysisEnabledTypes = function () {
     assessment: classAnalysisEnabledTypes.assessment !== false,
     mathObservation: classAnalysisEnabledTypes.mathObservation !== false,
     knowledgeGap: classAnalysisEnabledTypes.knowledgeGap !== false,
+    evidenceObservation: classAnalysisEnabledTypes.evidenceObservation !== false,
     completedEvaluation: classAnalysisEnabledTypes.completedEvaluation !== false
   };
 };
@@ -19971,7 +20455,7 @@ window.UnterrichtsassistentApp.setClassAnalysisCriterion = function (criterionKe
 window.UnterrichtsassistentApp.toggleClassAnalysisType = function (typeKey) {
   const normalizedType = String(typeKey || "").trim();
 
-  if (["attendance", "homework", "warning", "assessment", "mathObservation", "knowledgeGap", "completedEvaluation"].indexOf(normalizedType) < 0) {
+  if (["attendance", "homework", "warning", "assessment", "mathObservation", "knowledgeGap", "evidenceObservation", "completedEvaluation"].indexOf(normalizedType) < 0) {
     return false;
   }
 
@@ -20183,6 +20667,10 @@ window.UnterrichtsassistentApp.deleteClassAnalysisRecord = function (recordType,
     });
   } else if (normalizedType === "mathObservation") {
     currentRawSnapshot.mathObservationRecords = getMathObservationRecordsCollection(currentRawSnapshot).filter(function (record) {
+      return String(record.id || "") !== normalizedId;
+    });
+  } else if (normalizedType === "evidenceObservation") {
+    currentRawSnapshot.evidenceObservations = getEvidenceObservationRecordsCollection(currentRawSnapshot).filter(function (record) {
       return String(record.id || "") !== normalizedId;
     });
   } else {
@@ -20563,6 +21051,12 @@ window.UnterrichtsassistentApp.isPlanningAvailableLessonsExpanded = function () 
 };
 window.UnterrichtsassistentApp.isPlanningAdminMode = function () {
   return planningAdminMode;
+};
+window.UnterrichtsassistentApp.isUnterrichtLiveManageMode = function () {
+  return unterrichtLiveManageMode === true;
+};
+window.UnterrichtsassistentApp.getUnterrichtLiveEnabledTools = function () {
+  return getUnterrichtLiveEnabledTools(schoolService ? schoolService.snapshot : null);
 };
 window.UnterrichtsassistentApp.isBewertungCurriculumSectionExpanded = function () {
   return bewertungCurriculumSectionExpanded !== false;
@@ -25302,6 +25796,9 @@ window.UnterrichtsassistentApp.deleteStudent = function (studentId) {
   currentRawSnapshot.mathObservationRecords = getMathObservationRecordsCollection(currentRawSnapshot).filter(function (record) {
     return record.studentId !== studentId;
   });
+  currentRawSnapshot.evidenceObservations = getEvidenceObservationRecordsCollection(currentRawSnapshot).filter(function (record) {
+    return record.studentId !== studentId;
+  });
   currentRawSnapshot.seatPlans = getSeatPlansCollection(currentRawSnapshot).map(function (seatPlan) {
     seatPlan.seats = (seatPlan.seats || []).filter(function (seat) {
       return seat.studentId !== studentId;
@@ -25528,6 +26025,9 @@ window.UnterrichtsassistentApp.deleteActiveClass = function () {
     return record.classId !== activeClass.id && !studentIdsToDelete[record.studentId];
   });
   currentRawSnapshot.mathObservationRecords = getMathObservationRecordsCollection(currentRawSnapshot).filter(function (record) {
+    return record.classId !== activeClass.id && !studentIdsToDelete[record.studentId];
+  });
+  currentRawSnapshot.evidenceObservations = getEvidenceObservationRecordsCollection(currentRawSnapshot).filter(function (record) {
     return record.classId !== activeClass.id && !studentIdsToDelete[record.studentId];
   });
   currentRawSnapshot.todos = currentRawSnapshot.todos.filter(function (todo) {

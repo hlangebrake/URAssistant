@@ -4133,6 +4133,64 @@ button {
   font-size: 0.98rem;
 }
 
+.unterricht-live-tool-manager {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0 0 0.9rem;
+  padding: 0.8rem 0.95rem;
+}
+
+.unterricht-live-tool-manager__title {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 0.92rem;
+  line-height: 1.2;
+}
+
+.unterricht-live-tool-manager__rows {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.45rem;
+}
+
+.unterricht-live-tool-manager__row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.42rem 0.52rem;
+  border: 1px solid rgba(57, 117, 171, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--text);
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.unterricht-live-tool-manager__row input {
+  flex: 0 0 auto;
+}
+
+.unterricht-live-tool-manager__symbol {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.6rem;
+  max-width: 3.3rem;
+  height: 1.6rem;
+  padding: 0 0.28rem;
+  border-radius: 7px;
+  background: rgba(37, 76, 93, 0.1);
+  color: var(--sidebar);
+  font-size: 0.72rem;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .unterricht-layout--live > .unterricht-live-notice {
   grid-column: 1 / -1;
   grid-row: 1;
@@ -6010,6 +6068,100 @@ button {
   font-size: 0.66rem;
   line-height: 1.1;
   text-align: center;
+}
+
+.unterricht-evidence-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  pointer-events: auto;
+  opacity: 1;
+  transition: opacity 120ms ease, filter 120ms ease;
+  --origin-x: 50vw;
+  --origin-y: 50vh;
+}
+
+.unterricht-evidence-overlay.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.unterricht-evidence-overlay.is-confirmed {
+  filter: drop-shadow(0 0 20px rgba(48, 152, 103, 0.42));
+}
+
+.unterricht-evidence-overlay.is-confirmed .unterricht-evidence-overlay__aspect.is-active,
+.unterricht-evidence-overlay.is-confirmed .unterricht-evidence-overlay__stage.is-active {
+  background: rgba(48, 152, 103, 0.92);
+  border-color: rgba(30, 116, 75, 0.92);
+  color: #ffffff;
+}
+
+.unterricht-evidence-overlay__bounds {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px dashed rgba(23, 49, 62, 0.28);
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+.unterricht-evidence-overlay__aspect,
+.unterricht-evidence-overlay__stage {
+  position: absolute;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+  padding: 0.08rem 0.16rem;
+  border: 1px solid rgba(37, 76, 93, 0.28);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 400;
+  line-height: 1.08;
+  letter-spacing: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-align: center;
+  white-space: normal;
+  box-shadow: 0 6px 16px rgba(23, 49, 62, 0.12);
+  user-select: none;
+  touch-action: none;
+}
+
+.unterricht-evidence-overlay__aspect {
+  z-index: 2;
+  cursor: grab;
+}
+
+.unterricht-evidence-overlay__stage {
+  z-index: 1;
+  pointer-events: none;
+  background: rgba(255, 249, 232, 0.96);
+  border-color: rgba(180, 126, 23, 0.24);
+}
+
+.unterricht-evidence-overlay__aspect.is-active {
+  z-index: 4;
+  background: rgba(37, 76, 93, 0.94);
+  border-color: rgba(37, 76, 93, 0.98);
+  color: #ffffff;
+}
+
+.unterricht-evidence-overlay__stage.is-active {
+  z-index: 3;
+  background: rgba(231, 181, 64, 0.95);
+  border-color: rgba(151, 101, 21, 0.45);
+  color: #2b2112;
+}
+
+.unterricht-evidence-overlay__dimensions {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 
 .assessment-category-buttons {

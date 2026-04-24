@@ -29,7 +29,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
       : { key: "name", direction: "asc" };
     const analysisEnabledTypes = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getClassAnalysisEnabledTypes === "function"
       ? window.UnterrichtsassistentApp.getClassAnalysisEnabledTypes()
-      : { attendance: true, homework: true, warning: true, assessment: true, mathObservation: true, knowledgeGap: true, completedEvaluation: true };
+      : { attendance: true, homework: true, warning: true, assessment: true, mathObservation: true, knowledgeGap: true, evidenceObservation: true, completedEvaluation: true };
     const analysisGrouping = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getClassAnalysisGrouping === "function"
       ? window.UnterrichtsassistentApp.getClassAnalysisGrouping()
       : "day";
@@ -384,6 +384,55 @@ window.Unterrichtsassistent.ui.views.klasse = {
       }).join(" | ");
     }
 
+    function getEvidenceToolById(toolId) {
+      const normalizedToolId = String(toolId || "").trim();
+
+      return (Array.isArray(service.snapshot.evidenceTools) ? service.snapshot.evidenceTools : []).find(function (tool) {
+        return String(tool && tool.id || "").trim() === normalizedToolId;
+      }) || null;
+    }
+
+    function getEvidenceAspectById(tool, aspectId) {
+      const normalizedAspectId = String(aspectId || "").trim();
+
+      return (Array.isArray(tool && tool.aspekte) ? tool.aspekte : []).find(function (aspect) {
+        return String(aspect && aspect.id || "").trim() === normalizedAspectId;
+      }) || null;
+    }
+
+    function getEvidenceStageLabel(aspect, dimensionId, stageId) {
+      const dimension = (Array.isArray(aspect && aspect.aspektDimensionen) ? aspect.aspektDimensionen : []).find(function (entry) {
+        return String(entry && entry.id || "").trim() === String(dimensionId || "").trim();
+      }) || null;
+      const stage = (Array.isArray(dimension && dimension.stufen) ? dimension.stufen : []).find(function (entry) {
+        return String(entry && entry.id || "").trim() === String(stageId || "").trim();
+      }) || null;
+      const dimensionLabel = String(dimension && dimension.bezeichnung || "").trim();
+      const stageLabel = String(stage && stage.bezeichnung || "").trim();
+
+      return [dimensionLabel, stageLabel].filter(Boolean).join(": ");
+    }
+
+    function buildEvidenceObservationSummary(record) {
+      const tool = getEvidenceToolById(record && record.toolId);
+      const toolTitle = String(tool && tool.titel || "").trim() || "Bewertungswerkzeug";
+      const contextParts = [
+        formatDetailValue("situationType", record && record.situationType),
+        formatDetailValue("demandLevel", record && record.demandLevel)
+      ].filter(Boolean);
+      const selectionParts = (Array.isArray(record && record.selections) ? record.selections : []).map(function (selection) {
+        const aspect = getEvidenceAspectById(tool, selection && selection.aspectId);
+        const aspectTitle = String(aspect && aspect.titel || "").trim() || "Aspekt";
+        const stageLabels = (Array.isArray(selection && selection.stages) ? selection.stages : []).map(function (stageRef) {
+          return getEvidenceStageLabel(aspect, stageRef && stageRef.dimensionId, stageRef && stageRef.stageId);
+        }).filter(Boolean);
+
+        return stageLabels.length ? aspectTitle + " (" + stageLabels.join(", ") + ")" : aspectTitle;
+      }).filter(Boolean);
+
+      return [toolTitle, contextParts.join(" / "), selectionParts.join(" -> ")].filter(Boolean).join(" | ");
+    }
+
     function formatPointsLabel(value) {
       const numericValue = Number.isFinite(Number(value)) ? Number(value) : 0;
       const roundedValue = Math.round(numericValue * 2) / 2;
@@ -587,6 +636,20 @@ window.Unterrichtsassistent.ui.views.klasse = {
           raw: record
         };
       }))
+      .concat((service.snapshot.evidenceObservations || []).filter(function (record) {
+        return record.classId === schoolClass.id;
+      }).map(function (record, index) {
+        const tool = getEvidenceToolById(record && record.toolId);
+
+        return {
+          studentId: record.studentId,
+          date: normalizeDateValue(record.lessonDate),
+          type: "evidenceObservation",
+          symbol: String(tool && tool.symbol || "").trim() || "E",
+          sortKey: getAnalysisRecordCreatedAt(record) + "|" + String(record.id || index).padStart(6, "0"),
+          raw: record
+        };
+      }))
       .concat((service.snapshot.performedEvaluations || []).filter(function (record) {
         return record.classId === schoolClass.id && Boolean(record.isCompleted);
       }).map(function (record, index) {
@@ -662,6 +725,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
           assessment: 0,
           mathObservation: 0,
           knowledgeGap: 0,
+          evidenceObservation: 0,
           completedEvaluation: 0
         };
       }
@@ -833,6 +897,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
       const typeItems = [
         { key: "mathObservation", symbol: "K" },
         { key: "knowledgeGap", symbol: "B" },
+        { key: "evidenceObservation", symbol: "E" },
         { key: "attendance", symbol: "✓" },
         { key: "homework", symbol: "H" },
         { key: "warning", symbol: "⚠" },
@@ -881,6 +946,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
       : [];
     const analysisDetailRows = analysisDetailRecords.map(function (record) {
       const isCompletedEvaluation = String(record.type || "") === "completedEvaluation";
+      const isEvidenceObservation = String(record.type || "") === "evidenceObservation";
       const completedSummary = isCompletedEvaluation
         ? buildCompletedEvaluationSummary(record.plannedEvaluation, record.evaluationSheet, record.raw)
         : null;
@@ -890,7 +956,9 @@ window.Unterrichtsassistent.ui.views.klasse = {
             completedSummary ? formatPointsLabel(completedSummary.totalAchieved) + " / " + formatPointsLabel(completedSummary.totalReachable) : "",
             completedSummary && completedSummary.stageLabel ? completedSummary.stageLabel : ""
           ].filter(Boolean).join(" | ")
-        : (buildAnalysisDetailSummary(record.raw || {}) || "-");
+        : (isEvidenceObservation
+          ? buildEvidenceObservationSummary(record.raw || {})
+          : (buildAnalysisDetailSummary(record.raw || {}) || "-"));
 
       return [
         '<tr class="class-analysis-detail__row" onclick="return window.UnterrichtsassistentApp.', isCompletedEvaluation ? 'openClassAnalysisPerformedEvaluation(\'' + escapeValue(record.plannedEvaluation && record.plannedEvaluation.id || "") + '\', \'' + escapeValue(record.studentId || "") + '\')' : 'openClassAnalysisRecordEdit(\'' + escapeValue(record.type) + '\', \'' + escapeValue(record.raw && record.raw.id || "") + '\')', '">',
@@ -1019,6 +1087,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
         '<button class="unterricht-seatplan-action class-analysis-tool', analysisEnabledTypes.assessment !== false ? ' is-active' : "", '" type="button" aria-label="Bewertungen filtern" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisType(\'assessment\')">&#128269;</button>',
         '<button class="unterricht-seatplan-action class-analysis-tool', analysisEnabledTypes.mathObservation !== false ? ' is-active' : "", '" type="button" aria-label="Mathematik-Beobachtungen filtern" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisType(\'mathObservation\')">K</button>',
         '<button class="unterricht-seatplan-action class-analysis-tool', analysisEnabledTypes.knowledgeGap !== false ? ' is-active' : "", '" type="button" aria-label="Wissensluecken filtern" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisType(\'knowledgeGap\')">B</button>',
+        '<button class="unterricht-seatplan-action class-analysis-tool', analysisEnabledTypes.evidenceObservation !== false ? ' is-active' : "", '" type="button" aria-label="Bewertungswerkzeuge filtern" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisType(\'evidenceObservation\')">E</button>',
         '<button class="unterricht-seatplan-action class-analysis-tool', analysisEnabledTypes.completedEvaluation !== false ? ' is-active' : "", '" type="button" aria-label="Abgeschlossene Bewertungen filtern" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisType(\'completedEvaluation\')">&#9733;</button>',
         '</div>',
         '</div>',
@@ -1107,6 +1176,9 @@ window.Unterrichtsassistent.ui.views.klasse = {
         analysisEditRecord && analysisEditRecord.type === "mathObservation" ? [
           '<div class="import-modal__field"><span>Beobachtung</span><input type="text" readonly value="', escapeValue(buildAnalysisDetailSummary(analysisEditRecord.raw || {})), '"></div>',
           '<label class="import-modal__field"><span>Notiz</span><input id="classAnalysisMathObservationNote" type="text" maxlength="240" value="', escapeValue(analysisEditRecord.raw && analysisEditRecord.raw.note || ""), '" placeholder="Freie Notiz zur Beobachtung" autocomplete="off" autocapitalize="none" spellcheck="false"></label>'
+        ].join("") : "",
+        analysisEditRecord && analysisEditRecord.type === "evidenceObservation" ? [
+          '<div class="import-modal__field"><span>Bewertungswerkzeug</span><input type="text" readonly value="', escapeValue(buildEvidenceObservationSummary(analysisEditRecord.raw || {})), '"></div>'
         ].join("") : "",
         analysisEditRecord && analysisEditRecord.type === "knowledgeGap" ? [
           '<label class="import-modal__field import-modal__field--knowledge-gap"><span>Inhalt</span><input id="classAnalysisKnowledgeGapContent" type="text" maxlength="180" value="', escapeValue(analysisEditRecord.raw && analysisEditRecord.raw.content || ""), '" placeholder="Wissensluecke beschreiben" autocomplete="off" autocapitalize="none" spellcheck="false" onfocus="return window.UnterrichtsassistentApp.handleKnowledgeGapInputFocus(\'classAnalysisKnowledgeGapContent\', \'classAnalysisKnowledgeGapSuggestions\')" oninput="return window.UnterrichtsassistentApp.handleKnowledgeGapInput(event, \'classAnalysisKnowledgeGapSuggestions\')" onblur="return window.UnterrichtsassistentApp.handleKnowledgeGapInputBlur(\'classAnalysisKnowledgeGapSuggestions\')"><div class="knowledge-gap-suggestions" id="classAnalysisKnowledgeGapSuggestions" hidden onpointerdown="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerDown(event, \'classAnalysisKnowledgeGapSuggestions\')" onpointermove="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerMove(event, \'classAnalysisKnowledgeGapSuggestions\')" onpointerup="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerUp(event, \'classAnalysisKnowledgeGapSuggestions\')" onpointercancel="return window.UnterrichtsassistentApp.handleKnowledgeGapSuggestionsPointerUp(event, \'classAnalysisKnowledgeGapSuggestions\')"></div></label>',

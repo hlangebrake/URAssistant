@@ -35,6 +35,13 @@ window.Unterrichtsassistent.ui.views.unterricht = {
     const isLiveTodosCollapsed = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.isUnterrichtLiveTodosCollapsed === "function"
       ? window.UnterrichtsassistentApp.isUnterrichtLiveTodosCollapsed()
       : false;
+    const isLiveManageMode = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.isUnterrichtLiveManageMode === "function"
+      ? window.UnterrichtsassistentApp.isUnterrichtLiveManageMode()
+      : false;
+    const liveEnabledTools = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getUnterrichtLiveEnabledTools === "function"
+      ? window.UnterrichtsassistentApp.getUnterrichtLiveEnabledTools()
+      : {};
+    const evidenceTools = Array.isArray(snapshot.evidenceTools) ? snapshot.evidenceTools : [];
     const activeRoom = activeClass ? service.getRelevantRoomForClass(activeClass.id, referenceDate) : "";
     const currentSeatOrder = activeClass && typeof service.getCurrentSeatOrder === "function"
       ? service.getCurrentSeatOrder(activeClass.id, activeRoom, referenceDate)
@@ -1196,6 +1203,10 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         : "unterricht-seatplan-action";
     }
 
+    function isToolEnabled(toolKey) {
+      return liveEnabledTools[String(toolKey || "").trim()] !== false;
+    }
+
     function getRotationButtonClass() {
       return isSeatPlanRotated
         ? "unterricht-seatplan-action unterricht-seatplan-action--rotation is-active"
@@ -1246,13 +1257,16 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       const assessmentStateClass = assessmentStatus.hasCurrentAssessment
         ? "is-positive"
         : (assessmentStatus.isOlderThanFourteenDays ? "is-overdue" : "is-empty");
-      const isAttendanceInteractive = Boolean(student && currentClassLesson && toolMode === "attendance");
-      const isHomeworkInteractive = Boolean(student && currentClassLesson && toolMode === "homework" && attendanceState !== "absent");
-      const isWarningInteractive = Boolean(student && currentClassLesson && toolMode === "warning" && attendanceState !== "absent");
-      const isAssessmentInteractive = Boolean(student && currentClassLesson && toolMode === "assessment" && attendanceState !== "absent");
-      const isMathObservationInteractive = Boolean(student && currentClassLesson && toolMode === "mathObservation" && attendanceState !== "absent");
-      const isKnowledgeGapInteractive = Boolean(student && currentClassLesson && toolMode === "knowledgeGap" && attendanceState !== "absent");
-      const isInteractive = isAttendanceInteractive || isHomeworkInteractive || isWarningInteractive || isAssessmentInteractive || isMathObservationInteractive || isKnowledgeGapInteractive;
+      const isActiveToolEnabled = isToolEnabled(toolMode);
+      const isAttendanceInteractive = Boolean(isActiveToolEnabled && student && currentClassLesson && toolMode === "attendance");
+      const isHomeworkInteractive = Boolean(isActiveToolEnabled && student && currentClassLesson && toolMode === "homework" && attendanceState !== "absent");
+      const isWarningInteractive = Boolean(isActiveToolEnabled && student && currentClassLesson && toolMode === "warning" && attendanceState !== "absent");
+      const isAssessmentInteractive = Boolean(isActiveToolEnabled && student && currentClassLesson && toolMode === "assessment" && attendanceState !== "absent");
+      const isMathObservationInteractive = Boolean(isActiveToolEnabled && student && currentClassLesson && toolMode === "mathObservation" && attendanceState !== "absent");
+      const isKnowledgeGapInteractive = Boolean(isActiveToolEnabled && student && currentClassLesson && toolMode === "knowledgeGap" && attendanceState !== "absent");
+      const activeEvidenceToolId = String(toolMode || "").indexOf("evidence:") === 0 ? String(toolMode).slice(9) : "";
+      const isEvidenceInteractive = Boolean(isActiveToolEnabled && student && currentClassLesson && activeEvidenceToolId && attendanceState !== "absent");
+      const isInteractive = isAttendanceInteractive || isHomeworkInteractive || isWarningInteractive || isAssessmentInteractive || isMathObservationInteractive || isKnowledgeGapInteractive || isEvidenceInteractive;
       const onclick = isAttendanceInteractive
         ? ' onclick="return window.UnterrichtsassistentApp.handleUnterrichtSeatClick(\'' + escapeValue(student.id) + '\', \'' + escapeValue(currentClassLesson.id) + '\', \'' + escapeValue(currentClassLesson.startTime || "") + '\', \'' + escapeValue(currentClassLesson.room || "") + '\')"'
         : "";
@@ -1270,6 +1284,9 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         : "";
       const mathObservationPointerdown = isMathObservationInteractive
         ? ' onpointerdown="return window.UnterrichtsassistentApp.startUnterrichtMathObservationPointer(event, \'' + escapeValue(student.id) + '\', \'' + escapeValue(currentClassLesson.id) + '\', \'' + escapeValue(currentClassLesson.startTime || "") + '\', \'' + escapeValue(currentClassLesson.room || "") + '\')" oncontextmenu="return false"'
+        : "";
+      const evidencePointerdown = isEvidenceInteractive
+        ? ' onpointerdown="return window.UnterrichtsassistentApp.startUnterrichtEvidencePointer(event, \'' + escapeValue(student.id) + '\', \'' + escapeValue(currentClassLesson.id) + '\', \'' + escapeValue(currentClassLesson.startTime || "") + '\', \'' + escapeValue(currentClassLesson.room || "") + '\', \'' + escapeValue(activeEvidenceToolId) + '\')" oncontextmenu="return false"'
         : "";
       const mathObservationDataAttributes = isMathObservationInteractive
         ? ' data-math-observation-seat="true" data-math-observation-student-id="' + escapeValue(student.id) + '" data-math-observation-lesson-id="' + escapeValue(currentClassLesson.id) + '" data-math-observation-lesson-start-time="' + escapeValue(currentClassLesson.startTime || "") + '" data-math-observation-lesson-room="' + escapeValue(currentClassLesson.room || "") + '"'
@@ -1314,7 +1331,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         classes.push(toolMode === "attendance" ? "is-absent" : "is-muted");
       }
 
-      return '<div class="' + classes.join(" ") + '"' + mathObservationDataAttributes + onclick + knowledgeGapClick + pointerdown + warningPointerdown + assessmentPointerdown + mathObservationPointerdown + '><div class="unterricht-seatplan-slot__content">' + assessmentBadge + (student ? '<span class="seat-order-desk__label seat-order-desk__label--readonly">' + escapeValue(getStudentShortLabel(student)) + "</span>" : "") + symbolRow + "</div>" + mathObservationHitbox + "</div>";
+      return '<div class="' + classes.join(" ") + '"' + mathObservationDataAttributes + onclick + knowledgeGapClick + pointerdown + warningPointerdown + assessmentPointerdown + mathObservationPointerdown + evidencePointerdown + '><div class="unterricht-seatplan-slot__content">' + assessmentBadge + (student ? '<span class="seat-order-desk__label seat-order-desk__label--readonly">' + escapeValue(getStudentShortLabel(student)) + "</span>" : "") + symbolRow + "</div>" + mathObservationHitbox + "</div>";
     }
 
     function getDeskItemMetrics(item) {
@@ -1486,6 +1503,25 @@ window.Unterrichtsassistent.ui.views.unterricht = {
           }
         }).join("") + '</div>'
         : "";
+      const toolButtons = [
+        isToolEnabled("attendance") ? '<button class="' + getToolButtonClass("attendance") + '" type="button" aria-label="Anwesenheit markieren" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'attendance\')">&#10003;</button>' : "",
+        isToolEnabled("homework") ? '<button class="' + getToolButtonClass("homework") + '" type="button" aria-label="Hausaufgabe markieren" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'homework\')">H</button>' : "",
+        isToolEnabled("warning") ? '<button class="' + getToolButtonClass("warning") + '" type="button" aria-label="Warnung vergeben" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'warning\')">&#9888;</button>' : "",
+        isToolEnabled("assessment") ? '<button class="' + getToolButtonClass("assessment") + '" type="button" aria-label="Bewertung oeffnen" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'assessment\')">&#128269;</button>' : "",
+        isToolEnabled("mathObservation") ? '<button class="' + getToolButtonClass("mathObservation") + '" type="button" aria-label="Mathematik-Beobachtung erfassen" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'mathObservation\')">K</button>' : "",
+        isToolEnabled("knowledgeGap") ? '<button class="' + getToolButtonClass("knowledgeGap") + '" type="button" aria-label="Wissensluecke erfassen" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'knowledgeGap\')">&#128214;</button>' : "",
+        evidenceTools.map(function (tool) {
+          const toolId = String(tool && tool.id || "").trim();
+          const toolKey = "evidence:" + toolId;
+
+          if (!toolId || !isToolEnabled(toolKey)) {
+            return "";
+          }
+
+          return '<button class="' + getToolButtonClass(toolKey) + '" type="button" aria-label="' + escapeValue(String(tool && tool.titel || "Bewertungswerkzeug")) + '" title="' + escapeValue(String(tool && tool.titel || "Bewertungswerkzeug")) + '" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'' + escapeValue(toolKey) + '\')">' + escapeValue(String(tool && tool.symbol || "").trim() || "E") + '</button>';
+        }).join(""),
+        '<button class="' + getRotationButtonClass() + '" type="button" aria-label="Sitzplan um 180 Grad drehen" aria-pressed="' + (isSeatPlanRotated ? "true" : "false") + '" onclick="return window.UnterrichtsassistentApp.toggleUnterrichtSeatPlanRotation()">180&deg;</button>'
+      ].join("");
 
       if (!activeClass) {
         return '<div class="seat-plan-placeholder">Noch keine aktive Lerngruppe vorhanden.</div>';
@@ -1543,13 +1579,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         '</div>',
         '</div>',
         '<div class="unterricht-seatplan-actions" aria-label="Unterrichtsaktionen">',
-        '<button class="' + getToolButtonClass("attendance") + '" type="button" aria-label="Anwesenheit markieren" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'attendance\')">&#10003;</button>',
-        '<button class="' + getToolButtonClass("homework") + '" type="button" aria-label="Hausaufgabe markieren" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'homework\')">H</button>',
-        '<button class="' + getToolButtonClass("warning") + '" type="button" aria-label="Warnung vergeben" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'warning\')">&#9888;</button>',
-        '<button class="' + getToolButtonClass("assessment") + '" type="button" aria-label="Bewertung oeffnen" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'assessment\')">&#128269;</button>',
-        '<button class="' + getToolButtonClass("mathObservation") + '" type="button" aria-label="Mathematik-Beobachtung erfassen" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'mathObservation\')">K</button>',
-        '<button class="' + getToolButtonClass("knowledgeGap") + '" type="button" aria-label="Wissensluecke erfassen" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'knowledgeGap\')">&#128214;</button>',
-        '<button class="' + getRotationButtonClass() + '" type="button" aria-label="Sitzplan um 180 Grad drehen" aria-pressed="' + (isSeatPlanRotated ? "true" : "false") + '" onclick="return window.UnterrichtsassistentApp.toggleUnterrichtSeatPlanRotation()">180&deg;</button>',
+        toolButtons,
         '</div>',
         '</div>',
         '</div>',
@@ -2440,6 +2470,35 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       ].join("");
     }
 
+    function renderLiveToolManagementPanel() {
+      const standardTools = [
+        { key: "attendance", label: "Anwesenheit", symbol: "OK" },
+        { key: "homework", label: "Hausaufgaben", symbol: "H" },
+        { key: "warning", label: "Warnung", symbol: "!" },
+        { key: "assessment", label: "Bewertung", symbol: "Lupe" },
+        { key: "mathObservation", label: "Mathematik-Beobachtung", symbol: "K" },
+        { key: "knowledgeGap", label: "Wissensluecke", symbol: "Buch" }
+      ];
+      const rows = standardTools.map(function (tool) {
+        return '<label class="unterricht-live-tool-manager__row"><input type="checkbox"' + (isToolEnabled(tool.key) ? ' checked' : '') + ' onchange="return window.UnterrichtsassistentApp.updateUnterrichtLiveToolEnabled(\'' + escapeValue(tool.key) + '\', this.checked)"><span class="unterricht-live-tool-manager__symbol">' + escapeValue(tool.symbol) + '</span><span>' + escapeValue(tool.label) + '</span></label>';
+      }).join("") + evidenceTools.map(function (tool) {
+        const toolId = String(tool && tool.id || "").trim();
+        const toolKey = "evidence:" + toolId;
+
+        if (!toolId) {
+          return "";
+        }
+
+        return '<label class="unterricht-live-tool-manager__row"><input type="checkbox"' + (isToolEnabled(toolKey) ? ' checked' : '') + ' onchange="return window.UnterrichtsassistentApp.updateUnterrichtLiveToolEnabled(\'' + escapeValue(toolKey) + '\', this.checked)"><span class="unterricht-live-tool-manager__symbol">' + escapeValue(String(tool && tool.symbol || "").trim() || "E") + '</span><span>' + escapeValue(String(tool && tool.titel || "").trim() || "Bewertungswerkzeug") + '</span></label>';
+      }).join("");
+
+      if (!isLiveManageMode) {
+        return "";
+      }
+
+      return '<article class="panel unterricht-live-tool-manager"><h2 class="unterricht-live-tool-manager__title">Live-Werkzeuge</h2><div class="unterricht-live-tool-manager__rows">' + rows + '</div></article>';
+    }
+
     function buildLiveTodoPanelHeader(activeClassDisplayName, count) {
       return [
         '<button class="unterricht-live-todos__header-toggle" type="button" aria-expanded="', isLiveTodosCollapsed ? 'false' : 'true', '" onclick="return window.UnterrichtsassistentApp.toggleUnterrichtLiveTodosCollapsed()">',
@@ -2751,6 +2810,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         '<div class="unterricht-layout unterricht-layout--live' + (liveLessonFlowData ? ' has-live-flow' : '') + '">',
         renderLiveNotice(),
         '<div class="unterricht-layout__live-main">',
+        renderLiveToolManagementPanel(),
         '<article class="panel unterricht-layout__seatplan unterricht-layout__seatplan--full">',
         renderLivePhaseControls(liveLessonFlowData),
         renderCompactSeatPlan(),
