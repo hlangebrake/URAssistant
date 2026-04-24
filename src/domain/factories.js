@@ -131,16 +131,67 @@ function serializeDomainSnapshot(snapshot) {
   }
 
   function cloneEvidenceTools(items) {
+    function cloneEvidenceLevel(level) {
+      const source = level && typeof level === "object" ? level : {};
+      const layout = source.layout && typeof source.layout === "object" ? source.layout : {};
+      const positions = layout.aspectPositions && typeof layout.aspectPositions === "object" ? layout.aspectPositions : {};
+      const aspectSizes = layout.aspectSizes && typeof layout.aspectSizes === "object" ? layout.aspectSizes : {};
+      const stageSizes = layout.stageSizes && typeof layout.stageSizes === "object" ? layout.stageSizes : {};
+      const nextPositions = {};
+      const nextAspectSizes = {};
+      const nextStageSizes = {};
+
+      Object.keys(positions).forEach(function (aspectId) {
+        const position = positions[aspectId] && typeof positions[aspectId] === "object" ? positions[aspectId] : {};
+
+        nextPositions[aspectId] = {
+          x: Number(position.x) || 0,
+          y: Number(position.y) || 0
+        };
+      });
+      Object.keys(aspectSizes).forEach(function (aspectId) {
+        const size = aspectSizes[aspectId] && typeof aspectSizes[aspectId] === "object" ? aspectSizes[aspectId] : {};
+
+        nextAspectSizes[aspectId] = {
+          width: Math.max(24, Number(size.width) || 150),
+          height: Math.max(18, Number(size.height) || 22)
+        };
+      });
+      Object.keys(stageSizes).forEach(function (stageId) {
+        const size = stageSizes[stageId] && typeof stageSizes[stageId] === "object" ? stageSizes[stageId] : {};
+
+        nextStageSizes[stageId] = {
+          width: Math.max(24, Number(size.width) || 118),
+          height: Math.max(18, Number(size.height) || 20)
+        };
+      });
+
+      return {
+        ebenenAspekte: Array.isArray(source.ebenenAspekte) ? source.ebenenAspekte.slice() : [],
+        layout: {
+          aspectPositions: nextPositions,
+          aspectSizes: nextAspectSizes,
+          stageSizes: nextStageSizes,
+          boundingBox: layout.boundingBox && typeof layout.boundingBox === "object"
+            ? {
+                x: Number(layout.boundingBox.x) || 0,
+                y: Number(layout.boundingBox.y) || 0,
+                width: Math.max(0, Number(layout.boundingBox.width) || 0),
+                height: Math.max(0, Number(layout.boundingBox.height) || 0)
+              }
+            : { x: 0, y: 0, width: 0, height: 0 }
+        }
+      };
+    }
+
     return cloneItems(items || [], ["id", "titel", "symbol", "faecher", "jahrgaenge", "aspekte", "hauptebene"]).map(function (item) {
       return Object.assign({}, item, {
         faecher: Array.isArray(item.faecher) ? item.faecher.slice() : [],
         jahrgaenge: Array.isArray(item.jahrgaenge) ? item.jahrgaenge.slice() : [],
         aspekte: Array.isArray(item.aspekte)
           ? item.aspekte.map(function (aspect) {
-              return Object.assign({}, aspect, {
-                folgeEbene: aspect && aspect.folgeEbene && typeof aspect.folgeEbene === "object"
-                  ? { ebenenAspekte: Array.isArray(aspect.folgeEbene.ebenenAspekte) ? aspect.folgeEbene.ebenenAspekte.slice() : [] }
-                  : { ebenenAspekte: [] },
+            return Object.assign({}, aspect, {
+                folgeEbene: cloneEvidenceLevel(aspect && aspect.folgeEbene),
                 aspektDimensionen: Array.isArray(aspect && aspect.aspektDimensionen)
                   ? aspect.aspektDimensionen.map(function (dimension) {
                       return Object.assign({}, dimension, {
@@ -155,9 +206,7 @@ function serializeDomainSnapshot(snapshot) {
               });
             })
           : [],
-        hauptebene: item.hauptebene && typeof item.hauptebene === "object"
-          ? { ebenenAspekte: Array.isArray(item.hauptebene.ebenenAspekte) ? item.hauptebene.ebenenAspekte.slice() : [] }
-          : { ebenenAspekte: [] }
+        hauptebene: cloneEvidenceLevel(item.hauptebene)
       });
     });
   }

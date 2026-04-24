@@ -235,11 +235,72 @@ class EvidenceTool {
       const rawItems = Array.isArray(source.ebenenAspekte)
         ? source.ebenenAspekte
         : (Array.isArray(source.aspectIds) ? source.aspectIds : []);
+      const rawLayout = source.layout && typeof source.layout === "object" ? source.layout : {};
+      const rawPositions = rawLayout.aspectPositions && typeof rawLayout.aspectPositions === "object"
+        ? rawLayout.aspectPositions
+        : {};
+      const rawAspectSizes = rawLayout.aspectSizes && typeof rawLayout.aspectSizes === "object"
+        ? rawLayout.aspectSizes
+        : {};
+      const rawStageSizes = rawLayout.stageSizes && typeof rawLayout.stageSizes === "object"
+        ? rawLayout.stageSizes
+        : {};
+      const aspectPositions = {};
+      const aspectSizes = {};
+      const stageSizes = {};
+      let rawBoundingBox = rawLayout.boundingBox && typeof rawLayout.boundingBox === "object"
+        ? rawLayout.boundingBox
+        : null;
+
+      const ebenenAspekte = rawItems.map(function (item) {
+          return String(item && typeof item === "object" ? item.id : item || "").trim();
+        }).filter(Boolean);
+
+      ebenenAspekte.forEach(function (aspectId) {
+        const rawPosition = rawPositions[aspectId] && typeof rawPositions[aspectId] === "object"
+          ? rawPositions[aspectId]
+          : {};
+        const x = Number(rawPosition.x);
+        const y = Number(rawPosition.y);
+
+        aspectPositions[aspectId] = {
+          x: Number.isFinite(x) ? x : 0,
+          y: Number.isFinite(y) ? y : 0
+        };
+        if (rawAspectSizes[aspectId] && typeof rawAspectSizes[aspectId] === "object") {
+          aspectSizes[aspectId] = {
+            width: Math.max(24, Number.isFinite(Number(rawAspectSizes[aspectId].width)) ? Number(rawAspectSizes[aspectId].width) : 150),
+            height: Math.max(18, Number.isFinite(Number(rawAspectSizes[aspectId].height)) ? Number(rawAspectSizes[aspectId].height) : 22)
+          };
+        }
+      });
+
+      Object.keys(rawStageSizes).forEach(function (stageId) {
+        const size = rawStageSizes[stageId] && typeof rawStageSizes[stageId] === "object" ? rawStageSizes[stageId] : {};
+
+        stageSizes[stageId] = {
+          width: Math.max(24, Number.isFinite(Number(size.width)) ? Number(size.width) : 118),
+          height: Math.max(18, Number.isFinite(Number(size.height)) ? Number(size.height) : 20)
+        };
+      });
+
+      rawBoundingBox = rawBoundingBox
+        ? {
+            x: Number.isFinite(Number(rawBoundingBox.x)) ? Number(rawBoundingBox.x) : 0,
+            y: Number.isFinite(Number(rawBoundingBox.y)) ? Number(rawBoundingBox.y) : 0,
+            width: Math.max(0, Number.isFinite(Number(rawBoundingBox.width)) ? Number(rawBoundingBox.width) : 0),
+            height: Math.max(0, Number.isFinite(Number(rawBoundingBox.height)) ? Number(rawBoundingBox.height) : 0)
+          }
+        : { x: 0, y: 0, width: 0, height: 0 };
 
       return {
-        ebenenAspekte: rawItems.map(function (item) {
-          return String(item && typeof item === "object" ? item.id : item || "").trim();
-        }).filter(Boolean)
+        ebenenAspekte: ebenenAspekte,
+        layout: {
+          aspectPositions: aspectPositions,
+          aspectSizes: aspectSizes,
+          stageSizes: stageSizes,
+          boundingBox: rawBoundingBox
+        }
       };
     }
 

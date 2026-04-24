@@ -2884,6 +2884,9 @@ window.Unterrichtsassistent.ui.views.bewertung = {
       const expandedNodeIds = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getEvidenceToolExpandedNodeIds === "function"
         ? window.UnterrichtsassistentApp.getEvidenceToolExpandedNodeIds()
         : [];
+      const levelDesignDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveEvidenceLevelDesignDraft === "function"
+        ? window.UnterrichtsassistentApp.getActiveEvidenceLevelDesignDraft()
+        : null;
 
       function isExpanded(nodeId) {
         return expandedNodeIds.indexOf(String(nodeId || "").trim()) >= 0;
@@ -2899,6 +2902,215 @@ window.Unterrichtsassistent.ui.views.bewertung = {
 
       function itemTitle(item, fallback) {
         return String(item && (item.titel || item.bezeichnung) || "").trim() || fallback;
+      }
+
+      function getDefaultDesignerRectSize(textValue) {
+        const text = String(textValue || "").trim();
+        const longestLine = text.split(/\s+/).reduce(function (longest, word) {
+          return Math.max(longest, String(word || "").length);
+        }, Math.min(text.length, 18));
+
+        return {
+          width: Math.max(24, Math.min(150, Math.ceil((longestLine || 1) * 6.2) + 8)),
+          height: 22
+        };
+      }
+
+      function getLevelForDraft(draft) {
+        const levelType = String(draft && draft.levelType || "").trim();
+        const ownerAspect = levelType === "folge" ? getAspectById(activeTool, draft && draft.ownerAspectId) : null;
+
+        return levelType === "folge" && ownerAspect
+          ? (ownerAspect.folgeEbene || { ebenenAspekte: [] })
+          : (activeTool && activeTool.hauptebene || { ebenenAspekte: [] });
+      }
+
+      function calculateLevelDesignBoundingBox(level, positions) {
+        const aspectSizes = levelDesignDraft && levelDesignDraft.aspectSizes && typeof levelDesignDraft.aspectSizes === "object" ? levelDesignDraft.aspectSizes : {};
+        const stageSizes = levelDesignDraft && levelDesignDraft.stageSizes && typeof levelDesignDraft.stageSizes === "object" ? levelDesignDraft.stageSizes : {};
+        const aspectIds = Array.isArray(level && level.ebenenAspekte) ? level.ebenenAspekte : [];
+        let minX = 0;
+        let minY = 0;
+        let maxX = 0;
+        let maxY = 0;
+        let hasBox = false;
+
+        function includeRect(x, y, width, height) {
+          if (!hasBox) {
+            minX = x;
+            minY = y;
+            maxX = x + width;
+            maxY = y + height;
+            hasBox = true;
+            return;
+          }
+
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x + width);
+          maxY = Math.max(maxY, y + height);
+        }
+
+        aspectIds.forEach(function (aspectId) {
+          const aspect = getAspectById(activeTool, aspectId);
+          const position = positions && positions[aspectId] ? positions[aspectId] : { x: 0, y: 0 };
+          const aspectSize = aspectSizes[aspectId] || {};
+          const defaultAspectSize = getDefaultDesignerRectSize(aspect && aspect.titel || "Aspekt");
+          const x = Number(position.x) || 0;
+          const y = Number(position.y) || 0;
+          const aspectWidth = Math.max(24, Number(aspectSize.width) || defaultAspectSize.width);
+          const aspectHeight = Math.max(18, Number(aspectSize.height) || defaultAspectSize.height);
+          const directionSizes = [
+            { width: aspectWidth, height: 0 },
+            { width: 0, height: aspectHeight },
+            { width: aspectWidth, height: 0 },
+            { width: 0, height: aspectHeight }
+          ];
+
+          includeRect(x, y, aspectWidth, aspectHeight);
+
+          (Array.isArray(aspect && aspect.aspektDimensionen) ? aspect.aspektDimensionen : []).forEach(function (dimension, dimensionIndex) {
+            const stages = Array.isArray(dimension && dimension.stufen) ? dimension.stufen : [];
+            const direction = dimensionIndex % 4;
+            let dimensionWidth = 0;
+            let dimensionHeight = 0;
+
+            if (!stages.length) {
+              return;
+            }
+
+            stages.forEach(function (stage) {
+              const stageId = String(stage && stage.id || "").trim();
+              const stageSize = stageSizes[stageId] || {};
+              const stageWidth = Math.max(24, Number(stageSize.width) || aspectWidth);
+              const stageHeight = Math.max(18, Number(stageSize.height) || aspectHeight);
+
+            if (direction === 0 || direction === 2) {
+                dimensionHeight += stageHeight;
+                dimensionWidth = Math.max(dimensionWidth, stageWidth);
+            } else {
+                dimensionWidth += stageWidth;
+                dimensionHeight = Math.max(dimensionHeight, stageHeight);
+            }
+            });
+
+            if (direction === 0 || direction === 2) {
+              directionSizes[direction].height += dimensionHeight;
+              directionSizes[direction].width = Math.max(directionSizes[direction].width, dimensionWidth);
+            } else {
+              directionSizes[direction].width += dimensionWidth;
+              directionSizes[direction].height = Math.max(directionSizes[direction].height, dimensionHeight);
+            }
+          });
+
+          if (directionSizes[0].height) {
+            includeRect(x, y - directionSizes[0].height, directionSizes[0].width, directionSizes[0].height);
+          }
+          if (directionSizes[1].width) {
+            includeRect(x + aspectWidth, y, directionSizes[1].width, directionSizes[1].height);
+          }
+          if (directionSizes[2].height) {
+            includeRect(x, y + aspectHeight, directionSizes[2].width, directionSizes[2].height);
+          }
+          if (directionSizes[3].width) {
+            includeRect(x - directionSizes[3].width, y, directionSizes[3].width, directionSizes[3].height);
+          }
+        });
+
+        return hasBox
+          ? { x: Math.round(minX), y: Math.round(minY), width: Math.round(maxX - minX), height: Math.round(maxY - minY) }
+          : { x: 0, y: 0, width: 0, height: 0 };
+      }
+
+      function renderLevelDesigner(draft) {
+        const level = getLevelForDraft(draft);
+        const positions = draft && draft.aspectPositions && typeof draft.aspectPositions === "object" ? draft.aspectPositions : {};
+        const aspectSizes = draft && draft.aspectSizes && typeof draft.aspectSizes === "object" ? draft.aspectSizes : {};
+        const stageSizes = draft && draft.stageSizes && typeof draft.stageSizes === "object" ? draft.stageSizes : {};
+        const aspectIds = Array.isArray(level && level.ebenenAspekte) ? level.ebenenAspekte : [];
+        const boundingBox = calculateLevelDesignBoundingBox(level, positions);
+        const levelLabel = String(draft && draft.levelType || "") === "folge" ? "FolgeEbene" : "Hauptebene";
+
+        function renderDimensionStrip(aspect, directionIndex) {
+          const ownerAspectId = String(aspect && aspect.id || "").trim();
+          const ownerAspectSize = aspectSizes[ownerAspectId] || {};
+          const defaultOwnerSize = getDefaultDesignerRectSize(aspect && aspect.titel || "Aspekt");
+          const ownerWidth = Math.max(24, Number(ownerAspectSize.width) || defaultOwnerSize.width);
+          const ownerHeight = Math.max(18, Number(ownerAspectSize.height) || defaultOwnerSize.height);
+          const dimensions = Array.isArray(aspect && aspect.aspektDimensionen) ? aspect.aspektDimensionen : [];
+          const strips = dimensions.map(function (dimension, dimensionIndex) {
+            const stages = Array.isArray(dimension && dimension.stufen) ? dimension.stufen : [];
+            const direction = dimensionIndex % 4;
+
+            if (direction !== directionIndex || !stages.length) {
+              return "";
+            }
+
+            return [
+              '<div class="evidence-level-designer__dimension evidence-level-designer__dimension--', String(direction), '">',
+              stages.map(function (stage) {
+                const stageId = String(stage && stage.id || "").trim();
+                const stageSize = stageSizes[stageId] || {};
+                const stageWidth = Math.max(24, Number(stageSize.width) || ownerWidth);
+                const stageHeight = Math.max(18, Number(stageSize.height) || ownerHeight);
+
+                return [
+                  '<div class="evidence-level-designer__stage" style="width: ', escapeValue(String(stageWidth)), 'px; height: ', escapeValue(String(stageHeight)), 'px;">',
+                  escapeValue(itemTitle(stage, "Stufe")),
+                  '<span class="evidence-level-designer__resize evidence-level-designer__resize--right" onpointerdown="return window.UnterrichtsassistentApp.startEvidenceLevelDesignerResize(event, \'stage\', \'', escapeValue(stageId), '\', \'right\')" onpointermove="return window.UnterrichtsassistentApp.moveEvidenceLevelDesignerResize(event)" onpointerup="return window.UnterrichtsassistentApp.endEvidenceLevelDesignerResize(event)" onpointercancel="return window.UnterrichtsassistentApp.endEvidenceLevelDesignerResize(event)"></span>',
+                  '<span class="evidence-level-designer__resize evidence-level-designer__resize--bottom" onpointerdown="return window.UnterrichtsassistentApp.startEvidenceLevelDesignerResize(event, \'stage\', \'', escapeValue(stageId), '\', \'bottom\')" onpointermove="return window.UnterrichtsassistentApp.moveEvidenceLevelDesignerResize(event)" onpointerup="return window.UnterrichtsassistentApp.endEvidenceLevelDesignerResize(event)" onpointercancel="return window.UnterrichtsassistentApp.endEvidenceLevelDesignerResize(event)"></span>',
+                  '<span class="evidence-level-designer__resize evidence-level-designer__resize--corner" onpointerdown="return window.UnterrichtsassistentApp.startEvidenceLevelDesignerResize(event, \'stage\', \'', escapeValue(stageId), '\', \'corner\')" onpointermove="return window.UnterrichtsassistentApp.moveEvidenceLevelDesignerResize(event)" onpointerup="return window.UnterrichtsassistentApp.endEvidenceLevelDesignerResize(event)" onpointercancel="return window.UnterrichtsassistentApp.endEvidenceLevelDesignerResize(event)"></span>',
+                  '</div>'
+                ].join("");
+              }).join(""),
+              '</div>'
+            ].join("");
+          }).join("");
+
+          return strips;
+        }
+
+        const aspectHtml = aspectIds.map(function (aspectId, index) {
+          const aspect = getAspectById(activeTool, aspectId);
+          const position = positions[aspectId] || { x: Math.round((index - ((aspectIds.length - 1) / 2)) * 170), y: 0 };
+          const aspectSize = aspectSizes[aspectId] || {};
+          const defaultAspectSize = getDefaultDesignerRectSize(aspect && aspect.titel || "Aspekt");
+          const aspectWidth = Math.max(24, Number(aspectSize.width) || defaultAspectSize.width);
+          const aspectHeight = Math.max(18, Number(aspectSize.height) || defaultAspectSize.height);
+          const isOpen = String(draft && draft.openAspectId || "").trim() === String(aspectId || "").trim();
+
+          return [
+            '<div class="evidence-level-designer__aspect-wrap', isOpen ? ' is-open' : '', '" style="left: calc(50% + ', escapeValue(String(Math.round(Number(position.x) || 0))), 'px); top: calc(50% + ', escapeValue(String(Math.round(Number(position.y) || 0))), 'px); width: ', escapeValue(String(aspectWidth)), 'px; height: ', escapeValue(String(aspectHeight)), 'px;" onpointerdown="return window.UnterrichtsassistentApp.startEvidenceLevelDesignerDrag(event, \'', escapeValue(aspectId), '\')" onpointermove="return window.UnterrichtsassistentApp.moveEvidenceLevelDesignerDrag(event)" onpointerup="return window.UnterrichtsassistentApp.endEvidenceLevelDesignerDrag(event)" onpointercancel="return window.UnterrichtsassistentApp.endEvidenceLevelDesignerDrag(event)">',
+            isOpen ? '<div class="evidence-level-designer__dimension-zone evidence-level-designer__dimension-zone--top">' + renderDimensionStrip(aspect, 0) + '</div>' : '',
+            isOpen ? '<div class="evidence-level-designer__dimension-zone evidence-level-designer__dimension-zone--right">' + renderDimensionStrip(aspect, 1) + '</div>' : '',
+            isOpen ? '<div class="evidence-level-designer__dimension-zone evidence-level-designer__dimension-zone--bottom">' + renderDimensionStrip(aspect, 2) + '</div>' : '',
+            isOpen ? '<div class="evidence-level-designer__dimension-zone evidence-level-designer__dimension-zone--left">' + renderDimensionStrip(aspect, 3) + '</div>' : '',
+            '<button class="evidence-level-designer__aspect" type="button" style="width: ', escapeValue(String(aspectWidth)), 'px; height: ', escapeValue(String(aspectHeight)), 'px;" onclick="return window.UnterrichtsassistentApp.toggleEvidenceLevelDesignerAspect(\'', escapeValue(aspectId), '\')">',
+            escapeValue(itemTitle(aspect, "Aspekt")),
+            '</button>',
+            '<span class="evidence-level-designer__resize evidence-level-designer__resize--right" onpointerdown="return window.UnterrichtsassistentApp.startEvidenceLevelDesignerResize(event, \'aspect\', \'', escapeValue(aspectId), '\', \'right\')" onpointermove="return window.UnterrichtsassistentApp.moveEvidenceLevelDesignerResize(event)" onpointerup="return window.UnterrichtsassistentApp.endEvidenceLevelDesignerResize(event)" onpointercancel="return window.UnterrichtsassistentApp.endEvidenceLevelDesignerResize(event)"></span>',
+            '<span class="evidence-level-designer__resize evidence-level-designer__resize--bottom" onpointerdown="return window.UnterrichtsassistentApp.startEvidenceLevelDesignerResize(event, \'aspect\', \'', escapeValue(aspectId), '\', \'bottom\')" onpointermove="return window.UnterrichtsassistentApp.moveEvidenceLevelDesignerResize(event)" onpointerup="return window.UnterrichtsassistentApp.endEvidenceLevelDesignerResize(event)" onpointercancel="return window.UnterrichtsassistentApp.endEvidenceLevelDesignerResize(event)"></span>',
+            '<span class="evidence-level-designer__resize evidence-level-designer__resize--corner" onpointerdown="return window.UnterrichtsassistentApp.startEvidenceLevelDesignerResize(event, \'aspect\', \'', escapeValue(aspectId), '\', \'corner\')" onpointermove="return window.UnterrichtsassistentApp.moveEvidenceLevelDesignerResize(event)" onpointerup="return window.UnterrichtsassistentApp.endEvidenceLevelDesignerResize(event)" onpointercancel="return window.UnterrichtsassistentApp.endEvidenceLevelDesignerResize(event)"></span>',
+            '</div>'
+          ].join("");
+        }).join("");
+
+        return [
+          '<div class="evidence-level-designer">',
+          '<div class="evidence-level-designer__topbar">',
+          '<div><h3 class="bewertung-editor__title">Ebenengestaltung</h3><p class="bewertung-editor__meta">', escapeValue(levelLabel), '</p></div>',
+          '<div class="evidence-level-designer__actions">',
+          '<button class="evidence-level-designer__icon-button evidence-level-designer__icon-button--danger" type="button" aria-label="Abbrechen" title="Abbrechen" onclick="return window.UnterrichtsassistentApp.cancelEvidenceLevelDesigner()">x</button>',
+          '<button class="evidence-level-designer__icon-button" type="button" aria-label="Bestaetigen" title="Bestaetigen" onclick="return window.UnterrichtsassistentApp.confirmEvidenceLevelDesigner()">&#10003;</button>',
+          '</div>',
+          '</div>',
+          '<div class="evidence-level-designer__canvas">',
+          '<div class="evidence-level-designer__center" aria-hidden="true"></div>',
+          '<div class="evidence-level-designer__bounds" style="left: calc(50% + ', escapeValue(String(boundingBox.x)), 'px); top: calc(50% + ', escapeValue(String(boundingBox.y)), 'px); width: ', escapeValue(String(boundingBox.width)), 'px; height: ', escapeValue(String(boundingBox.height)), 'px;"></div>',
+          aspectHtml || '<div class="evidence-level-designer__empty">Diese Ebene enthaelt noch keine Aspekte.</div>',
+          '</div>',
+          '</div>'
+        ].join("");
       }
 
       function renderEditValue(label, value, scope, primaryId, secondaryId, fieldName) {
@@ -2992,7 +3204,19 @@ window.Unterrichtsassistent.ui.views.bewertung = {
             ].join("")
           : '<div class="evidence-tool-tree__empty">Alle Aspekte sind bereits enthalten.</div>';
 
-        return renderListShell(levelType + "-" + (ownerAspectId || "main"), title, itemsHtml + selectHtml, "");
+        const nodeId = levelType + "-" + (ownerAspectId || "main");
+        const expanded = isExpanded(nodeId);
+
+        return [
+          '<section class="evidence-tool-tree__node', expanded ? ' is-expanded' : '', '">',
+          '<div class="evidence-tool-tree__node-header">',
+          '<button class="evidence-tool-tree__toggle" type="button" aria-label="', expanded ? 'Einklappen' : 'Aufklappen', '" onclick="return window.UnterrichtsassistentApp.toggleEvidenceToolNode(\'', escapeValue(nodeId), '\')">', expanded ? '-' : '+', '</button>',
+          '<span class="evidence-tool-tree__node-title">', escapeValue(title), '</span>',
+          '<button class="evidence-tool-tree__edit" type="button" aria-label="Ebene gestalten" title="Ebene gestalten" onclick="return window.UnterrichtsassistentApp.openEvidenceLevelDesigner(\'', escapeValue(levelType), '\', \'', escapeValue(ownerAspectId || ""), '\')">&#9998;</button>',
+          '</div>',
+          expanded ? '<div class="evidence-tool-tree__children">' + itemsHtml + selectHtml + '</div>' : '',
+          '</section>'
+        ].join("");
       }
 
       function renderStages(aspectId, dimension) {
@@ -3059,6 +3283,10 @@ window.Unterrichtsassistent.ui.views.bewertung = {
           '</article>',
           '</div>'
         ].join("");
+      }
+
+      if (levelDesignDraft) {
+        return renderLevelDesigner(levelDesignDraft);
       }
 
       return [

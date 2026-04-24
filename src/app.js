@@ -84,6 +84,7 @@ let bewertungPlannedEvaluationsExpanded = false;
 let bewertungPlannedEvaluationDetailsExpanded = false;
 let evidenceToolExpandedNodeIds = ["root", "faecher", "jahrgaenge", "aspekte", "hauptebene"];
 let activeEvidenceToolDrag = null;
+let activeEvidenceLevelDesignDraft = null;
 let activePerformedPlannedEvaluationId = "";
 let activePerformedEvaluationStudentId = "";
 let activePerformedEvaluationStudentFilter = "alle";
@@ -10945,6 +10946,54 @@ function ensureEvidenceLevel(level) {
     return String(aspectId || "").trim();
   }).filter(Boolean);
 
+  if (!level.layout || typeof level.layout !== "object") {
+    level.layout = {
+      aspectPositions: {},
+      aspectSizes: {},
+      stageSizes: {},
+      boundingBox: { x: 0, y: 0, width: 0, height: 0 }
+    };
+  }
+
+  if (!level.layout.aspectPositions || typeof level.layout.aspectPositions !== "object") {
+    level.layout.aspectPositions = {};
+  }
+  if (!level.layout.aspectSizes || typeof level.layout.aspectSizes !== "object") {
+    level.layout.aspectSizes = {};
+  }
+  if (!level.layout.stageSizes || typeof level.layout.stageSizes !== "object") {
+    level.layout.stageSizes = {};
+  }
+
+  level.ebenenAspekte.forEach(function (aspectId, index) {
+    const rawPosition = level.layout.aspectPositions[aspectId] && typeof level.layout.aspectPositions[aspectId] === "object"
+      ? level.layout.aspectPositions[aspectId]
+      : null;
+    const defaultX = Math.round((index - ((level.ebenenAspekte.length - 1) / 2)) * 170);
+
+    level.layout.aspectPositions[aspectId] = {
+      x: rawPosition && Number.isFinite(Number(rawPosition.x)) ? Number(rawPosition.x) : defaultX,
+      y: rawPosition && Number.isFinite(Number(rawPosition.y)) ? Number(rawPosition.y) : 0
+    };
+    if (level.layout.aspectSizes[aspectId] && typeof level.layout.aspectSizes[aspectId] === "object") {
+      level.layout.aspectSizes[aspectId] = {
+        width: Math.max(24, Number(level.layout.aspectSizes[aspectId].width) || 24),
+        height: Math.max(18, Number(level.layout.aspectSizes[aspectId].height) || 22)
+      };
+    }
+  });
+
+  Object.keys(level.layout.aspectPositions).forEach(function (aspectId) {
+    if (level.ebenenAspekte.indexOf(aspectId) === -1) {
+      delete level.layout.aspectPositions[aspectId];
+      delete level.layout.aspectSizes[aspectId];
+    }
+  });
+
+  if (!level.layout.boundingBox || typeof level.layout.boundingBox !== "object") {
+    level.layout.boundingBox = { x: 0, y: 0, width: 0, height: 0 };
+  }
+
   return level;
 }
 
@@ -11582,7 +11631,13 @@ function createEvaluationSheetRecord(classId, typeValue, titleValue) {
 
 function createEvidenceLevelRecord() {
   return {
-    ebenenAspekte: []
+    ebenenAspekte: [],
+    layout: {
+      aspectPositions: {},
+      aspectSizes: {},
+      stageSizes: {},
+      boundingBox: { x: 0, y: 0, width: 0, height: 0 }
+    }
   };
 }
 
@@ -11625,7 +11680,13 @@ function createEvidenceToolRecord() {
     jahrgaenge: [],
     aspekte: [firstAspect],
     hauptebene: {
-      ebenenAspekte: [firstAspect.id]
+      ebenenAspekte: [firstAspect.id],
+      layout: {
+        aspectPositions: {},
+        aspectSizes: {},
+        stageSizes: {},
+        boundingBox: { x: 0, y: 0, width: 0, height: 0 }
+      }
     }
   };
 }
@@ -20410,6 +20471,11 @@ window.UnterrichtsassistentApp.getBewertungViewMode = function () {
 window.UnterrichtsassistentApp.getEvidenceToolExpandedNodeIds = function () {
   return evidenceToolExpandedNodeIds.slice();
 };
+window.UnterrichtsassistentApp.getActiveEvidenceLevelDesignDraft = function () {
+  return activeEvidenceLevelDesignDraft
+    ? JSON.parse(JSON.stringify(activeEvidenceLevelDesignDraft))
+    : null;
+};
 window.UnterrichtsassistentApp.getActiveEvaluationSheetDraft = function () {
   return activeEvaluationSheetDraft;
 };
@@ -20834,6 +20900,157 @@ function updateActiveEvidenceTool(mutator, forcePersist) {
   saveAndRefreshSnapshot(currentRawSnapshot, "bewertung", { forcePersist: Boolean(forcePersist) });
   return false;
 }
+function getEvidenceLevelDesignBoundingBox(tool, level, positions, aspectSizes, stageSizes) {
+  const ids = Array.isArray(level && level.ebenenAspekte) ? level.ebenenAspekte : [];
+  let minX = 0;
+  let minY = 0;
+  let maxX = 0;
+  let maxY = 0;
+  let hasBox = false;
+
+  function includeRect(x, y, width, height) {
+    if (!hasBox) {
+      minX = x;
+      minY = y;
+      maxX = x + width;
+      maxY = y + height;
+      hasBox = true;
+      return;
+    }
+
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x + width);
+    maxY = Math.max(maxY, y + height);
+  }
+
+  ids.forEach(function (aspectId) {
+    const aspect = getEvidenceAspectById(tool, aspectId);
+    const position = positions && positions[aspectId] ? positions[aspectId] : { x: 0, y: 0 };
+    const aspectSize = aspectSizes && aspectSizes[aspectId] ? aspectSizes[aspectId] : {};
+    const x = Number(position.x) || 0;
+    const y = Number(position.y) || 0;
+    const aspectWidth = Math.max(24, Number(aspectSize.width) || 150);
+    const aspectHeight = Math.max(18, Number(aspectSize.height) || 22);
+    const directionSizes = [
+      { width: aspectWidth, height: 0 },
+      { width: 0, height: aspectHeight },
+      { width: aspectWidth, height: 0 },
+      { width: 0, height: aspectHeight }
+    ];
+
+    includeRect(x, y, aspectWidth, aspectHeight);
+
+    (Array.isArray(aspect && aspect.aspektDimensionen) ? aspect.aspektDimensionen : []).forEach(function (dimension, dimensionIndex) {
+      const stages = Array.isArray(dimension && dimension.stufen) ? dimension.stufen : [];
+      const direction = dimensionIndex % 4;
+      let dimensionWidth = 0;
+      let dimensionHeight = 0;
+
+      if (!stages.length) {
+        return;
+      }
+
+      stages.forEach(function (stage) {
+        const stageId = String(stage && stage.id || "").trim();
+        const stageSize = stageSizes && stageSizes[stageId] ? stageSizes[stageId] : {};
+        const stageWidth = Math.max(24, Number(stageSize.width) || aspectWidth);
+        const stageHeight = Math.max(18, Number(stageSize.height) || aspectHeight);
+
+        if (direction === 0 || direction === 2) {
+          dimensionHeight += stageHeight;
+          dimensionWidth = Math.max(dimensionWidth, stageWidth);
+      } else {
+          dimensionWidth += stageWidth;
+          dimensionHeight = Math.max(dimensionHeight, stageHeight);
+      }
+      });
+
+      if (direction === 0 || direction === 2) {
+        directionSizes[direction].height += dimensionHeight;
+        directionSizes[direction].width = Math.max(directionSizes[direction].width, dimensionWidth);
+      } else {
+        directionSizes[direction].width += dimensionWidth;
+        directionSizes[direction].height = Math.max(directionSizes[direction].height, dimensionHeight);
+      }
+    });
+
+    if (directionSizes[0].height) {
+      includeRect(x, y - directionSizes[0].height, directionSizes[0].width, directionSizes[0].height);
+    }
+    if (directionSizes[1].width) {
+      includeRect(x + aspectWidth, y, directionSizes[1].width, directionSizes[1].height);
+    }
+    if (directionSizes[2].height) {
+      includeRect(x, y + aspectHeight, directionSizes[2].width, directionSizes[2].height);
+    }
+    if (directionSizes[3].width) {
+      includeRect(x - directionSizes[3].width, y, directionSizes[3].width, directionSizes[3].height);
+    }
+  });
+
+  return hasBox
+    ? {
+        x: Math.round(minX),
+        y: Math.round(minY),
+        width: Math.round(maxX - minX),
+        height: Math.round(maxY - minY)
+      }
+    : { x: 0, y: 0, width: 0, height: 0 };
+}
+function getDefaultEvidenceDesignerRectSize(textValue) {
+  const text = String(textValue || "").trim();
+  const longestLine = text.split(/\s+/).reduce(function (longest, word) {
+    return Math.max(longest, String(word || "").length);
+  }, Math.min(text.length, 18));
+
+  return {
+    width: Math.max(24, Math.min(150, Math.ceil((longestLine || 1) * 6.2) + 8)),
+    height: 22
+  };
+}
+function createEvidenceLevelDesignDraft(tool, levelType, ownerAspectId) {
+  const level = getEvidenceToolLevel(tool, levelType, ownerAspectId);
+  const positions = {};
+  const aspectSizes = {};
+  const stageSizes = {};
+
+  ensureEvidenceLevel(level).ebenenAspekte.forEach(function (aspectId, index) {
+    const aspect = getEvidenceAspectById(tool, aspectId);
+    const position = level.layout.aspectPositions[aspectId] || {};
+    const size = level.layout.aspectSizes[aspectId] || {};
+    const defaultSize = getDefaultEvidenceDesignerRectSize(aspect && aspect.titel || "Aspekt");
+    const defaultX = Math.round((index - ((level.ebenenAspekte.length - 1) / 2)) * 170);
+
+    positions[aspectId] = {
+      x: Number.isFinite(Number(position.x)) ? Number(position.x) : defaultX,
+      y: Number.isFinite(Number(position.y)) ? Number(position.y) : 0
+    };
+    aspectSizes[aspectId] = {
+      width: Math.max(24, Number(size.width) || defaultSize.width),
+      height: Math.max(18, Number(size.height) || defaultSize.height)
+    };
+  });
+  Object.keys(level.layout.stageSizes || {}).forEach(function (stageId) {
+    const size = level.layout.stageSizes[stageId] || {};
+
+    stageSizes[stageId] = {
+      width: Math.max(24, Number(size.width) || 118),
+      height: Math.max(18, Number(size.height) || 20)
+    };
+  });
+
+  return {
+    levelType: String(levelType || "").trim() === "folge" ? "folge" : "haupt",
+    ownerAspectId: String(ownerAspectId || "").trim(),
+    openAspectId: "",
+    aspectPositions: positions,
+    aspectSizes: aspectSizes,
+    stageSizes: stageSizes,
+    boundingBox: getEvidenceLevelDesignBoundingBox(tool, level, positions, aspectSizes, stageSizes),
+    drag: null
+  };
+}
 window.UnterrichtsassistentApp.changeActiveEvidenceTool = function (toolId) {
   if (!repository || !schoolService) {
     return false;
@@ -20877,6 +21094,291 @@ window.UnterrichtsassistentApp.deleteActiveEvidenceTool = function () {
   remainingTools = getSortedEvidenceTools(currentRawSnapshot);
   currentRawSnapshot.activeEvidenceToolId = remainingTools[0] ? String(remainingTools[0].id || "").trim() : null;
   saveAndRefreshSnapshot(currentRawSnapshot, "bewertung", { forcePersist: true });
+  return false;
+};
+window.UnterrichtsassistentApp.openEvidenceLevelDesigner = function (levelType, ownerAspectId) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeTool = currentRawSnapshot ? getActiveEvidenceToolForSnapshot(currentRawSnapshot) : null;
+
+  if (!activeTool) {
+    return false;
+  }
+
+  activeEvidenceLevelDesignDraft = createEvidenceLevelDesignDraft(activeTool, levelType, ownerAspectId);
+
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.cancelEvidenceLevelDesigner = function () {
+  activeEvidenceLevelDesignDraft = null;
+
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.confirmEvidenceLevelDesigner = function () {
+  const draft = activeEvidenceLevelDesignDraft;
+
+  if (!draft) {
+    return false;
+  }
+
+  return updateActiveEvidenceTool(function (tool) {
+    const level = getEvidenceToolLevel(tool, draft.levelType, draft.ownerAspectId);
+    const positions = draft.aspectPositions && typeof draft.aspectPositions === "object"
+      ? draft.aspectPositions
+      : {};
+    const aspectSizes = draft.aspectSizes && typeof draft.aspectSizes === "object"
+      ? draft.aspectSizes
+      : {};
+    const stageSizes = draft.stageSizes && typeof draft.stageSizes === "object"
+      ? draft.stageSizes
+      : {};
+
+    level.layout = level.layout && typeof level.layout === "object" ? level.layout : {};
+    level.layout.aspectPositions = {};
+    level.layout.aspectSizes = {};
+    level.layout.stageSizes = {};
+    ensureEvidenceLevel(level).ebenenAspekte.forEach(function (aspectId) {
+      const position = positions[aspectId] && typeof positions[aspectId] === "object"
+        ? positions[aspectId]
+        : {};
+      const size = aspectSizes[aspectId] && typeof aspectSizes[aspectId] === "object"
+        ? aspectSizes[aspectId]
+        : {};
+
+      level.layout.aspectPositions[aspectId] = {
+        x: Math.round(Number(position.x) || 0),
+        y: Math.round(Number(position.y) || 0)
+      };
+      level.layout.aspectSizes[aspectId] = {
+        width: Math.max(24, Math.round(Number(size.width) || 150)),
+        height: Math.max(18, Math.round(Number(size.height) || 22))
+      };
+    });
+    Object.keys(stageSizes).forEach(function (stageId) {
+      const size = stageSizes[stageId] && typeof stageSizes[stageId] === "object" ? stageSizes[stageId] : {};
+
+      level.layout.stageSizes[stageId] = {
+        width: Math.max(24, Math.round(Number(size.width) || 118)),
+        height: Math.max(18, Math.round(Number(size.height) || 20))
+      };
+    });
+    level.layout.boundingBox = getEvidenceLevelDesignBoundingBox(tool, level, level.layout.aspectPositions, level.layout.aspectSizes, level.layout.stageSizes);
+    activeEvidenceLevelDesignDraft = null;
+    return true;
+  }, true);
+};
+window.UnterrichtsassistentApp.toggleEvidenceLevelDesignerAspect = function (aspectId) {
+  const normalizedAspectId = String(aspectId || "").trim();
+
+  if (!activeEvidenceLevelDesignDraft || !normalizedAspectId) {
+    return false;
+  }
+
+  if (activeEvidenceLevelDesignDraft.suppressClickAspectId === normalizedAspectId) {
+    activeEvidenceLevelDesignDraft.suppressClickAspectId = "";
+    return false;
+  }
+
+  activeEvidenceLevelDesignDraft.openAspectId = activeEvidenceLevelDesignDraft.openAspectId === normalizedAspectId
+    ? ""
+    : normalizedAspectId;
+
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.startEvidenceLevelDesignerDrag = function (event, aspectId) {
+  const normalizedAspectId = String(aspectId || "").trim();
+  const stage = activeEvidenceLevelDesignDraft;
+  const position = stage && stage.aspectPositions ? stage.aspectPositions[normalizedAspectId] : null;
+  const canvas = event && event.currentTarget && typeof event.currentTarget.closest === "function"
+    ? event.currentTarget.closest(".evidence-level-designer__canvas")
+    : null;
+  const rect = canvas && typeof canvas.getBoundingClientRect === "function" ? canvas.getBoundingClientRect() : null;
+
+  if (!stage || !position || !rect) {
+    return false;
+  }
+
+  event.preventDefault();
+  stage.drag = {
+    aspectId: normalizedAspectId,
+    pointerId: event.pointerId,
+    startClientX: Number(event.clientX) || 0,
+    startClientY: Number(event.clientY) || 0,
+    startX: Number(position.x) || 0,
+    startY: Number(position.y) || 0,
+    didDrag: false
+  };
+
+  if (event.currentTarget && typeof event.currentTarget.setPointerCapture === "function") {
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch (error) {
+      // Pointer capture can fail for synthetic events.
+    }
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.moveEvidenceLevelDesignerDrag = function (event) {
+  const stage = activeEvidenceLevelDesignDraft;
+  const drag = stage && stage.drag ? stage.drag : null;
+
+  if (!drag || drag.pointerId !== event.pointerId) {
+    return false;
+  }
+
+  event.preventDefault();
+  drag.didDrag = true;
+  stage.aspectPositions[drag.aspectId] = {
+    x: Math.round(drag.startX + ((Number(event.clientX) || 0) - drag.startClientX)),
+    y: Math.round(drag.startY + ((Number(event.clientY) || 0) - drag.startClientY))
+  };
+
+  if (event.currentTarget && event.currentTarget.style) {
+    event.currentTarget.style.left = "calc(50% + " + stage.aspectPositions[drag.aspectId].x + "px)";
+    event.currentTarget.style.top = "calc(50% + " + stage.aspectPositions[drag.aspectId].y + "px)";
+  }
+  return false;
+};
+window.UnterrichtsassistentApp.endEvidenceLevelDesignerDrag = function (event) {
+  const stage = activeEvidenceLevelDesignDraft;
+
+  if (!stage || !stage.drag || stage.drag.pointerId !== event.pointerId) {
+    return false;
+  }
+
+  if (stage.drag.didDrag) {
+    stage.suppressClickAspectId = stage.drag.aspectId;
+  }
+  stage.drag = null;
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
+  }
+  return false;
+};
+window.UnterrichtsassistentApp.startEvidenceLevelDesignerResize = function (event, itemType, itemId, edge) {
+  const draft = activeEvidenceLevelDesignDraft;
+  const normalizedType = String(itemType || "").trim();
+  const normalizedId = String(itemId || "").trim();
+  const normalizedEdge = String(edge || "").trim();
+  const sizeMap = normalizedType === "stage"
+    ? (draft && draft.stageSizes)
+    : (draft && draft.aspectSizes);
+  const currentSize = sizeMap && sizeMap[normalizedId] ? sizeMap[normalizedId] : null;
+  const targetRect = event && event.currentTarget && event.currentTarget.parentElement && typeof event.currentTarget.parentElement.getBoundingClientRect === "function"
+    ? event.currentTarget.parentElement.getBoundingClientRect()
+    : null;
+
+  if (!draft || !normalizedId || ["right", "bottom", "corner"].indexOf(normalizedEdge) === -1) {
+    return false;
+  }
+
+  if (!currentSize) {
+    sizeMap[normalizedId] = normalizedType === "stage"
+      ? { width: Math.max(24, Math.round(targetRect && targetRect.width || 118)), height: Math.max(18, Math.round(targetRect && targetRect.height || 20)) }
+      : { width: Math.max(24, Math.round(targetRect && targetRect.width || 150)), height: Math.max(18, Math.round(targetRect && targetRect.height || 22)) };
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  draft.resize = {
+    itemType: normalizedType === "stage" ? "stage" : "aspect",
+    itemId: normalizedId,
+    edge: normalizedEdge,
+    pointerId: event.pointerId,
+    startClientX: Number(event.clientX) || 0,
+    startClientY: Number(event.clientY) || 0,
+    startWidth: Number(sizeMap[normalizedId].width) || (normalizedType === "stage" ? 118 : 150),
+    startHeight: Number(sizeMap[normalizedId].height) || (normalizedType === "stage" ? 20 : 22)
+  };
+
+  if (event.currentTarget && typeof event.currentTarget.setPointerCapture === "function") {
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch (error) {
+      // Pointer capture can fail for synthetic events.
+    }
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.moveEvidenceLevelDesignerResize = function (event) {
+  const draft = activeEvidenceLevelDesignDraft;
+  const resize = draft && draft.resize ? draft.resize : null;
+  const minWidth = resize && resize.itemType === "stage" ? 24 : 24;
+  const minHeight = resize && resize.itemType === "stage" ? 18 : 18;
+  const sizeMap = resize && resize.itemType === "stage" ? draft.stageSizes : draft.aspectSizes;
+  let nextWidth;
+  let nextHeight;
+
+  if (!resize || resize.pointerId !== event.pointerId || !sizeMap) {
+    return false;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  nextWidth = resize.startWidth;
+  nextHeight = resize.startHeight;
+
+  if (resize.edge === "right" || resize.edge === "corner") {
+    nextWidth = Math.max(minWidth, Math.round(resize.startWidth + ((Number(event.clientX) || 0) - resize.startClientX)));
+  }
+  if (resize.edge === "bottom" || resize.edge === "corner") {
+    nextHeight = Math.max(minHeight, Math.round(resize.startHeight + ((Number(event.clientY) || 0) - resize.startClientY)));
+  }
+
+  sizeMap[resize.itemId] = {
+    width: nextWidth,
+    height: nextHeight
+  };
+
+  if (resize.itemType === "aspect") {
+    const wrap = event.currentTarget && typeof event.currentTarget.closest === "function"
+      ? event.currentTarget.closest(".evidence-level-designer__aspect-wrap")
+      : null;
+    const aspectButton = wrap ? wrap.querySelector(".evidence-level-designer__aspect") : null;
+
+    if (wrap && wrap.style) {
+      wrap.style.width = nextWidth + "px";
+      wrap.style.height = nextHeight + "px";
+    }
+    if (aspectButton && aspectButton.style) {
+      aspectButton.style.width = nextWidth + "px";
+      aspectButton.style.height = nextHeight + "px";
+    }
+  } else if (event.currentTarget && event.currentTarget.parentElement && event.currentTarget.parentElement.style) {
+    event.currentTarget.parentElement.style.width = nextWidth + "px";
+    event.currentTarget.parentElement.style.height = nextHeight + "px";
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.endEvidenceLevelDesignerResize = function (event) {
+  const draft = activeEvidenceLevelDesignDraft;
+
+  if (!draft || !draft.resize || draft.resize.pointerId !== event.pointerId) {
+    return false;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  draft.resize = null;
+
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
+  }
+
   return false;
 };
 window.UnterrichtsassistentApp.toggleEvidenceToolNode = function (nodeId) {
