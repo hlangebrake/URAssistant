@@ -5,6 +5,7 @@ function createDomainSnapshot(rawData) {
   const {
     Assessment,
     EvaluationSheet,
+    EvidenceTool,
     PlannedEvaluation,
     PerformedEvaluation,
     AttendanceRecord,
@@ -53,6 +54,7 @@ function createDomainSnapshot(rawData) {
     activeSeatPlanId: rawData.activeSeatPlanId || null,
     activeSeatOrderId: rawData.activeSeatOrderId || null,
     activeEvaluationSheetId: rawData.activeEvaluationSheetId || null,
+    activeEvidenceToolId: rawData.activeEvidenceToolId || null,
     activeSeatPlanRoom: rawData.activeSeatPlanRoom || "",
     activeDateTime: rawData.activeDateTime || "",
     activeDateTimeMode: rawData.activeDateTimeMode || "live",
@@ -67,6 +69,7 @@ function createDomainSnapshot(rawData) {
     lessons: rawData.lessons.map((item) => new Lesson(item)),
     assessments: rawData.assessments.map((item) => new Assessment(item)),
     evaluationSheets: (Array.isArray(rawData.evaluationSheets) ? rawData.evaluationSheets : []).map((item) => new EvaluationSheet(item)),
+    evidenceTools: (Array.isArray(rawData.evidenceTools) ? rawData.evidenceTools : []).map((item) => new EvidenceTool(item)),
     plannedEvaluations: (Array.isArray(rawData.plannedEvaluations) ? rawData.plannedEvaluations : []).map((item) => new PlannedEvaluation(item)),
     performedEvaluations: (Array.isArray(rawData.performedEvaluations) ? rawData.performedEvaluations : []).map((item) => new PerformedEvaluation(item)),
     attendanceRecords: (Array.isArray(rawData.attendanceRecords) ? rawData.attendanceRecords : []).map((item) => new AttendanceRecord(item)),
@@ -123,6 +126,38 @@ function serializeDomainSnapshot(snapshot) {
         competencyGrid: item.competencyGrid && typeof item.competencyGrid === "object"
           ? JSON.parse(JSON.stringify(item.competencyGrid))
           : {}
+      });
+    });
+  }
+
+  function cloneEvidenceTools(items) {
+    return cloneItems(items || [], ["id", "titel", "symbol", "faecher", "jahrgaenge", "aspekte", "hauptebene"]).map(function (item) {
+      return Object.assign({}, item, {
+        faecher: Array.isArray(item.faecher) ? item.faecher.slice() : [],
+        jahrgaenge: Array.isArray(item.jahrgaenge) ? item.jahrgaenge.slice() : [],
+        aspekte: Array.isArray(item.aspekte)
+          ? item.aspekte.map(function (aspect) {
+              return Object.assign({}, aspect, {
+                folgeEbene: aspect && aspect.folgeEbene && typeof aspect.folgeEbene === "object"
+                  ? { ebenenAspekte: Array.isArray(aspect.folgeEbene.ebenenAspekte) ? aspect.folgeEbene.ebenenAspekte.slice() : [] }
+                  : { ebenenAspekte: [] },
+                aspektDimensionen: Array.isArray(aspect && aspect.aspektDimensionen)
+                  ? aspect.aspektDimensionen.map(function (dimension) {
+                      return Object.assign({}, dimension, {
+                        stufen: Array.isArray(dimension && dimension.stufen)
+                          ? dimension.stufen.map(function (stage) {
+                              return Object.assign({}, stage);
+                            })
+                          : []
+                      });
+                    })
+                  : []
+              });
+            })
+          : [],
+        hauptebene: item.hauptebene && typeof item.hauptebene === "object"
+          ? { ebenenAspekte: Array.isArray(item.hauptebene.ebenenAspekte) ? item.hauptebene.ebenenAspekte.slice() : [] }
+          : { ebenenAspekte: [] }
       });
     });
   }
@@ -201,6 +236,7 @@ function serializeDomainSnapshot(snapshot) {
     activeSeatPlanId: snapshot.activeSeatPlanId || null,
     activeSeatOrderId: snapshot.activeSeatOrderId || null,
     activeEvaluationSheetId: snapshot.activeEvaluationSheetId || null,
+    activeEvidenceToolId: snapshot.activeEvidenceToolId || null,
     activeSeatPlanRoom: snapshot.activeSeatPlanRoom || "",
     activeDateTime: snapshot.activeDateTime || "",
     activeDateTimeMode: snapshot.activeDateTimeMode || "live",
@@ -215,6 +251,7 @@ function serializeDomainSnapshot(snapshot) {
     lessons: cloneItems(snapshot.lessons, ["id", "classId", "subject", "room", "weekday", "startTime", "endTime", "topic"]),
     assessments: cloneItems(snapshot.assessments, ["id", "studentId", "classId", "type", "score", "maxScore", "date", "lessonId", "lessonDate", "room", "recordedAt", "category", "afb1", "afb2", "afb3", "workBehavior", "socialBehavior", "knowledgeGap", "note"]),
     evaluationSheets: cloneEvaluationSheets(snapshot.evaluationSheets || []),
+    evidenceTools: cloneEvidenceTools(snapshot.evidenceTools || []),
     plannedEvaluations: clonePlannedEvaluations(snapshot.plannedEvaluations || []),
     performedEvaluations: clonePerformedEvaluations(snapshot.performedEvaluations || []),
     attendanceRecords: cloneItems(snapshot.attendanceRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "status", "recordedAt", "effectiveAt"]),

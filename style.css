@@ -8420,6 +8420,178 @@ body.is-desk-dragging {
   line-height: 1.5;
 }
 
+.evidence-tool-editor {
+  gap: 0.9rem;
+}
+
+.evidence-tool-editor__header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.evidence-tool-editor__symbol {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 8px;
+  background: rgba(23, 49, 62, 0.09);
+  color: var(--sidebar);
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+.evidence-tool-tree {
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.92rem;
+}
+
+.evidence-tool-tree__node,
+.evidence-tool-tree__item,
+.evidence-tool-tree__field {
+  min-width: 0;
+}
+
+.evidence-tool-tree__node {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.evidence-tool-tree__node-header,
+.evidence-tool-tree__item,
+.evidence-tool-tree__field,
+.evidence-tool-tree__object-line {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2rem;
+}
+
+.evidence-tool-tree__node-header {
+  border-radius: 7px;
+  background: rgba(23, 49, 62, 0.05);
+  padding: 0.25rem 0.4rem;
+}
+
+.evidence-tool-tree__children {
+  display: grid;
+  gap: 0.35rem;
+  margin-left: 1.35rem;
+  padding-left: 0.7rem;
+  border-left: 1px solid rgba(23, 49, 62, 0.16);
+}
+
+.evidence-tool-tree__item {
+  border-radius: 7px;
+  padding: 0.2rem 0.35rem;
+  background: rgba(255, 255, 255, 0.54);
+}
+
+.evidence-tool-tree__item--object {
+  display: grid;
+  align-items: stretch;
+  gap: 0.25rem;
+  padding: 0.4rem;
+}
+
+.evidence-tool-tree__toggle,
+.evidence-tool-tree__remove,
+.evidence-tool-tree__add {
+  display: inline-grid;
+  place-items: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(23, 49, 62, 0.12);
+  color: var(--sidebar);
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.evidence-tool-tree__remove {
+  margin-left: auto;
+  background: rgba(146, 64, 45, 0.12);
+  color: #7b3327;
+}
+
+.evidence-tool-tree__add {
+  width: 2rem;
+  height: 2rem;
+  margin-top: 0.15rem;
+  background: var(--sidebar);
+  color: var(--text-on-dark);
+}
+
+.evidence-tool-tree__node-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--sidebar);
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evidence-tool-tree__label {
+  flex: 0 0 8.5rem;
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.evidence-tool-tree__value {
+  min-width: 0;
+  max-width: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: text;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evidence-tool-tree__value:hover,
+.evidence-tool-tree__value:focus-visible {
+  background: rgba(23, 49, 62, 0.08);
+  outline: none;
+}
+
+.evidence-tool-tree__value--inline {
+  flex: 1 1 auto;
+}
+
+.evidence-tool-tree__drag {
+  flex: 0 0 auto;
+  color: rgba(23, 49, 62, 0.42);
+  cursor: grab;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.evidence-tool-tree__select {
+  width: min(100%, 18rem);
+  min-height: 2rem;
+  border: 1px solid rgba(23, 49, 62, 0.16);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--text);
+  font: inherit;
+}
+
+.evidence-tool-tree__empty {
+  color: var(--text-soft);
+  font-size: 0.84rem;
+  padding: 0.25rem 0.1rem;
+}
+
 .bewertung-planung {
   display: grid;
   gap: 0.95rem;

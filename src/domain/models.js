@@ -228,6 +228,79 @@ class EvaluationSheet {
   }
 }
 
+class EvidenceTool {
+  constructor({ id, titel = "", symbol = "", faecher = [], jahrgaenge = [], aspekte = [], hauptebene = {} }) {
+    function normalizeLevel(rawLevel) {
+      const source = rawLevel && typeof rawLevel === "object" ? rawLevel : {};
+      const rawItems = Array.isArray(source.ebenenAspekte)
+        ? source.ebenenAspekte
+        : (Array.isArray(source.aspectIds) ? source.aspectIds : []);
+
+      return {
+        ebenenAspekte: rawItems.map(function (item) {
+          return String(item && typeof item === "object" ? item.id : item || "").trim();
+        }).filter(Boolean)
+      };
+    }
+
+    function normalizeStages(rawStages) {
+      return (Array.isArray(rawStages) ? rawStages : []).map(function (stage) {
+        const source = stage && typeof stage === "object" ? stage : {};
+
+        return {
+          id: String(source.id || "").trim(),
+          bezeichnung: String(source.bezeichnung || "").trim(),
+          beispiel: String(source.beispiel || "").trim(),
+          information: String(source.information || "").trim()
+        };
+      }).filter(function (stage) {
+        return Boolean(stage.id);
+      });
+    }
+
+    function normalizeDimensions(rawDimensions) {
+      return (Array.isArray(rawDimensions) ? rawDimensions : []).map(function (dimension) {
+        const source = dimension && typeof dimension === "object" ? dimension : {};
+
+        return {
+          id: String(source.id || "").trim(),
+          bezeichnung: String(source.bezeichnung || "").trim(),
+          stufen: normalizeStages(source.stufen)
+        };
+      }).filter(function (dimension) {
+        return Boolean(dimension.id);
+      });
+    }
+
+    this.id = String(id || "").trim();
+    this.titel = String(titel || "").trim();
+    this.symbol = String(symbol || "").trim();
+    this.faecher = (Array.isArray(faecher) ? faecher : []).map(function (fach) {
+      return String(fach || "").trim();
+    }).filter(Boolean);
+    this.jahrgaenge = (Array.isArray(jahrgaenge) ? jahrgaenge : []).map(function (jahrgang) {
+      return Math.round(Number(jahrgang));
+    }).filter(function (jahrgang) {
+      return Number.isFinite(jahrgang) && jahrgang >= 5 && jahrgang <= 13;
+    });
+    this.aspekte = (Array.isArray(aspekte) ? aspekte : []).map(function (aspect) {
+      const source = aspect && typeof aspect === "object" ? aspect : {};
+
+      return {
+        id: String(source.id || "").trim(),
+        titel: String(source.titel || "").trim(),
+        folgeEbene: normalizeLevel(source.folgeEbene),
+        information: String(source.information || "").trim(),
+        beispiel: String(source.beispiel || "").trim(),
+        aspektDimensionen: normalizeDimensions(source.aspektDimensionen)
+      };
+    }).filter(function (aspect) {
+      return Boolean(aspect.id);
+    });
+    this.hauptebene = normalizeLevel(hauptebene);
+  }
+}
+
 class PlannedEvaluation {
   constructor({ id, classId = "", type = "sonstige", evaluationSheetId = "", date = "", studentIds = [], createPlanningEvent = true, planningEventId = "", createdAt = "", gradingSystem = [] }) {
     this.id = id;
@@ -869,6 +942,7 @@ window.Unterrichtsassistent.domain.Timetable = Timetable;
 window.Unterrichtsassistent.domain.TimetableRow = TimetableRow;
 window.Unterrichtsassistent.domain.Assessment = Assessment;
 window.Unterrichtsassistent.domain.EvaluationSheet = EvaluationSheet;
+window.Unterrichtsassistent.domain.EvidenceTool = EvidenceTool;
 window.Unterrichtsassistent.domain.PlannedEvaluation = PlannedEvaluation;
 window.Unterrichtsassistent.domain.PerformedEvaluation = PerformedEvaluation;
 window.Unterrichtsassistent.domain.AttendanceRecord = AttendanceRecord;

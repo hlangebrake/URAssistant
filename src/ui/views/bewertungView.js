@@ -2871,14 +2871,210 @@ window.Unterrichtsassistent.ui.views.bewertung = {
     }
 
     function renderEvidenceMode() {
+      const snapshot = service ? service.snapshot : null;
+      const tools = snapshot && Array.isArray(snapshot.evidenceTools)
+        ? snapshot.evidenceTools.slice().sort(function (left, right) {
+            return String(left && left.titel || "").localeCompare(String(right && right.titel || ""), "de-DE");
+          })
+        : [];
+      const activeToolId = String(snapshot && snapshot.activeEvidenceToolId || "").trim();
+      const activeTool = tools.find(function (tool) {
+        return String(tool && tool.id || "").trim() === activeToolId;
+      }) || tools[0] || null;
+      const expandedNodeIds = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getEvidenceToolExpandedNodeIds === "function"
+        ? window.UnterrichtsassistentApp.getEvidenceToolExpandedNodeIds()
+        : [];
+
+      function isExpanded(nodeId) {
+        return expandedNodeIds.indexOf(String(nodeId || "").trim()) >= 0;
+      }
+
+      function getAspectById(tool, aspectId) {
+        const normalizedAspectId = String(aspectId || "").trim();
+
+        return (Array.isArray(tool && tool.aspekte) ? tool.aspekte : []).find(function (aspect) {
+          return String(aspect && aspect.id || "").trim() === normalizedAspectId;
+        }) || null;
+      }
+
+      function itemTitle(item, fallback) {
+        return String(item && (item.titel || item.bezeichnung) || "").trim() || fallback;
+      }
+
+      function renderEditValue(label, value, scope, primaryId, secondaryId, fieldName) {
+        const textValue = String(value || "").trim();
+
+        return [
+          '<div class="evidence-tool-tree__field">',
+          '<span class="evidence-tool-tree__label">', escapeValue(label), '</span>',
+          '<button class="evidence-tool-tree__value" type="button" onclick="return window.UnterrichtsassistentApp.promptEvidenceToolTextEdit(\'', escapeValue(scope), '\', \'', escapeValue(primaryId || ""), '\', \'', escapeValue(secondaryId || ""), '\', \'', escapeValue(fieldName), '\', \'', escapeValue(textValue), '\')">',
+          escapeValue(textValue || "Leer"),
+          '</button>',
+          '</div>'
+        ].join("");
+      }
+
+      function renderStageEditValue(label, value, aspectId, dimensionId, stageId, fieldName) {
+        const textValue = String(value || "").trim();
+
+        return [
+          '<div class="evidence-tool-tree__field evidence-tool-tree__field--subtle">',
+          '<span class="evidence-tool-tree__label">', escapeValue(label), '</span>',
+          '<button class="evidence-tool-tree__value" type="button" onclick="return window.UnterrichtsassistentApp.promptEvidenceToolStageTextEdit(\'', escapeValue(aspectId || ""), '\', \'', escapeValue(dimensionId || ""), '\', \'', escapeValue(stageId || ""), '\', \'', escapeValue(fieldName), '\', \'', escapeValue(textValue), '\')">',
+          escapeValue(textValue || "Leer"),
+          '</button>',
+          '</div>'
+        ].join("");
+      }
+
+      function renderListShell(nodeId, label, contentHtml, addAction) {
+        const expanded = isExpanded(nodeId);
+
+        return [
+          '<section class="evidence-tool-tree__node', expanded ? ' is-expanded' : '', '">',
+          '<div class="evidence-tool-tree__node-header">',
+          '<button class="evidence-tool-tree__toggle" type="button" aria-label="', expanded ? 'Einklappen' : 'Aufklappen', '" onclick="return window.UnterrichtsassistentApp.toggleEvidenceToolNode(\'', escapeValue(nodeId), '\')">', expanded ? '-' : '+', '</button>',
+          '<span class="evidence-tool-tree__node-title">', escapeValue(label), '</span>',
+          '</div>',
+          expanded ? '<div class="evidence-tool-tree__children">' + contentHtml + (addAction ? '<button class="evidence-tool-tree__add" type="button" onclick="return ' + addAction + '">+</button>' : '') + '</div>' : '',
+          '</section>'
+        ].join("");
+      }
+
+      function renderSimpleList(type, items) {
+        const listItems = (Array.isArray(items) ? items : []).map(function (item, index) {
+          const value = String(item || "").trim();
+          const scope = type === "faecher" ? "fach" : "jahrgang";
+
+          return [
+            '<div class="evidence-tool-tree__item" draggable="true" ondragstart="return window.UnterrichtsassistentApp.startEvidenceToolListDrag(event, \'', escapeValue(type), '\', \'', escapeValue(String(index)), '\')" ondragover="return window.UnterrichtsassistentApp.allowEvidenceToolDrop(event)" ondrop="return window.UnterrichtsassistentApp.dropEvidenceToolListItem(event, \'', escapeValue(type), '\', \'', escapeValue(String(index)), '\')">',
+            '<span class="evidence-tool-tree__drag" aria-hidden="true">::</span>',
+            '<button class="evidence-tool-tree__value evidence-tool-tree__value--inline" type="button" onclick="return window.UnterrichtsassistentApp.promptEvidenceToolTextEdit(\'', escapeValue(scope), '\', \'', escapeValue(String(index)), '\', \'\', \'value\', \'', escapeValue(value), '\')">', escapeValue(value || "Leer"), '</button>',
+            '<button class="evidence-tool-tree__remove" type="button" aria-label="Eintrag loeschen" onclick="return window.UnterrichtsassistentApp.deleteEvidenceToolListItem(\'', escapeValue(type), '\', \'', escapeValue(String(index)), '\')">-</button>',
+            '</div>'
+          ].join("");
+        }).join("");
+
+        return listItems || '<div class="evidence-tool-tree__empty">Keine Eintraege</div>';
+      }
+
+      function renderLevel(level, levelType, ownerAspectId, title) {
+        const sourceLevel = level && typeof level === "object" ? level : { ebenenAspekte: [] };
+        const usedAspectIds = Array.isArray(sourceLevel.ebenenAspekte) ? sourceLevel.ebenenAspekte : [];
+        const availableAspects = (Array.isArray(activeTool && activeTool.aspekte) ? activeTool.aspekte : []).filter(function (aspect) {
+          const aspectId = String(aspect && aspect.id || "").trim();
+
+          return aspectId && usedAspectIds.indexOf(aspectId) === -1;
+        });
+        const itemsHtml = usedAspectIds.map(function (aspectId) {
+          const aspect = getAspectById(activeTool, aspectId);
+
+          if (!aspect) {
+            return "";
+          }
+
+          return [
+            '<div class="evidence-tool-tree__item" draggable="true" ondragstart="return window.UnterrichtsassistentApp.startEvidenceToolListDrag(event, \'ebene\', \'', escapeValue(aspectId), '\', \'', escapeValue(ownerAspectId || ""), '\', \'\', \'', escapeValue(levelType), '\')" ondragover="return window.UnterrichtsassistentApp.allowEvidenceToolDrop(event)" ondrop="return window.UnterrichtsassistentApp.dropEvidenceToolListItem(event, \'ebene\', \'', escapeValue(aspectId), '\', \'', escapeValue(ownerAspectId || ""), '\', \'\', \'', escapeValue(levelType), '\')">',
+            '<span class="evidence-tool-tree__drag" aria-hidden="true">::</span>',
+            '<span class="evidence-tool-tree__value evidence-tool-tree__value--inline">', escapeValue(itemTitle(aspect, "Aspekt")), '</span>',
+            '<button class="evidence-tool-tree__remove" type="button" aria-label="Aspekt entfernen" onclick="return window.UnterrichtsassistentApp.deleteEvidenceToolLevelAspect(\'', escapeValue(levelType), '\', \'', escapeValue(ownerAspectId || ""), '\', \'', escapeValue(aspectId), '\')">-</button>',
+            '</div>'
+          ].join("");
+        }).join("") || '<div class="evidence-tool-tree__empty">Keine Aspekte zugeordnet</div>';
+        const selectHtml = availableAspects.length
+          ? [
+              '<select class="evidence-tool-tree__select" aria-label="Aspekt hinzufuegen" onchange="if (this.value) { window.UnterrichtsassistentApp.addEvidenceToolLevelAspect(\'', escapeValue(levelType), '\', \'', escapeValue(ownerAspectId || ""), '\', this.value); this.value = \'\'; } return false;">',
+              '<option value="">+ Aspekt waehlen</option>',
+              availableAspects.map(function (aspect) {
+                return '<option value="' + escapeValue(String(aspect && aspect.id || "").trim()) + '">' + escapeValue(itemTitle(aspect, "Aspekt")) + '</option>';
+              }).join(""),
+              '</select>'
+            ].join("")
+          : '<div class="evidence-tool-tree__empty">Alle Aspekte sind bereits enthalten.</div>';
+
+        return renderListShell(levelType + "-" + (ownerAspectId || "main"), title, itemsHtml + selectHtml, "");
+      }
+
+      function renderStages(aspectId, dimension) {
+        const dimensionId = String(dimension && dimension.id || "").trim();
+        const stages = Array.isArray(dimension && dimension.stufen) ? dimension.stufen : [];
+        const itemsHtml = stages.map(function (stage) {
+          const stageId = String(stage && stage.id || "").trim();
+
+          return [
+            '<article class="evidence-tool-tree__item evidence-tool-tree__item--object" draggable="true" ondragstart="return window.UnterrichtsassistentApp.startEvidenceToolListDrag(event, \'stufen\', \'', escapeValue(stageId), '\', \'', escapeValue(aspectId), '\', \'', escapeValue(dimensionId), '\')" ondragover="return window.UnterrichtsassistentApp.allowEvidenceToolDrop(event)" ondrop="return window.UnterrichtsassistentApp.dropEvidenceToolListItem(event, \'stufen\', \'', escapeValue(stageId), '\', \'', escapeValue(aspectId), '\', \'', escapeValue(dimensionId), '\')">',
+            '<div class="evidence-tool-tree__object-line"><span class="evidence-tool-tree__drag" aria-hidden="true">::</span><strong>', escapeValue(itemTitle(stage, "Stufe")), '</strong><button class="evidence-tool-tree__remove" type="button" aria-label="Stufe loeschen" onclick="return window.UnterrichtsassistentApp.deleteEvidenceToolListItem(\'stufen\', \'', escapeValue(aspectId), '\', \'', escapeValue(dimensionId), '\', \'', escapeValue(stageId), '\')">-</button></div>',
+            renderStageEditValue("Bezeichnung", stage && stage.bezeichnung, aspectId, dimensionId, stageId, "bezeichnung"),
+            renderStageEditValue("Information", stage && stage.information, aspectId, dimensionId, stageId, "information"),
+            renderStageEditValue("Beispiel", stage && stage.beispiel, aspectId, dimensionId, stageId, "beispiel"),
+            '</article>'
+          ].join("");
+        }).join("") || '<div class="evidence-tool-tree__empty">Keine Stufen</div>';
+
+        return renderListShell("stufen-" + dimensionId, "Stufen", itemsHtml, "window.UnterrichtsassistentApp.addEvidenceToolListItem('stufen', '" + escapeValue(aspectId) + "', '" + escapeValue(dimensionId) + "')");
+      }
+
+      function renderDimensions(aspect) {
+        const aspectId = String(aspect && aspect.id || "").trim();
+        const dimensions = Array.isArray(aspect && aspect.aspektDimensionen) ? aspect.aspektDimensionen : [];
+        const itemsHtml = dimensions.map(function (dimension) {
+          const dimensionId = String(dimension && dimension.id || "").trim();
+          const nodeId = "dimension-" + dimensionId;
+          const expanded = isExpanded(nodeId);
+
+          return [
+            '<section class="evidence-tool-tree__node evidence-tool-tree__node--object', expanded ? ' is-expanded' : '', '" draggable="true" ondragstart="return window.UnterrichtsassistentApp.startEvidenceToolListDrag(event, \'dimensionen\', \'', escapeValue(dimensionId), '\', \'', escapeValue(aspectId), '\')" ondragover="return window.UnterrichtsassistentApp.allowEvidenceToolDrop(event)" ondrop="return window.UnterrichtsassistentApp.dropEvidenceToolListItem(event, \'dimensionen\', \'', escapeValue(dimensionId), '\', \'', escapeValue(aspectId), '\')">',
+            '<div class="evidence-tool-tree__node-header"><span class="evidence-tool-tree__drag" aria-hidden="true">::</span><button class="evidence-tool-tree__toggle" type="button" onclick="return window.UnterrichtsassistentApp.toggleEvidenceToolNode(\'', escapeValue(nodeId), '\')">', expanded ? '-' : '+', '</button><span class="evidence-tool-tree__node-title">', escapeValue(itemTitle(dimension, "Dimension")), '</span><button class="evidence-tool-tree__remove" type="button" aria-label="Dimension loeschen" onclick="return window.UnterrichtsassistentApp.deleteEvidenceToolListItem(\'dimensionen\', \'', escapeValue(aspectId), '\', \'', escapeValue(dimensionId), '\')">-</button></div>',
+            expanded ? '<div class="evidence-tool-tree__children">' + renderEditValue("Bezeichnung", dimension && dimension.bezeichnung, "dimension", aspectId, dimensionId, "bezeichnung") + renderStages(aspectId, dimension) + '</div>' : '',
+            '</section>'
+          ].join("");
+        }).join("") || '<div class="evidence-tool-tree__empty">Keine Dimensionen</div>';
+
+        return renderListShell("dimensionen-" + aspectId, "AspektDimensionen", itemsHtml, "window.UnterrichtsassistentApp.addEvidenceToolListItem('dimensionen', '" + escapeValue(aspectId) + "')");
+      }
+
+      function renderAspects() {
+        const aspects = Array.isArray(activeTool && activeTool.aspekte) ? activeTool.aspekte : [];
+        const itemsHtml = aspects.map(function (aspect) {
+          const aspectId = String(aspect && aspect.id || "").trim();
+          const nodeId = "aspect-" + aspectId;
+          const expanded = isExpanded(nodeId);
+
+          return [
+            '<section class="evidence-tool-tree__node evidence-tool-tree__node--object', expanded ? ' is-expanded' : '', '" draggable="true" ondragstart="return window.UnterrichtsassistentApp.startEvidenceToolListDrag(event, \'aspekte\', \'', escapeValue(aspectId), '\')" ondragover="return window.UnterrichtsassistentApp.allowEvidenceToolDrop(event)" ondrop="return window.UnterrichtsassistentApp.dropEvidenceToolListItem(event, \'aspekte\', \'', escapeValue(aspectId), '\')">',
+            '<div class="evidence-tool-tree__node-header"><span class="evidence-tool-tree__drag" aria-hidden="true">::</span><button class="evidence-tool-tree__toggle" type="button" onclick="return window.UnterrichtsassistentApp.toggleEvidenceToolNode(\'', escapeValue(nodeId), '\')">', expanded ? '-' : '+', '</button><span class="evidence-tool-tree__node-title">', escapeValue(itemTitle(aspect, "Aspekt")), '</span><button class="evidence-tool-tree__remove" type="button" aria-label="Aspekt loeschen" onclick="return window.UnterrichtsassistentApp.deleteEvidenceToolListItem(\'aspekte\', \'', escapeValue(aspectId), '\')">-</button></div>',
+            expanded ? '<div class="evidence-tool-tree__children">' + renderEditValue("Titel", aspect && aspect.titel, "aspect", aspectId, "", "titel") + renderEditValue("Information", aspect && aspect.information, "aspect", aspectId, "", "information") + renderEditValue("Beispiel", aspect && aspect.beispiel, "aspect", aspectId, "", "beispiel") + renderDimensions(aspect) + renderLevel(aspect && aspect.folgeEbene, "folge", aspectId, "FolgeEbene") + '</div>' : '',
+            '</section>'
+          ].join("");
+        }).join("") || '<div class="evidence-tool-tree__empty">Keine Aspekte</div>';
+
+        return renderListShell("aspekte", "Aspekte", itemsHtml, "window.UnterrichtsassistentApp.addEvidenceToolListItem('aspekte')");
+      }
+
+      if (!activeTool) {
+        return [
+          '<div class="unterricht-layout">',
+          '<article class="panel unterricht-layout__content">',
+          '<p class="empty-message">Lege ueber den Plus-Button das erste Bewertungswerkzeug an.</p>',
+          '</article>',
+          '</div>'
+        ].join("");
+      }
+
       return [
         '<div class="unterricht-layout">',
-        '<article class="panel unterricht-layout__content">',
-        '<div class="seat-plan-placeholder">',
-        '<div>',
-        '<strong>Evidenz</strong><br>',
-        escapeValue("Hier wird spaeter erweitert: Man kann Evidenz-Werkzeuge fuer die Erfassung von Leistungen im Live Unterricht erstellen. Dazu kann ein Symbol ausgewaehlt werden, es koennen Bewertungsdimensionen und Kompetenzstufen definiert werden, aehnlich eines Kriterien/Kompetenzrasters."),
+        '<article class="panel unterricht-layout__content evidence-tool-editor">',
+        '<div class="evidence-tool-editor__header">',
+        '<div class="evidence-tool-editor__symbol">', escapeValue(String(activeTool.symbol || "").trim() || "+"), '</div>',
+        '<div><h3 class="bewertung-editor__title">', escapeValue(String(activeTool.titel || "").trim() || "Ohne Titel"), '</h3><p class="bewertung-editor__meta">Bewertungswerkzeug</p></div>',
         '</div>',
+        '<div class="evidence-tool-tree">',
+        renderEditValue("Titel", activeTool.titel, "tool", "", "", "titel"),
+        renderEditValue("Symbol", activeTool.symbol, "tool", "", "", "symbol"),
+        renderListShell("faecher", "Faecher", renderSimpleList("faecher", activeTool.faecher), "window.UnterrichtsassistentApp.addEvidenceToolListItem('faecher')"),
+        renderListShell("jahrgaenge", "Jahrgaenge", renderSimpleList("jahrgaenge", activeTool.jahrgaenge), "window.UnterrichtsassistentApp.addEvidenceToolListItem('jahrgaenge')"),
+        renderAspects(),
+        renderLevel(activeTool.hauptebene, "haupt", "", "Hauptebene"),
         '</div>',
         '</article>',
         '</div>'

@@ -82,6 +82,8 @@ let bewertungTaskSheetSectionExpanded = true;
 let bewertungAnalysisSectionExpanded = true;
 let bewertungPlannedEvaluationsExpanded = false;
 let bewertungPlannedEvaluationDetailsExpanded = false;
+let evidenceToolExpandedNodeIds = ["root", "faecher", "jahrgaenge", "aspekte", "hauptebene"];
+let activeEvidenceToolDrag = null;
 let activePerformedPlannedEvaluationId = "";
 let activePerformedEvaluationStudentId = "";
 let activePerformedEvaluationStudentFilter = "alle";
@@ -5367,6 +5369,31 @@ function buildEvaluationSheetDropdownHtml() {
   return '<select id="activeEvaluationSheetSelect" class="sidebar__class-select timetable-select" aria-label="Gespeicherten Bewertungsbogen waehlen" onchange="return window.UnterrichtsassistentApp.changeActiveEvaluationSheet(this.value)">' + options + "</select>";
 }
 
+function buildEvidenceToolDropdownHtml() {
+  const snapshot = schoolService ? schoolService.snapshot : null;
+  const allItems = snapshot && Array.isArray(snapshot.evidenceTools)
+    ? snapshot.evidenceTools.slice().sort(function (left, right) {
+        return String(left && left.titel || "").localeCompare(String(right && right.titel || ""), "de-DE");
+      })
+    : [];
+  const selectedItem = allItems.find(function (item) {
+    return String(item && item.id || "").trim() === String(snapshot && snapshot.activeEvidenceToolId || "").trim();
+  }) || allItems[0] || null;
+  const options = allItems.length
+    ? allItems.map(function (item) {
+        const title = String(item && item.titel || "").trim() || "Ohne Titel";
+        const symbol = String(item && item.symbol || "").trim();
+        const selected = selectedItem && String(selectedItem.id || "").trim() === String(item && item.id || "").trim()
+          ? ' selected'
+          : "";
+
+        return '<option value="' + escapeHtml(String(item && item.id || "").trim()) + '"' + selected + ">" + escapeHtml((symbol ? symbol + " " : "") + title) + "</option>";
+      }).join("")
+    : '<option value="">Keine Bewertungswerkzeuge</option>';
+
+  return '<select id="activeEvidenceToolSelect" class="sidebar__class-select timetable-select" aria-label="Bewertungswerkzeug waehlen" onchange="return window.UnterrichtsassistentApp.changeActiveEvidenceTool(this.value)">' + options + "</select>";
+}
+
 function buildTimetableDropdownHtml() {
   const currentTimetable = schoolService ? schoolService.getCurrentTimetable() : null;
   const allTimetables = schoolService ? schoolService.getAllTimetables() : [];
@@ -5728,6 +5755,14 @@ function updateSecondaryActions(viewId) {
         "Aktiven Bewertungsbogen loeschen",
         "window.UnterrichtsassistentApp.openEvaluationSheetModal()",
         "Neuen Bewertungsbogen anlegen"
+      );
+  } else if (viewId === "bewertung" && bewertungViewMode === "evidenz") {
+    html = buildEvidenceToolDropdownHtml()
+      + buildManageActionButtonsHtml(
+        "window.UnterrichtsassistentApp.deleteActiveEvidenceTool()",
+        "Aktuelles Bewertungswerkzeug loeschen",
+        "window.UnterrichtsassistentApp.createEvidenceTool()",
+        "Neues Bewertungswerkzeug anlegen"
       );
   }
 
@@ -6307,6 +6342,22 @@ function createPlanningCategoryId() {
 
 function createEvaluationSheetId() {
   return "evaluation-sheet-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+}
+
+function createEvidenceToolId() {
+  return "evidence-tool-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+}
+
+function createEvidenceAspectId() {
+  return "evidence-aspect-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+}
+
+function createEvidenceDimensionId() {
+  return "evidence-dimension-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+}
+
+function createEvidenceStageId() {
+  return "evidence-stage-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
 }
 
 function createEvaluationTaskId() {
@@ -10840,6 +10891,107 @@ function getActiveEvaluationSheetForSnapshot(rawSnapshot, activeClass) {
   }) || items[0] || null;
 }
 
+function initializeEvidenceToolSelectionState(rawSnapshot) {
+  if (!rawSnapshot) {
+    return;
+  }
+
+  rawSnapshot.activeEvidenceToolId = rawSnapshot.activeEvidenceToolId || null;
+}
+
+function getEvidenceToolsCollection(rawSnapshot) {
+  return Array.isArray(rawSnapshot && rawSnapshot.evidenceTools) ? rawSnapshot.evidenceTools : [];
+}
+
+function getMutableEvidenceToolsCollection(rawSnapshot) {
+  if (!rawSnapshot) {
+    return [];
+  }
+
+  initializeEvidenceToolSelectionState(rawSnapshot);
+
+  if (!Array.isArray(rawSnapshot.evidenceTools)) {
+    rawSnapshot.evidenceTools = [];
+  }
+
+  return rawSnapshot.evidenceTools;
+}
+
+function getSortedEvidenceTools(rawSnapshot) {
+  return getEvidenceToolsCollection(rawSnapshot).slice().sort(function (left, right) {
+    return String(left && left.titel || "").localeCompare(String(right && right.titel || ""), "de-DE");
+  });
+}
+
+function getActiveEvidenceToolForSnapshot(rawSnapshot) {
+  const items = getSortedEvidenceTools(rawSnapshot);
+  const activeToolId = String(rawSnapshot && rawSnapshot.activeEvidenceToolId || "").trim();
+
+  return items.find(function (item) {
+    return String(item && item.id || "").trim() === activeToolId;
+  }) || items[0] || null;
+}
+
+function ensureEvidenceLevel(level) {
+  if (!level || typeof level !== "object") {
+    return createEvidenceLevelRecord();
+  }
+
+  if (!Array.isArray(level.ebenenAspekte)) {
+    level.ebenenAspekte = [];
+  }
+
+  level.ebenenAspekte = level.ebenenAspekte.map(function (aspectId) {
+    return String(aspectId || "").trim();
+  }).filter(Boolean);
+
+  return level;
+}
+
+function getEvidenceAspectById(tool, aspectId) {
+  const normalizedAspectId = String(aspectId || "").trim();
+
+  return (Array.isArray(tool && tool.aspekte) ? tool.aspekte : []).find(function (aspect) {
+    return String(aspect && aspect.id || "").trim() === normalizedAspectId;
+  }) || null;
+}
+
+function getEvidenceDimensionById(tool, aspectId, dimensionId) {
+  const aspect = getEvidenceAspectById(tool, aspectId);
+  const normalizedDimensionId = String(dimensionId || "").trim();
+
+  return (Array.isArray(aspect && aspect.aspektDimensionen) ? aspect.aspektDimensionen : []).find(function (dimension) {
+    return String(dimension && dimension.id || "").trim() === normalizedDimensionId;
+  }) || null;
+}
+
+function getEvidenceToolLevel(tool, levelType, aspectId) {
+  const normalizedType = String(levelType || "").trim();
+  const aspect = normalizedType === "folge" ? getEvidenceAspectById(tool, aspectId) : null;
+
+  if (normalizedType === "folge" && aspect) {
+    aspect.folgeEbene = ensureEvidenceLevel(aspect.folgeEbene);
+    return aspect.folgeEbene;
+  }
+
+  tool.hauptebene = ensureEvidenceLevel(tool.hauptebene);
+  return tool.hauptebene;
+}
+
+function removeEvidenceAspectReferences(tool, aspectId) {
+  const normalizedAspectId = String(aspectId || "").trim();
+
+  ensureEvidenceLevel(tool.hauptebene).ebenenAspekte = ensureEvidenceLevel(tool.hauptebene).ebenenAspekte.filter(function (item) {
+    return item !== normalizedAspectId;
+  });
+  (Array.isArray(tool.aspekte) ? tool.aspekte : []).forEach(function (aspect) {
+    aspect.folgeEbene = ensureEvidenceLevel(aspect.folgeEbene);
+    aspect.folgeEbene.ebenenAspekte = aspect.folgeEbene.ebenenAspekte.filter(function (item) {
+      return item !== normalizedAspectId;
+    });
+  });
+}
+
 function getPlannedEvaluationsCollection(rawSnapshot) {
   return Array.isArray(rawSnapshot && rawSnapshot.plannedEvaluations) ? rawSnapshot.plannedEvaluations : [];
 }
@@ -11425,6 +11577,56 @@ function createEvaluationSheetRecord(classId, typeValue, titleValue) {
     curriculumLessonIds: [],
     taskSheet: normalizedType === "aufgabenbogen" ? { tasks: [] } : { tasks: [] },
     competencyGrid: normalizedType === "kompetenzraster" ? { rows: [], columns: [], cells: {} } : {}
+  };
+}
+
+function createEvidenceLevelRecord() {
+  return {
+    ebenenAspekte: []
+  };
+}
+
+function createEvidenceStageRecord() {
+  return {
+    id: createEvidenceStageId(),
+    bezeichnung: "Neue Stufe",
+    beispiel: "",
+    information: ""
+  };
+}
+
+function createEvidenceDimensionRecord() {
+  return {
+    id: createEvidenceDimensionId(),
+    bezeichnung: "Neue Dimension",
+    stufen: [createEvidenceStageRecord()]
+  };
+}
+
+function createEvidenceAspectRecord() {
+  return {
+    id: createEvidenceAspectId(),
+    titel: "Neuer Aspekt",
+    folgeEbene: createEvidenceLevelRecord(),
+    information: "",
+    beispiel: "",
+    aspektDimensionen: [createEvidenceDimensionRecord()]
+  };
+}
+
+function createEvidenceToolRecord() {
+  const firstAspect = createEvidenceAspectRecord();
+
+  return {
+    id: createEvidenceToolId(),
+    titel: "Neues Bewertungswerkzeug",
+    symbol: "+",
+    faecher: [],
+    jahrgaenge: [],
+    aspekte: [firstAspect],
+    hauptebene: {
+      ebenenAspekte: [firstAspect.id]
+    }
   };
 }
 
@@ -20205,6 +20407,9 @@ window.UnterrichtsassistentApp.getPlanningViewMode = function () {
 window.UnterrichtsassistentApp.getBewertungViewMode = function () {
   return bewertungViewMode;
 };
+window.UnterrichtsassistentApp.getEvidenceToolExpandedNodeIds = function () {
+  return evidenceToolExpandedNodeIds.slice();
+};
 window.UnterrichtsassistentApp.getActiveEvaluationSheetDraft = function () {
   return activeEvaluationSheetDraft;
 };
@@ -20612,6 +20817,385 @@ window.UnterrichtsassistentApp.toggleUnterrichtLiveTodosCollapsed = function () 
   }
 
   return false;
+};
+function updateActiveEvidenceTool(mutator, forcePersist) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeTool = currentRawSnapshot ? getActiveEvidenceToolForSnapshot(currentRawSnapshot) : null;
+
+  if (!repository || !schoolService || !currentRawSnapshot || !activeTool || typeof mutator !== "function") {
+    return false;
+  }
+
+  if (mutator(activeTool, currentRawSnapshot) === false) {
+    return false;
+  }
+
+  currentRawSnapshot.activeEvidenceToolId = activeTool.id;
+  saveAndRefreshSnapshot(currentRawSnapshot, "bewertung", { forcePersist: Boolean(forcePersist) });
+  return false;
+}
+window.UnterrichtsassistentApp.changeActiveEvidenceTool = function (toolId) {
+  if (!repository || !schoolService) {
+    return false;
+  }
+
+  const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
+  currentRawSnapshot.activeEvidenceToolId = String(toolId || "").trim() || null;
+  refreshSnapshotInMemory(currentRawSnapshot, "bewertung");
+  return false;
+};
+window.UnterrichtsassistentApp.createEvidenceTool = function () {
+  if (!repository || !schoolService) {
+    return false;
+  }
+
+  const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
+  const nextTool = createEvidenceToolRecord();
+
+  getMutableEvidenceToolsCollection(currentRawSnapshot).unshift(nextTool);
+  currentRawSnapshot.activeEvidenceToolId = nextTool.id;
+  evidenceToolExpandedNodeIds = ["root", "faecher", "jahrgaenge", "aspekte", "hauptebene"];
+  saveAndRefreshSnapshot(currentRawSnapshot, "bewertung", { forcePersist: true });
+  return false;
+};
+window.UnterrichtsassistentApp.deleteActiveEvidenceTool = function () {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeTool = currentRawSnapshot ? getActiveEvidenceToolForSnapshot(currentRawSnapshot) : null;
+  let remainingTools;
+
+  if (!repository || !schoolService || !currentRawSnapshot || !activeTool) {
+    return false;
+  }
+
+  if (!window.confirm("Soll dieses Bewertungswerkzeug wirklich dauerhaft geloescht werden?")) {
+    return false;
+  }
+
+  currentRawSnapshot.evidenceTools = getEvidenceToolsCollection(currentRawSnapshot).filter(function (tool) {
+    return String(tool && tool.id || "").trim() !== String(activeTool.id || "").trim();
+  });
+  remainingTools = getSortedEvidenceTools(currentRawSnapshot);
+  currentRawSnapshot.activeEvidenceToolId = remainingTools[0] ? String(remainingTools[0].id || "").trim() : null;
+  saveAndRefreshSnapshot(currentRawSnapshot, "bewertung", { forcePersist: true });
+  return false;
+};
+window.UnterrichtsassistentApp.toggleEvidenceToolNode = function (nodeId) {
+  const normalizedNodeId = String(nodeId || "").trim();
+
+  if (!normalizedNodeId) {
+    return false;
+  }
+
+  if (evidenceToolExpandedNodeIds.indexOf(normalizedNodeId) >= 0) {
+    evidenceToolExpandedNodeIds = evidenceToolExpandedNodeIds.filter(function (item) {
+      return item !== normalizedNodeId;
+    });
+  } else {
+    evidenceToolExpandedNodeIds = evidenceToolExpandedNodeIds.concat([normalizedNodeId]);
+  }
+
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.promptEvidenceToolTextEdit = function (scope, primaryId, secondaryId, fieldName, currentValue) {
+  const nextValue = window.prompt("Wert bearbeiten", String(currentValue || ""));
+
+  if (nextValue === null) {
+    return false;
+  }
+
+  return window.UnterrichtsassistentApp.updateEvidenceToolTextField(scope, primaryId, secondaryId, fieldName, nextValue);
+};
+window.UnterrichtsassistentApp.updateEvidenceToolTextField = function (scope, primaryId, secondaryId, fieldName, nextValue) {
+  const normalizedScope = String(scope || "").trim();
+  const normalizedField = String(fieldName || "").trim();
+
+  return updateActiveEvidenceTool(function (tool) {
+    let aspect;
+    let dimension;
+    let index;
+
+    if (normalizedScope === "tool" && ["titel", "symbol"].indexOf(normalizedField) >= 0) {
+      tool[normalizedField] = String(nextValue || "").trim();
+      return true;
+    }
+
+    if (normalizedScope === "fach") {
+      index = Number(primaryId);
+      if (!Array.isArray(tool.faecher) || !Number.isInteger(index) || index < 0 || index >= tool.faecher.length) {
+        return false;
+      }
+      tool.faecher[index] = String(nextValue || "").trim();
+      tool.faecher = tool.faecher.filter(Boolean);
+      return true;
+    }
+
+    if (normalizedScope === "jahrgang") {
+      index = Number(primaryId);
+      if (!Array.isArray(tool.jahrgaenge) || !Number.isInteger(index) || index < 0 || index >= tool.jahrgaenge.length) {
+        return false;
+      }
+      tool.jahrgaenge[index] = Math.max(5, Math.min(13, Math.round(Number(nextValue) || 5)));
+      return true;
+    }
+
+    if (normalizedScope === "aspect" && ["titel", "information", "beispiel"].indexOf(normalizedField) >= 0) {
+      aspect = getEvidenceAspectById(tool, primaryId);
+      if (!aspect) {
+        return false;
+      }
+      aspect[normalizedField] = String(nextValue || "").trim();
+      return true;
+    }
+
+    if (normalizedScope === "dimension" && normalizedField === "bezeichnung") {
+      dimension = getEvidenceDimensionById(tool, primaryId, secondaryId);
+      if (!dimension) {
+        return false;
+      }
+      dimension.bezeichnung = String(nextValue || "").trim();
+      return true;
+    }
+
+    return false;
+  });
+};
+window.UnterrichtsassistentApp.updateEvidenceToolStageTextField = function (aspectId, dimensionId, stageId, fieldName, nextValue) {
+  const normalizedField = String(fieldName || "").trim();
+
+  return updateActiveEvidenceTool(function (tool) {
+    const dimension = getEvidenceDimensionById(tool, aspectId, dimensionId);
+    const stage = dimension && Array.isArray(dimension.stufen)
+      ? dimension.stufen.find(function (item) {
+          return String(item && item.id || "").trim() === String(stageId || "").trim();
+        })
+      : null;
+
+    if (!stage || ["bezeichnung", "information", "beispiel"].indexOf(normalizedField) === -1) {
+      return false;
+    }
+
+    stage[normalizedField] = String(nextValue || "").trim();
+    return true;
+  });
+};
+window.UnterrichtsassistentApp.promptEvidenceToolStageTextEdit = function (aspectId, dimensionId, stageId, fieldName, currentValue) {
+  const nextValue = window.prompt("Wert bearbeiten", String(currentValue || ""));
+
+  if (nextValue === null) {
+    return false;
+  }
+
+  return window.UnterrichtsassistentApp.updateEvidenceToolStageTextField(aspectId, dimensionId, stageId, fieldName, nextValue);
+};
+window.UnterrichtsassistentApp.addEvidenceToolListItem = function (listType, aspectId, dimensionId) {
+  const normalizedType = String(listType || "").trim();
+
+  return updateActiveEvidenceTool(function (tool) {
+    const aspect = getEvidenceAspectById(tool, aspectId);
+    const dimension = getEvidenceDimensionById(tool, aspectId, dimensionId);
+    let nextYear;
+
+    if (normalizedType === "faecher") {
+      if (!Array.isArray(tool.faecher)) {
+        tool.faecher = [];
+      }
+      tool.faecher.push("Neues Fach");
+      return true;
+    }
+
+    if (normalizedType === "jahrgaenge") {
+      if (!Array.isArray(tool.jahrgaenge)) {
+        tool.jahrgaenge = [];
+      }
+      for (nextYear = 5; nextYear <= 13; nextYear += 1) {
+        if (tool.jahrgaenge.indexOf(nextYear) === -1) {
+          tool.jahrgaenge.push(nextYear);
+          return true;
+        }
+      }
+      return false;
+    }
+
+    if (normalizedType === "aspekte") {
+      if (!Array.isArray(tool.aspekte)) {
+        tool.aspekte = [];
+      }
+      tool.aspekte.push(createEvidenceAspectRecord());
+      return true;
+    }
+
+    if (normalizedType === "dimensionen" && aspect) {
+      if (!Array.isArray(aspect.aspektDimensionen)) {
+        aspect.aspektDimensionen = [];
+      }
+      aspect.aspektDimensionen.push(createEvidenceDimensionRecord());
+      return true;
+    }
+
+    if (normalizedType === "stufen" && dimension) {
+      if (!Array.isArray(dimension.stufen)) {
+        dimension.stufen = [];
+      }
+      dimension.stufen.push(createEvidenceStageRecord());
+      return true;
+    }
+
+    return false;
+  });
+};
+window.UnterrichtsassistentApp.deleteEvidenceToolListItem = function (listType, primaryId, secondaryId, tertiaryId) {
+  const normalizedType = String(listType || "").trim();
+
+  return updateActiveEvidenceTool(function (tool) {
+    const aspect = getEvidenceAspectById(tool, primaryId);
+    const dimension = getEvidenceDimensionById(tool, primaryId, secondaryId);
+    const index = Number(primaryId);
+
+    if (normalizedType === "faecher" && Array.isArray(tool.faecher) && Number.isInteger(index)) {
+      tool.faecher.splice(index, 1);
+      return true;
+    }
+
+    if (normalizedType === "jahrgaenge" && Array.isArray(tool.jahrgaenge) && Number.isInteger(index)) {
+      tool.jahrgaenge.splice(index, 1);
+      return true;
+    }
+
+    if (normalizedType === "aspekte") {
+      tool.aspekte = (Array.isArray(tool.aspekte) ? tool.aspekte : []).filter(function (item) {
+        return String(item && item.id || "").trim() !== String(primaryId || "").trim();
+      });
+      removeEvidenceAspectReferences(tool, primaryId);
+      return true;
+    }
+
+    if (normalizedType === "dimensionen" && aspect) {
+      aspect.aspektDimensionen = (Array.isArray(aspect.aspektDimensionen) ? aspect.aspektDimensionen : []).filter(function (item) {
+        return String(item && item.id || "").trim() !== String(secondaryId || "").trim();
+      });
+      return true;
+    }
+
+    if (normalizedType === "stufen" && dimension) {
+      dimension.stufen = (Array.isArray(dimension.stufen) ? dimension.stufen : []).filter(function (item) {
+        return String(item && item.id || "").trim() !== String(tertiaryId || "").trim();
+      });
+      return true;
+    }
+
+    return false;
+  });
+};
+window.UnterrichtsassistentApp.addEvidenceToolLevelAspect = function (levelType, ownerAspectId, aspectId) {
+  return updateActiveEvidenceTool(function (tool) {
+    const level = getEvidenceToolLevel(tool, levelType, ownerAspectId);
+    const normalizedAspectId = String(aspectId || "").trim();
+
+    if (!normalizedAspectId || !getEvidenceAspectById(tool, normalizedAspectId) || level.ebenenAspekte.indexOf(normalizedAspectId) >= 0) {
+      return false;
+    }
+
+    level.ebenenAspekte.push(normalizedAspectId);
+    return true;
+  });
+};
+window.UnterrichtsassistentApp.deleteEvidenceToolLevelAspect = function (levelType, ownerAspectId, aspectId) {
+  return updateActiveEvidenceTool(function (tool) {
+    const level = getEvidenceToolLevel(tool, levelType, ownerAspectId);
+    const normalizedAspectId = String(aspectId || "").trim();
+
+    level.ebenenAspekte = level.ebenenAspekte.filter(function (item) {
+      return item !== normalizedAspectId;
+    });
+    return true;
+  });
+};
+window.UnterrichtsassistentApp.startEvidenceToolListDrag = function (event, listType, itemId, aspectId, dimensionId, levelType) {
+  activeEvidenceToolDrag = {
+    listType: String(listType || "").trim(),
+    itemId: String(itemId || "").trim(),
+    aspectId: String(aspectId || "").trim(),
+    dimensionId: String(dimensionId || "").trim(),
+    levelType: String(levelType || "").trim()
+  };
+
+  if (event && event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", activeEvidenceToolDrag.itemId);
+  }
+
+  return true;
+};
+window.UnterrichtsassistentApp.allowEvidenceToolDrop = function (event) {
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+  return false;
+};
+window.UnterrichtsassistentApp.dropEvidenceToolListItem = function (event, listType, targetId, aspectId, dimensionId, levelType) {
+  const drag = activeEvidenceToolDrag;
+  const normalizedType = String(listType || "").trim();
+  const normalizedTargetId = String(targetId || "").trim();
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+  activeEvidenceToolDrag = null;
+
+  if (!drag || drag.listType !== normalizedType || drag.itemId === normalizedTargetId) {
+    return false;
+  }
+
+  return updateActiveEvidenceTool(function (tool) {
+    let list = null;
+    let fromIndex;
+    let toIndex;
+    let moved;
+    const ownerAspect = getEvidenceAspectById(tool, aspectId);
+    const ownerDimension = getEvidenceDimensionById(tool, aspectId, dimensionId);
+
+    if (normalizedType === "faecher") {
+      list = tool.faecher;
+    } else if (normalizedType === "jahrgaenge") {
+      list = tool.jahrgaenge;
+    } else if (normalizedType === "aspekte") {
+      list = tool.aspekte;
+    } else if (normalizedType === "dimensionen" && ownerAspect) {
+      list = ownerAspect.aspektDimensionen;
+    } else if (normalizedType === "stufen" && ownerDimension) {
+      list = ownerDimension.stufen;
+    } else if (normalizedType === "ebene") {
+      list = getEvidenceToolLevel(tool, levelType, aspectId).ebenenAspekte;
+    }
+
+    if (!Array.isArray(list)) {
+      return false;
+    }
+
+    if (normalizedType === "faecher" || normalizedType === "jahrgaenge") {
+      fromIndex = Number(drag.itemId);
+      toIndex = Number(normalizedTargetId);
+    } else {
+      fromIndex = list.findIndex(function (item) {
+        return String(item && typeof item === "object" ? item.id : item || "").trim() === drag.itemId;
+      });
+      toIndex = list.findIndex(function (item) {
+        return String(item && typeof item === "object" ? item.id : item || "").trim() === normalizedTargetId;
+      });
+    }
+
+    if (!Number.isInteger(fromIndex) || !Number.isInteger(toIndex) || fromIndex < 0 || toIndex < 0 || fromIndex >= list.length || toIndex >= list.length || fromIndex === toIndex) {
+      return false;
+    }
+
+    moved = list.splice(fromIndex, 1)[0];
+    list.splice(toIndex, 0, moved);
+    return true;
+  });
 };
 window.UnterrichtsassistentApp.changeActiveEvaluationSheet = function (sheetId) {
   if (!repository || !schoolService) {
