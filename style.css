@@ -5884,7 +5884,7 @@ button {
   position: fixed;
   inset: 0;
   z-index: 1200;
-  display: block;
+  display: none;
   padding: clamp(1rem, 3vw, 2.4rem);
   overflow: hidden;
   border: 0;
@@ -5899,6 +5899,7 @@ button {
 }
 
 .unterricht-math-observation-marker-menu.is-visible {
+  display: block;
   opacity: 1;
   transform: scale(1);
   pointer-events: auto;
