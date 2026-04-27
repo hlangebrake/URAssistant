@@ -6102,7 +6102,8 @@ button {
   position: absolute;
   box-sizing: border-box;
   border: 1px dashed rgba(23, 49, 62, 0.28);
-  border-radius: 6px;
+  border-radius: 8px;
+  background: rgba(23, 49, 62, 0.025);
   pointer-events: none;
 }
 
@@ -6112,23 +6113,23 @@ button {
   box-sizing: border-box;
   display: grid;
   place-items: center;
-  min-width: 0;
-  min-height: 0;
-  padding: 0.08rem 0.16rem;
-  border: 1px solid rgba(37, 76, 93, 0.28);
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.94);
-  color: var(--text);
+  min-width: 1.4rem;
+  min-height: 18px;
+  padding: 0 0.16rem;
+  border: 1px solid rgba(23, 49, 62, 0.16);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--sidebar);
   font: inherit;
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   font-weight: 400;
-  line-height: 1.08;
+  line-height: 1;
   letter-spacing: 0;
   overflow: hidden;
-  overflow-wrap: anywhere;
+  text-overflow: clip;
   text-align: center;
   white-space: normal;
-  box-shadow: 0 6px 16px rgba(23, 49, 62, 0.12);
+  box-shadow: none;
   user-select: none;
   touch-action: none;
 }
@@ -6141,8 +6142,14 @@ button {
 .unterricht-evidence-overlay__stage {
   z-index: 1;
   pointer-events: none;
-  background: rgba(255, 249, 232, 0.96);
-  border-color: rgba(180, 126, 23, 0.24);
+  min-width: 1.3rem;
+  min-height: 18px;
+  padding: 0 0.14rem;
+  border-radius: 0;
+  background: rgba(245, 247, 244, 0.97);
+  border-color: rgba(23, 49, 62, 0.14);
+  color: var(--text);
+  font-size: 0.66rem;
 }
 
 .unterricht-evidence-overlay__aspect.is-active {

@@ -14679,40 +14679,82 @@ function getEvidenceLevelBoundingFromRects(rects) {
 
   rects.forEach(function (rect) {
     includeRect(rect.x, rect.y, rect.width, rect.height);
-    (Array.isArray(rect.aspect && rect.aspect.aspektDimensionen) ? rect.aspect.aspektDimensionen : []).forEach(function (dimension, dimensionIndex) {
-      const stages = Array.isArray(dimension && dimension.stufen) ? dimension.stufen : [];
-      const direction = dimensionIndex % 4;
-      let dimensionWidth = 0;
-      let dimensionHeight = 0;
-
-      stages.forEach(function (stage) {
-        const stageId = String(stage && stage.id || "").trim();
-        const stageSize = rect.stageSizes[stageId] || {};
-        const stageWidth = Math.max(24, Number(stageSize.width) || rect.width);
-        const stageHeight = Math.max(18, Number(stageSize.height) || rect.height);
-
-        if (direction === 0 || direction === 2) {
-          dimensionHeight += stageHeight;
-          dimensionWidth = Math.max(dimensionWidth, stageWidth);
-        } else {
-          dimensionWidth += stageWidth;
-          dimensionHeight = Math.max(dimensionHeight, stageHeight);
-        }
-      });
-
-      if (direction === 0) {
-        includeRect(rect.x, rect.y - dimensionHeight, Math.max(rect.width, dimensionWidth), dimensionHeight);
-      } else if (direction === 1) {
-        includeRect(rect.x + rect.width, rect.y, dimensionWidth, Math.max(rect.height, dimensionHeight));
-      } else if (direction === 2) {
-        includeRect(rect.x, rect.y + rect.height, Math.max(rect.width, dimensionWidth), dimensionHeight);
-      } else {
-        includeRect(rect.x - dimensionWidth, rect.y, dimensionWidth, Math.max(rect.height, dimensionHeight));
-      }
+    getEvidenceAspectDimensionStageRects(rect).forEach(function (stageRect) {
+      includeRect(stageRect.x, stageRect.y, stageRect.width, stageRect.height);
     });
   });
 
   return hasRect ? { x: minX, y: minY, width: maxX - minX, height: maxY - minY } : { x: 0, y: 0, width: 0, height: 0 };
+}
+
+function getEvidenceAspectDimensionStageRects(rect) {
+  const dimensions = Array.isArray(rect && rect.aspect && rect.aspect.aspektDimensionen)
+    ? rect.aspect.aspektDimensionen
+    : [];
+  const directionOffsets = [0, 0, 0, 0];
+  const stageRects = [];
+
+  dimensions.forEach(function (dimension, dimensionIndex) {
+    const stages = Array.isArray(dimension && dimension.stufen) ? dimension.stufen : [];
+    const direction = dimensionIndex % 4;
+    const dimensionId = String(dimension && dimension.id || "").trim();
+    const items = stages.map(function (stage) {
+      const stageId = String(stage && stage.id || "").trim();
+      const stageSize = rect.stageSizes[stageId] || {};
+
+      return {
+        stage: stage,
+        stageId: stageId,
+        width: Math.max(24, Number(stageSize.width) || rect.width),
+        height: Math.max(18, Number(stageSize.height) || rect.height)
+      };
+    });
+    const dimensionWidth = direction === 0 || direction === 2
+      ? items.reduce(function (width, item) { return Math.max(width, item.width); }, 0)
+      : items.reduce(function (sum, item) { return sum + item.width; }, 0);
+    const dimensionHeight = direction === 0 || direction === 2
+      ? items.reduce(function (sum, item) { return sum + item.height; }, 0)
+      : items.reduce(function (height, item) { return Math.max(height, item.height); }, 0);
+    let dimensionX = rect.x;
+    let dimensionY = rect.y;
+
+    if (!items.length) {
+      return;
+    }
+
+    if (direction === 0) {
+      dimensionY = rect.y - directionOffsets[direction] - dimensionHeight;
+      directionOffsets[direction] += dimensionHeight;
+    } else if (direction === 1) {
+      dimensionX = rect.x + rect.width + directionOffsets[direction];
+      directionOffsets[direction] += dimensionWidth;
+    } else if (direction === 2) {
+      dimensionY = rect.y + rect.height + directionOffsets[direction];
+      directionOffsets[direction] += dimensionHeight;
+    } else {
+      dimensionX = rect.x - directionOffsets[direction] - dimensionWidth;
+      directionOffsets[direction] += dimensionWidth;
+    }
+
+    items.forEach(function (item, stageIndex) {
+      const previousOffset = items.slice(0, stageIndex).reduce(function (sum, previousItem) {
+        return sum + (direction === 0 || direction === 2 ? previousItem.height : previousItem.width);
+      }, 0);
+
+      stageRects.push({
+        dimensionId: dimensionId,
+        stageId: item.stageId,
+        stage: item.stage,
+        direction: direction,
+        x: direction === 1 || direction === 3 ? dimensionX + previousOffset : dimensionX,
+        y: direction === 0 || direction === 2 ? dimensionY + previousOffset : dimensionY,
+        width: item.width,
+        height: item.height
+      });
+    });
+  });
+
+  return stageRects;
 }
 
 function positionUnterrichtEvidenceOverlay(overlay, startX, startY, bounds) {
@@ -14814,51 +14856,13 @@ function updateUnterrichtEvidenceOverlaySelection(clientX, clientY) {
     return;
   }
 
-  dimensionsWrap.innerHTML = (Array.isArray(nearestAspect.aspect && nearestAspect.aspect.aspektDimensionen) ? nearestAspect.aspect.aspektDimensionen : []).map(function (dimension, dimensionIndex) {
-    const stages = Array.isArray(dimension && dimension.stufen) ? dimension.stufen : [];
-    const direction = dimensionIndex % 4;
-    const stageRects = stages.map(function (stage) {
-      const stageId = String(stage && stage.id || "").trim();
-      const stageSize = nearestAspect.stageSizes[stageId] || {};
+  dimensionsWrap.innerHTML = getEvidenceAspectDimensionStageRects(nearestAspect).map(function (stageRect) {
+    const centerX = drag.originX + stageRect.x + (stageRect.width / 2);
+    const centerY = drag.originY + stageRect.y + (stageRect.height / 2);
+    const distance = Math.hypot(clientX - centerX, clientY - centerY);
 
-      return {
-        stage: stage,
-        stageId: stageId,
-        width: Math.max(24, Number(stageSize.width) || nearestAspect.width),
-        height: Math.max(18, Number(stageSize.height) || nearestAspect.height)
-      };
-    });
-    const totalStageWidth = stageRects.reduce(function (sum, item) { return sum + item.width; }, 0);
-    const totalStageHeight = stageRects.reduce(function (sum, item) { return sum + item.height; }, 0);
-    let offsetX = nearestAspect.x;
-    let offsetY = nearestAspect.y;
-
-    if (direction === 0) {
-      offsetY -= totalStageHeight;
-    } else if (direction === 1) {
-      offsetX += nearestAspect.width;
-    } else if (direction === 2) {
-      offsetY += nearestAspect.height;
-    } else {
-      offsetX -= totalStageWidth;
-    }
-
-    return stageRects.map(function (stageRect, stageIndex) {
-      const x = direction === 1 || direction === 3
-        ? offsetX + stageRects.slice(0, stageIndex).reduce(function (sum, item) { return sum + item.width; }, 0)
-        : offsetX;
-      const y = direction === 0 || direction === 2
-        ? offsetY + stageRects.slice(0, stageIndex).reduce(function (sum, item) { return sum + item.height; }, 0)
-        : offsetY;
-      const stageWidth = stageRect.width;
-      const stageHeight = stageRect.height;
-      const centerX = drag.originX + x + (stageWidth / 2);
-      const centerY = drag.originY + y + (stageHeight / 2);
-      const distance = Math.hypot(clientX - centerX, clientY - centerY);
-
-      stageCandidates.push({ dimensionId: String(dimension && dimension.id || "").trim(), stageId: stageRect.stageId, distance: distance });
-      return '<div class="unterricht-evidence-overlay__stage" data-dimension-id="' + escapeHtml(String(dimension && dimension.id || "").trim()) + '" data-stage-id="' + escapeHtml(stageRect.stageId) + '" style="left:calc(var(--origin-x) + ' + escapeHtml(String(x)) + 'px);top:calc(var(--origin-y) + ' + escapeHtml(String(y)) + 'px);width:' + escapeHtml(String(stageWidth)) + 'px;height:' + escapeHtml(String(stageHeight)) + 'px">' + escapeHtml(String(stageRect.stage && stageRect.stage.bezeichnung || "").trim() || "Stufe") + '</div>';
-    }).join("");
+    stageCandidates.push({ dimensionId: stageRect.dimensionId, stageId: stageRect.stageId, distance: distance });
+    return '<div class="unterricht-evidence-overlay__stage" data-dimension-id="' + escapeHtml(stageRect.dimensionId) + '" data-stage-id="' + escapeHtml(stageRect.stageId) + '" style="left:calc(var(--origin-x) + ' + escapeHtml(String(stageRect.x)) + 'px);top:calc(var(--origin-y) + ' + escapeHtml(String(stageRect.y)) + 'px);width:' + escapeHtml(String(stageRect.width)) + 'px;height:' + escapeHtml(String(stageRect.height)) + 'px">' + escapeHtml(String(stageRect.stage && stageRect.stage.bezeichnung || "").trim() || "Stufe") + '</div>';
   }).join("");
 
   drag.activeStages = stageCandidates.sort(function (left, right) {
@@ -14898,7 +14902,7 @@ function finishUnterrichtEvidenceSelection() {
   });
 
   if (followLevel) {
-    renderUnterrichtEvidenceOverlay(drag, followLevel, drag.lastClientX || drag.startX, drag.lastClientY || drag.startY);
+    renderUnterrichtEvidenceOverlay(drag, followLevel, drag.startX, drag.startY);
     return false;
   }
 
