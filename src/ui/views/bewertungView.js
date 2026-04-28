@@ -318,6 +318,26 @@ window.Unterrichtsassistent.ui.views.bewertung = {
         : [];
     }
 
+    function sortStudentsByFirstName(left, right) {
+      const leftFirstName = String(left && left.firstName || "").trim();
+      const rightFirstName = String(right && right.firstName || "").trim();
+      const firstNameComparison = leftFirstName.localeCompare(rightFirstName, "de-DE", { sensitivity: "base" });
+
+      if (firstNameComparison !== 0) {
+        return firstNameComparison;
+      }
+
+      const leftLastName = String(left && left.lastName || "").trim();
+      const rightLastName = String(right && right.lastName || "").trim();
+      const lastNameComparison = leftLastName.localeCompare(rightLastName, "de-DE", { sensitivity: "base" });
+
+      if (lastNameComparison !== 0) {
+        return lastNameComparison;
+      }
+
+      return String(left && left.id || "").trim().localeCompare(String(right && right.id || "").trim(), "de-DE");
+    }
+
     function getPlannedEvaluationsForActiveClass() {
       const allItems = Array.isArray(snapshot.plannedEvaluations) ? snapshot.plannedEvaluations : [];
       const classId = String(activeClass && activeClass.id || "").trim();
@@ -1511,7 +1531,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
       const assignedStudents = selectedPlannedEvaluation && Array.isArray(selectedPlannedEvaluation.studentIds)
         ? selectedPlannedEvaluation.studentIds.map(function (studentId) {
             return studentLookup[String(studentId || "").trim()] || null;
-          }).filter(Boolean)
+          }).filter(Boolean).sort(sortStudentsByFirstName)
         : [];
       const performedEvaluationLookup = selectedPlannedEvaluation
         ? performedEvaluations.reduce(function (lookup, entry) {

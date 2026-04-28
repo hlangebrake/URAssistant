@@ -9204,16 +9204,16 @@ body.is-desk-dragging {
 .import-modal__dialog--planning-evaluation {
   width: min(980px, calc(100% - 2rem));
   max-width: none;
-  max-height: min(86vh, 920px);
+  max-height: min(86vh, 920px, calc(100dvh - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 .import-modal__dialog--planning-evaluation .import-modal__form {
   flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
+  overflow-y: visible;
   padding-right: 0.2rem;
 }
 
