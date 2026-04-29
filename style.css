@@ -4252,6 +4252,13 @@ button {
   margin-top: -2.2rem;
 }
 
+.unterricht-layout__live-todos.is-collapsed {
+  min-height: 0;
+  height: auto;
+  padding-top: 0.8rem;
+  padding-bottom: 0.8rem;
+}
+
 .unterricht-layout--live.has-live-flow .unterricht-layout__live-flow {
   grid-column: 2 / 3;
   grid-row: 2;
