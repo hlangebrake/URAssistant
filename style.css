@@ -4806,6 +4806,12 @@ button {
   background: rgba(255, 255, 255, 0.72);
 }
 
+.unterricht-live-flow__extra--homework {
+  gap: 0.24rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 10px;
+}
+
 .unterricht-live-flow__extra-header {
   display: flex;
   align-items: baseline;

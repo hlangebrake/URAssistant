@@ -224,6 +224,28 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       return normalizedDate.slice(8, 10) + "." + normalizedDate.slice(5, 7) + ".";
     }
 
+    function addDaysToIsoDate(dateValue, amount) {
+      const date = parseLocalDate(dateValue);
+
+      if (!date) {
+        return "";
+      }
+
+      date.setDate(date.getDate() + (Number(amount) || 0));
+      return toIsoDate(date);
+    }
+
+    function addMonthsToIsoDate(dateValue, amount) {
+      const date = parseLocalDate(dateValue);
+
+      if (!date) {
+        return "";
+      }
+
+      date.setMonth(date.getMonth() + (Number(amount) || 0));
+      return toIsoDate(date);
+    }
+
     function normalizePlanningCategoryKey(value) {
       return String(value || "")
         .trim()
@@ -608,18 +630,57 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       ].join("");
     }
 
-    function renderLiveLessonHomework(lessonPlan) {
+    function getCurriculumHomeworkDueDate(lessonPlan, lessonDate, lessonSlots) {
+      const homeworkDueMode = String(lessonPlan && lessonPlan.homeworkDueMode || "").trim().toLowerCase();
+      const homeworkDueAmount = Math.max(1, Number(lessonPlan && lessonPlan.homeworkDueAmount) || 1);
+      const homeworkDueUnit = String(lessonPlan && lessonPlan.homeworkDueUnit || "").trim().toLowerCase();
+      const normalizedLessonDate = String(lessonDate || "").slice(0, 10);
+
+      if (!homeworkDueMode || !normalizedLessonDate) {
+        return "";
+      }
+
+      if (homeworkDueMode === "next_available_day") {
+        const matchingSlot = (Array.isArray(lessonSlots) ? lessonSlots : []).find(function (slot) {
+          return String(slot && slot.lessonDate || "").slice(0, 10) > normalizedLessonDate;
+        });
+
+        return matchingSlot ? String(matchingSlot.lessonDate || "").slice(0, 10) : "";
+      }
+
+      if (homeworkDueMode === "next_week") {
+        return addDaysToIsoDate(normalizedLessonDate, 7);
+      }
+
+      if (homeworkDueMode === "manual") {
+        if (homeworkDueUnit === "wochen") {
+          return addDaysToIsoDate(normalizedLessonDate, homeworkDueAmount * 7);
+        }
+
+        if (homeworkDueUnit === "monate") {
+          return addMonthsToIsoDate(normalizedLessonDate, homeworkDueAmount);
+        }
+
+        return addDaysToIsoDate(normalizedLessonDate, homeworkDueAmount);
+      }
+
+      return "";
+    }
+
+    function renderLiveLessonHomework(lessonPlan, lessonDate, lessonSlots) {
       const homeworkText = String(lessonPlan && lessonPlan.homeworkText || "").trim();
       const homeworkDueMode = String(lessonPlan && lessonPlan.homeworkDueMode || "").trim().toLowerCase();
       const homeworkDueAmount = Math.max(1, Number(lessonPlan && lessonPlan.homeworkDueAmount) || 1);
       const homeworkDueUnit = String(lessonPlan && lessonPlan.homeworkDueUnit || "").trim().toLowerCase();
-      let dueLabel = getCurriculumHomeworkDueModeLabel(homeworkDueMode);
+      const dueDate = getCurriculumHomeworkDueDate(lessonPlan, lessonDate, lessonSlots);
+      const referenceDateValue = toIsoDate(referenceDate);
+      let dueLabel = dueDate ? "faellig " + formatShortDateLabel(dueDate) : getCurriculumHomeworkDueModeLabel(homeworkDueMode);
 
-      if (!homeworkDueMode || !homeworkText) {
+      if (!homeworkDueMode || !homeworkText || !dueDate || dueDate < referenceDateValue) {
         return "";
       }
 
-      if (homeworkDueMode === "manual") {
+      if (!dueLabel && homeworkDueMode === "manual") {
         dueLabel = String(homeworkDueAmount) + " " + getCurriculumHomeworkDueUnitLabel(homeworkDueUnit, homeworkDueAmount);
       }
 
@@ -1139,6 +1200,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
 
       return {
         lessonDate: lessonDate,
+        lessonSlots: lessonSlots,
         segments: segments,
         activeSegmentIndex: activeSegmentIndex
       };
@@ -1658,6 +1720,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
             ].join("") : "",
             isCollapsed ? "" : [
             renderLiveLessonPreparation(segmentItem.lessonPlan),
+            renderLiveLessonHomework(segmentItem.lessonPlan, segmentItem.lessonDate || lessonFlowData.lessonDate, lessonFlowData.lessonSlots),
             '<div class="unterricht-live-flow__phase-list">',
             segmentItem.phases.map(function (phaseItem) {
             const phaseItemId = String(phaseItem && phaseItem.id || "").trim();
@@ -1778,8 +1841,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
               '</section>'
             ].join("");
             }).join(""),
-            '</div>',
-            renderLiveLessonHomework(segmentItem.lessonPlan)
+            '</div>'
             ].join(""),
             '</section>'
           ].join("");
