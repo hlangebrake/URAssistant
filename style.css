@@ -1772,6 +1772,10 @@ button {
 }
 
 .planning-lesson-flow__phase-summary-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
   color: rgba(23, 49, 62, 0.9);
   font-size: 0.92rem;
   font-weight: 800;
@@ -1993,15 +1997,57 @@ button {
   table-layout: fixed;
 }
 
+.planning-lesson-flow__step-table--compact td:nth-child(1) {
+  width: auto;
+}
+
+.planning-lesson-flow__step-table--compact td:nth-child(2) {
+  width: 64px;
+}
+
+.planning-lesson-flow__step-table--compact td:nth-child(3) {
+  width: 92px;
+}
+
+.planning-lesson-flow__step-table--compact td:nth-child(4) {
+  width: 96px;
+}
+
 .planning-lesson-flow__step-row--compact td {
   padding-top: 0.5rem;
   padding-bottom: 0.5rem;
 }
 
 .planning-lesson-flow__step-view-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
   color: rgba(23, 49, 62, 0.9);
   font-weight: 700;
   line-height: 1.3;
+}
+
+.planning-lesson-flow__status-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 0.08rem 0.42rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.planning-lesson-flow__status-badge--completed {
+  background: rgba(46, 138, 71, 0.12);
+  color: #2e6f3e;
+}
+
+.planning-lesson-flow__status-badge--skipped {
+  background: rgba(31, 36, 48, 0.1);
+  color: rgba(31, 36, 48, 0.66);
 }
 
 .planning-lesson-flow__step-view-head {
@@ -2015,6 +2061,7 @@ button {
   color: rgba(23, 49, 62, 0.74);
   font-size: 0.84rem;
   line-height: 1.42;
+  max-width: 72ch;
   white-space: pre-wrap;
 }
 
@@ -2028,6 +2075,8 @@ button {
   color: rgba(23, 49, 62, 0.76);
   font-size: 0.76rem;
   font-weight: 700;
+  max-width: 100%;
+  white-space: nowrap;
 }
 
 .planning-lesson-flow__step-empty {
@@ -4796,11 +4845,26 @@ button {
   color: rgba(31, 36, 48, 0.58);
 }
 
+.unterricht-live-flow__phase.is-skipped {
+  background: rgba(31, 36, 48, 0.04);
+  border-color: rgba(31, 36, 48, 0.12);
+  color: rgba(31, 36, 48, 0.46);
+}
+
 .unterricht-live-flow__phase.is-completed .unterricht-live-flow__phase-title,
 .unterricht-live-flow__phase.is-completed .unterricht-live-flow__step-title,
 .unterricht-live-flow__phase.is-completed .unterricht-live-flow__step-content,
 .unterricht-live-flow__phase.is-completed .unterricht-live-flow__step-meta strong {
   color: inherit;
+}
+
+.unterricht-live-flow__phase.is-skipped .unterricht-live-flow__phase-title-label > span,
+.unterricht-live-flow__step.is-skipped .unterricht-live-flow__step-title,
+.unterricht-live-flow__step.is-skipped .unterricht-live-flow__step-timing,
+.unterricht-live-flow__step.is-skipped .unterricht-live-flow__step-meta strong {
+  color: inherit;
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
 }
 
 .unterricht-live-flow__phase-content {
@@ -4837,6 +4901,14 @@ button {
   min-width: 0;
 }
 
+.unterricht-live-flow__phase-controls,
+.unterricht-live-flow__step-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
 .unterricht-live-flow__phase-title-label input {
   width: 16px;
   height: 16px;
@@ -4846,6 +4918,39 @@ button {
 
 .unterricht-live-flow__phase-title-label > span {
   min-width: 0;
+}
+
+.unterricht-live-flow__skip-button {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(23, 49, 62, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  color: rgba(23, 49, 62, 0.68);
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.unterricht-live-flow__skip-button:hover,
+.unterricht-live-flow__skip-button:focus-visible {
+  border-color: rgba(23, 49, 62, 0.42);
+  color: var(--sidebar);
+}
+
+.unterricht-live-flow__skip-button.is-active {
+  background: rgba(31, 36, 48, 0.12);
+  border-color: rgba(31, 36, 48, 0.3);
+  color: rgba(31, 36, 48, 0.74);
+}
+
+.unterricht-live-flow__skip-button--step {
+  width: 20px;
+  height: 20px;
+  font-size: 0.68rem;
 }
 
 .unterricht-live-flow__phase-meta {

@@ -2181,8 +2181,40 @@ window.Unterrichtsassistent.ui.views.planung = {
       const lessonDateLabel = lessonAssignment && lessonAssignment.firstDate
         ? formatInstructionSeriesRange(lessonAssignment.firstDate, lessonAssignment.lastDate)
         : "Noch ohne Datum";
+      const lessonStatusDate = String(lessonAssignment && lessonAssignment.firstDate || "").slice(0, 10);
       const lessonSummary = String(lessonItem && lessonItem.summary || "").trim();
       const orderedPhases = lessonItem ? getOrderedCurriculumLessonPhasesForLesson(normalizedLessonId) : [];
+      const lessonPhaseStatusLookup = (Array.isArray(snapshot.curriculumLessonPhaseStatuses) ? snapshot.curriculumLessonPhaseStatuses : []).reduce(function (lookup, statusItem) {
+        const classId = String(statusItem && statusItem.classId || "").trim();
+        const lessonDate = String(statusItem && statusItem.lessonDate || "").slice(0, 10);
+        const lessonPlanId = String(statusItem && statusItem.lessonPlanId || "").trim();
+        const phaseId = String(statusItem && statusItem.phaseId || "").trim();
+
+        if (classId && lessonPlanId && phaseId && statusItem) {
+          lookup[[classId, lessonPlanId, phaseId].join("::")] = statusItem;
+          if (lessonDate) {
+            lookup[[classId, lessonDate, lessonPlanId, phaseId].join("::")] = statusItem;
+          }
+        }
+
+        return lookup;
+      }, {});
+      const lessonStepStatusLookup = (Array.isArray(snapshot.curriculumLessonStepStatuses) ? snapshot.curriculumLessonStepStatuses : []).reduce(function (lookup, statusItem) {
+        const classId = String(statusItem && statusItem.classId || "").trim();
+        const lessonDate = String(statusItem && statusItem.lessonDate || "").slice(0, 10);
+        const lessonPlanId = String(statusItem && statusItem.lessonPlanId || "").trim();
+        const phaseId = String(statusItem && statusItem.phaseId || "").trim();
+        const stepId = String(statusItem && statusItem.stepId || "").trim();
+
+        if (classId && lessonPlanId && phaseId && stepId && statusItem) {
+          lookup[[classId, lessonPlanId, phaseId, stepId].join("::")] = statusItem;
+          if (lessonDate) {
+            lookup[[classId, lessonDate, lessonPlanId, phaseId, stepId].join("::")] = statusItem;
+          }
+        }
+
+        return lookup;
+      }, {});
       const viewPhaseLookup = activeCurriculumLessonFlowViewPhaseIds.reduce(function (lookup, phaseId) {
         lookup[phaseId] = true;
         return lookup;
@@ -2192,6 +2224,37 @@ window.Unterrichtsassistent.ui.views.planung = {
       });
 
       if (!activeClass || !lessonItem || !sequenceItem || !seriesItem || String(seriesItem.classId || "").trim() !== String(activeClass.id || "").trim()) {
+        return "";
+      }
+
+      function getLessonPhaseStatus(phaseId) {
+        const normalizedClassId = String(activeClass && activeClass.id || "").trim();
+        const normalizedPhaseId = String(phaseId || "").trim();
+
+        return lessonPhaseStatusLookup[[normalizedClassId, lessonStatusDate, normalizedLessonId, normalizedPhaseId].join("::")]
+          || lessonPhaseStatusLookup[[normalizedClassId, normalizedLessonId, normalizedPhaseId].join("::")]
+          || null;
+      }
+
+      function getLessonStepStatus(phaseId, stepId) {
+        const normalizedClassId = String(activeClass && activeClass.id || "").trim();
+        const normalizedPhaseId = String(phaseId || "").trim();
+        const normalizedStepId = String(stepId || "").trim();
+
+        return lessonStepStatusLookup[[normalizedClassId, lessonStatusDate, normalizedLessonId, normalizedPhaseId, normalizedStepId].join("::")]
+          || lessonStepStatusLookup[[normalizedClassId, normalizedLessonId, normalizedPhaseId, normalizedStepId].join("::")]
+          || null;
+      }
+
+      function buildLessonFlowStatusBadge(statusItem) {
+        if (statusItem && statusItem.isSkipped) {
+          return '<span class="planning-lesson-flow__status-badge planning-lesson-flow__status-badge--skipped">uebersprungen</span>';
+        }
+
+        if (statusItem && statusItem.isCompleted) {
+          return '<span class="planning-lesson-flow__status-badge planning-lesson-flow__status-badge--completed">erledigt</span>';
+        }
+
         return "";
       }
 
@@ -2215,6 +2278,8 @@ window.Unterrichtsassistent.ui.views.planung = {
           const isViewMode = Boolean(viewPhaseLookup[phaseId]);
           const phaseSituationType = String(phaseItem && phaseItem.situationType || "").trim().toLowerCase();
           const phaseDemandLevel = String(phaseItem && phaseItem.demandLevel || "").trim().toLowerCase();
+          const phaseStatus = getLessonPhaseStatus(phaseId);
+          const phaseStatusBadge = buildLessonFlowStatusBadge(phaseStatus);
           const phaseSummaryMetaParts = [
             String(Math.max(0, Number(phaseItem && phaseItem.durationMinutes) || 0)) + ' Min.',
             phaseItem && phaseItem.isReserve ? 'Reserve' : '',
@@ -2229,7 +2294,7 @@ window.Unterrichtsassistent.ui.views.planung = {
             '<div class="planning-lesson-flow__phase-toolbar">',
             '<button class="planning-lesson-flow__drag-handle planning-lesson-flow__drag-handle--phase" type="button" aria-label="Phase verschieben" onclick="return window.UnterrichtsassistentApp.stopEventPropagation(event)" onpointerdown="return window.UnterrichtsassistentApp.startCurriculumLessonFlowPhaseDrag(event, \'', escapeValue(normalizedLessonId), '\', \'', escapeValue(phaseId), '\')">&#8645;</button>',
             isViewMode
-              ? '<div class="planning-lesson-flow__phase-summary"><div class="planning-lesson-flow__phase-summary-title">' + escapeValue(String(phaseItem && phaseItem.title || "").trim() || "Ohne Titel") + '</div><div class="planning-lesson-flow__phase-summary-meta">' + phaseSummaryMetaParts.map(function (entry) { return '<span>' + escapeValue(entry) + '</span>'; }).join("") + '</div></div>'
+              ? '<div class="planning-lesson-flow__phase-summary"><div class="planning-lesson-flow__phase-summary-title">' + escapeValue(String(phaseItem && phaseItem.title || "").trim() || "Ohne Titel") + phaseStatusBadge + '</div><div class="planning-lesson-flow__phase-summary-meta">' + phaseSummaryMetaParts.map(function (entry) { return '<span>' + escapeValue(entry) + '</span>'; }).join("") + '</div></div>'
               : '<label class="planning-lesson-flow__phase-field planning-lesson-flow__phase-field--title"><span>Phase</span><input type="text" value="' + escapeValue(String(phaseItem && phaseItem.title || "").trim()) + '" placeholder="Titel der Phase" onchange="return window.UnterrichtsassistentApp.updateCurriculumLessonPhaseField(\'' + escapeValue(phaseId) + '\', \'title\', this.value)"></label>',
             isViewMode
               ? ''
@@ -2250,14 +2315,17 @@ window.Unterrichtsassistent.ui.views.planung = {
                   '<table class="planning-lesson-flow__step-table planning-lesson-flow__step-table--compact">',
                   '<tbody>',
                   orderedSteps.length ? orderedSteps.map(function (stepItem) {
+                    const stepId = String(stepItem && stepItem.id || "").trim();
                     const stepDurationRaw = stepItem && stepItem.durationMinutes !== null && typeof stepItem.durationMinutes !== "undefined"
                       ? String(stepItem.durationMinutes).trim()
                       : "";
+                    const stepStatus = getLessonStepStatus(phaseId, stepId);
+                    const stepStatusBadge = buildLessonFlowStatusBadge(stepStatus);
 
                     return [
-                      '<tr class="planning-lesson-flow__step-row planning-lesson-flow__step-row--compact" data-step-drop-target="', escapeValue(String(stepItem && stepItem.id || "").trim()), '" data-phase-id="', escapeValue(phaseId), '">',
+                      '<tr class="planning-lesson-flow__step-row planning-lesson-flow__step-row--compact" data-step-drop-target="', escapeValue(stepId), '" data-phase-id="', escapeValue(phaseId), '">',
                       '<td class="planning-lesson-flow__step-main-cell">',
-                      '<div class="planning-lesson-flow__step-view-head"><button class="planning-lesson-flow__drag-handle planning-lesson-flow__drag-handle--step" type="button" aria-label="Schritt verschieben" onclick="return window.UnterrichtsassistentApp.stopEventPropagation(event)" onpointerdown="return window.UnterrichtsassistentApp.startCurriculumLessonFlowStepDrag(event, \'', escapeValue(phaseId), '\', \'', escapeValue(String(stepItem && stepItem.id || "").trim()), '\')">&#8645;</button><div class="planning-lesson-flow__step-view-title">', escapeValue(String(stepItem && stepItem.title || "").trim() || "Ohne Titel"), '</div></div>',
+                      '<div class="planning-lesson-flow__step-view-head"><button class="planning-lesson-flow__drag-handle planning-lesson-flow__drag-handle--step" type="button" aria-label="Schritt verschieben" onclick="return window.UnterrichtsassistentApp.stopEventPropagation(event)" onpointerdown="return window.UnterrichtsassistentApp.startCurriculumLessonFlowStepDrag(event, \'', escapeValue(phaseId), '\', \'', escapeValue(stepId), '\')">&#8645;</button><div class="planning-lesson-flow__step-view-title">', escapeValue(String(stepItem && stepItem.title || "").trim() || "Ohne Titel"), stepStatusBadge, '</div></div>',
                       String(stepItem && stepItem.content || "").trim()
                         ? '<div class="planning-lesson-flow__step-view-content">' + escapeValue(String(stepItem && stepItem.content || "").trim()) + '</div>'
                         : '',

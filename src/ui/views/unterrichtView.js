@@ -1672,12 +1672,15 @@ window.Unterrichtsassistent.ui.views.unterricht = {
             const persistedElapsedMinutes = Math.max(0, Number(phaseStatus && phaseStatus.elapsedMinutes) || 0);
             const resumeStartMinutes = Math.max(0, Number(phaseStatus && phaseStatus.resumeStartMinutes) || 0);
             const isCompleted = Boolean(phaseStatus && phaseStatus.isCompleted);
+            const isSkipped = Boolean(phaseStatus && phaseStatus.isSkipped);
             let elapsedMinutes = 0;
             let diffLabel = "";
             let titleClasses = ["unterricht-live-flow__phase-title"];
             let diffClass = "";
 
-            if (isCompleted) {
+            if (isSkipped) {
+              elapsedMinutes = 0;
+            } else if (isCompleted) {
               elapsedMinutes = persistedElapsedMinutes;
             } else if (phaseStatus && persistedElapsedMinutes > 0) {
               elapsedMinutes = persistedElapsedMinutes + Math.max(0, segmentItem.elapsedMinutes - resumeStartMinutes);
@@ -1702,10 +1705,10 @@ window.Unterrichtsassistent.ui.views.unterricht = {
             consumedCompletedMinutes += elapsedMinutes;
 
             return [
-              '<section class="unterricht-live-flow__phase' + (isCompleted ? ' is-completed' : '') + '">',
+              '<section class="unterricht-live-flow__phase' + (isCompleted ? ' is-completed' : '') + (isSkipped ? ' is-skipped' : '') + '">',
               '<div class="unterricht-live-flow__phase-content">',
               '<div class="unterricht-live-flow__phase-title-row">',
-              '<h3 class="' + titleClasses.join(" ") + '"><label class="unterricht-live-flow__phase-title-label"><input type="checkbox" aria-label="Phase erledigt" ' + (isCompleted ? 'checked ' : '') + 'onchange="return window.UnterrichtsassistentApp.toggleCurriculumLessonPhaseCompleted(\'' + escapeValue(String(activeClass && activeClass.id || "").trim()) + '\', \'' + escapeValue(lessonFlowData.lessonDate) + '\', \'' + escapeValue(String(segmentItem.lessonPlan && segmentItem.lessonPlan.id || "").trim()) + '\', \'' + escapeValue(phaseItemId) + '\', this.checked, ' + String(elapsedMinutes) + ', ' + String(segmentItem.elapsedMinutes) + ')"><span>' + escapeValue(phaseTitle) + ' <span>(' + escapeValue(String(elapsedMinutes)) + ' / ' + escapeValue(String(phaseDuration)) + ' Min.)</span>' + diffLabel + '</span></label></h3>',
+              '<h3 class="' + titleClasses.join(" ") + '"><span class="unterricht-live-flow__phase-controls"><label class="unterricht-live-flow__phase-title-label"><input type="checkbox" aria-label="Phase erledigt" ' + (isCompleted ? 'checked ' : '') + 'onchange="return window.UnterrichtsassistentApp.toggleCurriculumLessonPhaseCompleted(\'' + escapeValue(String(activeClass && activeClass.id || "").trim()) + '\', \'' + escapeValue(lessonFlowData.lessonDate) + '\', \'' + escapeValue(String(segmentItem.lessonPlan && segmentItem.lessonPlan.id || "").trim()) + '\', \'' + escapeValue(phaseItemId) + '\', this.checked, ' + String(elapsedMinutes) + ', ' + String(segmentItem.elapsedMinutes) + ')"><span>' + escapeValue(phaseTitle) + ' <span>(' + escapeValue(String(elapsedMinutes)) + ' / ' + escapeValue(String(phaseDuration)) + ' Min.)</span>' + diffLabel + '</span></label><button class="unterricht-live-flow__skip-button' + (isSkipped ? ' is-active' : '') + '" type="button" aria-pressed="' + (isSkipped ? 'true' : 'false') + '" aria-label="Phase ueberspringen" title="Ueberspringen" onclick="return window.UnterrichtsassistentApp.toggleCurriculumLessonPhaseSkipped(\'' + escapeValue(String(activeClass && activeClass.id || "").trim()) + '\', \'' + escapeValue(lessonFlowData.lessonDate) + '\', \'' + escapeValue(String(segmentItem.lessonPlan && segmentItem.lessonPlan.id || "").trim()) + '\', \'' + escapeValue(phaseItemId) + '\', ' + (isSkipped ? 'false' : 'true') + ')">ü</button></span></h3>',
               phaseMetaParts.length
                 ? '<div class="unterricht-live-flow__phase-meta">' + phaseMetaParts.map(function (entry) {
                     return '<span>' + escapeValue(entry) + '</span>';
@@ -1715,7 +1718,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
                 ? '<span class="unterricht-live-flow__phase-flag">Reserve</span>'
                 : "",
               '</div>',
-              !isCompleted && phaseSteps.length
+              !isCompleted && !isSkipped && phaseSteps.length
                 ? '<div class="unterricht-live-flow__step-list">' + (function () {
                   let consumedStepMinutes = 0;
                   let activeIncompleteAssigned = false;
@@ -1732,9 +1735,12 @@ window.Unterrichtsassistent.ui.views.unterricht = {
                   const stepPlannedMinutes = stepHasDuration ? Math.max(0, Number(stepItem && stepItem.durationMinutes) || 0) : 0;
                   const stepStatus = lessonStepStatusLookup[[String(activeClass && activeClass.id || "").trim(), String(segmentItem.lessonPlan && segmentItem.lessonPlan.id || "").trim(), phaseItemId, stepId].join("::")] || lessonStepStatusLookup[[String(activeClass && activeClass.id || "").trim(), lessonFlowData.lessonDate, String(segmentItem.lessonPlan && segmentItem.lessonPlan.id || "").trim(), phaseItemId, stepId].join("::")] || null;
                   const isStepCompleted = Boolean(stepStatus && stepStatus.isCompleted);
+                  const isStepSkipped = Boolean(stepStatus && stepStatus.isSkipped);
                   let stepElapsedMinutes = 0;
 
-                  if (isStepCompleted) {
+                  if (isStepSkipped) {
+                    stepElapsedMinutes = 0;
+                  } else if (isStepCompleted) {
                     stepElapsedMinutes = Math.max(0, Number(stepStatus && stepStatus.elapsedMinutes) || 0);
                     consumedStepMinutes += stepElapsedMinutes;
                   } else if (!activeIncompleteAssigned) {
@@ -1748,16 +1754,14 @@ window.Unterrichtsassistent.ui.views.unterricht = {
                   const stepTimingLabel = stepHasDuration
                     ? '<div class="unterricht-live-flow__step-timing' + stepTimingClass + '">(' + escapeValue(String(stepElapsedMinutes)) + ' / ' + escapeValue(String(stepPlannedMinutes)) + ' Min.)</div>'
                     : "";
-                  const stepCheckbox = '<input type="checkbox" aria-label="Schritt erledigt" ' + (isStepCompleted ? 'checked ' : '') + 'onchange="return window.UnterrichtsassistentApp.toggleCurriculumLessonStepCompleted(\'' + escapeValue(String(activeClass && activeClass.id || "").trim()) + '\', \'' + escapeValue(lessonFlowData.lessonDate) + '\', \'' + escapeValue(String(segmentItem.lessonPlan && segmentItem.lessonPlan.id || "").trim()) + '\', \'' + escapeValue(phaseItemId) + '\', \'' + escapeValue(stepId) + '\', this.checked, ' + String(stepElapsedMinutes) + ')">';
+                  const stepCheckbox = '<input type="checkbox" aria-label="Schritt erledigt" ' + (isStepCompleted ? 'checked ' : '') + 'onchange="return window.UnterrichtsassistentApp.toggleCurriculumLessonStepCompleted(\'' + escapeValue(String(activeClass && activeClass.id || "").trim()) + '\', \'' + escapeValue(lessonFlowData.lessonDate) + '\', \'' + escapeValue(String(segmentItem.lessonPlan && segmentItem.lessonPlan.id || "").trim()) + '\', \'' + escapeValue(phaseItemId) + '\', \'' + escapeValue(stepId) + '\', this.checked, ' + String(stepElapsedMinutes) + ', ' + String(elapsedMinutes) + ')">';
+                  const stepSkipButton = '<button class="unterricht-live-flow__skip-button unterricht-live-flow__skip-button--step' + (isStepSkipped ? ' is-active' : '') + '" type="button" aria-pressed="' + (isStepSkipped ? 'true' : 'false') + '" aria-label="Schritt ueberspringen" title="Ueberspringen" onclick="return window.UnterrichtsassistentApp.toggleCurriculumLessonStepSkipped(\'' + escapeValue(String(activeClass && activeClass.id || "").trim()) + '\', \'' + escapeValue(lessonFlowData.lessonDate) + '\', \'' + escapeValue(String(segmentItem.lessonPlan && segmentItem.lessonPlan.id || "").trim()) + '\', \'' + escapeValue(phaseItemId) + '\', \'' + escapeValue(stepId) + '\', ' + (isStepSkipped ? 'false' : 'true') + ')">ü</button>';
 
                   return [
-                    '<div class="unterricht-live-flow__step' + (isStepCompleted ? ' is-completed' : '') + '">',
+                    '<div class="unterricht-live-flow__step' + (isStepCompleted ? ' is-completed' : '') + (isStepSkipped ? ' is-skipped' : '') + '">',
                     '<div class="unterricht-live-flow__step-main">',
-                    (stepTitle || stepTimingLabel)
-                      ? '<div class="unterricht-live-flow__step-title-row"><label class="unterricht-live-flow__step-title-label">' + stepCheckbox + (stepTitle ? '<div class="unterricht-live-flow__step-title">' + escapeValue(stepTitle) + '</div>' : '<div class="unterricht-live-flow__step-title">Ohne Titel</div>') + '</label>' + stepTimingLabel + '</div>'
-                      : "",
-                    (!isStepCompleted && stepContent) ? '<div class="unterricht-live-flow__step-content">' + escapeValue(stepContent) + '</div>' : "",
-                    (!isStepCompleted && !stepTitle && !stepContent) ? '<div class="unterricht-live-flow__empty unterricht-live-flow__empty--inline">Noch kein Inhalt.</div>' : "",
+                    '<div class="unterricht-live-flow__step-title-row"><span class="unterricht-live-flow__step-controls"><label class="unterricht-live-flow__step-title-label">' + stepCheckbox + (stepTitle ? '<div class="unterricht-live-flow__step-title">' + escapeValue(stepTitle) + '</div>' : '<div class="unterricht-live-flow__step-title">Ohne Titel</div>') + '</label>' + stepSkipButton + '</span>' + stepTimingLabel + '</div>',
+                    (!isStepCompleted && !isStepSkipped && stepContent) ? '<div class="unterricht-live-flow__step-content">' + escapeValue(stepContent) + '</div>' : "",
                     '</div>',
                     '<div class="unterricht-live-flow__step-side">',
                     '<div class="unterricht-live-flow__step-meta"><span>S</span><strong>' + escapeValue(getCurriculumLessonStepSocialFormShortLabel(stepItem && stepItem.socialForm)) + '</strong></div>',
@@ -1767,7 +1771,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
                   ].join("");
                 }).join("");
                 })() + '</div>'
-                : (!isCompleted
+                : (!isCompleted && !isSkipped
                   ? '<div class="unterricht-live-flow__empty unterricht-live-flow__empty--inline">Noch keine Schritte angelegt.</div>'
                   : ""),
               '</div>',

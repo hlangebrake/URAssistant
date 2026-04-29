@@ -385,8 +385,8 @@ function serializeDomainSnapshot(snapshot) {
     curriculumLessonPlans: cloneItems(snapshot.curriculumLessonPlans || [], ["id", "sequenceId", "topic", "summary", "hourType", "functionType", "situationType", "demandLevel", "preparationMode", "preparationText", "preparationTodoId", "homeworkText", "homeworkDueMode", "homeworkDueAmount", "homeworkDueUnit", "nextLessonId"]),
     curriculumLessonPhases: cloneItems(snapshot.curriculumLessonPhases || [], ["id", "lessonPlanId", "title", "durationMinutes", "isReserve", "situationType", "demandLevel", "nextPhaseId"]),
     curriculumLessonSteps: cloneItems(snapshot.curriculumLessonSteps || [], ["id", "phaseId", "title", "content", "durationMinutes", "socialForm", "material", "nextStepId"]),
-    curriculumLessonPhaseStatuses: cloneItems(snapshot.curriculumLessonPhaseStatuses || [], ["id", "classId", "lessonDate", "lessonPlanId", "phaseId", "isCompleted", "elapsedMinutes", "resumeStartMinutes", "liveSituationType", "liveDemandLevel"]),
-    curriculumLessonStepStatuses: cloneItems(snapshot.curriculumLessonStepStatuses || [], ["id", "classId", "lessonDate", "lessonPlanId", "phaseId", "stepId", "isCompleted", "elapsedMinutes", "completedAt"]),
+    curriculumLessonPhaseStatuses: cloneItems(snapshot.curriculumLessonPhaseStatuses || [], ["id", "classId", "lessonDate", "lessonPlanId", "phaseId", "isCompleted", "isSkipped", "elapsedMinutes", "resumeStartMinutes", "liveSituationType", "liveDemandLevel"]),
+    curriculumLessonStepStatuses: cloneItems(snapshot.curriculumLessonStepStatuses || [], ["id", "classId", "lessonDate", "lessonPlanId", "phaseId", "stepId", "isCompleted", "isSkipped", "elapsedMinutes", "completedAt"]),
     seatOrders: cloneItems(snapshot.seatOrders || [], ["id", "classId", "room", "validFrom", "validTo", "updatedAt", "seats"])
   };
 }

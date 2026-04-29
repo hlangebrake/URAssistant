@@ -2945,6 +2945,109 @@ function setCurriculumLessonFlowPhaseModeForLesson(snapshot, lessonId, shouldUse
     : [];
 }
 
+function createEmptyCurriculumLessonPhaseForLesson(lessonItem) {
+  const normalizedSituationType = String(lessonItem && lessonItem.situationType || "").trim().toLowerCase();
+  const normalizedDemandLevel = String(lessonItem && lessonItem.demandLevel || "").trim().toLowerCase();
+
+  return {
+    id: createCurriculumLessonPhaseId(),
+    lessonPlanId: String(lessonItem && lessonItem.id || "").trim(),
+    title: "",
+    durationMinutes: 0,
+    isReserve: false,
+    situationType: normalizedSituationType === "lernsituation"
+      ? "lernen"
+      : (normalizedSituationType === "leistungssituation"
+        ? "leisten"
+        : (["lernen", "leisten"].indexOf(normalizedSituationType) >= 0 ? normalizedSituationType : "")),
+    demandLevel: ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(normalizedDemandLevel) >= 0
+      ? normalizedDemandLevel
+      : "",
+    nextPhaseId: ""
+  };
+}
+
+function upsertCurriculumLessonPhaseItems(collections, phaseItems) {
+  phaseItems.forEach(function (phaseItem) {
+    const collectionIndex = collections.lessonPhases.findIndex(function (entry) {
+      return String(entry && entry.id || "").trim() === String(phaseItem && phaseItem.id || "").trim();
+    });
+
+    if (collectionIndex >= 0) {
+      collections.lessonPhases[collectionIndex] = phaseItem;
+      return;
+    }
+
+    collections.lessonPhases.push(phaseItem);
+  });
+}
+
+function moveCurriculumLessonFlowPhaseToLessonStart(sourceLessonId, draggedPhaseId, targetLessonId) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
+  const normalizedSourceLessonId = String(sourceLessonId || "").trim();
+  const normalizedDraggedPhaseId = String(draggedPhaseId || "").trim();
+  const normalizedTargetLessonId = String(targetLessonId || "").trim();
+  const targetLesson = collections
+    ? collections.lessons.find(function (entry) {
+        return String(entry && entry.id || "").trim() === normalizedTargetLessonId;
+      }) || null
+    : null;
+  const draggedPhase = collections
+    ? collections.lessonPhases.find(function (entry) {
+        return String(entry && entry.id || "").trim() === normalizedDraggedPhaseId;
+      }) || null
+    : null;
+  const effectiveSourceLessonId = String(draggedPhase && draggedPhase.lessonPlanId || normalizedSourceLessonId).trim();
+  const sourcePhases = currentRawSnapshot
+    ? getOrderedCurriculumLessonPhasesForLesson(currentRawSnapshot, effectiveSourceLessonId).slice()
+    : [];
+  const targetPhases = currentRawSnapshot
+    ? getOrderedCurriculumLessonPhasesForLesson(currentRawSnapshot, normalizedTargetLessonId).slice()
+    : [];
+  const sourceRemainder = sourcePhases.filter(function (entry) {
+    return String(entry && entry.id || "").trim() !== normalizedDraggedPhaseId;
+  });
+  const targetRemainder = effectiveSourceLessonId === normalizedTargetLessonId
+    ? sourceRemainder.slice()
+    : targetPhases.filter(function (entry) {
+        return String(entry && entry.id || "").trim() !== normalizedDraggedPhaseId;
+      });
+  const nextTargetPhases = [draggedPhase].concat(targetRemainder);
+
+  if (!currentRawSnapshot || !collections || !targetLesson || !draggedPhase || !effectiveSourceLessonId || !normalizedTargetLessonId) {
+    return false;
+  }
+
+  draggedPhase.lessonPlanId = normalizedTargetLessonId;
+  reconnectCurriculumLessonPhaseChain(sourceRemainder);
+  reconnectCurriculumLessonPhaseChain(nextTargetPhases);
+  upsertCurriculumLessonPhaseItems(collections, sourceRemainder.concat(nextTargetPhases));
+
+  collections.lessonPhaseStatuses.forEach(function (statusItem) {
+    if (String(statusItem && statusItem.phaseId || "").trim() === normalizedDraggedPhaseId) {
+      statusItem.lessonPlanId = normalizedTargetLessonId;
+    }
+  });
+  collections.lessonStepStatuses.forEach(function (statusItem) {
+    const stepItem = collections.lessonSteps.find(function (entry) {
+      return String(entry && entry.id || "").trim() === String(statusItem && statusItem.stepId || "").trim();
+    }) || null;
+
+    if (String(stepItem && stepItem.phaseId || "").trim() === normalizedDraggedPhaseId) {
+      statusItem.lessonPlanId = normalizedTargetLessonId;
+    }
+  });
+
+  currentRawSnapshot.curriculumLessonPhases = collections.lessonPhases;
+  currentRawSnapshot.curriculumLessonPhaseStatuses = collections.lessonPhaseStatuses;
+  currentRawSnapshot.curriculumLessonStepStatuses = collections.lessonStepStatuses;
+  activeCurriculumLessonFlowLessonId = normalizedTargetLessonId;
+  setCurriculumLessonFlowPhaseModeForLesson(currentRawSnapshot, normalizedTargetLessonId, true);
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return true;
+}
+
 function reorderCurriculumLessonFlowPhases(lessonId, draggedPhaseId, targetPhaseId, placement) {
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
   const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
@@ -3057,6 +3160,90 @@ function reorderCurriculumLessonFlowSteps(sourcePhaseId, draggedStepId, targetPh
 
   currentRawSnapshot.curriculumLessonSteps = collections.lessonSteps;
   activeCurriculumLessonFlowLessonId = String(targetPhase.lessonPlanId || "").trim();
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return true;
+}
+
+function moveCurriculumLessonFlowStepToLessonStart(sourcePhaseId, draggedStepId, targetLessonId) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
+  const normalizedSourcePhaseId = String(sourcePhaseId || "").trim();
+  const normalizedDraggedStepId = String(draggedStepId || "").trim();
+  const normalizedTargetLessonId = String(targetLessonId || "").trim();
+  const targetLesson = collections
+    ? collections.lessons.find(function (entry) {
+        return String(entry && entry.id || "").trim() === normalizedTargetLessonId;
+      }) || null
+    : null;
+  const draggedStep = collections
+    ? collections.lessonSteps.find(function (entry) {
+        return String(entry && entry.id || "").trim() === normalizedDraggedStepId;
+      }) || null
+    : null;
+  const sourcePhase = collections
+    ? collections.lessonPhases.find(function (entry) {
+        return String(entry && entry.id || "").trim() === normalizedSourcePhaseId;
+      }) || null
+    : null;
+  const targetPhases = currentRawSnapshot
+    ? getOrderedCurriculumLessonPhasesForLesson(currentRawSnapshot, normalizedTargetLessonId).slice()
+    : [];
+  let targetPhase = targetPhases[0] || null;
+  let nextTargetPhases = targetPhases.slice();
+  let targetSteps = [];
+  let remainingSourceSteps = [];
+  let nextTargetSteps = [];
+
+  if (!currentRawSnapshot || !collections || !targetLesson || !draggedStep || !sourcePhase || !normalizedSourcePhaseId || !normalizedTargetLessonId) {
+    return false;
+  }
+
+  if (!targetPhase) {
+    targetPhase = createEmptyCurriculumLessonPhaseForLesson(targetLesson);
+    nextTargetPhases = [targetPhase];
+    reconnectCurriculumLessonPhaseChain(nextTargetPhases);
+    upsertCurriculumLessonPhaseItems(collections, nextTargetPhases);
+  }
+
+  targetSteps = getOrderedCurriculumLessonStepsForPhase(currentRawSnapshot, String(targetPhase.id || "").trim()).filter(function (entry) {
+    return String(entry && entry.id || "").trim() !== normalizedDraggedStepId;
+  });
+  remainingSourceSteps = getOrderedCurriculumLessonStepsForPhase(currentRawSnapshot, normalizedSourcePhaseId).filter(function (entry) {
+    return String(entry && entry.id || "").trim() !== normalizedDraggedStepId;
+  });
+  draggedStep.phaseId = String(targetPhase.id || "").trim();
+  nextTargetSteps = [draggedStep].concat(normalizedSourcePhaseId === String(targetPhase.id || "").trim() ? remainingSourceSteps : targetSteps);
+
+  reconnectCurriculumLessonStepChain(remainingSourceSteps);
+  reconnectCurriculumLessonStepChain(nextTargetSteps);
+
+  collections.lessonSteps = collections.lessonSteps.map(function (entry) {
+    const entryId = String(entry && entry.id || "").trim();
+    const replacement = remainingSourceSteps.concat(nextTargetSteps).find(function (candidate) {
+      return String(candidate && candidate.id || "").trim() === entryId;
+    });
+
+    return replacement || entry;
+  });
+
+  if (!collections.lessonSteps.some(function (entry) {
+    return String(entry && entry.id || "").trim() === normalizedDraggedStepId;
+  })) {
+    collections.lessonSteps.push(draggedStep);
+  }
+
+  collections.lessonStepStatuses.forEach(function (statusItem) {
+    if (String(statusItem && statusItem.stepId || "").trim() === normalizedDraggedStepId) {
+      statusItem.lessonPlanId = normalizedTargetLessonId;
+      statusItem.phaseId = String(targetPhase.id || "").trim();
+    }
+  });
+
+  currentRawSnapshot.curriculumLessonPhases = collections.lessonPhases;
+  currentRawSnapshot.curriculumLessonSteps = collections.lessonSteps;
+  currentRawSnapshot.curriculumLessonStepStatuses = collections.lessonStepStatuses;
+  activeCurriculumLessonFlowLessonId = normalizedTargetLessonId;
+  setCurriculumLessonFlowPhaseModeForLesson(currentRawSnapshot, normalizedTargetLessonId, true);
   saveAndRefreshSnapshot(currentRawSnapshot, "planung");
   return true;
 }
@@ -12183,10 +12370,6 @@ function scoreClasstimeStudentMatch(importedName, student) {
   return Math.max(0, Math.min(1, bestSimilarity));
 }
 
-function createClasstimeImportedStudentId(rowNumber) {
-  return "classtime-imported-student-" + String(rowNumber || "0");
-}
-
 function decodeClasstimeSharedStringItem(sharedStringItem) {
   return Array.prototype.slice.call(sharedStringItem && sharedStringItem.getElementsByTagNameNS
     ? sharedStringItem.getElementsByTagNameNS("*", "t")
@@ -12385,6 +12568,57 @@ function parseClasstimeWorksheetNumber(value) {
   return Number.isFinite(numericValue) ? numericValue : null;
 }
 
+function getClasstimeWorksheetCellValue(worksheet, columnName, rowNumber) {
+  return worksheet && worksheet.rows && worksheet.rows[rowNumber]
+    ? worksheet.rows[rowNumber][columnName]
+    : undefined;
+}
+
+function findClasstimeQuestionNameHeaderRow(worksheet) {
+  const rows = worksheet && worksheet.rows ? worksheet.rows : {};
+  const rowNumbers = Object.keys(rows).map(function (rowKey) {
+    return Number(rowKey);
+  }).filter(function (rowNumber) {
+    return Number.isFinite(rowNumber);
+  }).sort(function (left, right) {
+    return left - right;
+  });
+
+  return rowNumbers.find(function (rowNumber) {
+    return normalizeClasstimeMatchValue(getClasstimeWorksheetCellValue(worksheet, "A", rowNumber)) === "name des lernenden";
+  }) || null;
+}
+
+function createClasstimeImportedStudentKey(studentName, rowNumber) {
+  const normalizedName = normalizeClasstimeMatchValue(studentName);
+
+  return normalizedName || ("row-" + String(rowNumber || "0"));
+}
+
+function createClasstimeImportedStudentIdFromKey(studentKey) {
+  return "classtime-imported-student-" + encodeURIComponent(String(studentKey || "unknown")).replace(/%/g, "-");
+}
+
+function resolveClasstimeQuestionMaxPoints(worksheet, headerRowNumber) {
+  const candidateRows = [
+    Number(headerRowNumber) || 0,
+    (Number(headerRowNumber) || 0) - 1,
+    (!headerRowNumber || Number(headerRowNumber) >= 4) ? 4 : 0,
+    3
+  ];
+
+  for (let index = 0; index < candidateRows.length; index += 1) {
+    const rowNumber = candidateRows[index];
+    const maxPoints = parseClasstimeWorksheetNumber(getClasstimeWorksheetCellValue(worksheet, "B", rowNumber));
+
+    if (maxPoints !== null && maxPoints > 0) {
+      return maxPoints;
+    }
+  }
+
+  return 0;
+}
+
 function resolveClasstimeOverviewSheetName(workbookSheets) {
   return workbookSheets.find(function (entry) {
     return normalizeClasstimeMatchValue(entry && entry.name || "") === "ubersicht";
@@ -12405,7 +12639,9 @@ function buildClasstimeWorkbookData(parsedSheets) {
     return leftOrder - rightOrder;
   }).map(function (entry, index) {
     const worksheet = parsedSheets.worksheetsByName[entry.name] || { cells: {}, rows: {} };
-    const importedStudentsByRow = {};
+    const headerRowNumber = findClasstimeQuestionNameHeaderRow(worksheet);
+    const firstStudentRowNumber = headerRowNumber ? headerRowNumber + 1 : 5;
+    const importedStudentsByKey = {};
 
     Object.keys(worksheet.rows || {}).forEach(function (rowKey) {
       const rowNumber = Number(rowKey);
@@ -12413,8 +12649,9 @@ function buildClasstimeWorkbookData(parsedSheets) {
       const studentName = String(rowData.A || "").trim();
       const scoreValue = parseClasstimeWorksheetNumber(rowData.B);
       const normalizedStudentName = normalizeClasstimeMatchValue(studentName);
+      const studentKey = createClasstimeImportedStudentKey(studentName, rowNumber);
 
-      if (rowNumber < 5) {
+      if (rowNumber < firstStudentRowNumber) {
         return;
       }
 
@@ -12426,43 +12663,49 @@ function buildClasstimeWorkbookData(parsedSheets) {
         return;
       }
 
-      importedStudentsByRow[rowNumber] = {
-        id: createClasstimeImportedStudentId(rowNumber),
+      importedStudentsByKey[studentKey] = {
+        id: createClasstimeImportedStudentIdFromKey(studentKey),
         rowNumber: rowNumber,
         sourceName: studentName || ("Zeile " + String(rowNumber)),
         points: scoreValue
       };
     });
 
+    const observedMaxPoints = Object.keys(importedStudentsByKey).reduce(function (maxValue, studentKey) {
+      const scoreValue = importedStudentsByKey[studentKey] ? importedStudentsByKey[studentKey].points : null;
+
+      return scoreValue === null ? maxValue : Math.max(maxValue, Number(scoreValue) || 0);
+    }, 0);
+    const configuredMaxPoints = resolveClasstimeQuestionMaxPoints(worksheet, headerRowNumber);
+
     return {
       key: String(entry && entry.name || "").trim(),
       order: Number(String(entry && entry.name || "").trim().replace(/[^0-9]/g, "")) || (index + 1),
       title: String(worksheet.cells.C1 || "").trim() || ("Aufgabe " + String(index + 1)),
-      maxPoints: Math.max(0, parseClasstimeWorksheetNumber(worksheet.cells.B4) || 0),
-      importedStudentsByRow: importedStudentsByRow
+      maxPoints: Math.max(0, configuredMaxPoints || observedMaxPoints),
+      importedStudentsByKey: importedStudentsByKey
     };
   });
   const importedStudents = {};
 
   questionSheets.forEach(function (questionSheet) {
-    Object.keys(questionSheet.importedStudentsByRow || {}).forEach(function (rowKey) {
-      const rowNumber = Number(rowKey);
-      const rowEntry = questionSheet.importedStudentsByRow[rowKey];
+    Object.keys(questionSheet.importedStudentsByKey || {}).forEach(function (studentKey) {
+      const rowEntry = questionSheet.importedStudentsByKey[studentKey];
 
-      if (!importedStudents[rowNumber]) {
-        importedStudents[rowNumber] = {
-          id: createClasstimeImportedStudentId(rowNumber),
-          rowNumber: rowNumber,
+      if (!importedStudents[studentKey]) {
+        importedStudents[studentKey] = {
+          id: createClasstimeImportedStudentIdFromKey(studentKey),
+          rowNumber: Number(rowEntry && rowEntry.rowNumber) || 0,
           sourceName: String(rowEntry && rowEntry.sourceName || "").trim(),
           scoresByQuestionKey: {}
         };
       }
 
-      if (String(rowEntry && rowEntry.sourceName || "").trim().length > String(importedStudents[rowNumber].sourceName || "").trim().length) {
-        importedStudents[rowNumber].sourceName = String(rowEntry && rowEntry.sourceName || "").trim();
+      if (String(rowEntry && rowEntry.sourceName || "").trim().length > String(importedStudents[studentKey].sourceName || "").trim().length) {
+        importedStudents[studentKey].sourceName = String(rowEntry && rowEntry.sourceName || "").trim();
       }
 
-      importedStudents[rowNumber].scoresByQuestionKey[questionSheet.key] = rowEntry ? rowEntry.points : null;
+      importedStudents[studentKey].scoresByQuestionKey[questionSheet.key] = rowEntry ? rowEntry.points : null;
     });
   });
 
@@ -12477,8 +12720,8 @@ function buildClasstimeWorkbookData(parsedSheets) {
         taskTitle: "Aufgabe " + String(index + 1)
       };
     }),
-    importedStudents: Object.keys(importedStudents).map(function (rowKey) {
-      const entry = importedStudents[rowKey];
+    importedStudents: Object.keys(importedStudents).map(function (studentKey) {
+      const entry = importedStudents[studentKey];
       const totalPoints = questionSheets.reduce(function (sum, questionSheet) {
         const scoreValue = entry && entry.scoresByQuestionKey
           ? entry.scoresByQuestionKey[questionSheet.key]
@@ -12490,7 +12733,9 @@ function buildClasstimeWorkbookData(parsedSheets) {
         totalPoints: totalPoints
       });
     }).sort(function (left, right) {
-      return Number(left.rowNumber) - Number(right.rowNumber);
+      const rowDifference = Number(left.rowNumber) - Number(right.rowNumber);
+
+      return rowDifference || String(left.sourceName || "").localeCompare(String(right.sourceName || ""), "de-DE");
     })
   };
 }
@@ -17517,7 +17762,6 @@ window.UnterrichtsassistentApp.addCurriculumLessonPhase = function (lessonId) {
 
   currentRawSnapshot.curriculumLessonPhases = collections.lessonPhases;
   activeCurriculumLessonFlowLessonId = normalizedLessonId;
-  setCurriculumLessonFlowPhaseModeForLesson(currentRawSnapshot, normalizedLessonId, true);
   saveAndRefreshSnapshot(currentRawSnapshot, "planung");
   return false;
 };
@@ -18059,6 +18303,7 @@ window.UnterrichtsassistentApp.toggleCurriculumLessonPhaseCompleted = function (
   if (shouldBeCompleted) {
     if (existingStatus) {
       existingStatus.isCompleted = true;
+      existingStatus.isSkipped = false;
       existingStatus.elapsedMinutes = normalizedElapsedMinutes;
       existingStatus.resumeStartMinutes = 0;
     } else {
@@ -18069,6 +18314,7 @@ window.UnterrichtsassistentApp.toggleCurriculumLessonPhaseCompleted = function (
         lessonPlanId: normalizedLessonPlanId,
         phaseId: normalizedPhaseId,
         isCompleted: true,
+        isSkipped: false,
         elapsedMinutes: normalizedElapsedMinutes,
         resumeStartMinutes: 0,
         liveSituationType: "",
@@ -18085,7 +18331,161 @@ window.UnterrichtsassistentApp.toggleCurriculumLessonPhaseCompleted = function (
   saveAndRefreshSnapshot(currentRawSnapshot, activeViewId === "unterricht" ? "unterricht" : "planung");
   return false;
 };
-window.UnterrichtsassistentApp.toggleCurriculumLessonStepCompleted = function (classId, lessonDate, lessonPlanId, phaseId, stepId, isChecked, elapsedMinutes) {
+
+function getCurriculumLessonPhaseStatusForContext(collections, classId, lessonPlanId, phaseId) {
+  const normalizedClassId = String(classId || "").trim();
+  const normalizedLessonPlanId = String(lessonPlanId || "").trim();
+  const normalizedPhaseId = String(phaseId || "").trim();
+
+  return collections && Array.isArray(collections.lessonPhaseStatuses)
+    ? collections.lessonPhaseStatuses.find(function (entry) {
+        return String(entry && entry.classId || "").trim() === normalizedClassId
+          && String(entry && entry.lessonPlanId || "").trim() === normalizedLessonPlanId
+          && String(entry && entry.phaseId || "").trim() === normalizedPhaseId;
+      }) || null
+    : null;
+}
+
+function getCurriculumLessonStepStatusForContext(collections, classId, lessonPlanId, phaseId, stepId) {
+  const normalizedClassId = String(classId || "").trim();
+  const normalizedLessonPlanId = String(lessonPlanId || "").trim();
+  const normalizedPhaseId = String(phaseId || "").trim();
+  const normalizedStepId = String(stepId || "").trim();
+
+  return collections && Array.isArray(collections.lessonStepStatuses)
+    ? collections.lessonStepStatuses.find(function (entry) {
+        return String(entry && entry.classId || "").trim() === normalizedClassId
+          && String(entry && entry.lessonPlanId || "").trim() === normalizedLessonPlanId
+          && String(entry && entry.phaseId || "").trim() === normalizedPhaseId
+          && String(entry && entry.stepId || "").trim() === normalizedStepId;
+      }) || null
+    : null;
+}
+
+function completeCurriculumLessonPhaseFromSteps(collections, options) {
+  const normalizedClassId = String(options && options.classId || "").trim();
+  const normalizedLessonDate = String(options && options.lessonDate || "").slice(0, 10);
+  const normalizedLessonPlanId = String(options && options.lessonPlanId || "").trim();
+  const normalizedPhaseId = String(options && options.phaseId || "").trim();
+  const elapsedMinutes = Math.max(0, Number(options && options.elapsedMinutes) || 0);
+  const existingStatus = getCurriculumLessonPhaseStatusForContext(collections, normalizedClassId, normalizedLessonPlanId, normalizedPhaseId);
+
+  if (!collections || !normalizedClassId || !normalizedLessonDate || !normalizedLessonPlanId || !normalizedPhaseId) {
+    return;
+  }
+
+  if (existingStatus) {
+    existingStatus.isCompleted = true;
+    existingStatus.isSkipped = false;
+    existingStatus.elapsedMinutes = elapsedMinutes;
+    existingStatus.resumeStartMinutes = 0;
+  } else {
+    collections.lessonPhaseStatuses.push({
+      id: createCurriculumLessonPhaseStatusId(),
+      classId: normalizedClassId,
+      lessonDate: normalizedLessonDate,
+      lessonPlanId: normalizedLessonPlanId,
+      phaseId: normalizedPhaseId,
+      isCompleted: true,
+      isSkipped: false,
+      elapsedMinutes: elapsedMinutes,
+      resumeStartMinutes: 0,
+      liveSituationType: "",
+      liveDemandLevel: ""
+    });
+  }
+}
+
+function maybeCompleteCurriculumLessonPhaseFromStepStatuses(snapshot, collections, options) {
+  const normalizedClassId = String(options && options.classId || "").trim();
+  const normalizedLessonDate = String(options && options.lessonDate || "").slice(0, 10);
+  const normalizedLessonPlanId = String(options && options.lessonPlanId || "").trim();
+  const normalizedPhaseId = String(options && options.phaseId || "").trim();
+  const phaseSteps = snapshot && normalizedPhaseId
+    ? getOrderedCurriculumLessonStepsForPhase(snapshot, normalizedPhaseId)
+    : [];
+
+  if (!phaseSteps.length) {
+    return;
+  }
+
+  const allStepsCompleted = phaseSteps.every(function (stepItem) {
+    const stepId = String(stepItem && stepItem.id || "").trim();
+    const stepStatus = getCurriculumLessonStepStatusForContext(collections, normalizedClassId, normalizedLessonPlanId, normalizedPhaseId, stepId);
+
+    return Boolean(stepStatus && stepStatus.isCompleted);
+  });
+
+  if (!allStepsCompleted) {
+    return;
+  }
+
+  const completedStepElapsedMinutes = phaseSteps.reduce(function (sum, stepItem) {
+    const stepId = String(stepItem && stepItem.id || "").trim();
+    const stepStatus = getCurriculumLessonStepStatusForContext(collections, normalizedClassId, normalizedLessonPlanId, normalizedPhaseId, stepId);
+
+    return sum + Math.max(0, Number(stepStatus && stepStatus.elapsedMinutes) || 0);
+  }, 0);
+  const phaseElapsedMinutes = Math.max(
+    0,
+    Number(options && options.phaseElapsedMinutes) || 0,
+    completedStepElapsedMinutes
+  );
+
+  completeCurriculumLessonPhaseFromSteps(collections, {
+    classId: normalizedClassId,
+    lessonDate: normalizedLessonDate,
+    lessonPlanId: normalizedLessonPlanId,
+    phaseId: normalizedPhaseId,
+    elapsedMinutes: phaseElapsedMinutes
+  });
+}
+
+window.UnterrichtsassistentApp.toggleCurriculumLessonPhaseSkipped = function (classId, lessonDate, lessonPlanId, phaseId, isSkipped) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
+  const normalizedClassId = String(classId || "").trim();
+  const normalizedLessonDate = String(lessonDate || "").slice(0, 10);
+  const normalizedLessonPlanId = String(lessonPlanId || "").trim();
+  const normalizedPhaseId = String(phaseId || "").trim();
+  const shouldBeSkipped = Boolean(isSkipped);
+  const existingStatus = getCurriculumLessonPhaseStatusForContext(collections, normalizedClassId, normalizedLessonPlanId, normalizedPhaseId);
+
+  if (!currentRawSnapshot || !collections || !normalizedClassId || !normalizedLessonDate || !normalizedLessonPlanId || !normalizedPhaseId) {
+    return false;
+  }
+
+  if (shouldBeSkipped) {
+    if (existingStatus) {
+      existingStatus.isSkipped = true;
+      existingStatus.isCompleted = false;
+      existingStatus.elapsedMinutes = 0;
+      existingStatus.resumeStartMinutes = 0;
+    } else {
+      collections.lessonPhaseStatuses.push({
+        id: createCurriculumLessonPhaseStatusId(),
+        classId: normalizedClassId,
+        lessonDate: normalizedLessonDate,
+        lessonPlanId: normalizedLessonPlanId,
+        phaseId: normalizedPhaseId,
+        isCompleted: false,
+        isSkipped: true,
+        elapsedMinutes: 0,
+        resumeStartMinutes: 0,
+        liveSituationType: "",
+        liveDemandLevel: ""
+      });
+    }
+  } else if (existingStatus) {
+    existingStatus.isSkipped = false;
+  }
+
+  currentRawSnapshot.curriculumLessonPhaseStatuses = collections.lessonPhaseStatuses;
+  saveAndRefreshSnapshot(currentRawSnapshot, activeViewId === "unterricht" ? "unterricht" : "planung");
+  return false;
+};
+
+window.UnterrichtsassistentApp.toggleCurriculumLessonStepCompleted = function (classId, lessonDate, lessonPlanId, phaseId, stepId, isChecked, elapsedMinutes, phaseElapsedMinutes) {
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
   const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
   const normalizedClassId = String(classId || "").trim();
@@ -18095,14 +18495,8 @@ window.UnterrichtsassistentApp.toggleCurriculumLessonStepCompleted = function (c
   const normalizedStepId = String(stepId || "").trim();
   const shouldBeCompleted = Boolean(isChecked);
   const normalizedElapsedMinutes = Math.max(0, Number(elapsedMinutes) || 0);
-  const existingStatus = collections
-    ? collections.lessonStepStatuses.find(function (entry) {
-        return String(entry && entry.classId || "").trim() === normalizedClassId
-          && String(entry && entry.lessonPlanId || "").trim() === normalizedLessonPlanId
-          && String(entry && entry.phaseId || "").trim() === normalizedPhaseId
-          && String(entry && entry.stepId || "").trim() === normalizedStepId;
-      }) || null
-    : null;
+  const normalizedPhaseElapsedMinutes = Math.max(0, Number(phaseElapsedMinutes) || 0);
+  const existingStatus = getCurriculumLessonStepStatusForContext(collections, normalizedClassId, normalizedLessonPlanId, normalizedPhaseId, normalizedStepId);
 
   if (!currentRawSnapshot || !collections || !normalizedClassId || !normalizedLessonDate || !normalizedLessonPlanId || !normalizedPhaseId || !normalizedStepId) {
     return false;
@@ -18111,6 +18505,7 @@ window.UnterrichtsassistentApp.toggleCurriculumLessonStepCompleted = function (c
   if (shouldBeCompleted) {
     if (existingStatus) {
       existingStatus.isCompleted = true;
+      existingStatus.isSkipped = false;
       existingStatus.elapsedMinutes = normalizedElapsedMinutes;
       existingStatus.completedAt = String(existingStatus.completedAt || "").trim() || getActiveDateTimeTimestamp();
     } else {
@@ -18122,6 +18517,7 @@ window.UnterrichtsassistentApp.toggleCurriculumLessonStepCompleted = function (c
         phaseId: normalizedPhaseId,
         stepId: normalizedStepId,
         isCompleted: true,
+        isSkipped: false,
         elapsedMinutes: normalizedElapsedMinutes,
         completedAt: getActiveDateTimeTimestamp()
       });
@@ -18130,6 +18526,61 @@ window.UnterrichtsassistentApp.toggleCurriculumLessonStepCompleted = function (c
     existingStatus.isCompleted = false;
     existingStatus.elapsedMinutes = normalizedElapsedMinutes;
     existingStatus.completedAt = "";
+  }
+
+  if (shouldBeCompleted) {
+    maybeCompleteCurriculumLessonPhaseFromStepStatuses(currentRawSnapshot, collections, {
+      classId: normalizedClassId,
+      lessonDate: normalizedLessonDate,
+      lessonPlanId: normalizedLessonPlanId,
+      phaseId: normalizedPhaseId,
+      phaseElapsedMinutes: normalizedPhaseElapsedMinutes
+    });
+  }
+
+  currentRawSnapshot.curriculumLessonPhaseStatuses = collections.lessonPhaseStatuses;
+  currentRawSnapshot.curriculumLessonStepStatuses = collections.lessonStepStatuses;
+  saveAndRefreshSnapshot(currentRawSnapshot, activeViewId === "unterricht" ? "unterricht" : "planung");
+  return false;
+};
+
+window.UnterrichtsassistentApp.toggleCurriculumLessonStepSkipped = function (classId, lessonDate, lessonPlanId, phaseId, stepId, isSkipped) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
+  const normalizedClassId = String(classId || "").trim();
+  const normalizedLessonDate = String(lessonDate || "").slice(0, 10);
+  const normalizedLessonPlanId = String(lessonPlanId || "").trim();
+  const normalizedPhaseId = String(phaseId || "").trim();
+  const normalizedStepId = String(stepId || "").trim();
+  const shouldBeSkipped = Boolean(isSkipped);
+  const existingStatus = getCurriculumLessonStepStatusForContext(collections, normalizedClassId, normalizedLessonPlanId, normalizedPhaseId, normalizedStepId);
+
+  if (!currentRawSnapshot || !collections || !normalizedClassId || !normalizedLessonDate || !normalizedLessonPlanId || !normalizedPhaseId || !normalizedStepId) {
+    return false;
+  }
+
+  if (shouldBeSkipped) {
+    if (existingStatus) {
+      existingStatus.isSkipped = true;
+      existingStatus.isCompleted = false;
+      existingStatus.elapsedMinutes = 0;
+      existingStatus.completedAt = "";
+    } else {
+      collections.lessonStepStatuses.push({
+        id: createCurriculumLessonStepStatusId(),
+        classId: normalizedClassId,
+        lessonDate: normalizedLessonDate,
+        lessonPlanId: normalizedLessonPlanId,
+        phaseId: normalizedPhaseId,
+        stepId: normalizedStepId,
+        isCompleted: false,
+        isSkipped: true,
+        elapsedMinutes: 0,
+        completedAt: ""
+      });
+    }
+  } else if (existingStatus) {
+    existingStatus.isSkipped = false;
   }
 
   currentRawSnapshot.curriculumLessonStepStatuses = collections.lessonStepStatuses;
@@ -18332,6 +18783,24 @@ function getCurriculumLessonFlowStepDropTargetFromPoint(clientX, clientY) {
   };
 }
 
+function getCurriculumLessonFlowLessonDropTargetFromPoint(clientX, clientY) {
+  const target = document.elementFromPoint(Number(clientX) || 0, Number(clientY) || 0);
+  const dropTarget = target && typeof target.closest === "function"
+    ? target.closest(".planning-curriculum__lesson-block[data-lesson-drop-target]")
+    : null;
+  const targetLessonId = dropTarget ? String(dropTarget.getAttribute("data-lesson-drop-target") || "").trim() : "";
+  const sequenceId = dropTarget ? String(dropTarget.getAttribute("data-sequence-id") || "").trim() : "";
+
+  if (!dropTarget || !targetLessonId) {
+    return null;
+  }
+
+  return {
+    sequenceId: sequenceId,
+    targetLessonId: targetLessonId
+  };
+}
+
 function clearCurriculumLessonFlowPhasePointerDrag() {
   if (!activeCurriculumLessonFlowPhaseDrag) {
     return;
@@ -18342,6 +18811,7 @@ function clearCurriculumLessonFlowPhasePointerDrag() {
   window.removeEventListener("pointercancel", window.UnterrichtsassistentApp.handleCurriculumLessonFlowPhasePointerEnd);
   removeCurriculumSeriesDragPreview();
   clearCurriculumLessonFlowPhaseDropIndicator();
+  clearCurriculumLessonDropIndicator();
   stopPlanningLessonFlowAutoScroll();
   activeCurriculumLessonFlowPhaseDrag = null;
 }
@@ -18356,6 +18826,7 @@ function clearCurriculumLessonFlowStepPointerDrag() {
   window.removeEventListener("pointercancel", window.UnterrichtsassistentApp.handleCurriculumLessonFlowStepPointerEnd);
   removeCurriculumSeriesDragPreview();
   clearCurriculumLessonFlowStepDropIndicator();
+  clearCurriculumLessonDropIndicator();
   stopPlanningLessonFlowAutoScroll();
   activeCurriculumLessonFlowStepDrag = null;
 }
@@ -18402,6 +18873,7 @@ window.UnterrichtsassistentApp.handleCurriculumLessonFlowPhasePointerMove = func
   const deltaX = activeCurriculumLessonFlowPhaseDrag ? (Number(event.clientX) || 0) - activeCurriculumLessonFlowPhaseDrag.startX : 0;
   const deltaY = activeCurriculumLessonFlowPhaseDrag ? (Number(event.clientY) || 0) - activeCurriculumLessonFlowPhaseDrag.startY : 0;
   const dropTarget = getCurriculumLessonFlowPhaseDropTargetFromPoint(event && event.clientX, event && event.clientY);
+  const lessonDropTarget = dropTarget ? null : getCurriculumLessonFlowLessonDropTargetFromPoint(event && event.clientX, event && event.clientY);
 
   if (!activeCurriculumLessonFlowPhaseDrag || event.pointerId !== activeCurriculumLessonFlowPhaseDrag.pointerId) {
     return false;
@@ -18418,9 +18890,14 @@ window.UnterrichtsassistentApp.handleCurriculumLessonFlowPhasePointerMove = func
   updateCurriculumSeriesDragPreview(event.clientX, event.clientY, "#3975ab");
   updatePlanningLessonFlowAutoScroll(Number(event.clientX) || 0, Number(event.clientY) || 0);
 
-  if (!dropTarget || String(dropTarget.targetPhaseId || "").trim() === activeCurriculumLessonFlowPhaseDrag.phaseId) {
+  if (lessonDropTarget) {
     clearCurriculumLessonFlowPhaseDropIndicator();
+    setCurriculumLessonDropIndicator(lessonDropTarget.sequenceId, lessonDropTarget.targetLessonId, "before", "#3975ab");
+  } else if (!dropTarget || String(dropTarget.targetPhaseId || "").trim() === activeCurriculumLessonFlowPhaseDrag.phaseId) {
+    clearCurriculumLessonFlowPhaseDropIndicator();
+    clearCurriculumLessonDropIndicator();
   } else {
+    clearCurriculumLessonDropIndicator();
     setCurriculumLessonFlowPhaseDropIndicator(dropTarget.targetPhaseId, dropTarget.placement);
   }
 
@@ -18440,6 +18917,11 @@ window.UnterrichtsassistentApp.handleCurriculumLessonFlowPhasePointerEnd = funct
         placement: String(activeCurriculumLessonFlowPhaseDropIndicator.placement || "").trim() === "before" ? "before" : "after"
       }
     : null;
+  const lessonDropIndicator = activeCurriculumLessonDropIndicator
+    ? {
+        targetLessonId: String(activeCurriculumLessonDropIndicator.targetLessonId || "").trim()
+      }
+    : null;
 
   if (!activeCurriculumLessonFlowPhaseDrag || event.pointerId !== pointerId) {
     return false;
@@ -18451,11 +18933,19 @@ window.UnterrichtsassistentApp.handleCurriculumLessonFlowPhasePointerEnd = funct
 
   clearCurriculumLessonFlowPhasePointerDrag();
 
-  if (!didDrag || !lessonId || !draggedPhaseId || !dropIndicator || draggedPhaseId === dropIndicator.targetPhaseId) {
+  if (!didDrag || !lessonId || !draggedPhaseId || (!dropIndicator && !lessonDropIndicator)) {
     return false;
   }
 
   event.preventDefault();
+  if (lessonDropIndicator && lessonDropIndicator.targetLessonId) {
+    return moveCurriculumLessonFlowPhaseToLessonStart(lessonId, draggedPhaseId, lessonDropIndicator.targetLessonId);
+  }
+
+  if (draggedPhaseId === dropIndicator.targetPhaseId) {
+    return false;
+  }
+
   return reorderCurriculumLessonFlowPhases(lessonId, draggedPhaseId, dropIndicator.targetPhaseId, dropIndicator.placement);
 };
 
@@ -18501,6 +18991,7 @@ window.UnterrichtsassistentApp.handleCurriculumLessonFlowStepPointerMove = funct
   const deltaX = activeCurriculumLessonFlowStepDrag ? (Number(event.clientX) || 0) - activeCurriculumLessonFlowStepDrag.startX : 0;
   const deltaY = activeCurriculumLessonFlowStepDrag ? (Number(event.clientY) || 0) - activeCurriculumLessonFlowStepDrag.startY : 0;
   const dropTarget = getCurriculumLessonFlowStepDropTargetFromPoint(event && event.clientX, event && event.clientY);
+  const lessonDropTarget = dropTarget ? null : getCurriculumLessonFlowLessonDropTargetFromPoint(event && event.clientX, event && event.clientY);
 
   if (!activeCurriculumLessonFlowStepDrag || event.pointerId !== activeCurriculumLessonFlowStepDrag.pointerId) {
     return false;
@@ -18517,11 +19008,16 @@ window.UnterrichtsassistentApp.handleCurriculumLessonFlowStepPointerMove = funct
   updateCurriculumSeriesDragPreview(event.clientX, event.clientY, "#3975ab");
   updatePlanningLessonFlowAutoScroll(Number(event.clientX) || 0, Number(event.clientY) || 0);
 
-  if (!dropTarget
+  if (lessonDropTarget) {
+    clearCurriculumLessonFlowStepDropIndicator();
+    setCurriculumLessonDropIndicator(lessonDropTarget.sequenceId, lessonDropTarget.targetLessonId, "before", "#3975ab");
+  } else if (!dropTarget
     || (String(dropTarget.phaseId || "").trim() === activeCurriculumLessonFlowStepDrag.phaseId
       && String(dropTarget.targetStepId || "").trim() === activeCurriculumLessonFlowStepDrag.stepId)) {
     clearCurriculumLessonFlowStepDropIndicator();
+    clearCurriculumLessonDropIndicator();
   } else {
+    clearCurriculumLessonDropIndicator();
     setCurriculumLessonFlowStepDropIndicator(dropTarget.phaseId, dropTarget.targetStepId, dropTarget.placement);
   }
 
@@ -18542,6 +19038,11 @@ window.UnterrichtsassistentApp.handleCurriculumLessonFlowStepPointerEnd = functi
         placement: String(activeCurriculumLessonFlowStepDropIndicator.placement || "").trim() === "before" ? "before" : "after"
       }
     : null;
+  const lessonDropIndicator = activeCurriculumLessonDropIndicator
+    ? {
+        targetLessonId: String(activeCurriculumLessonDropIndicator.targetLessonId || "").trim()
+      }
+    : null;
 
   if (!activeCurriculumLessonFlowStepDrag || event.pointerId !== pointerId) {
     return false;
@@ -18553,11 +19054,15 @@ window.UnterrichtsassistentApp.handleCurriculumLessonFlowStepPointerEnd = functi
 
   clearCurriculumLessonFlowStepPointerDrag();
 
-  if (!didDrag || !sourcePhaseId || !draggedStepId || !dropIndicator) {
+  if (!didDrag || !sourcePhaseId || !draggedStepId || (!dropIndicator && !lessonDropIndicator)) {
     return false;
   }
 
   event.preventDefault();
+  if (lessonDropIndicator && lessonDropIndicator.targetLessonId) {
+    return moveCurriculumLessonFlowStepToLessonStart(sourcePhaseId, draggedStepId, lessonDropIndicator.targetLessonId);
+  }
+
   return reorderCurriculumLessonFlowSteps(sourcePhaseId, draggedStepId, dropIndicator.phaseId, dropIndicator.targetStepId, dropIndicator.placement);
 };
 window.UnterrichtsassistentApp.startCurriculumLessonDrag = function (event, sequenceId, lessonId, color) {

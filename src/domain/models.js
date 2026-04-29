@@ -997,7 +997,7 @@ class CurriculumLessonStep {
 }
 
 class CurriculumLessonPhaseStatus {
-  constructor({ id, classId = "", lessonDate = "", lessonPlanId = "", phaseId = "", isCompleted = false, elapsedMinutes = 0, resumeStartMinutes = 0, liveSituationType = "", liveDemandLevel = "" }) {
+  constructor({ id, classId = "", lessonDate = "", lessonPlanId = "", phaseId = "", isCompleted = false, isSkipped = false, elapsedMinutes = 0, resumeStartMinutes = 0, liveSituationType = "", liveDemandLevel = "" }) {
     const normalizedSituationType = String(liveSituationType || "").trim().toLowerCase();
     const normalizedDemandLevel = String(liveDemandLevel || "").trim().toLowerCase();
 
@@ -1007,6 +1007,7 @@ class CurriculumLessonPhaseStatus {
     this.lessonPlanId = lessonPlanId;
     this.phaseId = phaseId;
     this.isCompleted = Boolean(isCompleted);
+    this.isSkipped = Boolean(isSkipped);
     this.elapsedMinutes = Math.max(0, Number(elapsedMinutes) || 0);
     this.resumeStartMinutes = Math.max(0, Number(resumeStartMinutes) || 0);
     this.liveSituationType = ["lernen", "leisten"].indexOf(normalizedSituationType) >= 0
@@ -1019,7 +1020,7 @@ class CurriculumLessonPhaseStatus {
 }
 
 class CurriculumLessonStepStatus {
-  constructor({ id, classId = "", lessonDate = "", lessonPlanId = "", phaseId = "", stepId = "", isCompleted = false, elapsedMinutes = 0, completedAt = "" }) {
+  constructor({ id, classId = "", lessonDate = "", lessonPlanId = "", phaseId = "", stepId = "", isCompleted = false, isSkipped = false, elapsedMinutes = 0, completedAt = "" }) {
     this.id = id;
     this.classId = classId;
     this.lessonDate = String(lessonDate || "").slice(0, 10);
@@ -1027,6 +1028,7 @@ class CurriculumLessonStepStatus {
     this.phaseId = phaseId;
     this.stepId = stepId;
     this.isCompleted = Boolean(isCompleted);
+    this.isSkipped = Boolean(isSkipped);
     this.elapsedMinutes = Math.max(0, Number(elapsedMinutes) || 0);
     this.completedAt = this.isCompleted
       ? String(completedAt || "").trim()
