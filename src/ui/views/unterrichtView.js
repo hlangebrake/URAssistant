@@ -35,6 +35,12 @@ window.Unterrichtsassistent.ui.views.unterricht = {
     const isLiveTodosCollapsed = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.isUnterrichtLiveTodosCollapsed === "function"
       ? window.UnterrichtsassistentApp.isUnterrichtLiveTodosCollapsed()
       : false;
+    const isLiveMissedHomeworkCollapsed = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.isUnterrichtLiveMissedHomeworkCollapsed === "function"
+      ? window.UnterrichtsassistentApp.isUnterrichtLiveMissedHomeworkCollapsed()
+      : true;
+    const isLiveKnowledgeGapsCollapsed = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.isUnterrichtLiveKnowledgeGapsCollapsed === "function"
+      ? window.UnterrichtsassistentApp.isUnterrichtLiveKnowledgeGapsCollapsed()
+      : true;
     const isLiveManageMode = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.isUnterrichtLiveManageMode === "function"
       ? window.UnterrichtsassistentApp.isUnterrichtLiveManageMode()
       : false;
@@ -51,7 +57,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       : null;
     const students = activeClass ? service.getStudentsForClass(activeClass.id) : [];
     const lowEvidenceStudentIds = activeClass && viewMode === "live" && typeof service.getLowEvidenceStudentIdsForClass === "function"
-      ? service.getLowEvidenceStudentIdsForClass(activeClass.id, referenceDate, 5, 14)
+      ? service.getLowEvidenceStudentIdsForClass(activeClass.id, referenceDate, 5, 30)
       : [];
     const lowEvidenceStudentIdLookup = lowEvidenceStudentIds.reduce(function (lookup, studentId) {
       lookup[studentId] = true;
@@ -162,8 +168,14 @@ window.Unterrichtsassistent.ui.views.unterricht = {
     const collapsedLiveLessonIds = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getCollapsedUnterrichtLiveLessonIds === "function"
       ? window.UnterrichtsassistentApp.getCollapsedUnterrichtLiveLessonIds()
       : [];
+    const collapsedLiveDueHomeworkIds = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getCollapsedUnterrichtLiveDueHomeworkIds === "function"
+      ? window.UnterrichtsassistentApp.getCollapsedUnterrichtLiveDueHomeworkIds()
+      : [];
     const activeLiveLessonInfoLessonId = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveUnterrichtLiveLessonInfoLessonId === "function"
       ? String(window.UnterrichtsassistentApp.getActiveUnterrichtLiveLessonInfoLessonId() || "").trim()
+      : "";
+    const activeMissedHomeworkStudentId = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveUnterrichtMissedHomeworkStudentId === "function"
+      ? String(window.UnterrichtsassistentApp.getActiveUnterrichtMissedHomeworkStudentId() || "").trim()
       : "";
     const deskLayoutItemsSource = currentSeatPlan && Array.isArray(currentSeatPlan.deskLayoutItems)
       ? currentSeatPlan.deskLayoutItems
@@ -734,20 +746,33 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       }, []);
     }
 
-    function renderLiveHomeworkBlock(lessonPlan, dueLabel, extraTitle) {
+    function renderLiveHomeworkBlock(lessonPlan, dueLabel, extraTitle, options) {
       const homeworkText = String(lessonPlan && lessonPlan.homeworkText || "").trim();
+      const normalizedOptions = options && typeof options === "object" ? options : {};
+      const isCollapsible = Boolean(normalizedOptions.isCollapsible);
+      const isCollapsed = Boolean(normalizedOptions.isCollapsed);
+      const collapseId = String(normalizedOptions.collapseId || "").trim();
+      const extraClasses = [
+        "unterricht-live-flow__extra",
+        "unterricht-live-flow__extra--homework",
+        isCollapsible ? "is-collapsible" : "",
+        isCollapsed ? "is-collapsed" : ""
+      ].filter(Boolean).join(" ");
+      const toggleAttributes = isCollapsible && collapseId
+        ? ' role="button" tabindex="0" aria-expanded="' + (isCollapsed ? 'false' : 'true') + '" onclick="return window.UnterrichtsassistentApp.toggleUnterrichtLiveDueHomeworkCollapsed(\'' + escapeValue(collapseId) + '\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();return window.UnterrichtsassistentApp.toggleUnterrichtLiveDueHomeworkCollapsed(\'' + escapeValue(collapseId) + '\')} return true;"'
+        : "";
 
       if (!homeworkText) {
         return "";
       }
 
       return [
-        '<div class="unterricht-live-flow__extra unterricht-live-flow__extra--homework">',
+        '<div class="' + extraClasses + '"' + toggleAttributes + '>',
         '<div class="unterricht-live-flow__extra-header">',
         '<div class="unterricht-live-flow__extra-title">' + escapeValue(extraTitle || "Hausaufgabe") + '</div>',
-        dueLabel ? '<div class="unterricht-live-flow__extra-meta">' + escapeValue(dueLabel) + '</div>' : '',
+        !isCollapsed && dueLabel ? '<div class="unterricht-live-flow__extra-meta">' + escapeValue(dueLabel) + '</div>' : '',
         '</div>',
-        '<div class="unterricht-live-flow__extra-text">', escapeValue(homeworkText), '</div>',
+        isCollapsed ? '' : '<div class="unterricht-live-flow__extra-text">' + escapeValue(homeworkText) + '</div>',
         '</div>'
       ].join("");
     }
@@ -780,14 +805,115 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       }
 
       return items.map(function (item) {
+        const lessonPlanId = String(item && item.lessonPlan && item.lessonPlan.id || "").trim();
+        const collapseId = lessonPlanId ? "homework-" + lessonPlanId : "";
         const lessonTopic = String(item && item.lessonPlan && item.lessonPlan.topic || "").trim();
         const metaParts = [
           item && item.dueDate ? "faellig " + formatShortDateLabel(item.dueDate) : "",
           lessonTopic ? "aus " + lessonTopic : ""
         ].filter(Boolean);
 
-        return renderLiveHomeworkBlock(item && item.lessonPlan, metaParts.join(" · "), "Faellige Hausaufgabe");
+        return renderLiveHomeworkBlock(item && item.lessonPlan, metaParts.join(" · "), "Faellige Hausaufgabe", {
+          isCollapsible: Boolean(collapseId),
+          isCollapsed: collapseId ? collapsedLiveDueHomeworkIds.indexOf(collapseId) >= 0 : false,
+          collapseId: collapseId
+        });
       }).join("");
+    }
+
+    function doesHomeworkRecordMatchTargetSlot(record, targetSlot) {
+      const recordDate = String(record && record.lessonDate || "").slice(0, 10);
+      const targetDate = String(targetSlot && targetSlot.lessonDate || "").slice(0, 10);
+      const recordLessonId = String(record && record.lessonId || "").trim();
+      const targetSourceRowId = String(targetSlot && targetSlot.sourceRowId || "").trim();
+
+      if (!recordDate || recordDate !== targetDate) {
+        return false;
+      }
+
+      if (!recordLessonId || !targetSourceRowId) {
+        return true;
+      }
+
+      return recordLessonId === targetSourceRowId
+        || recordLessonId.slice(-targetSourceRowId.length) === targetSourceRowId;
+    }
+
+    function getMissedHomeworkTextForRecord(record, lessonSlots) {
+      const slots = Array.isArray(lessonSlots) ? lessonSlots : [];
+      const matches = Object.keys(lessonPlanLookup).map(function (lessonPlanId) {
+        const lessonPlan = lessonPlanLookup[lessonPlanId];
+        const targetInfo = getCurriculumHomeworkTargetSlotInfo(lessonPlan, slots);
+
+        return targetInfo && doesHomeworkRecordMatchTargetSlot(record, targetInfo.targetSlot)
+          ? lessonPlan
+          : null;
+      }).filter(Boolean);
+      const exactText = matches.length
+        ? String(matches[0] && matches[0].homeworkText || "").trim()
+        : "";
+
+      return exactText || "Keine zugeordnete faellige Hausaufgabe gefunden.";
+    }
+
+    function getMissedHomeworkRecordSortValue(record) {
+      return String(record && (record.recordedAt || record.lessonDate || "") || "").trim();
+    }
+
+    function getMissedHomeworkEntries() {
+      const normalizedActiveClassId = String(activeClass && activeClass.id || "").trim();
+      const lessonSlots = normalizedActiveClassId ? buildInstructionAssignmentSlotsForClass(normalizedActiveClassId) : [];
+
+      return (Array.isArray(snapshot.homeworkRecords) ? snapshot.homeworkRecords : []).filter(function (record) {
+        return normalizedActiveClassId
+          && String(record && record.classId || "").trim() === normalizedActiveClassId
+          && String(record && record.quality || "").trim() === "fehlt"
+          && !Boolean(record && record.ignored);
+      }).map(function (record) {
+        return {
+          record: record,
+          homeworkText: getMissedHomeworkTextForRecord(record, lessonSlots)
+        };
+      });
+    }
+
+    function getMissedHomeworkStudentSummaries(entries) {
+      const grouped = {};
+
+      entries.forEach(function (entry) {
+        const studentId = String(entry && entry.record && entry.record.studentId || "").trim();
+        const sortValue = getMissedHomeworkRecordSortValue(entry && entry.record);
+
+        if (!studentId) {
+          return;
+        }
+
+        if (!grouped[studentId]) {
+          grouped[studentId] = {
+            studentId: studentId,
+            entries: [],
+            latestRecord: null,
+            latestSortValue: ""
+          };
+        }
+
+        grouped[studentId].entries.push(entry);
+
+        if (!grouped[studentId].latestRecord || sortValue > grouped[studentId].latestSortValue) {
+          grouped[studentId].latestRecord = entry.record;
+          grouped[studentId].latestSortValue = sortValue;
+        }
+      });
+
+      return Object.keys(grouped).map(function (studentId) {
+        return grouped[studentId];
+      }).sort(function (left, right) {
+        if (left.latestSortValue !== right.latestSortValue) {
+          return right.latestSortValue.localeCompare(left.latestSortValue);
+        }
+
+        return String(left.studentId || "").localeCompare(String(right.studentId || ""));
+      });
     }
 
     function getCurriculumSituationTypeLabel(situationTypeValue) {
@@ -1407,6 +1533,26 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       return service.getMathObservationCountForStudent(studentId, activeClass.id, service.getReferenceDate());
     }
 
+    function hasRecentMathObservationForStudent(studentId) {
+      if (!studentId || !activeClass || typeof service.hasRecentMathObservationForStudent !== "function") {
+        return false;
+      }
+
+      return service.hasRecentMathObservationForStudent(studentId, activeClass.id, service.getReferenceDate(), 14);
+    }
+
+    function getMathObservationBadgeState(mathObservationCount, hasRecentMathObservation) {
+      if (mathObservationCount >= 3) {
+        return "is-limit";
+      }
+
+      if (mathObservationCount > 0) {
+        return "is-current";
+      }
+
+      return hasRecentMathObservation ? "is-missing-current" : "is-overdue";
+    }
+
     function renderReadonlySeatSlot(student, extraClasses) {
       const classes = ["seat-order-slot", "unterricht-seatplan-slot"];
       const attendanceState = student ? getAttendanceStateForStudent(student.id) : "present";
@@ -1420,6 +1566,8 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       };
       const assessmentCount = assessmentStatus.currentCount;
       const mathObservationCount = student ? getMathObservationCountForStudent(student.id) : 0;
+      const hasRecentMathObservation = student ? hasRecentMathObservationForStudent(student.id) : false;
+      const mathObservationBadgeState = getMathObservationBadgeState(mathObservationCount, hasRecentMathObservation);
       const assessmentStateClass = assessmentStatus.hasCurrentAssessment
         ? "is-positive"
         : (assessmentStatus.isOlderThanFourteenDays ? "is-overdue" : "is-empty");
@@ -1470,7 +1618,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         ? '<div class="unterricht-seatplan-assessment-count ' + assessmentStateClass + (toolMode === "assessment" ? ' is-emphasized' : ' is-muted') + '"><span class="unterricht-seatplan-assessment-count__icon">&#128269;</span><span class="unterricht-seatplan-assessment-count__value">' + escapeValue(String(assessmentCount)) + '</span></div>'
         : "";
       const mathObservationBadge = student && currentClassLesson && showStatusInfo
-        ? '<span class="unterricht-seatplan-observation-badge' + (toolMode === "mathObservation" ? ' is-emphasized' : ' is-muted') + '">K<span class="unterricht-seatplan-observation-badge__count">' + escapeValue(String(mathObservationCount)) + '</span></span>'
+        ? '<span class="unterricht-seatplan-observation-badge ' + mathObservationBadgeState + (toolMode === "mathObservation" && mathObservationBadgeState !== "is-limit" ? ' is-emphasized' : ' is-muted') + '">K<span class="unterricht-seatplan-observation-badge__count">' + escapeValue(String(mathObservationCount)) + '</span></span>'
         : "";
       const symbolRow = (homeworkBadge || warningBadge || mathObservationBadge)
         ? '<div class="unterricht-seatplan-symbol-row">' + homeworkBadge + warningBadge + mathObservationBadge + '</div>'
@@ -2858,6 +3006,127 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       ].join("");
     }
 
+    function renderHomeworkQualityOptions(selectedQuality) {
+      const normalizedSelectedQuality = String(selectedQuality || "").trim() || "fehlt";
+      const options = [
+        { value: "fehlt", label: "fehlt" },
+        { value: "unvollstaendig", label: "unvollstaendig" },
+        { value: "abgeschrieben", label: "abgeschrieben" },
+        { value: "besondersgut", label: "besonders gut" },
+        { value: "vorhanden", label: "vorhanden" }
+      ];
+
+      return options.map(function (option) {
+        return '<option value="' + escapeValue(option.value) + '"' + (normalizedSelectedQuality === option.value ? ' selected' : '') + '>' + escapeValue(option.label) + '</option>';
+      }).join("");
+    }
+
+    function buildLiveMissedHomeworkRow(summary) {
+      const student = getStudentById(summary && summary.studentId);
+      const studentLabel = student
+        ? getStudentCompactDisplayName(student, students)
+        : "Unbekannt";
+      const latestDateLabel = formatTodoDateLabel(summary && summary.latestRecord && summary.latestRecord.lessonDate);
+
+      return [
+        '<div class="unterricht-live-missed-homework__row">',
+        '<div class="unterricht-live-missed-homework__student">',
+        '<strong>', escapeValue(studentLabel), '</strong>',
+        '<span>', escapeValue(String(summary && summary.entries ? summary.entries.length : 0)), 'x fehlt</span>',
+        '</div>',
+        '<div class="unterricht-live-missed-homework__meta">',
+        latestDateLabel ? '<span>' + escapeValue(latestDateLabel) + '</span>' : '',
+        '<button class="unterricht-live-missed-homework__info" type="button" aria-label="Versaeumte Hausaufgaben anzeigen" onclick="return window.UnterrichtsassistentApp.openUnterrichtMissedHomeworkModal(\'', escapeValue(String(summary && summary.studentId || "")), '\')">info</button>',
+        '</div>',
+        '</div>'
+      ].join("");
+    }
+
+    function buildLiveMissedHomeworkModal(entries) {
+      const student = activeMissedHomeworkStudentId ? getStudentById(activeMissedHomeworkStudentId) : null;
+      const studentEntries = activeMissedHomeworkStudentId
+        ? entries.filter(function (entry) {
+          return String(entry && entry.record && entry.record.studentId || "").trim() === activeMissedHomeworkStudentId;
+        }).sort(function (left, right) {
+          return getMissedHomeworkRecordSortValue(right && right.record).localeCompare(getMissedHomeworkRecordSortValue(left && left.record));
+        })
+        : [];
+      const studentLabel = student ? getStudentCompactDisplayName(student, students) : "Unbekannt";
+
+      if (!activeMissedHomeworkStudentId || !studentEntries.length) {
+        return "";
+      }
+
+      return [
+        '<div class="import-modal unterricht-missed-homework-modal">',
+        '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeUnterrichtMissedHomeworkModal()"></div>',
+        '<div class="import-modal__dialog import-modal__dialog--assessment import-modal__dialog--missed-homework" role="dialog" aria-modal="true" aria-labelledby="unterrichtMissedHomeworkTitle">',
+        '<div class="import-modal__header">',
+        '<div>',
+        '<h3 id="unterrichtMissedHomeworkTitle">Versaeumte Hausaufgaben</h3>',
+        '<div class="import-modal__meta">', escapeValue(studentLabel), '</div>',
+        '</div>',
+        '<div class="import-modal__icon-actions">',
+        '<button class="import-modal__icon-button import-modal__icon-button--cancel" type="button" aria-label="Schliessen" onclick="return window.UnterrichtsassistentApp.closeUnterrichtMissedHomeworkModal()">&#10005;</button>',
+        '</div>',
+        '</div>',
+        '<div class="import-modal__form unterricht-missed-homework-modal__list">',
+        studentEntries.map(function (entry) {
+          const record = entry && entry.record ? entry.record : {};
+          const recordId = String(record && record.id || "").trim();
+          const dateLabel = formatTodoDateLabel(record && record.lessonDate);
+          const homeworkText = String(entry && entry.homeworkText || "").trim();
+
+          return [
+            '<div class="unterricht-missed-homework-modal__row">',
+            '<div class="unterricht-missed-homework-modal__main">',
+            '<div class="unterricht-missed-homework-modal__date">', escapeValue(dateLabel || "-"), '</div>',
+            '<div class="unterricht-missed-homework-modal__text">', escapeValue(homeworkText), '</div>',
+            '</div>',
+            '<div class="unterricht-missed-homework-modal__actions">',
+            '<label class="unterricht-missed-homework-modal__status"><span>Status</span><select onchange="return window.UnterrichtsassistentApp.updateMissedHomeworkRecordQuality(\'', escapeValue(recordId), '\', this.value)">',
+            renderHomeworkQualityOptions(record && record.quality),
+            '</select></label>',
+            '<button class="unterricht-missed-homework-modal__ignore" type="button" onclick="return window.UnterrichtsassistentApp.ignoreMissedHomeworkRecord(\'', escapeValue(recordId), '\')">ignorieren</button>',
+            '</div>',
+            '</div>'
+          ].join("");
+        }).join(""),
+        '</div>',
+        '</div>',
+        '</div>'
+      ].join("");
+    }
+
+    function buildLiveMissedHomeworkPanel() {
+      const entries = getMissedHomeworkEntries();
+      const summaries = getMissedHomeworkStudentSummaries(entries);
+      const isScrollable = summaries.length > 5;
+
+      if (!activeClass) {
+        return "";
+      }
+
+      return [
+        '<article class="panel unterricht-layout__live-missed-homework', isLiveMissedHomeworkCollapsed ? ' is-collapsed' : '', '">',
+        '<button class="unterricht-live-missed-homework__header" type="button" aria-expanded="', isLiveMissedHomeworkCollapsed ? 'false' : 'true', '" onclick="return window.UnterrichtsassistentApp.toggleUnterrichtLiveMissedHomeworkCollapsed()">',
+        '<div>',
+        '<h2 class="unterricht-live-missed-homework__title">versaeumte Hausaufgaben</h2>',
+        isLiveMissedHomeworkCollapsed ? '' : '<div class="unterricht-live-missed-homework__subtitle">neueste fehlt-Eintraege zuerst</div>',
+        '</div>',
+        isLiveMissedHomeworkCollapsed ? '' : '<span class="unterricht-live-missed-homework__count">' + escapeValue(String(summaries.length)) + '</span>',
+        '</button>',
+        isLiveMissedHomeworkCollapsed ? '' : (summaries.length ? [
+          '<div class="unterricht-live-missed-homework__list', isScrollable ? ' is-scrollable' : '', '">',
+          summaries.map(buildLiveMissedHomeworkRow).join(""),
+          '</div>',
+          isScrollable ? '<div class="todos-view__scroll-indicator">Weitere versaeumte Hausaufgaben per Scrollen</div>' : ''
+        ].join("") : '<p class="empty-message todos-view__empty">Keine versaeumten Hausaufgaben fuer die aktuelle Lerngruppe.</p>'),
+        '</article>',
+        buildLiveMissedHomeworkModal(entries)
+      ].join("");
+    }
+
     function getKnowledgeGapStatusRank(statusValue) {
       const normalizedStatus = String(statusValue || "").trim().toLowerCase();
 
@@ -2943,20 +3212,20 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       }
 
       return [
-        '<article class="panel unterricht-layout__live-knowledge-gaps">',
-        '<div class="unterricht-live-knowledge-gaps__header">',
+        '<article class="panel unterricht-layout__live-knowledge-gaps', isLiveKnowledgeGapsCollapsed ? ' is-collapsed' : '', '">',
+        '<button class="unterricht-live-knowledge-gaps__header" type="button" aria-expanded="', isLiveKnowledgeGapsCollapsed ? 'false' : 'true', '" onclick="return window.UnterrichtsassistentApp.toggleUnterrichtLiveKnowledgeGapsCollapsed()">',
         '<div>',
         '<h2 class="unterricht-live-knowledge-gaps__title">Wissensluecken</h2>',
-        '<div class="unterricht-live-knowledge-gaps__subtitle">offen zuerst, aelteste zuerst</div>',
+        isLiveKnowledgeGapsCollapsed ? '' : '<div class="unterricht-live-knowledge-gaps__subtitle">offen zuerst, aelteste zuerst</div>',
         '</div>',
-        '<span class="unterricht-live-knowledge-gaps__count">', escapeValue(String(knowledgeGapRecords.length)), '</span>',
-        '</div>',
-        knowledgeGapRecords.length ? [
+        isLiveKnowledgeGapsCollapsed ? '' : '<span class="unterricht-live-knowledge-gaps__count">' + escapeValue(String(knowledgeGapRecords.length)) + '</span>',
+        '</button>',
+        isLiveKnowledgeGapsCollapsed ? '' : (knowledgeGapRecords.length ? [
           '<div class="unterricht-live-knowledge-gaps__list', isScrollable ? ' is-scrollable' : '', '">',
           knowledgeGapRecords.map(buildLiveKnowledgeGapRow).join(""),
           '</div>',
           isScrollable ? '<div class="todos-view__scroll-indicator">Weitere Wissensluecken per Scrollen</div>' : ''
-        ].join("") : '<p class="empty-message todos-view__empty">Keine Wissensluecken fuer die aktuelle Lerngruppe.</p>',
+        ].join("") : '<p class="empty-message todos-view__empty">Keine Wissensluecken fuer die aktuelle Lerngruppe.</p>'),
         '</article>'
       ].join("");
     }
@@ -2987,6 +3256,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         renderCompactSeatPlan(),
         '</article>',
         buildLiveCurrentClassTodoPanel(),
+        buildLiveMissedHomeworkPanel(),
         buildLiveKnowledgeGapPanel(),
         '</div>',
         renderLiveLessonFlowPanel(liveLessonFlowData),

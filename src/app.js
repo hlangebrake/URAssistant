@@ -123,7 +123,10 @@ let activeCurriculumLessonFlowViewPhaseIds = [];
 let expandedCurriculumSeriesIds = [];
 let expandedCurriculumSequenceIds = [];
 let collapsedUnterrichtLiveLessonIds = [];
+let collapsedUnterrichtLiveDueHomeworkIds = [];
 let isUnterrichtLiveTodosCollapsed = false;
+let isUnterrichtLiveMissedHomeworkCollapsed = true;
+let isUnterrichtLiveKnowledgeGapsCollapsed = true;
 let activeUnterrichtLiveLessonInfoLessonId = "";
 let activeCurriculumSeriesDrag = null;
 let activeCurriculumSeriesDropIndicator = null;
@@ -171,6 +174,7 @@ let unterrichtWarningRadialMenu = null;
 let activeUnterrichtWarningOtherDraft = null;
 let activeUnterrichtAssessmentDraft = null;
 let activeUnterrichtKnowledgeGapDraft = null;
+let activeUnterrichtMissedHomeworkStudentId = "";
 let activeUnterrichtAssessmentGridDrag = null;
 let activeUnterrichtAssessmentPress = null;
 let unterrichtAssessmentQuickMenu = null;
@@ -20728,6 +20732,83 @@ window.UnterrichtsassistentApp.updateLiveKnowledgeGapStatus = function (recordId
   saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
   return false;
 };
+window.UnterrichtsassistentApp.openUnterrichtMissedHomeworkModal = function (studentId) {
+  activeUnterrichtMissedHomeworkStudentId = String(studentId || "").trim();
+
+  if (activeViewId === "unterricht") {
+    setActiveView("unterricht");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.closeUnterrichtMissedHomeworkModal = function () {
+  activeUnterrichtMissedHomeworkStudentId = "";
+
+  if (activeViewId === "unterricht") {
+    setActiveView("unterricht");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.updateMissedHomeworkRecordQuality = function (recordId, nextQuality) {
+  const currentRawSnapshot = schoolService && serializeSnapshot ? serializeSnapshot(schoolService.snapshot) : null;
+  const normalizedRecordId = String(recordId || "").trim();
+  const normalizedQuality = normalizeHomeworkQualityValue(nextQuality);
+  let didUpdate = false;
+
+  if (!currentRawSnapshot || !normalizedRecordId) {
+    return false;
+  }
+
+  if (normalizedQuality === "vorhanden") {
+    currentRawSnapshot.homeworkRecords = getHomeworkRecordsCollection(currentRawSnapshot).filter(function (record) {
+      if (String(record && record.id || "").trim() === normalizedRecordId) {
+        didUpdate = true;
+        return false;
+      }
+
+      return true;
+    });
+  } else {
+    getMutableHomeworkRecordsCollection(currentRawSnapshot).forEach(function (record) {
+      if (String(record && record.id || "").trim() === normalizedRecordId) {
+        record.quality = normalizedQuality;
+        record.ignored = false;
+        didUpdate = true;
+      }
+    });
+  }
+
+  if (!didUpdate) {
+    return false;
+  }
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
+  return false;
+};
+window.UnterrichtsassistentApp.ignoreMissedHomeworkRecord = function (recordId) {
+  const currentRawSnapshot = schoolService && serializeSnapshot ? serializeSnapshot(schoolService.snapshot) : null;
+  const normalizedRecordId = String(recordId || "").trim();
+  let didUpdate = false;
+
+  if (!currentRawSnapshot || !normalizedRecordId) {
+    return false;
+  }
+
+  getMutableHomeworkRecordsCollection(currentRawSnapshot).forEach(function (record) {
+    if (String(record && record.id || "").trim() === normalizedRecordId) {
+      record.ignored = true;
+      didUpdate = true;
+    }
+  });
+
+  if (!didUpdate) {
+    return false;
+  }
+
+  saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
+  return false;
+};
 window.UnterrichtsassistentApp.startUnterrichtAssessmentGridPointer = function (event) {
   const point = getUnterrichtAssessmentGridPoint(event);
   const captureTarget = event && event.currentTarget ? event.currentTarget : getUnterrichtAssessmentGridSvg();
@@ -21612,11 +21693,23 @@ window.UnterrichtsassistentApp.getExpandedCurriculumSequenceIds = function () {
 window.UnterrichtsassistentApp.getCollapsedUnterrichtLiveLessonIds = function () {
   return collapsedUnterrichtLiveLessonIds.slice();
 };
+window.UnterrichtsassistentApp.getCollapsedUnterrichtLiveDueHomeworkIds = function () {
+  return collapsedUnterrichtLiveDueHomeworkIds.slice();
+};
 window.UnterrichtsassistentApp.isUnterrichtLiveTodosCollapsed = function () {
   return Boolean(isUnterrichtLiveTodosCollapsed);
 };
+window.UnterrichtsassistentApp.isUnterrichtLiveMissedHomeworkCollapsed = function () {
+  return Boolean(isUnterrichtLiveMissedHomeworkCollapsed);
+};
+window.UnterrichtsassistentApp.isUnterrichtLiveKnowledgeGapsCollapsed = function () {
+  return Boolean(isUnterrichtLiveKnowledgeGapsCollapsed);
+};
 window.UnterrichtsassistentApp.getActiveUnterrichtLiveLessonInfoLessonId = function () {
   return activeUnterrichtLiveLessonInfoLessonId;
+};
+window.UnterrichtsassistentApp.getActiveUnterrichtMissedHomeworkStudentId = function () {
+  return activeUnterrichtMissedHomeworkStudentId;
 };
 window.UnterrichtsassistentApp.getActivePlanningRangeDraft = function () {
   return activePlanningRangeDraft;
@@ -21758,6 +21851,24 @@ window.UnterrichtsassistentApp.toggleUnterrichtLiveLessonCollapsed = function (l
   setActiveView("unterricht");
   return false;
 };
+window.UnterrichtsassistentApp.toggleUnterrichtLiveDueHomeworkCollapsed = function (homeworkId) {
+  const normalizedHomeworkId = String(homeworkId || "").trim();
+
+  if (activeViewId !== "unterricht" || !normalizedHomeworkId) {
+    return false;
+  }
+
+  if (collapsedUnterrichtLiveDueHomeworkIds.indexOf(normalizedHomeworkId) >= 0) {
+    collapsedUnterrichtLiveDueHomeworkIds = collapsedUnterrichtLiveDueHomeworkIds.filter(function (entry) {
+      return entry !== normalizedHomeworkId;
+    });
+  } else {
+    collapsedUnterrichtLiveDueHomeworkIds = collapsedUnterrichtLiveDueHomeworkIds.concat([normalizedHomeworkId]);
+  }
+
+  setActiveView("unterricht");
+  return false;
+};
 window.UnterrichtsassistentApp.toggleUnterrichtLiveLessonInfo = function (lessonId) {
   const normalizedLessonId = String(lessonId || "").trim();
 
@@ -21880,6 +21991,24 @@ window.UnterrichtsassistentApp.togglePlanningAdminMode = function () {
 };
 window.UnterrichtsassistentApp.toggleUnterrichtLiveTodosCollapsed = function () {
   isUnterrichtLiveTodosCollapsed = !isUnterrichtLiveTodosCollapsed;
+
+  if (activeViewId === "unterricht") {
+    setActiveView("unterricht");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.toggleUnterrichtLiveMissedHomeworkCollapsed = function () {
+  isUnterrichtLiveMissedHomeworkCollapsed = !isUnterrichtLiveMissedHomeworkCollapsed;
+
+  if (activeViewId === "unterricht") {
+    setActiveView("unterricht");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.toggleUnterrichtLiveKnowledgeGapsCollapsed = function () {
+  isUnterrichtLiveKnowledgeGapsCollapsed = !isUnterrichtLiveKnowledgeGapsCollapsed;
 
   if (activeViewId === "unterricht") {
     setActiveView("unterricht");

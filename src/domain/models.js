@@ -469,7 +469,7 @@ class AttendanceRecord {
 }
 
 class HomeworkRecord {
-  constructor({ id, studentId, classId, lessonId = "", lessonDate = "", room = "", recordedAt = "", quality = "fehlt" }) {
+  constructor({ id, studentId, classId, lessonId = "", lessonDate = "", room = "", recordedAt = "", quality = "fehlt", ignored = false }) {
     this.id = id;
     this.studentId = studentId;
     this.classId = classId;
@@ -478,6 +478,7 @@ class HomeworkRecord {
     this.room = room;
     this.recordedAt = recordedAt;
     this.quality = quality;
+    this.ignored = Boolean(ignored);
   }
 }
 

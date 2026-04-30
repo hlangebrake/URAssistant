@@ -4355,6 +4355,24 @@ button {
   justify-content: space-between;
   gap: 0.75rem;
   margin-bottom: 0.9rem;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.unterricht-layout__live-knowledge-gaps.is-collapsed .unterricht-live-knowledge-gaps__header {
+  margin-bottom: 0;
+}
+
+.unterricht-layout__live-knowledge-gaps.is-collapsed {
+  min-height: 0;
+  height: auto;
+  padding: 0.65rem 0.8rem;
 }
 
 .unterricht-live-knowledge-gaps__title {
@@ -4812,6 +4830,19 @@ button {
   border-radius: 10px;
 }
 
+.unterricht-live-flow__extra--homework.is-collapsible {
+  cursor: pointer;
+}
+
+.unterricht-live-flow__extra--homework.is-collapsible:focus-visible {
+  outline: 2px solid rgba(48, 111, 118, 0.72);
+  outline-offset: 2px;
+}
+
+.unterricht-live-flow__extra--homework.is-collapsed {
+  gap: 0;
+}
+
 .unterricht-live-flow__extra-header {
   display: flex;
   align-items: baseline;
@@ -4839,6 +4870,192 @@ button {
   font-size: 0.8rem;
   line-height: 1.35;
   white-space: pre-wrap;
+}
+
+.unterricht-layout__live-missed-homework {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.unterricht-layout__live-missed-homework.is-collapsed {
+  min-height: 0;
+  height: auto;
+  gap: 0;
+  padding: 0.65rem 0.8rem;
+}
+
+.unterricht-live-missed-homework__header,
+.unterricht-live-knowledge-gaps__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.unterricht-live-missed-homework__header {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.unterricht-live-missed-homework__title {
+  margin: 0;
+  color: rgba(23, 49, 62, 0.92);
+  font-size: 0.96rem;
+}
+
+.unterricht-live-missed-homework__subtitle {
+  margin-top: 0.15rem;
+  color: rgba(23, 49, 62, 0.58);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.unterricht-live-missed-homework__count {
+  min-width: 1.7rem;
+  padding: 0.18rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(190, 73, 64, 0.12);
+  color: rgba(126, 48, 42, 0.95);
+  font-size: 0.76rem;
+  font-weight: 900;
+  text-align: center;
+}
+
+.unterricht-live-missed-homework__list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.unterricht-live-missed-homework__list.is-scrollable {
+  max-height: 17rem;
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
+.unterricht-live-missed-homework__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(23, 49, 62, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.unterricht-live-missed-homework__student {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.unterricht-live-missed-homework__student strong {
+  overflow: hidden;
+  color: rgba(31, 36, 48, 0.9);
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.unterricht-live-missed-homework__student span,
+.unterricht-live-missed-homework__meta {
+  color: rgba(31, 36, 48, 0.58);
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.unterricht-live-missed-homework__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex: 0 0 auto;
+}
+
+.unterricht-live-missed-homework__info,
+.unterricht-missed-homework-modal__ignore {
+  border: 0;
+  border-radius: 999px;
+  background: rgba(48, 111, 118, 0.12);
+  color: rgba(23, 49, 62, 0.86);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.unterricht-live-missed-homework__info {
+  padding: 0.22rem 0.48rem;
+}
+
+.unterricht-missed-homework-modal__list {
+  display: grid;
+  gap: 0.65rem;
+  max-height: min(58vh, 34rem);
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
+.unterricht-missed-homework-modal__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.8rem;
+  align-items: start;
+  padding: 0.7rem;
+  border: 1px solid rgba(23, 49, 62, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.unterricht-missed-homework-modal__main {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.unterricht-missed-homework-modal__date {
+  color: rgba(23, 49, 62, 0.56);
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
+.unterricht-missed-homework-modal__text {
+  color: rgba(31, 36, 48, 0.86);
+  font-size: 0.86rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+}
+
+.unterricht-missed-homework-modal__actions {
+  display: inline-flex;
+  align-items: end;
+  gap: 0.5rem;
+}
+
+.unterricht-missed-homework-modal__status {
+  display: grid;
+  gap: 0.18rem;
+  color: rgba(23, 49, 62, 0.56);
+  font-size: 0.7rem;
+  font-weight: 900;
+}
+
+.unterricht-missed-homework-modal__status select {
+  min-width: 9.5rem;
+  border: 1px solid rgba(23, 49, 62, 0.16);
+  border-radius: 8px;
+  padding: 0.35rem 0.45rem;
+  background: #ffffff;
+  color: rgba(31, 36, 48, 0.9);
+  font-weight: 800;
+}
+
+.unterricht-missed-homework-modal__ignore {
+  padding: 0.42rem 0.65rem;
 }
 
 .unterricht-live-flow__phase {
@@ -5546,6 +5763,24 @@ button {
   color: #ffffff;
   opacity: 1;
   filter: none;
+}
+
+.unterricht-seatplan-observation-badge.is-current.is-emphasized {
+  background: rgba(78, 152, 76, 0.96);
+  color: #ffffff;
+  box-shadow: 0 0 0 1px rgba(78, 152, 76, 0.24);
+}
+
+.unterricht-seatplan-observation-badge.is-missing-current.is-emphasized {
+  background: rgba(205, 154, 55, 0.96);
+  color: #ffffff;
+  box-shadow: 0 0 0 1px rgba(205, 154, 55, 0.24);
+}
+
+.unterricht-seatplan-observation-badge.is-overdue.is-emphasized {
+  background: rgba(190, 73, 64, 0.96);
+  color: #ffffff;
+  box-shadow: 0 0 0 1px rgba(190, 73, 64, 0.24);
 }
 
 .unterricht-seatplan-assessment-count {

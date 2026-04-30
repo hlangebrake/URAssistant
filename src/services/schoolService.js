@@ -134,7 +134,8 @@ function normalizeHomeworkRecord(homeworkRecord) {
     lessonDate: source.lessonDate || "",
     room: source.room || "",
     recordedAt: source.recordedAt || "",
-    quality: quality
+    quality: quality,
+    ignored: Boolean(source.ignored)
   };
 }
 
@@ -198,6 +199,24 @@ function normalizeMathObservationRecord(observationRecord) {
     lessonPhaseId: source.lessonPhaseId || "",
     lessonStepId: source.lessonStepId || "",
     note: String(source.note || "").trim()
+  };
+}
+
+function normalizeEvidenceObservationRecord(observationRecord) {
+  const source = observationRecord || {};
+
+  return {
+    id: source.id || "",
+    studentId: source.studentId || "",
+    classId: source.classId || "",
+    lessonId: source.lessonId || "",
+    lessonDate: source.lessonDate || "",
+    room: source.room || "",
+    recordedAt: source.recordedAt || "",
+    toolId: String(source.toolId || "").trim(),
+    situationType: source.situationType || "",
+    demandLevel: source.demandLevel || "",
+    selections: Array.isArray(source.selections) ? source.selections.slice() : []
   };
 }
 
@@ -850,6 +869,10 @@ class SchoolService {
     return (this.snapshot.mathObservationRecords || []).map(normalizeMathObservationRecord);
   }
 
+  getAllEvidenceObservationRecords() {
+    return (this.snapshot.evidenceObservations || []).map(normalizeEvidenceObservationRecord);
+  }
+
   getAttendanceRecordsForLessonOccurrence(classId, lessonId, lessonDate, studentId) {
     return this.getAllAttendanceRecords().filter(function (record) {
       const matchesClass = record.classId === classId;
@@ -980,6 +1003,32 @@ class SchoolService {
     return this.getMathObservationRecordsForLessonOccurrence(classId, context.id, context.lessonDate, studentId).length;
   }
 
+  hasRecentMathObservationForStudent(studentId, classId, date, days) {
+    const effectiveDate = date || this.getReferenceDate();
+    const thresholdDays = Math.max(1, Number(days) || 14);
+    const endDateValue = getLocalDateValue(effectiveDate);
+    const startDate = new Date(effectiveDate);
+    let startValue;
+
+    if (!studentId || !classId) {
+      return false;
+    }
+
+    startDate.setHours(0, 0, 0, 0);
+    startDate.setDate(startDate.getDate() - (thresholdDays - 1));
+    startValue = getLocalDateValue(startDate);
+
+    return this.getAllMathObservationRecords().some(function (record) {
+      const recordDate = normalizeDateValue(record && (record.recordedAt || record.lessonDate));
+
+      return record.classId === classId
+        && record.studentId === studentId
+        && recordDate
+        && compareDateValues(recordDate, startValue) >= 0
+        && compareDateValues(recordDate, endDateValue) <= 0;
+    });
+  }
+
   getNextLesson(date) {
     const effectiveDate = date || this.getReferenceDate();
     const weekday = getCurrentWeekdayIndex(effectiveDate);
@@ -1073,14 +1122,14 @@ class SchoolService {
 
   getRecentEvidenceCountsForClass(classId, date, days) {
     const effectiveDate = date || this.getReferenceDate();
-    const thresholdDays = Number(days) || 14;
+    const thresholdDays = Math.max(1, Number(days) || 30);
     const endDateValue = getLocalDateValue(effectiveDate);
     const startDate = new Date(effectiveDate);
-    const countsByStudentId = {};
+    const evidenceDaysByStudentId = {};
     let startValue;
 
     startDate.setHours(0, 0, 0, 0);
-    startDate.setDate(startDate.getDate() - thresholdDays);
+    startDate.setDate(startDate.getDate() - (thresholdDays - 1));
     startValue = getLocalDateValue(startDate);
 
     function getRecordDateValue(record) {
@@ -1093,26 +1142,46 @@ class SchoolService {
       return Boolean(recordDate) && compareDateValues(recordDate, startValue) >= 0 && compareDateValues(recordDate, endDateValue) <= 0;
     }
 
+    function addEvidenceDay(record) {
+      const studentId = record && record.studentId;
+      const recordDate = getRecordDateValue(record);
+
+      if (!recordDate || !evidenceDaysByStudentId[studentId] || !isInWindow(record)) {
+        return;
+      }
+
+      evidenceDaysByStudentId[studentId][recordDate] = true;
+    }
+
     this.getStudentsForClass(classId).forEach(function (student) {
-      countsByStudentId[student.id] = 0;
+      evidenceDaysByStudentId[student.id] = {};
     });
 
     this.getAssessmentsForClass(classId).forEach(function (assessment) {
       const isUnterrichtAssessment = String(assessment && assessment.type || "").trim() === "unterricht"
         || Boolean(String(assessment && assessment.lessonId || "").trim());
 
-      if (isUnterrichtAssessment && countsByStudentId[assessment.studentId] !== undefined && isInWindow(assessment)) {
-        countsByStudentId[assessment.studentId] += 1;
+      if (isUnterrichtAssessment) {
+        addEvidenceDay(assessment);
       }
     });
 
     this.getAllMathObservationRecords().forEach(function (record) {
-      if (record.classId === classId && countsByStudentId[record.studentId] !== undefined && isInWindow(record)) {
-        countsByStudentId[record.studentId] += 1;
+      if (record.classId === classId) {
+        addEvidenceDay(record);
       }
     });
 
-    return countsByStudentId;
+    this.getAllEvidenceObservationRecords().forEach(function (record) {
+      if (record.classId === classId && record.toolId) {
+        addEvidenceDay(record);
+      }
+    });
+
+    return Object.keys(evidenceDaysByStudentId).reduce(function (countsByStudentId, studentId) {
+      countsByStudentId[studentId] = Object.keys(evidenceDaysByStudentId[studentId]).length;
+      return countsByStudentId;
+    }, {});
   }
 
   getLowEvidenceStudentIdsForClass(classId, date, limit, days) {
@@ -1124,6 +1193,9 @@ class SchoolService {
     }
 
     return this.getStudentsForClass(classId)
+      .filter(function (student) {
+        return this.getAttendanceStateForStudent(student.id, classId, date) !== "absent";
+      }, this)
       .map(function (student, index) {
         return {
           studentId: student.id,
