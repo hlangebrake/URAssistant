@@ -60,6 +60,8 @@ let unterrichtViewMode = "live";
 let unterrichtToolMode = "attendance";
 let unterrichtSeatPlanRotation = 0;
 let classViewMode = "analyse";
+let classBasisdatenExpanded = false;
+let classSozialgefuegeExpanded = false;
 let classAnalysisSort = { key: "name", direction: "asc" };
 let classAnalysisGrouping = "day";
 let classAnalysisCriterion = "count";
@@ -157,6 +159,8 @@ let liveDateTimeIntervalId = null;
 let isClassImportModalOpen = false;
 let isClassAnalysisDetailModalOpen = false;
 let activeClassAnalysisDetailDraft = null;
+let activeClassSocialRelationsDraft = null;
+let activeClassSocialImportDraft = null;
 let isClassAnalysisRecordEditModalOpen = false;
 let activeClassAnalysisRecordEditDraft = null;
 let activeClassAnalysisAssessmentGridDrag = null;
@@ -21421,13 +21425,48 @@ window.UnterrichtsassistentApp.submitClassAnalysisRecordEditModal = function (ev
   return window.UnterrichtsassistentApp.closeClassAnalysisRecordEditModal();
 };
 window.UnterrichtsassistentApp.setClassViewMode = function (nextMode) {
+  const previousClassViewMode = classViewMode;
   classViewMode = nextMode === "verwalten" ? "verwalten" : "analyse";
+  if (previousClassViewMode !== "verwalten" && classViewMode === "verwalten") {
+    classBasisdatenExpanded = false;
+    classSozialgefuegeExpanded = false;
+  }
 
   if (activeViewId === "klasse") {
     setActiveView("klasse");
   }
 
   return false;
+};
+window.UnterrichtsassistentApp.isClassBasisdatenExpanded = function () {
+  return Boolean(classBasisdatenExpanded);
+};
+window.UnterrichtsassistentApp.toggleClassBasisdaten = function () {
+  classBasisdatenExpanded = !classBasisdatenExpanded;
+
+  if (activeViewId === "klasse") {
+    setActiveView("klasse");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.isClassSozialgefuegeExpanded = function () {
+  return Boolean(classSozialgefuegeExpanded);
+};
+window.UnterrichtsassistentApp.toggleClassSozialgefuege = function () {
+  classSozialgefuegeExpanded = !classSozialgefuegeExpanded;
+
+  if (activeViewId === "klasse") {
+    setActiveView("klasse");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.getActiveClassSocialRelationsDraft = function () {
+  return activeClassSocialRelationsDraft ? Object.assign({}, activeClassSocialRelationsDraft) : null;
+};
+window.UnterrichtsassistentApp.getActiveClassSocialImportDraft = function () {
+  return activeClassSocialImportDraft ? JSON.parse(JSON.stringify(activeClassSocialImportDraft)) : null;
 };
 window.UnterrichtsassistentApp.handleClassAnalysisDragScrollMove = function (event) {
   const deltaX = activeClassAnalysisDragScroll
@@ -26323,6 +26362,578 @@ window.UnterrichtsassistentApp.updateStudentField = function (studentId, fieldNa
   saveAndRefreshSnapshot(currentRawSnapshot, "klasse");
   return false;
 };
+window.UnterrichtsassistentApp.openClassSocialRelationsModal = function (studentId, relationKey) {
+  const normalizedRelationKey = String(relationKey || "").trim();
+
+  if (!isClassManageMode() || ["likesWith", "dislikesWith", "shouldWith", "shouldNotWith"].indexOf(normalizedRelationKey) < 0) {
+    return false;
+  }
+
+  activeClassSocialRelationsDraft = {
+    studentId: String(studentId || "").trim(),
+    relationKey: normalizedRelationKey
+  };
+
+  if (activeViewId === "klasse") {
+    setActiveView("klasse");
+    window.setTimeout(function () {
+      const input = document.getElementById("classSocialRelationsInput");
+      if (input && typeof input.focus === "function") {
+        input.focus();
+        window.UnterrichtsassistentApp.updateClassSocialRelationsSuggestions();
+      }
+    }, 0);
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.closeClassSocialRelationsModal = function () {
+  activeClassSocialRelationsDraft = null;
+
+  if (activeViewId === "klasse") {
+    setActiveView("klasse");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.updateClassSocialRelationsSuggestions = function () {
+  const input = document.getElementById("classSocialRelationsInput");
+  const suggestions = document.getElementById("classSocialRelationsSuggestions");
+  const items = suggestions ? Array.prototype.slice.call(suggestions.querySelectorAll(".class-social-modal__suggestion")) : [];
+  const rawValue = input ? String(input.value || "") : "";
+  const lastPart = rawValue.split(",").pop().trim().toLocaleLowerCase();
+  const selectedNames = rawValue.split(",").map(function (part) {
+    return part.trim().toLocaleLowerCase();
+  }).filter(Boolean);
+  const exactCandidateNames = items.map(function (item) {
+    return String(item.getAttribute("data-full-name") || "").trim().toLocaleLowerCase();
+  });
+  const filterValue = exactCandidateNames.indexOf(lastPart) >= 0 ? "" : lastPart;
+  let visibleCount = 0;
+
+  if (!suggestions) {
+    return false;
+  }
+
+  items.forEach(function (item) {
+    const fullName = String(item.getAttribute("data-full-name") || "").trim();
+    const lookupName = fullName.toLocaleLowerCase();
+    const isSelected = selectedNames.indexOf(lookupName) >= 0;
+    const isMatch = !filterValue || lookupName.indexOf(filterValue) >= 0;
+    const isVisible = !isSelected && isMatch;
+
+    item.hidden = !isVisible;
+    if (isVisible) {
+      visibleCount += 1;
+    }
+  });
+
+  suggestions.hidden = !input || document.activeElement !== input || visibleCount === 0;
+  return false;
+};
+window.UnterrichtsassistentApp.hideClassSocialRelationsSuggestions = function () {
+  window.setTimeout(function () {
+    const suggestions = document.getElementById("classSocialRelationsSuggestions");
+    if (suggestions) {
+      suggestions.hidden = true;
+    }
+  }, 120);
+
+  return false;
+};
+window.UnterrichtsassistentApp.insertClassSocialRelationSuggestion = function (fullName) {
+  const input = document.getElementById("classSocialRelationsInput");
+  const normalizedFullName = String(fullName || "").trim();
+  let parts;
+  let prefixParts;
+
+  if (!input || !normalizedFullName) {
+    return false;
+  }
+
+  parts = String(input.value || "").split(",").map(function (part) {
+    return part.trim();
+  });
+  prefixParts = parts.slice(0, Math.max(0, parts.length - 1)).filter(Boolean);
+  if (prefixParts.map(function (part) {
+    return part.toLocaleLowerCase();
+  }).indexOf(normalizedFullName.toLocaleLowerCase()) < 0) {
+    prefixParts.push(normalizedFullName);
+  }
+  input.value = prefixParts.join(", ");
+  input.focus();
+  window.UnterrichtsassistentApp.updateClassSocialRelationsSuggestions();
+  return false;
+};
+window.UnterrichtsassistentApp.submitClassSocialRelationsModal = function (event) {
+  const draft = activeClassSocialRelationsDraft;
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const input = document.getElementById("classSocialRelationsInput");
+  const relationKeys = ["likesWith", "dislikesWith", "shouldWith", "shouldNotWith"];
+  const normalizedRelationKey = draft ? String(draft.relationKey || "").trim() : "";
+  let targetStudent;
+  let classStudents;
+  let studentsByFullName;
+  let nextStudentIds;
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  if (!isClassManageMode() || !draft || !currentRawSnapshot || !activeClass || relationKeys.indexOf(normalizedRelationKey) < 0) {
+    return false;
+  }
+
+  targetStudent = currentRawSnapshot.students.find(function (student) {
+    return student.id === draft.studentId;
+  }) || null;
+  if (!targetStudent) {
+    return window.UnterrichtsassistentApp.closeClassSocialRelationsModal();
+  }
+
+  classStudents = currentRawSnapshot.students.filter(function (student) {
+    return activeClass.studentIds.indexOf(student.id) >= 0 && student.id !== targetStudent.id;
+  });
+  studentsByFullName = classStudents.reduce(function (lookup, student) {
+    const fullName = [student.firstName || "", student.lastName || ""].join(" ").trim().toLocaleLowerCase();
+    if (fullName) {
+      lookup[fullName] = student.id;
+    }
+    return lookup;
+  }, {});
+  nextStudentIds = String(input && input.value || "").split(",").map(function (part) {
+    return part.trim().toLocaleLowerCase();
+  }).filter(Boolean).reduce(function (ids, name) {
+    const studentId = studentsByFullName[name];
+    if (studentId && ids.indexOf(studentId) < 0) {
+      ids.push(studentId);
+    }
+    return ids;
+  }, []);
+
+  targetStudent.socialRelations = targetStudent.socialRelations && typeof targetStudent.socialRelations === "object"
+    ? targetStudent.socialRelations
+    : {};
+  relationKeys.forEach(function (key) {
+    if (!Array.isArray(targetStudent.socialRelations[key])) {
+      targetStudent.socialRelations[key] = [];
+    }
+  });
+  targetStudent.socialRelations[normalizedRelationKey] = nextStudentIds;
+  activeClassSocialRelationsDraft = null;
+  saveAndRefreshSnapshot(currentRawSnapshot, "klasse");
+  return false;
+};
+function parseDelimitedClassSocialImport(text) {
+  const source = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const delimiter = (source.match(/;/g) || []).length > (source.match(/,/g) || []).length ? ";" : ",";
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let inQuotes = false;
+  let index;
+  let charValue;
+
+  for (index = 0; index < source.length; index += 1) {
+    charValue = source.charAt(index);
+    if (charValue === '"') {
+      if (inQuotes && source.charAt(index + 1) === '"') {
+        cell += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (charValue === delimiter && !inQuotes) {
+      row.push(cell.trim());
+      cell = "";
+    } else if (charValue === "\n" && !inQuotes) {
+      row.push(cell.trim());
+      if (row.some(Boolean)) {
+        rows.push(row);
+      }
+      row = [];
+      cell = "";
+    } else {
+      cell += charValue;
+    }
+  }
+
+  row.push(cell.trim());
+  if (row.some(Boolean)) {
+    rows.push(row);
+  }
+
+  return rows;
+}
+function parseHtmlClassSocialImport(text) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(String(text || ""), "text/html");
+  const table = doc.querySelector("table");
+  function getCellText(cell) {
+    const childNodes = cell ? Array.prototype.slice.call(cell.childNodes || []) : [];
+    const parts = childNodes.map(function (node) {
+      if (!node) {
+        return "";
+      }
+
+      if (node.nodeType === 3) {
+        return String(node.textContent || "").replace(/\s+/g, " ").trim();
+      }
+
+      if (node.nodeType === 1) {
+        return String(node.textContent || "").replace(/\s+/g, " ").trim();
+      }
+
+      return "";
+    }).filter(Boolean);
+
+    return (parts.length ? parts.join(", ") : String(cell && cell.textContent || ""))
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+  const rows = table
+    ? Array.prototype.slice.call(table.querySelectorAll("tr")).map(function (row) {
+        return Array.prototype.slice.call(row.querySelectorAll("th,td")).map(function (cell) {
+          return getCellText(cell);
+        });
+      }).filter(function (row) {
+        return row.some(Boolean);
+      })
+    : [];
+
+  return rows;
+}
+function createClassSocialImportDraft(fileName, text) {
+  const isHtml = /\.html?$/i.test(String(fileName || "")) || /^\s*</.test(String(text || ""));
+  const rawRows = isHtml ? parseHtmlClassSocialImport(text) : parseDelimitedClassSocialImport(text);
+  const headers = (rawRows[0] || []).map(function (header, index) {
+    const normalizedHeader = String(header || "").trim();
+    return normalizedHeader || ("Spalte " + String(index + 1));
+  });
+  const dataRows = rawRows.slice(1).map(function (row) {
+    return headers.map(function (_header, index) {
+      return String(row[index] || "").trim();
+    });
+  }).filter(function (row) {
+    return row.some(Boolean);
+  });
+  const columns = headers.map(function (header, index) {
+    const samples = dataRows.slice(0, 4).map(function (row) {
+      return row[index] || "";
+    }).filter(Boolean);
+    const headerLookup = header.toLocaleLowerCase();
+
+    return {
+      index: index,
+      header: header,
+      role: headerLookup.indexOf("waehl") >= 0 || headerLookup.indexOf("w\u00e4hl") >= 0 || headerLookup.indexOf("von") >= 0 ? "chooser" : "",
+      samples: samples
+    };
+  });
+
+  if (columns.length && !columns.some(function (column) { return column.role === "chosen"; })) {
+    columns[columns.length > 1 ? 1 : 0].role = columns[columns.length > 1 ? 1 : 0].role || "chosen";
+  }
+
+  return {
+    fileName: String(fileName || "Import").trim() || "Import",
+    relationKey: "likesWith",
+    mode: "replace",
+    columns: columns,
+    rows: dataRows.slice(0, 500)
+  };
+}
+function normalizeClassSocialMatchText(value) {
+  return String(value || "")
+    .toLocaleLowerCase()
+    .replace(/\u00e4/g, "ae")
+    .replace(/\u00f6/g, "oe")
+    .replace(/\u00fc/g, "ue")
+    .replace(/\u00df/g, "ss")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+function getClassSocialSimilarity(leftValue, rightValue) {
+  const left = normalizeClassSocialMatchText(leftValue).replace(/\s+/g, "");
+  const right = normalizeClassSocialMatchText(rightValue).replace(/\s+/g, "");
+  const distances = [];
+  const matrix = [];
+  let leftIndex;
+  let rightIndex;
+
+  if (!left || !right) {
+    return 0;
+  }
+
+  if (left === right) {
+    return 1;
+  }
+
+  if (left.indexOf(right) >= 0 || right.indexOf(left) >= 0) {
+    return Math.min(left.length, right.length) / Math.max(left.length, right.length);
+  }
+
+  for (leftIndex = 0; leftIndex <= left.length; leftIndex += 1) {
+    matrix[leftIndex] = [leftIndex];
+  }
+  for (rightIndex = 0; rightIndex <= right.length; rightIndex += 1) {
+    matrix[0][rightIndex] = rightIndex;
+  }
+  for (leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    for (rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      matrix[leftIndex][rightIndex] = left.charAt(leftIndex - 1) === right.charAt(rightIndex - 1)
+        ? matrix[leftIndex - 1][rightIndex - 1]
+        : Math.min(
+            matrix[leftIndex - 1][rightIndex - 1] + 1,
+            matrix[leftIndex][rightIndex - 1] + 1,
+            matrix[leftIndex - 1][rightIndex] + 1
+          );
+    }
+  }
+
+  distances.push(matrix[left.length][right.length]);
+  return 1 - (Math.min.apply(Math, distances) / Math.max(left.length, right.length));
+}
+function getClassSocialStudentMatchScore(textValue, student) {
+  const text = normalizeClassSocialMatchText(textValue);
+  const firstName = String(student && student.firstName || "").trim();
+  const lastName = String(student && student.lastName || "").trim();
+  const candidates = [
+    [firstName, lastName].join(" ").trim(),
+    [lastName, firstName].join(" ").trim(),
+    firstName,
+    lastName
+  ].filter(Boolean);
+  let bestScore = 0;
+
+  candidates.forEach(function (candidate) {
+    const normalizedCandidate = normalizeClassSocialMatchText(candidate);
+    const compactText = text.replace(/\s+/g, "");
+    const compactCandidate = normalizedCandidate.replace(/\s+/g, "");
+
+    if (normalizedCandidate && (" " + text + " ").indexOf(" " + normalizedCandidate + " ") >= 0) {
+      bestScore = Math.max(bestScore, candidate === firstName ? 0.74 : 0.98);
+    }
+    if (compactCandidate && compactText.indexOf(compactCandidate) >= 0) {
+      bestScore = Math.max(bestScore, candidate === firstName ? 0.72 : 0.96);
+    }
+    bestScore = Math.max(bestScore, getClassSocialSimilarity(textValue, candidate));
+  });
+
+  return bestScore;
+}
+function matchClassSocialStudentsInCell(cellValue, students, excludedStudentId) {
+  const normalizedCellValue = String(cellValue || "").trim();
+  const rawParts = normalizedCellValue
+    .split(/(?:,|;|\n|\/|\+|&|\bund\b|\bu\.\b)/i)
+    .map(function (part) {
+      return part.trim();
+    }).filter(Boolean);
+  const parts = rawParts.length ? rawParts : [normalizedCellValue].filter(Boolean);
+  const matchedIds = [];
+
+  if (!normalizedCellValue) {
+    return matchedIds;
+  }
+
+  students.forEach(function (student) {
+    const score = student.id === excludedStudentId ? 0 : getClassSocialStudentMatchScore(normalizedCellValue, student);
+
+    if (score >= 0.92 && matchedIds.indexOf(student.id) < 0) {
+      matchedIds.push(student.id);
+    }
+  });
+
+  parts.forEach(function (part) {
+    let bestStudent = null;
+    let bestScore = 0;
+
+    students.forEach(function (student) {
+      const score = student.id === excludedStudentId ? 0 : getClassSocialStudentMatchScore(part, student);
+      if (score > bestScore) {
+        bestScore = score;
+        bestStudent = student;
+      }
+    });
+
+    if (bestStudent && bestScore >= 0.68 && matchedIds.indexOf(bestStudent.id) < 0) {
+      matchedIds.push(bestStudent.id);
+    }
+  });
+
+  return matchedIds;
+}
+window.UnterrichtsassistentApp.openClassSocialImportPicker = function () {
+  const input = document.getElementById("classSocialImportFile");
+
+  if (!isClassManageMode() || !input) {
+    return false;
+  }
+
+  input.value = "";
+  input.click();
+  return false;
+};
+window.UnterrichtsassistentApp.handleClassSocialImportFile = function (inputElement) {
+  const input = inputElement || document.getElementById("classSocialImportFile");
+  const file = input && input.files && input.files[0] ? input.files[0] : null;
+  const reader = new FileReader();
+
+  if (!isClassManageMode() || !file) {
+    return false;
+  }
+
+  reader.onload = function () {
+    activeClassSocialImportDraft = createClassSocialImportDraft(file.name, reader.result || "");
+    if (!activeClassSocialImportDraft.columns.length) {
+      window.alert("In dieser Datei wurden keine importierbaren Spalten gefunden.");
+      activeClassSocialImportDraft = null;
+    }
+    if (activeViewId === "klasse") {
+      setActiveView("klasse");
+    }
+  };
+  reader.readAsText(file);
+  return false;
+};
+window.UnterrichtsassistentApp.closeClassSocialImportModal = function () {
+  activeClassSocialImportDraft = null;
+
+  if (activeViewId === "klasse") {
+    setActiveView("klasse");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.updateClassSocialImportRelation = function (relationKey) {
+  const normalizedRelationKey = String(relationKey || "").trim();
+
+  if (activeClassSocialImportDraft && ["likesWith", "dislikesWith", "shouldWith", "shouldNotWith"].indexOf(normalizedRelationKey) >= 0) {
+    activeClassSocialImportDraft.relationKey = normalizedRelationKey;
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.updateClassSocialImportMode = function (mode) {
+  const normalizedMode = String(mode || "").trim();
+
+  if (activeClassSocialImportDraft) {
+    activeClassSocialImportDraft.mode = normalizedMode === "append" ? "append" : "replace";
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.updateClassSocialImportColumnRole = function (columnIndex, role) {
+  const normalizedRole = String(role || "").trim();
+  const numericIndex = Number(columnIndex);
+
+  if (!activeClassSocialImportDraft || !Number.isFinite(numericIndex)) {
+    return false;
+  }
+
+  activeClassSocialImportDraft.columns.forEach(function (column) {
+    if (column.index === numericIndex) {
+      column.role = ["chooser", "chosen"].indexOf(normalizedRole) >= 0 ? normalizedRole : "";
+    }
+  });
+
+  return false;
+};
+window.UnterrichtsassistentApp.submitClassSocialImportModal = function (event) {
+  const draft = activeClassSocialImportDraft;
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const relationKeys = ["likesWith", "dislikesWith", "shouldWith", "shouldNotWith"];
+  const importMode = draft && draft.mode === "append" ? "append" : "replace";
+  let chooserColumns;
+  let chosenColumns;
+  let classStudents;
+  let importedRelations;
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  if (!isClassManageMode() || !draft || !currentRawSnapshot || !activeClass || relationKeys.indexOf(draft.relationKey) < 0) {
+    return false;
+  }
+
+  chooserColumns = draft.columns.filter(function (column) {
+    return column.role === "chooser";
+  });
+  chosenColumns = draft.columns.filter(function (column) {
+    return column.role === "chosen";
+  });
+
+  if (!chooserColumns.length || !chosenColumns.length) {
+    window.alert("Bitte mindestens eine Spalte als waehlende Person und mindestens eine Spalte als gewaehlte Person markieren.");
+    return false;
+  }
+
+  classStudents = currentRawSnapshot.students.filter(function (student) {
+    return activeClass.studentIds.indexOf(student.id) >= 0;
+  });
+  importedRelations = classStudents.reduce(function (lookup, student) {
+    lookup[student.id] = [];
+    return lookup;
+  }, {});
+
+  draft.rows.forEach(function (row) {
+    const chooserIds = chooserColumns.reduce(function (ids, column) {
+      matchClassSocialStudentsInCell(row[column.index], classStudents, "").forEach(function (studentId) {
+        if (ids.indexOf(studentId) < 0) {
+          ids.push(studentId);
+        }
+      });
+      return ids;
+    }, []);
+
+    chooserIds.forEach(function (chooserId) {
+      const chosenIds = chosenColumns.reduce(function (ids, column) {
+        matchClassSocialStudentsInCell(row[column.index], classStudents, chooserId).forEach(function (studentId) {
+          if (ids.indexOf(studentId) < 0) {
+            ids.push(studentId);
+          }
+        });
+        return ids;
+      }, []);
+
+      chosenIds.forEach(function (chosenId) {
+        if (importedRelations[chooserId] && importedRelations[chooserId].indexOf(chosenId) < 0) {
+          importedRelations[chooserId].push(chosenId);
+        }
+      });
+    });
+  });
+
+  currentRawSnapshot.students.forEach(function (student) {
+    if (!importedRelations[student.id]) {
+      return;
+    }
+
+    student.socialRelations = student.socialRelations && typeof student.socialRelations === "object"
+      ? student.socialRelations
+      : {};
+    relationKeys.forEach(function (key) {
+      if (!Array.isArray(student.socialRelations[key])) {
+        student.socialRelations[key] = [];
+      }
+    });
+    student.socialRelations[draft.relationKey] = (importMode === "append"
+      ? student.socialRelations[draft.relationKey].concat(importedRelations[student.id])
+      : importedRelations[student.id]).reduce(function (ids, studentId) {
+        if (studentId && studentId !== student.id && ids.indexOf(studentId) < 0) {
+          ids.push(studentId);
+        }
+        return ids;
+      }, []);
+  });
+
+  activeClassSocialImportDraft = null;
+  saveAndRefreshSnapshot(currentRawSnapshot, "klasse");
+  return false;
+};
 window.UnterrichtsassistentApp.updateActiveClassField = function (fieldName, nextValue) {
   if (!isClassManageMode()) {
     return false;
@@ -26381,7 +26992,13 @@ window.UnterrichtsassistentApp.addStudentRow = function () {
     gender: "",
     strengths: [],
     gaps: [],
-    attendanceRate: 1
+    attendanceRate: 1,
+    socialRelations: {
+      likesWith: [],
+      dislikesWith: [],
+      shouldWith: [],
+      shouldNotWith: []
+    }
   });
 
   currentRawSnapshot.classes = currentRawSnapshot.classes.map(function (schoolClass) {
@@ -26410,6 +27027,24 @@ window.UnterrichtsassistentApp.deleteStudent = function (studentId) {
   currentRawSnapshot.students = currentRawSnapshot.students.filter(function (student) {
     return student.id !== studentId;
   });
+  currentRawSnapshot.students.forEach(function (student) {
+    const relations = student.socialRelations && typeof student.socialRelations === "object" ? student.socialRelations : null;
+
+    if (!relations) {
+      return;
+    }
+
+    ["likesWith", "dislikesWith", "shouldWith", "shouldNotWith"].forEach(function (key) {
+      relations[key] = Array.isArray(relations[key])
+        ? relations[key].filter(function (linkedStudentId) {
+          return linkedStudentId !== studentId;
+        })
+        : [];
+    });
+  });
+  if (activeClassSocialRelationsDraft && activeClassSocialRelationsDraft.studentId === studentId) {
+    activeClassSocialRelationsDraft = null;
+  }
   currentRawSnapshot.classes = currentRawSnapshot.classes.map(function (schoolClass) {
     schoolClass.studentIds = (schoolClass.studentIds || []).filter(function (linkedStudentId) {
       return linkedStudentId !== studentId;

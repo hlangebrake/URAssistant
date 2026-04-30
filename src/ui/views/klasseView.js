@@ -24,6 +24,18 @@ window.Unterrichtsassistent.ui.views.klasse = {
       ? window.UnterrichtsassistentApp.getClassDisplayColor(schoolClass)
       : "#d9d4cb";
     const isManageMode = classViewMode === "verwalten";
+    const isBasisdatenExpanded = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.isClassBasisdatenExpanded === "function"
+      ? window.UnterrichtsassistentApp.isClassBasisdatenExpanded()
+      : false;
+    const isSozialgefuegeExpanded = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.isClassSozialgefuegeExpanded === "function"
+      ? window.UnterrichtsassistentApp.isClassSozialgefuegeExpanded()
+      : false;
+    const socialRelationsDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveClassSocialRelationsDraft === "function"
+      ? window.UnterrichtsassistentApp.getActiveClassSocialRelationsDraft()
+      : null;
+    const socialImportDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveClassSocialImportDraft === "function"
+      ? window.UnterrichtsassistentApp.getActiveClassSocialImportDraft()
+      : null;
     const analysisSort = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getClassAnalysisSort === "function"
       ? window.UnterrichtsassistentApp.getClassAnalysisSort()
       : { key: "name", direction: "asc" };
@@ -74,6 +86,24 @@ window.Unterrichtsassistent.ui.views.klasse = {
     function formatTimeLabel(dateTimeValue) {
       const value = String(dateTimeValue || "");
       return value.length >= 16 ? value.slice(11, 16) : "";
+    }
+
+    function buildBasisdatenHeader() {
+      return [
+        '<button class="class-basisdaten__header" type="button" aria-expanded="', isBasisdatenExpanded ? 'true' : 'false', '" onclick="return window.UnterrichtsassistentApp.toggleClassBasisdaten()">',
+        '<span class="class-basisdaten__title">Basisdaten</span>',
+        '<span class="class-basisdaten__toggle', isBasisdatenExpanded ? ' is-expanded' : '', '" aria-hidden="true">&#9662;</span>',
+        '</button>'
+      ].join("");
+    }
+
+    function buildSozialgefuegeHeader() {
+      return [
+        '<button class="class-basisdaten__header" type="button" aria-expanded="', isSozialgefuegeExpanded ? 'true' : 'false', '" onclick="return window.UnterrichtsassistentApp.toggleClassSozialgefuege()">',
+        '<span class="class-basisdaten__title">Sozialgef&uuml;ge</span>',
+        '<span class="class-basisdaten__toggle', isSozialgefuegeExpanded ? ' is-expanded' : '', '" aria-hidden="true">&#9662;</span>',
+        '</button>'
+      ].join("");
     }
 
     function parseDateValue(dateValue) {
@@ -976,6 +1006,236 @@ window.Unterrichtsassistent.ui.views.klasse = {
         return student.id === analysisEditRecord.studentId;
       }) || null
       : null;
+    const socialRelationColumns = [
+      { key: "likesWith", label: "mag mit" },
+      { key: "dislikesWith", label: "mag nicht mit" },
+      { key: "shouldWith", label: "soll mit" },
+      { key: "shouldNotWith", label: "soll nicht mit" }
+    ];
+    const firstNameCounts = students.reduce(function (counts, student) {
+      const firstName = String(student && student.firstName || "").trim().toLocaleLowerCase();
+
+      if (firstName) {
+        counts[firstName] = (counts[firstName] || 0) + 1;
+      }
+
+      return counts;
+    }, {});
+    const studentsById = students.reduce(function (lookup, student) {
+      lookup[student.id] = student;
+      return lookup;
+    }, {});
+    const activeSocialRelationsStudent = socialRelationsDraft
+      ? studentsById[socialRelationsDraft.studentId] || null
+      : null;
+    const activeSocialRelationsColumn = socialRelationsDraft
+      ? socialRelationColumns.find(function (column) {
+        return column.key === socialRelationsDraft.relationKey;
+      }) || null
+      : null;
+
+    function getStudentFullName(student) {
+      return [student && student.firstName || "", student && student.lastName || ""].join(" ").trim();
+    }
+
+    function getStudentShortName(student) {
+      const firstName = String(student && student.firstName || "").trim();
+      const lastName = String(student && student.lastName || "").trim();
+      const firstNameKey = firstName.toLocaleLowerCase();
+
+      if (!firstName) {
+        return lastName || "-";
+      }
+
+      if ((firstNameCounts[firstNameKey] || 0) > 1 && lastName) {
+        return firstName + " " + lastName.charAt(0) + ".";
+      }
+
+      return firstName;
+    }
+
+    function getSocialRelationIds(student, relationKey) {
+      const relations = student && student.socialRelations && typeof student.socialRelations === "object"
+        ? student.socialRelations
+        : {};
+
+      return Array.isArray(relations[relationKey]) ? relations[relationKey].filter(function (studentId, index, studentIds) {
+        return Boolean(studentsById[studentId]) && studentIds.indexOf(studentId) === index;
+      }) : [];
+    }
+
+    function buildSocialRelationDisplay(student, relationKey) {
+      const text = getSocialRelationIds(student, relationKey).map(function (studentId) {
+        return getStudentShortName(studentsById[studentId]);
+      }).join(", ");
+
+      return text || "-";
+    }
+
+    function buildSocialRelationsTable() {
+      const rows = students.map(function (student) {
+        return [
+          '<tr>',
+          '<th scope="row">', escapeValue(getStudentShortName(student)), '</th>',
+          socialRelationColumns.map(function (column) {
+            return [
+              '<td>',
+              '<button class="class-social-table__cell-button" type="button" onclick="return window.UnterrichtsassistentApp.openClassSocialRelationsModal(\'', escapeValue(student.id), '\', \'', escapeValue(column.key), '\')">',
+              escapeValue(buildSocialRelationDisplay(student, column.key)),
+              '</button>',
+              '</td>'
+            ].join("");
+          }).join(""),
+          '</tr>'
+        ].join("");
+      }).join("");
+
+      return [
+        '<div class="class-social-table-wrap">',
+        '<table class="student-table class-social-table">',
+        '<thead><tr><th>Schueler</th>',
+        socialRelationColumns.map(function (column) {
+          return '<th>' + escapeValue(column.label) + '</th>';
+        }).join(""),
+        '</tr></thead>',
+        '<tbody>',
+        rows || '<tr><td colspan="5">Noch keine Schuelerdaten in dieser Lerngruppe.</td></tr>',
+        '</tbody>',
+        '</table>',
+        '</div>'
+      ].join("");
+    }
+
+    function buildSocialRelationsImportToolbar() {
+      return [
+        '<div class="class-social-toolbar">',
+        '<button class="row-delete-button class-social-toolbar__import" type="button" onclick="return window.UnterrichtsassistentApp.openClassSocialImportPicker()">Import</button>',
+        '<input id="classSocialImportFile" class="class-social-toolbar__file" type="file" accept=".csv,.html,.htm,text/csv,text/html" onchange="return window.UnterrichtsassistentApp.handleClassSocialImportFile(this)">',
+        '</div>'
+      ].join("");
+    }
+
+    function buildSocialRelationsModal() {
+      const activeIds = activeSocialRelationsStudent && activeSocialRelationsColumn
+        ? getSocialRelationIds(activeSocialRelationsStudent, activeSocialRelationsColumn.key)
+        : [];
+      const inputValue = activeIds.map(function (studentId) {
+        return getStudentFullName(studentsById[studentId]);
+      }).filter(Boolean).join(", ");
+      const suggestionItems = activeSocialRelationsStudent
+        ? students.filter(function (student) {
+          return student.id !== activeSocialRelationsStudent.id;
+        }).map(function (student) {
+          const fullName = getStudentFullName(student);
+
+          return [
+            '<button class="class-social-modal__suggestion" type="button" data-full-name="', escapeValue(fullName), '" onmousedown="event.preventDefault(); return window.UnterrichtsassistentApp.insertClassSocialRelationSuggestion(this.getAttribute(\'data-full-name\'))">',
+            escapeValue(fullName),
+            '</button>'
+          ].join("");
+        }).join("")
+        : "";
+
+      if (!activeSocialRelationsStudent || !activeSocialRelationsColumn) {
+        return "";
+      }
+
+      return [
+        '<div class="import-modal is-open" id="classSocialRelationsModal">',
+        '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeClassSocialRelationsModal()"></div>',
+        '<div class="import-modal__dialog import-modal__dialog--class-social" role="dialog" aria-modal="true" aria-labelledby="classSocialRelationsTitle">',
+        '<div class="import-modal__header">',
+        '<div>',
+        '<h3 id="classSocialRelationsTitle">', escapeValue(activeSocialRelationsColumn.label), ' - ', escapeValue(getStudentFullName(activeSocialRelationsStudent)), '</h3>',
+        '<p class="import-modal__meta">Namen mit Komma trennen</p>',
+        '</div>',
+        '<div class="import-modal__icon-actions">',
+        '<button class="import-modal__icon-button import-modal__icon-button--confirm" type="submit" form="classSocialRelationsForm" aria-label="Sozialgefuege uebernehmen">&#10003;</button>',
+        '<button class="import-modal__icon-button import-modal__icon-button--cancel" type="button" aria-label="Bearbeitung abbrechen" onclick="return window.UnterrichtsassistentApp.closeClassSocialRelationsModal()">&#10005;</button>',
+        '</div>',
+        '</div>',
+        '<form class="import-modal__form" id="classSocialRelationsForm" autocomplete="off" method="post" action="about:blank" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitClassSocialRelationsModal(event)">',
+        '<label class="import-modal__field class-social-modal__field">',
+        '<span>Schueler</span>',
+        '<input id="classSocialRelationsInput" type="text" value="', escapeValue(inputValue), '" autocomplete="off" autocapitalize="none" spellcheck="false" onfocus="return window.UnterrichtsassistentApp.updateClassSocialRelationsSuggestions()" oninput="return window.UnterrichtsassistentApp.updateClassSocialRelationsSuggestions()" onblur="return window.UnterrichtsassistentApp.hideClassSocialRelationsSuggestions()">',
+        '<div class="class-social-modal__suggestions" id="classSocialRelationsSuggestions" hidden>',
+        suggestionItems,
+        '</div>',
+        '</label>',
+        '</form>',
+        '</div>',
+        '</div>'
+      ].join("");
+    }
+
+    function buildSocialImportModal() {
+      const relationOptions = socialRelationColumns.map(function (column) {
+        return '<option value="' + escapeValue(column.key) + '"' + (socialImportDraft && socialImportDraft.relationKey === column.key ? ' selected' : '') + '>' + escapeValue(column.label) + '</option>';
+      }).join("");
+      const importMode = socialImportDraft && socialImportDraft.mode === "append" ? "append" : "replace";
+      const columnRows = socialImportDraft && Array.isArray(socialImportDraft.columns)
+        ? socialImportDraft.columns.map(function (column) {
+          const samples = Array.isArray(column.samples) ? column.samples : [];
+
+          return [
+            '<tr>',
+            '<th scope="row">', escapeValue(column.header || ("Spalte " + String(column.index + 1))), '</th>',
+            '<td><select class="student-table__input student-table__select" onchange="return window.UnterrichtsassistentApp.updateClassSocialImportColumnRole(', escapeValue(String(column.index)), ', this.value)">',
+            '<option value=""', column.role ? '' : ' selected', '>ignorieren</option>',
+            '<option value="chooser"', column.role === "chooser" ? ' selected' : '', '>waehlende Person</option>',
+            '<option value="chosen"', column.role === "chosen" ? ' selected' : '', '>gewaehlte Person</option>',
+            '</select></td>',
+            '<td class="class-social-import__sample">', escapeValue(samples.join(" | ") || "-"), '</td>',
+            '</tr>'
+          ].join("");
+        }).join("")
+        : "";
+
+      if (!socialImportDraft) {
+        return "";
+      }
+
+      return [
+        '<div class="import-modal is-open" id="classSocialImportModal">',
+        '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeClassSocialImportModal()"></div>',
+        '<div class="import-modal__dialog import-modal__dialog--class-social-import" role="dialog" aria-modal="true" aria-labelledby="classSocialImportTitle">',
+        '<div class="import-modal__header">',
+        '<div>',
+        '<h3 id="classSocialImportTitle">Sozialgefuege importieren</h3>',
+        '<p class="import-modal__meta">', escapeValue(socialImportDraft.fileName || "Import"), '</p>',
+        '</div>',
+        '<div class="import-modal__icon-actions">',
+        '<button class="import-modal__icon-button import-modal__icon-button--confirm" type="submit" form="classSocialImportForm" aria-label="Import uebernehmen">&#10003;</button>',
+        '<button class="import-modal__icon-button import-modal__icon-button--cancel" type="button" aria-label="Import abbrechen" onclick="return window.UnterrichtsassistentApp.closeClassSocialImportModal()">&#10005;</button>',
+        '</div>',
+        '</div>',
+        '<form class="import-modal__form" id="classSocialImportForm" autocomplete="off" method="post" action="about:blank" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitClassSocialImportModal(event)">',
+        '<label class="import-modal__field">',
+        '<span>Import gilt fuer</span>',
+        '<select class="student-table__input student-table__select" onchange="return window.UnterrichtsassistentApp.updateClassSocialImportRelation(this.value)">',
+        relationOptions,
+        '</select>',
+        '</label>',
+        '<label class="import-modal__field">',
+        '<span>Importmodus</span>',
+        '<select class="student-table__input student-table__select" onchange="return window.UnterrichtsassistentApp.updateClassSocialImportMode(this.value)">',
+        '<option value="replace"', importMode === "replace" ? ' selected' : '', '>ersetzen</option>',
+        '<option value="append"', importMode === "append" ? ' selected' : '', '>hinzufuegen</option>',
+        '</select>',
+        '</label>',
+        '<div class="class-social-import__table-wrap">',
+        '<table class="student-table class-social-import__table">',
+        '<thead><tr><th>Spalte</th><th>Kategorie</th><th>Vorschau</th></tr></thead>',
+        '<tbody>',
+        columnRows || '<tr><td colspan="3">Keine Spalten gefunden.</td></tr>',
+        '</tbody>',
+        '</table>',
+        '</div>',
+        '</form>',
+        '</div>',
+        '</div>'
+      ].join("");
+    }
 
     const sortedStudents = !isManageMode ? students.slice().sort(function (leftStudent, rightStudent) {
       const directionFactor = analysisSort && analysisSort.direction === "desc" ? -1 : 1;
@@ -1061,6 +1321,9 @@ window.Unterrichtsassistent.ui.views.klasse = {
       '<article class="panel panel--full">',
       schoolClass ? "" : '<p class="empty-message">Noch keine Lerngruppe angelegt. Lege ueber den Plus-Button zuerst eine Lerngruppe an.</p>',
       schoolClass && isManageMode ? [
+        '<section class="class-basisdaten', isBasisdatenExpanded ? '' : ' is-collapsed', '">',
+        buildBasisdatenHeader(),
+        isBasisdatenExpanded ? [
         '<div class="class-meta-editor">',
         '<label class="class-meta-editor__field">',
         '<span>Klassenbezeichner</span>',
@@ -1074,7 +1337,28 @@ window.Unterrichtsassistent.ui.views.klasse = {
         '<span>Anzeigefarbe</span>',
         '<input class="student-table__input class-color-input" type="color" value="', escapeValue(classDisplayColor), '" onchange="window.UnterrichtsassistentApp.updateActiveClassField(\'displayColor\', this.value)">',
         '</label>',
-      '</div>'
+        '</div>',
+        '<div class="table-header">',
+        '<h2 class="table-header__title">Schueler</h2>',
+        '<span class="table-header__count">', students.length, ' Eintraege</span>',
+        '</div>',
+        '<div class="student-table-wrap">',
+        '<table class="student-table">',
+        '<thead><tr><th>Vorname</th><th>Nachname</th><th>Geschlecht</th><th></th></tr></thead>',
+        '<tbody>',
+        tableRows || '<tr><td colspan="4">Noch keine Schuelerdaten in dieser Lerngruppe.</td></tr>',
+        '</tbody>',
+        '</table>',
+        '</div>',
+        '<div class="table-actions"><button class="import-box__label" type="button" onclick="return window.UnterrichtsassistentApp.addStudentRow()">Neue Zeile</button></div>'
+        ].join("") : "",
+        '</section>'
+      ].join("") : "",
+      schoolClass && isManageMode ? [
+        '<section class="class-basisdaten class-sozialgefuege', isSozialgefuegeExpanded ? '' : ' is-collapsed', '">',
+        buildSozialgefuegeHeader(),
+        isSozialgefuegeExpanded ? [buildSocialRelationsImportToolbar(), buildSocialRelationsTable()].join("") : "",
+        '</section>'
       ].join("") : "",
       !isManageMode ? [
         '<div class="class-analysis-toolbar">',
@@ -1096,23 +1380,22 @@ window.Unterrichtsassistent.ui.views.klasse = {
         '</div>',
         '</div>'
       ].join("") : "",
-      '<div class="table-header">',
-      '<h2 class="table-header__title">', isManageMode ? "Schueler" : "Datensaetze", '</h2>',
-      '<span class="table-header__count">', students.length, ' Eintraege</span>',
-      '</div>',
-      '<div class="student-table-wrap', isManageMode ? "" : ' student-table-wrap--analysis', '"', isManageMode ? "" : ' data-drag-scroll="true" data-class-id="' + escapeValue(schoolClass && schoolClass.id || "") + '"', '>',
-      '<table class="student-table', isManageMode ? "" : ' student-table student-table--analysis', '">',
-      isManageMode
-        ? "<thead><tr><th>Vorname</th><th>Nachname</th><th>Geschlecht</th><th></th></tr></thead>"
-        : ("<thead><tr><th class=\"student-table__name-cell student-table__name-cell--head\"><button class=\"student-table__sort-button\" type=\"button\" onclick=\"return window.UnterrichtsassistentApp.setClassAnalysisSort('name')\">Name<span class=\"student-table__sort-arrow\">" + escapeValue(getSortArrow("name")) + "</span></button></th>" + visibleAnalysisGroups.map(function (groupInfo) {
+      !isManageMode ? [
+        '<div class="table-header">',
+        '<h2 class="table-header__title">Datensaetze</h2>',
+        '<span class="table-header__count">', students.length, ' Eintraege</span>',
+        '</div>',
+        '<div class="student-table-wrap student-table-wrap--analysis" data-drag-scroll="true" data-class-id="' + escapeValue(schoolClass && schoolClass.id || "") + '">',
+        '<table class="student-table student-table--analysis">',
+        "<thead><tr><th class=\"student-table__name-cell student-table__name-cell--head\"><button class=\"student-table__sort-button\" type=\"button\" onclick=\"return window.UnterrichtsassistentApp.setClassAnalysisSort('name')\">Name<span class=\"student-table__sort-arrow\">" + escapeValue(getSortArrow("name")) + "</span></button></th>" + visibleAnalysisGroups.map(function (groupInfo) {
           return '<th class="student-table__date-head"><button class="student-table__sort-button student-table__sort-button--center" type="button" onclick="return window.UnterrichtsassistentApp.setClassAnalysisSort(\'' + escapeValue(groupInfo.key) + '\')">' + escapeValue(groupInfo.label) + '<span class="student-table__sort-arrow">' + escapeValue(getSortArrow(groupInfo.key)) + "</span></button></th>";
-        }).join("") + new Array(analysisEmptyColumnCount + 1).join('<th class="student-table__date-head student-table__date-head--empty"></th>') + "</tr></thead>"),
-      "<tbody>",
-      tableRows || ('<tr><td colspan="' + (isManageMode ? "4" : String(visibleAnalysisGroups.length + analysisEmptyColumnCount + 1)) + '">Noch keine Schuelerdaten in dieser Lerngruppe.</td></tr>'),
-      "</tbody>",
-      "</table>",
-      "</div>",
-      schoolClass && isManageMode ? '<div class="table-actions"><button class="import-box__label" type="button" onclick="return window.UnterrichtsassistentApp.addStudentRow()">Neue Zeile</button></div>' : "",
+        }).join("") + new Array(analysisEmptyColumnCount + 1).join('<th class="student-table__date-head student-table__date-head--empty"></th>') + "</tr></thead>",
+        "<tbody>",
+        tableRows || ('<tr><td colspan="' + String(visibleAnalysisGroups.length + analysisEmptyColumnCount + 1) + '">Noch keine Schuelerdaten in dieser Lerngruppe.</td></tr>'),
+        "</tbody>",
+        "</table>",
+        "</div>"
+      ].join("") : "",
       "</article>",
       !isManageMode ? [
         '<div class="import-modal', analysisDetailDraft && analysisDetailStudent ? ' is-open' : "", '" id="classAnalysisDetailModal"', analysisDetailDraft && analysisDetailStudent ? "" : " hidden", ">",
@@ -1218,6 +1501,8 @@ window.Unterrichtsassistent.ui.views.klasse = {
         '</div>',
       ].join("") : "",
       "",
+      schoolClass && isManageMode ? buildSocialRelationsModal() : "",
+      schoolClass && isManageMode ? buildSocialImportModal() : "",
       '<div class="import-modal" id="classImportModal" hidden>',
       '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeClassImportModal()"></div>',
       '<div class="import-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="classImportTitle">',

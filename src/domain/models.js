@@ -2,7 +2,16 @@ window.Unterrichtsassistent = window.Unterrichtsassistent || {};
 window.Unterrichtsassistent.domain = window.Unterrichtsassistent.domain || {};
 
 class Student {
-  constructor({ id, firstName, lastName, className = "", gender = "", strengths = [], gaps = [], attendanceRate = 1 }) {
+  constructor({ id, firstName, lastName, className = "", gender = "", strengths = [], gaps = [], attendanceRate = 1, socialRelations = {} }) {
+    const sourceSocialRelations = socialRelations && typeof socialRelations === "object" ? socialRelations : {};
+    function normalizeSocialRelationList(value) {
+      return Array.isArray(value)
+        ? value.map(function (studentId) {
+            return String(studentId || "").trim();
+          }).filter(Boolean)
+        : [];
+    }
+
     this.id = id;
     this.firstName = firstName;
     this.lastName = lastName;
@@ -11,6 +20,12 @@ class Student {
     this.strengths = strengths;
     this.gaps = gaps;
     this.attendanceRate = attendanceRate;
+    this.socialRelations = {
+      likesWith: normalizeSocialRelationList(sourceSocialRelations.likesWith),
+      dislikesWith: normalizeSocialRelationList(sourceSocialRelations.dislikesWith),
+      shouldWith: normalizeSocialRelationList(sourceSocialRelations.shouldWith),
+      shouldNotWith: normalizeSocialRelationList(sourceSocialRelations.shouldNotWith)
+    };
   }
 
   get fullName() {

@@ -317,7 +317,18 @@ function serializeDomainSnapshot(snapshot) {
     hidePastPlanningMonths: snapshot.hidePastPlanningMonths !== false,
     autoApplyCalculatedCurriculumHourDemands: snapshot.autoApplyCalculatedCurriculumHourDemands === true,
     timetables: (snapshot.timetables || []).map(cloneTimetable),
-    students: cloneItems(snapshot.students, ["id", "firstName", "lastName", "className", "gender", "strengths", "gaps", "attendanceRate"]),
+    students: cloneItems(snapshot.students, ["id", "firstName", "lastName", "className", "gender", "strengths", "gaps", "attendanceRate", "socialRelations"]).map(function (item) {
+      const sourceSocialRelations = item.socialRelations && typeof item.socialRelations === "object" ? item.socialRelations : {};
+
+      return Object.assign({}, item, {
+        socialRelations: {
+          likesWith: Array.isArray(sourceSocialRelations.likesWith) ? sourceSocialRelations.likesWith.slice() : [],
+          dislikesWith: Array.isArray(sourceSocialRelations.dislikesWith) ? sourceSocialRelations.dislikesWith.slice() : [],
+          shouldWith: Array.isArray(sourceSocialRelations.shouldWith) ? sourceSocialRelations.shouldWith.slice() : [],
+          shouldNotWith: Array.isArray(sourceSocialRelations.shouldNotWith) ? sourceSocialRelations.shouldNotWith.slice() : []
+        }
+      });
+    }),
     classes: cloneItems(snapshot.classes, ["id", "name", "room", "subject", "studentIds", "displayColor"]),
     lessons: cloneItems(snapshot.lessons, ["id", "classId", "subject", "room", "weekday", "startTime", "endTime", "topic"]),
     assessments: cloneItems(snapshot.assessments, ["id", "studentId", "classId", "type", "score", "maxScore", "date", "lessonId", "lessonDate", "room", "recordedAt", "category", "afb1", "afb2", "afb3", "workBehavior", "socialBehavior", "knowledgeGap", "note"]),
