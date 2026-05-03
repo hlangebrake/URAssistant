@@ -39,6 +39,9 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
     const shouldSeparateWarnings = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.shouldSeatPlanSeparateWarnings === "function"
       ? window.UnterrichtsassistentApp.shouldSeatPlanSeparateWarnings()
       : false;
+    const shouldRespectPreviousPlan = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.shouldSeatPlanRespectPreviousPlan === "function"
+      ? window.UnterrichtsassistentApp.shouldSeatPlanRespectPreviousPlan()
+      : false;
     const socialWishLimit = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getSeatPlanSocialWishLimit === "function"
       ? window.UnterrichtsassistentApp.getSeatPlanSocialWishLimit()
       : 1;
@@ -845,6 +848,10 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
         '<label class="seat-order-social-option">',
         '<input type="checkbox"', shouldSeparateWarnings ? ' checked' : '', ' onchange="return window.UnterrichtsassistentApp.updateSeatPlanSocialOptimizationSetting(\'separateWarnings\', this.checked)">',
         '<span>Verwarnungen trennen</span>',
+        '</label>',
+        '<label class="seat-order-social-option">',
+        '<input type="checkbox"', shouldRespectPreviousPlan ? ' checked' : '', ' onchange="return window.UnterrichtsassistentApp.updateSeatPlanSocialOptimizationSetting(\'respectPreviousPlan\', this.checked)">',
+        '<span>Letzten Plan beachten</span>',
         '</label>',
         '<label class="seat-order-social-wishes">',
         '<span>Anzahl W&uuml;nsche</span>',

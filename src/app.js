@@ -158,6 +158,7 @@ let seatPlanMirrorMode = "horizontal";
 let seatPlanRespectSocialRelations = false;
 let seatPlanMixGender = false;
 let seatPlanSeparateWarnings = false;
+let seatPlanRespectPreviousPlan = false;
 let seatPlanSocialWishLimit = 1;
 const timetableWeekdayKeys = ["1", "2", "3", "4", "5"];
 let liveDateTimeIntervalId = null;
@@ -11203,6 +11204,82 @@ function getDeskSlotRectsForSeatOptimization(item, items) {
   return rects;
 }
 
+function getDeskSlotCenterForSeatOptimization(item, items, slotName) {
+  const slotRect = getDeskSlotRectsForSeatOptimization(item, items).find(function (rect) {
+    return rect && rect.slot === slotName;
+  }) || null;
+
+  if (!slotRect) {
+    return null;
+  }
+
+  return {
+    x: (Number(item && item.x) || 0) + slotRect.x + (slotRect.width / 2),
+    y: (Number(item && item.y) || 0) + slotRect.y + (slotRect.height / 2)
+  };
+}
+
+function buildSeatSlotZoneLookup(deskLayoutSeatPlan) {
+  const items = deskLayoutSeatPlan && Array.isArray(deskLayoutSeatPlan.deskLayoutItems) ? deskLayoutSeatPlan.deskLayoutItems : [];
+  const seatItems = items.filter(function (item) {
+    return item && ["single", "double"].indexOf(String(item.type || "")) >= 0;
+  });
+  const targetItem = items.find(function (item) {
+    return item && item.type === "tafel";
+  }) || items.find(function (item) {
+    return item && item.type === "pult";
+  });
+  const targetCenter = targetItem ? getDeskItemCenterForSeatOptimization(targetItem) : null;
+  const slotPositions = [];
+  const lookup = {};
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minFrontDistance = Number.POSITIVE_INFINITY;
+  let maxFrontDistance = Number.NEGATIVE_INFINITY;
+
+  function toZoneIndex(value, minValue, maxValue) {
+    const span = maxValue - minValue;
+
+    if (!Number.isFinite(value) || !Number.isFinite(minValue) || !Number.isFinite(maxValue) || span <= 0) {
+      return 1;
+    }
+
+    return Math.max(0, Math.min(2, Math.floor(((value - minValue) / span) * 3)));
+  }
+
+  seatItems.forEach(function (item) {
+    getDeskSeatSlots(String(item.type || "")).forEach(function (slotName) {
+      const center = getDeskSlotCenterForSeatOptimization(item, items, slotName);
+      const frontDistance = center && targetCenter
+        ? Math.sqrt(Math.pow(center.x - targetCenter.x, 2) + Math.pow(center.y - targetCenter.y, 2))
+        : (center ? center.y : 0);
+
+      if (!center) {
+        return;
+      }
+
+      minX = Math.min(minX, center.x);
+      maxX = Math.max(maxX, center.x);
+      minFrontDistance = Math.min(minFrontDistance, frontDistance);
+      maxFrontDistance = Math.max(maxFrontDistance, frontDistance);
+      slotPositions.push({
+        key: item.id + "::" + slotName,
+        x: center.x,
+        frontDistance: frontDistance
+      });
+    });
+  });
+
+  slotPositions.forEach(function (position) {
+    lookup[position.key] = {
+      column: toZoneIndex(position.x, minX, maxX),
+      row: toZoneIndex(position.frontDistance, minFrontDistance, maxFrontDistance)
+    };
+  });
+
+  return lookup;
+}
+
 function getDeskSlotSideProjection(slotRect, item, sideName) {
   const metrics = getDeskItemMetricsForSeatOptimization(item);
   const itemX = Number(item && item.x) || 0;
@@ -11414,6 +11491,50 @@ function getRecentWarningStudentIdsLookup(rawSnapshot, classId, referenceDateVal
   return lookup;
 }
 
+function getPreviousSeatOrderForOptimization(rawSnapshot, currentSeatOrder, classId, roomValue) {
+  const currentId = String(currentSeatOrder && currentSeatOrder.id || "");
+  const currentValidFrom = normalizeDateValue(currentSeatOrder && currentSeatOrder.validFrom) || getReferenceDateValue();
+  const sameRoomOrders = getSeatOrdersCollection(rawSnapshot).filter(function (seatOrder) {
+    const validFrom = normalizeDateValue(seatOrder && seatOrder.validFrom);
+
+    return seatOrder
+      && String(seatOrder.id || "") !== currentId
+      && String(seatOrder.classId || "") === String(classId || "")
+      && String(seatOrder.room || "") === String(roomValue || "")
+      && validFrom
+      && compareDateValues(validFrom, currentValidFrom) < 0;
+  }).sort(function (left, right) {
+    return compareDateValues(normalizeDateValue(right.validFrom), normalizeDateValue(left.validFrom));
+  });
+
+  return sameRoomOrders[0] || null;
+}
+
+function buildPreviousSeatPlanZoneLookup(rawSnapshot, previousSeatOrder, classId, roomValue) {
+  const lookup = {};
+  const previousDeskLayoutSeatPlan = previousSeatOrder
+    ? getSeatPlanFromSnapshotForDateValue(
+        rawSnapshot,
+        classId,
+        roomValue,
+        previousSeatOrder.validFrom || getReferenceDateValue()
+      )
+    : null;
+  const previousSlotZones = buildSeatSlotZoneLookup(previousDeskLayoutSeatPlan);
+
+  (previousSeatOrder && Array.isArray(previousSeatOrder.seats) ? previousSeatOrder.seats : []).forEach(function (seat) {
+    const studentId = String(seat && seat.studentId || "").trim();
+    const slotKey = seat ? (seat.deskItemId + "::" + seat.slot) : "";
+    const zone = previousSlotZones[slotKey];
+
+    if (studentId && zone) {
+      lookup[studentId] = zone;
+    }
+  });
+
+  return lookup;
+}
+
 function optimizeSocialSeatAssignments(students, slotAssignments, neighborPairs, lockedStudentIdsLookup, options) {
   const settings = options || {};
   const studentsById = {};
@@ -11421,8 +11542,15 @@ function optimizeSocialSeatAssignments(students, slotAssignments, neighborPairs,
   const shouldRespectSocialRelations = Boolean(settings.respectSocialRelations);
   const shouldMixGender = Boolean(settings.mixGender);
   const shouldSeparateWarnings = Boolean(settings.separateWarnings);
+  const shouldRespectPreviousPlan = Boolean(settings.respectPreviousPlan);
   const warnedStudentIdsLookup = settings.warnedStudentIdsLookup && typeof settings.warnedStudentIdsLookup === "object"
     ? settings.warnedStudentIdsLookup
+    : {};
+  const previousSeatZonesByStudentId = settings.previousSeatZonesByStudentId && typeof settings.previousSeatZonesByStudentId === "object"
+    ? settings.previousSeatZonesByStudentId
+    : {};
+  const currentSeatZonesBySlotKey = settings.currentSeatZonesBySlotKey && typeof settings.currentSeatZonesBySlotKey === "object"
+    ? settings.currentSeatZonesBySlotKey
     : {};
   let bestAssignments;
   let bestScore;
@@ -11489,6 +11617,38 @@ function optimizeSocialSeatAssignments(students, slotAssignments, neighborPairs,
 
     if (shouldSeparateWarnings) {
       hardViolations += countHardWarningSeatViolations(assignments, neighborPairs, warnedStudentIdsLookup);
+    }
+
+    if (shouldRespectPreviousPlan) {
+      Object.keys(assignments || {}).forEach(function (slotKey) {
+        const studentId = String(assignments[slotKey] || "").trim();
+        const previousZone = previousSeatZonesByStudentId[studentId];
+        const currentZone = currentSeatZonesBySlotKey[slotKey];
+        let distance;
+
+        if (!studentId || !previousZone || !currentZone) {
+          return;
+        }
+
+        distance = Math.abs(Number(currentZone.column) - Number(previousZone.column))
+          + Math.abs(Number(currentZone.row) - Number(previousZone.row));
+
+        if (distance >= 2) {
+          score += 16 + (distance * 4);
+        } else if (distance === 1) {
+          score += 3;
+        } else {
+          score -= 22;
+        }
+
+        if (Number(currentZone.column) === Number(previousZone.column)) {
+          score -= 6;
+        }
+
+        if (Number(currentZone.row) === Number(previousZone.row)) {
+          score -= 6;
+        }
+      });
     }
 
     return score - (hardViolations * 10000);
@@ -11602,6 +11762,9 @@ function shuffleSeatAssignments(options) {
   let optimizedAssignments;
   let neighborPairs;
   let warnedStudentIdsLookup;
+  let previousSeatOrder;
+  let previousSeatZonesByStudentId;
+  let currentSeatZonesBySlotKey;
 
   function shuffleItems(items) {
     let currentIndex = items.length;
@@ -11648,7 +11811,7 @@ function shuffleSeatAssignments(options) {
     }
   });
 
-  if (settings.respectSocialRelations || settings.mixGender || settings.separateWarnings) {
+  if (settings.respectSocialRelations || settings.mixGender || settings.separateWarnings || settings.respectPreviousPlan) {
     optimizedAssignments = seatPlan.seats.reduce(function (assignments, seat) {
       if (seat && seat.studentId) {
         assignments[seat.deskItemId + "::" + seat.slot] = seat.studentId;
@@ -11663,6 +11826,25 @@ function shuffleSeatAssignments(options) {
           seatPlan && seatPlan.validFrom ? seatPlan.validFrom : getReferenceDateValue()
         )
       : {};
+    previousSeatOrder = settings.respectPreviousPlan
+      ? getPreviousSeatOrderForOptimization(
+          currentRawSnapshot,
+          seatPlan,
+          activeClass.id,
+          getActiveSeatPlanRoomFromSnapshot(currentRawSnapshot, activeClass)
+        )
+      : null;
+    previousSeatZonesByStudentId = previousSeatOrder
+      ? buildPreviousSeatPlanZoneLookup(
+          currentRawSnapshot,
+          previousSeatOrder,
+          activeClass.id,
+          getActiveSeatPlanRoomFromSnapshot(currentRawSnapshot, activeClass)
+        )
+      : {};
+    currentSeatZonesBySlotKey = settings.respectPreviousPlan
+      ? buildSeatSlotZoneLookup(deskLayoutSeatPlan)
+      : {};
     optimizedAssignments = optimizeSocialSeatAssignments(
       students,
       optimizedAssignments,
@@ -11673,6 +11855,9 @@ function shuffleSeatAssignments(options) {
         mixGender: settings.mixGender,
         separateWarnings: settings.separateWarnings,
         warnedStudentIdsLookup: warnedStudentIdsLookup,
+        respectPreviousPlan: settings.respectPreviousPlan,
+        previousSeatZonesByStudentId: previousSeatZonesByStudentId,
+        currentSeatZonesBySlotKey: currentSeatZonesBySlotKey,
         wishLimit: settings.wishLimit
       }
     );
@@ -22537,6 +22722,9 @@ window.UnterrichtsassistentApp.shouldSeatPlanMixGender = function () {
 window.UnterrichtsassistentApp.shouldSeatPlanSeparateWarnings = function () {
   return Boolean(seatPlanSeparateWarnings);
 };
+window.UnterrichtsassistentApp.shouldSeatPlanRespectPreviousPlan = function () {
+  return Boolean(seatPlanRespectPreviousPlan);
+};
 window.UnterrichtsassistentApp.getSeatPlanSocialWishLimit = function () {
   return normalizeSeatPlanWishLimit(seatPlanSocialWishLimit);
 };
@@ -22551,6 +22739,10 @@ window.UnterrichtsassistentApp.updateSeatPlanSocialOptimizationSetting = functio
 
   if (fieldName === "separateWarnings") {
     seatPlanSeparateWarnings = Boolean(nextValue);
+  }
+
+  if (fieldName === "respectPreviousPlan") {
+    seatPlanRespectPreviousPlan = Boolean(nextValue);
   }
 
   if (fieldName === "wishLimit") {
@@ -26386,6 +26578,7 @@ window.UnterrichtsassistentApp.shuffleSeatAssignments = function () {
     respectSocialRelations: seatPlanRespectSocialRelations,
     mixGender: seatPlanMixGender,
     separateWarnings: seatPlanSeparateWarnings,
+    respectPreviousPlan: seatPlanRespectPreviousPlan,
     wishLimit: seatPlanSocialWishLimit
   });
 };
