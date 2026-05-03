@@ -20,10 +20,15 @@ window.Unterrichtsassistent.ui.views.klasse = {
     const classViewMode = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getClassViewMode === "function"
       ? window.UnterrichtsassistentApp.getClassViewMode()
       : "analyse";
+    const activeClassStudentAnalysisStudentId = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveClassStudentAnalysisStudentId === "function"
+      ? String(window.UnterrichtsassistentApp.getActiveClassStudentAnalysisStudentId() || "").trim()
+      : "";
     const classDisplayColor = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getClassDisplayColor === "function"
       ? window.UnterrichtsassistentApp.getClassDisplayColor(schoolClass)
       : "#d9d4cb";
     const isManageMode = classViewMode === "verwalten";
+    const isStudentMode = classViewMode === "schueler";
+    const isAnalysisMode = classViewMode === "analyse";
     const isBasisdatenExpanded = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.isClassBasisdatenExpanded === "function"
       ? window.UnterrichtsassistentApp.isClassBasisdatenExpanded()
       : false;
@@ -270,6 +275,44 @@ window.Unterrichtsassistent.ui.views.klasse = {
       }[key] || key;
     }
 
+    function findCurriculumItemById(collectionName, itemId) {
+      const normalizedId = String(itemId || "").trim();
+      const items = Array.isArray(service.snapshot && service.snapshot[collectionName])
+        ? service.snapshot[collectionName]
+        : [];
+
+      if (!normalizedId) {
+        return null;
+      }
+
+      return items.find(function (entry) {
+        return String(entry && entry.id || "").trim() === normalizedId;
+      }) || null;
+    }
+
+    function formatCurriculumReferenceValue(key, value) {
+      const normalizedValue = String(value || "").trim();
+      let item = null;
+      let label = "";
+
+      if (!normalizedValue) {
+        return "";
+      }
+
+      if (key === "lessonPlanId") {
+        item = findCurriculumItemById("curriculumLessonPlans", normalizedValue);
+        label = String(item && (item.topic || item.title) || "").trim();
+      } else if (key === "lessonPhaseId") {
+        item = findCurriculumItemById("curriculumLessonPhases", normalizedValue);
+        label = String(item && item.title || "").trim();
+      } else if (key === "lessonStepId") {
+        item = findCurriculumItemById("curriculumLessonSteps", normalizedValue);
+        label = String(item && item.title || "").trim();
+      }
+
+      return label || normalizedValue;
+    }
+
     function formatDetailValue(key, value) {
       const normalizedValue = value === undefined || value === null ? "" : String(value).trim();
 
@@ -376,6 +419,10 @@ window.Unterrichtsassistent.ui.views.klasse = {
 
       if (key === "demandLevel") {
         return normalizedValue.toUpperCase();
+      }
+
+      if (key === "lessonPlanId" || key === "lessonPhaseId" || key === "lessonStepId") {
+        return formatCurriculumReferenceValue(key, normalizedValue);
       }
 
       return normalizedValue;
@@ -712,6 +759,472 @@ window.Unterrichtsassistent.ui.views.klasse = {
         groupSortKey: groupInfo ? groupInfo.sortKey : ""
       });
     });
+    const classModalAnalysisRecords = (isStudentMode ? allAnalysisRecords : analysisRecords).map(function (record) {
+      const groupInfo = getGroupInfoForDate(record.date);
+      return Object.assign({}, record, {
+        groupKey: groupInfo ? groupInfo.key : "",
+        groupLabel: groupInfo ? groupInfo.label : "",
+        groupSortKey: groupInfo ? groupInfo.sortKey : ""
+      });
+    });
+
+    function formatFullDateLabel(dateValue) {
+      const normalized = normalizeDateValue(dateValue);
+
+      if (!normalized) {
+        return "-";
+      }
+
+      return String(normalized).slice(8, 10) + "." + String(normalized).slice(5, 7) + "." + String(normalized).slice(0, 4);
+    }
+
+    function getRecordTypeLabel(type) {
+      return {
+        attendance: "Anwesenheit",
+        homework: "Hausaufgabe",
+        warning: "Warnung",
+        assessment: "Unterrichtsbewertung",
+        mathObservation: "Mathe-Beobachtung",
+        knowledgeGap: "Wissensluecke",
+        evidenceObservation: "Evidenz",
+        completedEvaluation: "Bewertung"
+      }[String(type || "").trim()] || "Datensatz";
+    }
+
+    function getRecordContextLabel(record) {
+      const raw = record && record.raw || {};
+      const parts = [
+        formatDetailValue("situationType", raw.situationType),
+        formatDetailValue("demandLevel", raw.demandLevel),
+        raw.lessonPlanId ? formatDetailValue("lessonPlanId", raw.lessonPlanId) : "",
+        raw.lessonPhaseId ? formatDetailValue("lessonPhaseId", raw.lessonPhaseId) : "",
+        raw.lessonStepId ? formatDetailValue("lessonStepId", raw.lessonStepId) : ""
+      ].filter(Boolean);
+
+      return parts.join(" / ");
+    }
+
+    function getCompletedEvaluationPercent(record) {
+      const summary = record && String(record.evaluationSheet && record.evaluationSheet.type || "").trim() === "aufgabenbogen"
+        ? buildCompletedEvaluationSummary(record.plannedEvaluation, record.evaluationSheet, record.raw)
+        : null;
+
+      return summary && summary.totalReachable > 0 ? summary.percent : null;
+    }
+
+    function getStudentRecordSummary(record) {
+      const isCompletedEvaluation = String(record && record.type || "") === "completedEvaluation";
+      const isEvidenceObservation = String(record && record.type || "") === "evidenceObservation";
+      const completedSummary = isCompletedEvaluation
+        ? buildCompletedEvaluationSummary(record.plannedEvaluation, record.evaluationSheet, record.raw)
+        : null;
+
+      if (isCompletedEvaluation && String(record.evaluationSheet && record.evaluationSheet.type || "").trim() === "kompetenzraster") {
+        const results = Array.isArray(record.raw && record.raw.competencyResults) ? record.raw.competencyResults : [];
+        return [
+          String(record.evaluationSheet && record.evaluationSheet.title || "").trim() || "Kompetenzraster",
+          results.length ? String(results.length) + " Teilkompetenzen" : "",
+          String(record.raw && record.raw.overallNote || "").trim()
+        ].filter(Boolean).join(" | ");
+      }
+
+      if (isCompletedEvaluation) {
+        return [
+          String(record.evaluationSheet && record.evaluationSheet.title || "").trim() || "Bewertung",
+          completedSummary ? formatPointsLabel(completedSummary.totalAchieved) + " / " + formatPointsLabel(completedSummary.totalReachable) : "",
+          completedSummary && completedSummary.stageLabel ? completedSummary.stageLabel : "",
+          String(record.raw && record.raw.overallNote || "").trim()
+        ].filter(Boolean).join(" | ");
+      }
+
+      return isEvidenceObservation
+        ? buildEvidenceObservationSummary(record.raw || {})
+        : (buildAnalysisDetailSummary(record.raw || {}) || "-");
+    }
+
+    function getAverageNumber(values) {
+      const numericValues = values.filter(function (value) {
+        return Number.isFinite(Number(value));
+      }).map(Number);
+
+      return numericValues.length
+        ? numericValues.reduce(function (sum, value) { return sum + value; }, 0) / numericValues.length
+        : null;
+    }
+
+    function formatStudentAnalysisNumber(value) {
+      const numericValue = Number(value);
+
+      if (!Number.isFinite(numericValue)) {
+        return "-";
+      }
+
+      return Math.abs(numericValue % 1) < 0.05
+        ? String(Math.round(numericValue))
+        : numericValue.toFixed(1).replace(".", ",");
+    }
+
+    function getStudentAnalysisSourceCounts(records) {
+      return records.reduce(function (lookup, record) {
+        const key = String(record && record.type || "").trim();
+
+        if (key) {
+          lookup[key] = (lookup[key] || 0) + 1;
+        }
+
+        return lookup;
+      }, {});
+    }
+
+    function getStudentAnalysisEvidenceDayCount(records) {
+      return Object.keys(records.reduce(function (lookup, record) {
+        const dateKey = normalizeDateValue(record && record.date);
+
+        if (dateKey && ["assessment", "mathObservation", "evidenceObservation", "completedEvaluation"].indexOf(String(record && record.type || "")) >= 0) {
+          lookup[dateKey] = true;
+        }
+
+        return lookup;
+      }, {})).length;
+    }
+
+    function getStudentAnalysisObservationContexts(records) {
+      return records.reduce(function (lookup, record) {
+        const raw = record && record.raw || {};
+        const situation = String(raw.situationType || "").trim();
+        const demandLevel = String(raw.demandLevel || "").trim();
+
+        if (situation) {
+          lookup.situation[situation] = (lookup.situation[situation] || 0) + 1;
+        }
+
+        if (demandLevel) {
+          lookup.demandLevel[demandLevel] = (lookup.demandLevel[demandLevel] || 0) + 1;
+        }
+
+        return lookup;
+      }, { situation: {}, demandLevel: {} });
+    }
+
+    function buildStudentAnalysisMetricCard(label, value, detail) {
+      return [
+        '<div class="student-analysis-card">',
+        '<span class="student-analysis-card__label">', escapeValue(label), '</span>',
+        '<strong class="student-analysis-card__value">', escapeValue(value), '</strong>',
+        detail ? '<span class="student-analysis-card__detail">' + escapeValue(detail) + '</span>' : '',
+        '</div>'
+      ].join("");
+    }
+
+    function buildStudentAnalysisSourceBar(sourceCounts, totalRecords) {
+      const sourceOrder = ["completedEvaluation", "assessment", "mathObservation", "evidenceObservation", "knowledgeGap", "homework", "attendance", "warning"];
+      const total = Math.max(1, Number(totalRecords) || 0);
+
+      return [
+        '<div class="student-analysis-sourcebar">',
+        sourceOrder.filter(function (key) {
+          return Number(sourceCounts[key] || 0) > 0;
+        }).map(function (key) {
+          const count = Number(sourceCounts[key] || 0);
+          return [
+            '<div class="student-analysis-sourcebar__item student-analysis-sourcebar__item--', escapeValue(key), '" style="--source-share:', escapeValue(String(Math.max(6, Math.round((count / total) * 100)))), '%">',
+            '<span>', escapeValue(getRecordTypeLabel(key)), '</span>',
+            '<strong>', escapeValue(String(count)), '</strong>',
+            '</div>'
+          ].join("");
+        }).join("") || '<div class="student-analysis-sourcebar__empty">Noch keine Datensaetze</div>',
+        '</div>'
+      ].join("");
+    }
+
+    function buildStudentAnalysisContextList(contexts) {
+      const situationItems = [
+        ["lernen", "Lernen"],
+        ["leisten", "Leisten"]
+      ].map(function (entry) {
+        return '<span><strong>' + escapeValue(String(contexts.situation[entry[0]] || 0)) + '</strong> ' + escapeValue(entry[1]) + '</span>';
+      }).join("");
+      const demandItems = ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].map(function (key) {
+        return '<span><strong>' + escapeValue(String(contexts.demandLevel[key] || 0)) + '</strong> ' + escapeValue(formatDetailValue("demandLevel", key)) + '</span>';
+      }).join("");
+
+      return '<div class="student-analysis-context-list">' + situationItems + demandItems + '</div>';
+    }
+
+    function buildStudentAnalysisSelector(selectedStudent) {
+      return [
+        '<aside class="student-analysis-selector" aria-label="Schueler auswaehlen">',
+        '<div class="student-analysis-selector__title">Schueler</div>',
+        students.map(function (student) {
+          const isSelected = selectedStudent && String(selectedStudent.id || "") === String(student && student.id || "");
+
+          return [
+            '<button class="student-analysis-selector__item', isSelected ? ' is-active' : '', '" type="button" onclick="return window.UnterrichtsassistentApp.selectClassStudentAnalysisStudent(\'', escapeValue(student.id), '\')">',
+            '<span>', escapeValue(getStudentFullName(student) || getStudentAnalysisName(student)), '</span>',
+            '</button>'
+          ].join("");
+        }).join("") || '<div class="student-analysis-selector__empty">Keine Schuelerdaten</div>',
+        '</aside>'
+      ].join("");
+    }
+
+    function buildStudentAnalysisCompetencies(records) {
+      const mathLabels = {
+        k1: "K1 Argumentieren",
+        k2: "K2 Probleme loesen",
+        k3: "K3 Modellieren",
+        k4: "K4 Darstellungen",
+        k5: "K5 Formalisieren",
+        k6: "K6 Kommunizieren"
+      };
+      const mathStats = {};
+      const evidenceItems = [];
+      const gridItems = [];
+
+      records.forEach(function (record) {
+        const raw = record && record.raw || {};
+
+        if (record.type === "mathObservation") {
+          (Array.isArray(raw.competencyIds) ? raw.competencyIds : [raw.primaryCompetency]).forEach(function (competencyId) {
+            const key = String(competencyId || "").trim().toLowerCase();
+            if (!key) {
+              return;
+            }
+            if (!mathStats[key]) {
+              mathStats[key] = { count: 0, qualities: [], latest: "" };
+            }
+            mathStats[key].count += 1;
+            mathStats[key].qualities.push(Number(raw.processQuality));
+            mathStats[key].latest = record.date > mathStats[key].latest ? record.date : mathStats[key].latest;
+          });
+        } else if (record.type === "evidenceObservation") {
+          (Array.isArray(raw.selections) ? raw.selections : []).forEach(function (selection) {
+            const tool = getEvidenceToolById(raw.toolId);
+            const aspect = getEvidenceAspectById(tool, selection && selection.aspectId);
+            const stageLabels = (Array.isArray(selection && selection.stages) ? selection.stages : []).map(function (stageRef) {
+              return getEvidenceStageLabel(aspect, stageRef && stageRef.dimensionId, stageRef && stageRef.stageId);
+            }).filter(Boolean);
+
+            evidenceItems.push({
+              title: [String(tool && tool.titel || "").trim(), String(aspect && aspect.titel || "").trim()].filter(Boolean).join(" / ") || "Evidenz",
+              value: stageLabels.join(", ") || "beobachtet",
+              date: record.date
+            });
+          });
+        } else if (record.type === "completedEvaluation" && String(record.evaluationSheet && record.evaluationSheet.type || "").trim() === "kompetenzraster") {
+          const grid = record.evaluationSheet && record.evaluationSheet.competencyGrid || {};
+          const rows = Array.isArray(grid.rows) ? grid.rows : [];
+          const columns = Array.isArray(grid.columns) ? grid.columns : [];
+
+          (Array.isArray(raw.competencyResults) ? raw.competencyResults : []).forEach(function (result) {
+            const row = rows.find(function (entry) { return String(entry && entry.id || "") === String(result && result.rowId || ""); }) || null;
+            const column = columns.find(function (entry) { return String(entry && entry.id || "") === String(result && result.columnId || ""); }) || null;
+
+            gridItems.push({
+              title: String(row && row.title || "").trim() || "Teilkompetenz",
+              value: String(column && column.title || "").trim() || "Niveau gesetzt",
+              nextStep: String(result && result.nextStep || "").trim(),
+              date: record.date
+            });
+          });
+        }
+      });
+
+      const mathRows = Object.keys(mathLabels).map(function (key) {
+        const stat = mathStats[key] || { count: 0, qualities: [] };
+        const average = getAverageNumber(stat.qualities);
+        return [
+          '<div class="student-analysis-competency-row">',
+          '<span>', escapeValue(mathLabels[key]), '</span>',
+          '<strong>', escapeValue(stat.count ? formatStudentAnalysisNumber(average) : "-"), '</strong>',
+          '<em>', escapeValue(stat.count ? String(stat.count) + "x" : "keine Evidenz"), '</em>',
+          '</div>'
+        ].join("");
+      }).join("");
+      const evidenceRows = evidenceItems.slice().sort(function (left, right) {
+        return String(right.date || "").localeCompare(String(left.date || ""));
+      }).slice(0, 6).map(function (item) {
+        return '<li><strong>' + escapeValue(item.title) + '</strong><span>' + escapeValue(item.value) + '</span></li>';
+      }).join("");
+      const gridRows = gridItems.slice().sort(function (left, right) {
+        return String(right.date || "").localeCompare(String(left.date || ""));
+      }).slice(0, 6).map(function (item) {
+        return '<li><strong>' + escapeValue(item.title) + '</strong><span>' + escapeValue(item.value) + (item.nextStep ? " -> " + item.nextStep : "") + '</span></li>';
+      }).join("");
+
+      return [
+        '<section class="student-analysis-section student-analysis-section--competencies">',
+        '<h3>Kompetenzprofil</h3>',
+        '<div class="student-analysis-competency-grid">',
+        '<div class="student-analysis-competency-card"><h4>Mathematische Kompetenzen</h4>', mathRows, '</div>',
+        '<div class="student-analysis-competency-card"><h4>Evidenz-Werkzeuge</h4><ul>', evidenceRows || '<li><span>Keine Evidenzen erfasst.</span></li>', '</ul></div>',
+        '<div class="student-analysis-competency-card"><h4>Kompetenzraster</h4><ul>', gridRows || '<li><span>Keine Raster-Eintraege erfasst.</span></li>', '</ul></div>',
+        '</div>',
+        '</section>'
+      ].join("");
+    }
+
+    function buildStudentAnalysisGapsAndSteps(records) {
+      const knowledgeGaps = records.filter(function (record) {
+        return record.type === "knowledgeGap" || (record.type === "assessment" && String(record.raw && record.raw.knowledgeGap || "").trim());
+      }).map(function (record) {
+        const raw = record.raw || {};
+        return {
+          content: String(raw.content || raw.knowledgeGap || "").trim(),
+          status: String(raw.status || (record.type === "assessment" ? "offen" : "")).trim() || "offen",
+          note: String(raw.note || "").trim(),
+          date: record.date
+        };
+      }).filter(function (item) {
+        return Boolean(item.content);
+      }).sort(function (left, right) {
+        return String(right.date || "").localeCompare(String(left.date || ""));
+      });
+      const nextSteps = [];
+
+      records.forEach(function (record) {
+        if (record.type !== "completedEvaluation") {
+          return;
+        }
+
+        (Array.isArray(record.raw && record.raw.competencyResults) ? record.raw.competencyResults : []).forEach(function (result) {
+          const nextStep = String(result && result.nextStep || "").trim();
+          if (nextStep) {
+            nextSteps.push({ text: nextStep, date: record.date });
+          }
+        });
+      });
+
+      return [
+        '<section class="student-analysis-section student-analysis-section--gaps">',
+        '<h3>Wissensluecken und naechste Schritte</h3>',
+        '<div class="student-analysis-two-column">',
+        '<div><h4>Offene Inhalte</h4><ul class="student-analysis-list">',
+        knowledgeGaps.slice(0, 7).map(function (gap) {
+          return '<li><strong>' + escapeValue(gap.content) + '</strong><span>' + escapeValue([formatDetailValue("status", gap.status), formatFullDateLabel(gap.date), gap.note].filter(Boolean).join(" | ")) + '</span></li>';
+        }).join("") || '<li><span>Keine Wissensluecken erfasst.</span></li>',
+        '</ul></div>',
+        '<div><h4>Naechste Schritte</h4><ul class="student-analysis-list">',
+        nextSteps.slice(0, 7).map(function (step) {
+          return '<li><strong>' + escapeValue(step.text) + '</strong><span>' + escapeValue(formatFullDateLabel(step.date)) + '</span></li>';
+        }).join("") || '<li><span>Keine konkreten naechsten Schritte erfasst.</span></li>',
+        '</ul></div>',
+        '</div>',
+        '</section>'
+      ].join("");
+    }
+
+    function buildStudentAnalysisPerformance(records) {
+      const completedPercents = records.map(getCompletedEvaluationPercent).filter(function (value) {
+        return Number.isFinite(Number(value));
+      });
+      const assessments = records.filter(function (record) {
+        return record.type === "assessment";
+      }).map(function (record) {
+        return getAssessmentPerformanceValue(record.raw || {});
+      }).filter(function (value) {
+        return Number.isFinite(Number(value));
+      });
+      const workBehavior = records.filter(function (record) {
+        return record.type === "assessment";
+      }).map(function (record) {
+        return getAssessmentWorkBehaviorValue(record.raw || {});
+      }).filter(function (value) {
+        return Number.isFinite(Number(value));
+      });
+      const contexts = getStudentAnalysisObservationContexts(records);
+
+      return [
+        '<section class="student-analysis-section student-analysis-section--performance">',
+        '<h3>Leistung nach Kontext</h3>',
+        '<div class="student-analysis-performance-grid">',
+        buildStudentAnalysisMetricCard("Bewertungen", completedPercents.length ? Math.round(getAverageNumber(completedPercents)) + " %" : "-", completedPercents.length ? String(completedPercents.length) + " abgeschlossene Bewertungen" : "keine abgeschlossenen Punktewerte"),
+        buildStudentAnalysisMetricCard("Unterrichtsleistung", assessments.length ? formatStudentAnalysisNumber(getAverageNumber(assessments)) : "-", assessments.length ? "AFB-Raster aus " + String(assessments.length) + " Eintraegen" : "keine Unterrichtsbewertungen"),
+        buildStudentAnalysisMetricCard("Arbeitsverhalten", workBehavior.length ? formatStudentAnalysisNumber(getAverageNumber(workBehavior)) : "-", workBehavior.length ? "A=4 bis D=1" : "keine AV-Daten"),
+        '<div class="student-analysis-card student-analysis-card--wide"><span class="student-analysis-card__label">Beobachtungskontext</span>', buildStudentAnalysisContextList(contexts), '</div>',
+        '</div>',
+        '</section>'
+      ].join("");
+    }
+
+    function buildStudentAnalysisTimeline(records) {
+      const sortedRecords = records.slice().sort(function (left, right) {
+        return String(right.sortKey || right.date || "").localeCompare(String(left.sortKey || left.date || ""));
+      }).slice(0, 14);
+
+      return [
+        '<section class="student-analysis-section student-analysis-section--timeline">',
+        '<h3>Timeline</h3>',
+        '<div class="student-analysis-timeline">',
+        sortedRecords.map(function (record) {
+          const context = getRecordContextLabel(record);
+          return [
+            '<button class="student-analysis-timeline__item" type="button" onclick="return window.UnterrichtsassistentApp.openClassAnalysisDetail(\'', escapeValue(record.studentId), '\', \'', escapeValue(getGroupInfoForDate(record.date).key), '\', \'', escapeValue(formatFullDateLabel(record.date)), '\')">',
+            '<span class="student-analysis-timeline__date">', escapeValue(formatFullDateLabel(record.date)), '</span>',
+            '<strong>', escapeValue(getRecordTypeLabel(record.type)), '</strong>',
+            '<span>', escapeValue(getStudentRecordSummary(record)), '</span>',
+            context ? '<em>' + escapeValue(context) + '</em>' : '',
+            '</button>'
+          ].join("");
+        }).join("") || '<div class="student-analysis-timeline__empty">Noch keine Datensaetze fuer diesen Schueler.</div>',
+        '</div>',
+        '</section>'
+      ].join("");
+    }
+
+    function buildStudentAnalysisView() {
+      const selectedStudent = students.find(function (student) {
+        return String(student && student.id || "") === activeClassStudentAnalysisStudentId;
+      }) || students[0] || null;
+      const records = selectedStudent
+        ? allAnalysisRecords.filter(function (record) {
+            return String(record && record.studentId || "") === String(selectedStudent.id || "");
+          })
+        : [];
+      const sourceCounts = getStudentAnalysisSourceCounts(records);
+      const evidenceDayCount = getStudentAnalysisEvidenceDayCount(records);
+      const latestRecord = records.slice().sort(function (left, right) {
+        return String(right.sortKey || right.date || "").localeCompare(String(left.sortKey || left.date || ""));
+      })[0] || null;
+      const openGapCount = records.filter(function (record) {
+        return record.type === "knowledgeGap" && String(record.raw && record.raw.status || "offen") !== "geschlossen";
+      }).length;
+      const homeworkIssueCount = records.filter(function (record) {
+        const quality = String(record.raw && record.raw.quality || "").trim();
+        return record.type === "homework" && ["fehlt", "unvollstaendig", "abgeschrieben"].indexOf(quality) >= 0 && !record.raw.ignored;
+      }).length;
+      const absentCount = records.filter(function (record) {
+        return record.type === "attendance" && String(record.raw && record.raw.status || "") === "absent";
+      }).length;
+
+      return [
+        '<div class="student-analysis-layout">',
+        buildStudentAnalysisSelector(selectedStudent),
+        '<div class="student-analysis-main">',
+        selectedStudent ? [
+          '<section class="student-analysis-hero">',
+          '<div>',
+          '<div class="student-analysis-hero__kicker">Lerngruppe &gt; Schueler</div>',
+          '<h2>', escapeValue(getStudentFullName(selectedStudent) || getStudentAnalysisName(selectedStudent)), '</h2>',
+          '<p>', escapeValue([schoolClass && schoolClass.name, schoolClass && schoolClass.subject].filter(Boolean).join(" | ")), '</p>',
+          '</div>',
+          '<div class="student-analysis-hero__cards">',
+          buildStudentAnalysisMetricCard("Datenlage", String(evidenceDayCount), "Evidenztage"),
+          buildStudentAnalysisMetricCard("Datensaetze", String(records.length), latestRecord ? "zuletzt " + formatFullDateLabel(latestRecord.date) : "noch keine Daten"),
+          buildStudentAnalysisMetricCard("Offene Luecken", String(openGapCount), "Wissensluecken"),
+          buildStudentAnalysisMetricCard("Kontextsignale", String(homeworkIssueCount + absentCount), "HA/Abwesenheit"),
+          '</div>',
+          '</section>',
+          buildStudentAnalysisSourceBar(sourceCounts, records.length),
+          buildStudentAnalysisPerformance(records),
+          buildStudentAnalysisCompetencies(records),
+          buildStudentAnalysisGapsAndSteps(records),
+          buildStudentAnalysisTimeline(records)
+        ].join("") : '<p class="empty-message">Noch keine Schuelerdaten in dieser Lerngruppe.</p>',
+        '</div>',
+        '</div>'
+      ].join("");
+    }
     const analysisGroups = Array.from(new Map(analysisRecords.filter(function (record) {
       return Boolean(record.groupKey);
     }).map(function (record) {
@@ -967,7 +1480,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
       }) || null
       : null;
     const analysisDetailRecords = analysisDetailDraft && analysisDetailStudent
-      ? analysisRecords.filter(function (record) {
+      ? classModalAnalysisRecords.filter(function (record) {
         return record.studentId === analysisDetailDraft.studentId
           && String(record.groupKey || "") === String(analysisDetailDraft.groupKey || "");
       }).sort(function (leftRecord, rightRecord) {
@@ -998,7 +1511,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
         "</tr>"
       ].join("");
     }).join("");
-    const analysisEditRecord = analysisEditDraft ? analysisRecords.find(function (record) {
+    const analysisEditRecord = analysisEditDraft ? classModalAnalysisRecords.find(function (record) {
       return record.type === analysisEditDraft.recordType && String(record.raw && record.raw.id || "") === analysisEditDraft.recordId;
     }) || null : null;
     const analysisEditStudent = analysisEditRecord
@@ -1360,7 +1873,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
         isSozialgefuegeExpanded ? [buildSocialRelationsImportToolbar(), buildSocialRelationsTable()].join("") : "",
         '</section>'
       ].join("") : "",
-      !isManageMode ? [
+      isAnalysisMode ? [
         '<div class="class-analysis-toolbar">',
         '<div class="class-analysis-toolbar__cluster">',
         '<div class="class-analysis-toolbar__group"><span class="class-analysis-toolbar__label">Filter:</span>',
@@ -1380,7 +1893,8 @@ window.Unterrichtsassistent.ui.views.klasse = {
         '</div>',
         '</div>'
       ].join("") : "",
-      !isManageMode ? [
+      isStudentMode ? buildStudentAnalysisView() : "",
+      isAnalysisMode ? [
         '<div class="table-header">',
         '<h2 class="table-header__title">Datensaetze</h2>',
         '<span class="table-header__count">', students.length, ' Eintraege</span>',

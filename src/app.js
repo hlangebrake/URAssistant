@@ -62,6 +62,7 @@ let unterrichtSeatPlanRotation = 0;
 let classViewMode = "analyse";
 let classBasisdatenExpanded = false;
 let classSozialgefuegeExpanded = false;
+let activeClassStudentAnalysisStudentId = "";
 let classAnalysisSort = { key: "name", direction: "asc" };
 let classAnalysisGrouping = "day";
 let classAnalysisCriterion = "count";
@@ -154,6 +155,10 @@ let seatPlanDeskToolMode = "move";
 let seatPlanMoveLinkMode = true;
 let seatPlanRotateMode = "90";
 let seatPlanMirrorMode = "horizontal";
+let seatPlanRespectSocialRelations = false;
+let seatPlanMixGender = false;
+let seatPlanSeparateWarnings = false;
+let seatPlanSocialWishLimit = 1;
 const timetableWeekdayKeys = ["1", "2", "3", "4", "5"];
 let liveDateTimeIntervalId = null;
 let isClassImportModalOpen = false;
@@ -186,6 +191,7 @@ let unterrichtAssessmentQuickOverlay = null;
 let isUnterrichtKnowledgeGapModalOpen = false;
 let isUnterrichtMathObservationModalOpen = false;
 let activeUnterrichtMathObservationDraft = null;
+let activeUnterrichtMathObservationCompactDraft = null;
 let activeUnterrichtMathObservationPress = null;
 let activeUnterrichtMathObservationMarkerPress = null;
 let unterrichtMathObservationQuickMenu = null;
@@ -1349,6 +1355,9 @@ function closeOpenTransientUi() {
 
   if (typeof window.UnterrichtsassistentApp.closeUnterrichtMathObservationModal === "function") {
     window.UnterrichtsassistentApp.closeUnterrichtMathObservationModal();
+  }
+  if (typeof window.UnterrichtsassistentApp.closeUnterrichtMathObservationCompactModal === "function") {
+    window.UnterrichtsassistentApp.closeUnterrichtMathObservationCompactModal();
   }
   cancelUnterrichtMathObservationInteraction();
 
@@ -5774,15 +5783,26 @@ function updateHeaderActions(viewId) {
   }
 
   if (viewId === "klasse") {
-    viewHeaderActions.innerHTML = buildViewModeToggleHtml({
+    viewHeaderActions.innerHTML = buildMultiModeToggleHtml({
       ariaLabel: "Ansicht der Lerngruppe wechseln",
       activeMode: classViewMode,
-      leftMode: "analyse",
-      leftLabel: "Analyse",
-      leftAction: "window.UnterrichtsassistentApp.setClassViewMode('analyse')",
-      rightMode: "verwalten",
-      rightLabel: "Verwalten",
-      rightAction: "window.UnterrichtsassistentApp.setClassViewMode('verwalten')"
+      modes: [
+        {
+          value: "analyse",
+          label: "Analyse",
+          action: "window.UnterrichtsassistentApp.setClassViewMode('analyse')"
+        },
+        {
+          value: "schueler",
+          label: "Schueler",
+          action: "window.UnterrichtsassistentApp.setClassViewMode('schueler')"
+        },
+        {
+          value: "verwalten",
+          label: "Verwalten",
+          action: "window.UnterrichtsassistentApp.setClassViewMode('verwalten')"
+        }
+      ]
     });
     return;
   }
@@ -7820,6 +7840,68 @@ function ensureUnterrichtMathObservationMarkerOverlay() {
   return unterrichtMathObservationMarkerOverlay;
 }
 
+function ensureUnterrichtMathObservationCompactModal() {
+  let modal = getUnterrichtMathObservationCompactModal();
+
+  if (modal && document.body.contains(modal)) {
+    return modal;
+  }
+
+  modal = document.createElement("div");
+  modal.className = "import-modal unterricht-math-observation-compact-modal";
+  modal.id = "unterrichtMathObservationCompactModal";
+  modal.hidden = true;
+  modal.innerHTML = [
+    '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeUnterrichtMathObservationCompactModal()"></div>',
+    '<div class="import-modal__dialog import-modal__dialog--math-observation-compact" role="dialog" aria-modal="true" aria-labelledby="unterrichtMathObservationCompactStudent">',
+    '<div class="import-modal__header">',
+    '<div>',
+    '<h3 id="unterrichtMathObservationCompactStudent">Schueler</h3>',
+    '<div class="import-modal__meta" id="unterrichtMathObservationCompactDate"></div>',
+    '</div>',
+    '<div class="import-modal__icon-actions">',
+    '<button class="import-modal__icon-button import-modal__icon-button--confirm" type="submit" form="unterrichtMathObservationCompactForm" aria-label="Mathematik-Beobachtung uebernehmen">&#10003;</button>',
+    '<button class="import-modal__icon-button import-modal__icon-button--cancel" type="button" aria-label="Mathematik-Beobachtung verwerfen" onclick="return window.UnterrichtsassistentApp.closeUnterrichtMathObservationCompactModal()">&#10005;</button>',
+    '</div>',
+    '</div>',
+    '<form class="import-modal__form" id="unterrichtMathObservationCompactForm" autocomplete="off" method="post" action="about:blank" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitUnterrichtMathObservationCompactModal(event)">',
+    '<div class="math-observation-compact-grid">',
+    '<section class="math-observation-compact-panel math-observation-compact-panel--competencies">',
+    '<h4 class="assessment-column__title">Kompetenzen</h4>',
+    MATH_OBSERVATION_COMPETENCIES.map(function (competency) {
+      return [
+        '<div class="math-observation-compact-competency" data-compact-competency-row="' + escapeHtml(competency.key) + '">',
+        '<div class="math-observation-compact-competency__label">',
+        '<strong>' + escapeHtml(competency.label) + '</strong>',
+        '<span>' + escapeHtml(MATH_OBSERVATION_COMPETENCY_INFO[competency.key] || "") + '</span>',
+        '</div>',
+        '<div class="assessment-grade-buttons math-observation-compact-quality-buttons">',
+        MATH_OBSERVATION_QUALITY_LABELS.map(function (quality) {
+          return '<button class="assessment-grade-button" type="button" data-compact-competency="' + escapeHtml(competency.key) + '" data-compact-quality="' + escapeHtml(String(quality.value)) + '" aria-pressed="false" onclick="return window.UnterrichtsassistentApp.selectUnterrichtMathObservationCompactQuality(\'' + escapeHtml(competency.key) + '\', \'' + escapeHtml(String(quality.value)) + '\')">' + escapeHtml(formatAssessmentQuickQuality(quality.value)) + '</button>';
+        }).join(""),
+        '</div>',
+        '<input type="hidden" data-compact-competency-quality="' + escapeHtml(competency.key) + '" value="">',
+        '</div>'
+      ].join("");
+    }).join(""),
+    '</section>',
+    '<section class="math-observation-compact-panel math-observation-compact-panel--side">',
+    '<h4 class="assessment-column__title">Marker</h4>',
+    '<div class="math-observation-compact-markers" id="unterrichtMathObservationCompactMarkers"></div>',
+    '<button class="circle-action math-observation-compact-add" type="button" aria-label="Marker hinzufuegen" onclick="return window.UnterrichtsassistentApp.addUnterrichtMathObservationCompactMarker()">+</button>',
+    '<label class="import-modal__field">',
+    '<span>Notiz</span>',
+    '<textarea id="unterrichtMathObservationCompactNote" maxlength="360" placeholder="Freie Notiz" autocomplete="off" autocapitalize="sentences" spellcheck="true"></textarea>',
+    '</label>',
+    '</section>',
+    '</div>',
+    '</form>',
+    '</div>'
+  ].join("");
+  document.body.appendChild(modal);
+  return modal;
+}
+
 function clearUnterrichtMathObservationPressListeners() {
   window.removeEventListener("pointermove", window.UnterrichtsassistentApp.handleUnterrichtMathObservationPointerMove);
   window.removeEventListener("pointerup", window.UnterrichtsassistentApp.handleUnterrichtMathObservationPointerEnd);
@@ -7898,6 +7980,7 @@ function cancelUnterrichtMathObservationInteraction() {
   activeUnterrichtMathObservationPress = null;
   activeUnterrichtMathObservationMarkerPress = null;
   activeUnterrichtMathObservationDraft = null;
+  activeUnterrichtMathObservationCompactDraft = null;
   hideUnterrichtMathObservationUi();
 }
 
@@ -8484,6 +8567,10 @@ function getUnterrichtMathObservationModal() {
   return document.getElementById("unterrichtMathObservationModal");
 }
 
+function getUnterrichtMathObservationCompactModal() {
+  return document.getElementById("unterrichtMathObservationCompactModal");
+}
+
 function getUnterrichtAssessmentGridSvg() {
   return document.getElementById("unterrichtAssessmentGridSvg");
 }
@@ -8981,6 +9068,86 @@ function syncUnterrichtMathObservationUi() {
   if (markerQualifier) {
     markerQualifier.hidden = !markerIsSwipable;
   }
+}
+
+function renderUnterrichtMathObservationCompactMarkers() {
+  const container = document.getElementById("unterrichtMathObservationCompactMarkers");
+  const markers = activeUnterrichtMathObservationCompactDraft && Array.isArray(activeUnterrichtMathObservationCompactDraft.markers)
+    ? activeUnterrichtMathObservationCompactDraft.markers
+    : [];
+
+  if (!container) {
+    return;
+  }
+
+  container.innerHTML = markers.map(function (markerEntry, index) {
+    const markerValue = normalizeMathObservationMarkerValue(markerEntry && markerEntry.marker);
+    const markerIsSwipable = isMathObservationSwipeMarker(markerValue);
+    const qualifier = getMathObservationMarkerQualifier(markerValue);
+
+    return [
+      '<div class="math-observation-compact-marker" data-compact-marker-row="' + escapeHtml(String(index)) + '">',
+      '<div class="math-observation-compact-marker__header">',
+      '<select aria-label="Marker" onchange="return window.UnterrichtsassistentApp.updateUnterrichtMathObservationCompactMarker(' + String(index) + ', \'marker\', this.value)">',
+      MATH_OBSERVATION_MARKERS.map(function (marker) {
+        return '<option value="' + escapeHtml(marker.key) + '"' + (marker.key === markerValue ? " selected" : "") + ">" + escapeHtml(marker.label) + "</option>";
+      }).join(""),
+      '</select>',
+      '<button class="import-modal__icon-button import-modal__icon-button--cancel" type="button" aria-label="Marker entfernen" onclick="return window.UnterrichtsassistentApp.removeUnterrichtMathObservationCompactMarker(' + String(index) + ')">-</button>',
+      '</div>',
+      markerIsSwipable
+        ? [
+          '<div class="math-observation-compact-marker__dimensions">',
+          '<label class="import-modal__field"><span>Dimension</span><select onchange="return window.UnterrichtsassistentApp.updateUnterrichtMathObservationCompactMarker(' + String(index) + ', \'direction\', this.value)">',
+          '<option value="">neutral</option>',
+          '<option value="left"' + (markerEntry.markerDirection === "left" ? " selected" : "") + '>' + escapeHtml(qualifier.left || "links") + '</option>',
+          '<option value="right"' + (markerEntry.markerDirection === "right" ? " selected" : "") + '>' + escapeHtml(qualifier.right || "rechts") + '</option>',
+          '</select></label>',
+          '<label class="import-modal__field"><span>Qualitaet</span><select onchange="return window.UnterrichtsassistentApp.updateUnterrichtMathObservationCompactMarker(' + String(index) + ', \'quality\', this.value)">',
+          '<option value="">keine</option>',
+          (Array.isArray(qualifier.qualities) ? qualifier.qualities : MATH_OBSERVATION_QUALITY_LABELS).map(function (quality) {
+            const qualityValue = String(normalizeMathObservationQualityValue(quality.value));
+            return '<option value="' + escapeHtml(qualityValue) + '"' + (String(markerEntry.markerQuality) === qualityValue ? " selected" : "") + ">" + escapeHtml(quality.label) + "</option>";
+          }).join(""),
+          '</select></label>',
+          '</div>'
+        ].join("")
+        : "",
+      '</div>'
+    ].join("");
+  }).join("");
+}
+
+function syncUnterrichtMathObservationCompactUi() {
+  Array.from(document.querySelectorAll("[data-compact-competency-quality]")).forEach(function (input) {
+    const competency = String(input.getAttribute("data-compact-competency-quality") || "").trim();
+    const selectedQuality = String(input.value || "").trim();
+
+    Array.from(document.querySelectorAll('[data-compact-competency="' + competency.replace(/"/g, '\\"') + '"]')).forEach(function (button) {
+      const isActive = selectedQuality !== "" && String(button.getAttribute("data-compact-quality") || "") === selectedQuality;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-pressed", isActive ? "true" : "false");
+    });
+  });
+  renderUnterrichtMathObservationCompactMarkers();
+}
+
+function createUnterrichtMathObservationDraftFromPressState(pressState, activeClass, lessonDate) {
+  const liveObservationContext = getUnterrichtLiveObservationContextForRecord();
+
+  return {
+    studentId: String(pressState && pressState.studentId || ""),
+    classId: activeClass && activeClass.id,
+    lessonId: String(pressState && pressState.lessonId || ""),
+    lessonDate: lessonDate,
+    lessonStartTime: String(pressState && pressState.lessonStartTime || ""),
+    lessonRoom: String(pressState && pressState.lessonRoom || ""),
+    situationType: liveObservationContext.situationType,
+    demandLevel: liveObservationContext.demandLevel,
+    lessonPlanId: liveObservationContext.lessonPlanId,
+    lessonPhaseId: liveObservationContext.lessonPhaseId,
+    lessonStepId: liveObservationContext.lessonStepId
+  };
 }
 
 function getClassAnalysisRecordByDraft(rawSnapshot, draft) {
@@ -10859,7 +11026,533 @@ function resetSeatAssignments() {
   return false;
 }
 
-function shuffleSeatAssignments() {
+function normalizeSeatPlanWishLimit(value) {
+  return clampValue(Math.round(Number(value) || 1), 0, 4);
+}
+
+function getSocialRelationIds(student, relationKey) {
+  const relations = student && student.socialRelations && typeof student.socialRelations === "object"
+    ? student.socialRelations
+    : {};
+  return Array.isArray(relations[relationKey])
+    ? relations[relationKey].map(function (studentId) {
+        return String(studentId || "").trim();
+      }).filter(Boolean)
+    : [];
+}
+
+function normalizeStudentGenderValue(student) {
+  const gender = String(student && student.gender || "").trim().toLowerCase();
+
+  if (["m", "maennlich", "männlich", "male", "junge"].indexOf(gender) >= 0) {
+    return "m";
+  }
+
+  if (["w", "weiblich", "female", "maedchen", "mädchen"].indexOf(gender) >= 0) {
+    return "w";
+  }
+
+  if (gender) {
+    return gender;
+  }
+
+  return "";
+}
+
+function getAutomaticSeatSlots(deskLayoutSeatPlan) {
+  return deskLayoutSeatPlan && Array.isArray(deskLayoutSeatPlan.deskLayoutItems)
+    ? deskLayoutSeatPlan.deskLayoutItems.filter(function (item) {
+        return item && ["single", "double"].indexOf(String(item.type || "")) >= 0;
+      }).reduce(function (slots, desk) {
+        getDeskSeatSlots(String(desk.type || "")).forEach(function (slotName) {
+          slots.push({
+            key: desk.id + "::" + slotName,
+            deskItemId: desk.id,
+            slot: slotName
+          });
+        });
+        return slots;
+      }, [])
+    : [];
+}
+
+function getDeskItemMetricsForSeatOptimization(item) {
+  const rawType = String(item && item.type || "");
+  const itemType = ["single", "double", "pult", "tafel"].indexOf(rawType) >= 0 ? rawType : "single";
+  const templateMetrics = getDeskTemplateMetrics(itemType);
+
+  return {
+    type: itemType,
+    width: Number(item && item.width) || templateMetrics.width,
+    height: Number(item && item.height) || templateMetrics.height
+  };
+}
+
+function getDeskItemCenterForSeatOptimization(item) {
+  const metrics = getDeskItemMetricsForSeatOptimization(item);
+
+  return {
+    x: (Number(item && item.x) || 0) + (metrics.width / 2),
+    y: (Number(item && item.y) || 0) + (metrics.height / 2)
+  };
+}
+
+function getSeatOrderReferenceTargetForSeatOptimization(item, items) {
+  const targetItem = (items || []).find(function (candidate) {
+    return candidate && candidate.type === "tafel";
+  }) || (items || []).find(function (candidate) {
+    return candidate && candidate.type === "pult";
+  });
+  const deskCenter = getDeskItemCenterForSeatOptimization(item);
+
+  if (targetItem) {
+    return getDeskItemCenterForSeatOptimization(targetItem);
+  }
+
+  return {
+    x: deskCenter.x,
+    y: deskCenter.y + 240
+  };
+}
+
+function getDoubleDeskSlotLayoutForSeatOptimization(item, items) {
+  const metrics = getDeskItemMetricsForSeatOptimization(item);
+  const deskCenter = getDeskItemCenterForSeatOptimization(item);
+  const targetPoint = getSeatOrderReferenceTargetForSeatOptimization(item, items);
+  let facingX = (Number(targetPoint.x) || 0) - deskCenter.x;
+  let facingY = (Number(targetPoint.y) || 0) - deskCenter.y;
+  const longAxis = metrics.width >= metrics.height ? "horizontal" : "vertical";
+  const leftVectorFallback = longAxis === "horizontal"
+    ? { x: -1, y: 0 }
+    : { x: 0, y: -1 };
+  let leftVector;
+  let orderedSlots;
+
+  if (!facingX && !facingY) {
+    facingY = 1;
+  }
+
+  leftVector = {
+    x: facingY || leftVectorFallback.x,
+    y: -facingX || leftVectorFallback.y
+  };
+
+  if (longAxis === "horizontal") {
+    orderedSlots = leftVector.x <= 0 ? ["left", "right"] : ["right", "left"];
+  } else {
+    orderedSlots = leftVector.y <= 0 ? ["left", "right"] : ["right", "left"];
+  }
+
+  return {
+    axis: longAxis,
+    orderedSlots: orderedSlots
+  };
+}
+
+function getDeskSlotRectsForSeatOptimization(item, items) {
+  const metrics = getDeskItemMetricsForSeatOptimization(item);
+  const slotNames = getDeskSeatSlots(String(item && item.type || ""));
+  const rects = [];
+
+  if (slotNames.length === 1) {
+    return [{
+      slot: slotNames[0],
+      x: 0,
+      y: 0,
+      width: metrics.width,
+      height: metrics.height
+    }];
+  }
+
+  if (slotNames.length === 2) {
+    const layout = getDoubleDeskSlotLayoutForSeatOptimization(item, items);
+
+    if (layout.axis === "horizontal") {
+      rects.push({
+        slot: layout.orderedSlots[0],
+        x: 0,
+        y: 0,
+        width: metrics.width / 2,
+        height: metrics.height
+      });
+      rects.push({
+        slot: layout.orderedSlots[1],
+        x: metrics.width / 2,
+        y: 0,
+        width: metrics.width / 2,
+        height: metrics.height
+      });
+    } else {
+      rects.push({
+        slot: layout.orderedSlots[0],
+        x: 0,
+        y: 0,
+        width: metrics.width,
+        height: metrics.height / 2
+      });
+      rects.push({
+        slot: layout.orderedSlots[1],
+        x: 0,
+        y: metrics.height / 2,
+        width: metrics.width,
+        height: metrics.height / 2
+      });
+    }
+  }
+
+  return rects;
+}
+
+function getDeskSlotSideProjection(slotRect, item, sideName) {
+  const metrics = getDeskItemMetricsForSeatOptimization(item);
+  const itemX = Number(item && item.x) || 0;
+  const itemY = Number(item && item.y) || 0;
+  const tolerance = 0.5;
+
+  if (sideName === "left") {
+    return Math.abs(slotRect.x) <= tolerance
+      ? { start: itemY + slotRect.y, end: itemY + slotRect.y + slotRect.height }
+      : null;
+  }
+
+  if (sideName === "right") {
+    return Math.abs((slotRect.x + slotRect.width) - metrics.width) <= tolerance
+      ? { start: itemY + slotRect.y, end: itemY + slotRect.y + slotRect.height }
+      : null;
+  }
+
+  if (sideName === "top") {
+    return Math.abs(slotRect.y) <= tolerance
+      ? { start: itemX + slotRect.x, end: itemX + slotRect.x + slotRect.width }
+      : null;
+  }
+
+  if (sideName === "bottom") {
+    return Math.abs((slotRect.y + slotRect.height) - metrics.height) <= tolerance
+      ? { start: itemX + slotRect.x, end: itemX + slotRect.x + slotRect.width }
+      : null;
+  }
+
+  return null;
+}
+
+function doSeatSlotSideProjectionsOverlap(leftProjection, rightProjection) {
+  if (!leftProjection || !rightProjection) {
+    return false;
+  }
+
+  return Math.min(leftProjection.end, rightProjection.end) - Math.max(leftProjection.start, rightProjection.start) > 4;
+}
+
+function buildSeatNeighborPairs(deskLayoutSeatPlan, availableSlotKeysLookup) {
+  const items = deskLayoutSeatPlan && Array.isArray(deskLayoutSeatPlan.deskLayoutItems) ? deskLayoutSeatPlan.deskLayoutItems : [];
+  const links = deskLayoutSeatPlan && Array.isArray(deskLayoutSeatPlan.deskLayoutLinks) ? deskLayoutSeatPlan.deskLayoutLinks : [];
+  const pairs = [];
+  const seenPairs = {};
+
+  function addPair(leftSlot, rightSlot) {
+    const leftKey = leftSlot && leftSlot.key;
+    const rightKey = rightSlot && rightSlot.key;
+    const pairKey = leftKey < rightKey ? leftKey + "||" + rightKey : rightKey + "||" + leftKey;
+
+    if (!leftKey || !rightKey || leftKey === rightKey || !availableSlotKeysLookup[leftKey] || !availableSlotKeysLookup[rightKey] || seenPairs[pairKey]) {
+      return;
+    }
+
+    seenPairs[pairKey] = true;
+    pairs.push([leftKey, rightKey]);
+  }
+
+  items.forEach(function (item) {
+    const slotNames = getDeskSeatSlots(String(item && item.type || ""));
+
+    slotNames.forEach(function (slotName, slotIndex) {
+      slotNames.slice(slotIndex + 1).forEach(function (otherSlotName) {
+        addPair(
+          { key: item.id + "::" + slotName },
+          { key: item.id + "::" + otherSlotName }
+        );
+      });
+    });
+  });
+
+  links.forEach(function (link) {
+    const itemA = getDeskLayoutItemById(items, link && link.itemAId);
+    const itemB = getDeskLayoutItemById(items, link && link.itemBId);
+    let slotRectsA;
+    let slotRectsB;
+
+    if (!itemA || !itemB) {
+      return;
+    }
+
+    slotRectsA = getDeskSlotRectsForSeatOptimization(itemA, items);
+    slotRectsB = getDeskSlotRectsForSeatOptimization(itemB, items);
+
+    slotRectsA.forEach(function (slotRectA) {
+      const projectionA = getDeskSlotSideProjection(slotRectA, itemA, String(link && link.sideA || ""));
+
+      slotRectsB.forEach(function (slotRectB) {
+        const projectionB = getDeskSlotSideProjection(slotRectB, itemB, String(link && link.sideB || ""));
+
+        if (doSeatSlotSideProjectionsOverlap(projectionA, projectionB)) {
+          addPair(
+            { key: itemA.id + "::" + slotRectA.slot },
+            { key: itemB.id + "::" + slotRectB.slot }
+          );
+        }
+      });
+    });
+  });
+
+  return pairs;
+}
+
+function countHardSocialSeatViolations(students, assignments, neighborPairs) {
+  const studentsById = {};
+  const assignedStudentIds = {};
+  const shouldWithSatisfied = {};
+  let hardViolations = 0;
+
+  function hasRelation(studentId, relationKey, otherStudentId) {
+    const student = studentsById[studentId];
+    return getSocialRelationIds(student, relationKey).indexOf(otherStudentId) >= 0;
+  }
+
+  (students || []).forEach(function (student) {
+    if (student && student.id) {
+      studentsById[student.id] = student;
+    }
+  });
+
+  Object.keys(assignments || {}).forEach(function (slotKey) {
+    const studentId = String(assignments[slotKey] || "").trim();
+
+    if (studentId) {
+      assignedStudentIds[studentId] = true;
+    }
+  });
+
+  (neighborPairs || []).forEach(function (pair) {
+    const leftStudentId = assignments[pair[0]] || "";
+    const rightStudentId = assignments[pair[1]] || "";
+
+    if (!leftStudentId || !rightStudentId) {
+      return;
+    }
+
+    if (hasRelation(leftStudentId, "shouldNotWith", rightStudentId) || hasRelation(rightStudentId, "shouldNotWith", leftStudentId)) {
+      hardViolations += 1;
+    }
+
+    if (hasRelation(leftStudentId, "shouldWith", rightStudentId)) {
+      shouldWithSatisfied[leftStudentId] = true;
+    }
+
+    if (hasRelation(rightStudentId, "shouldWith", leftStudentId)) {
+      shouldWithSatisfied[rightStudentId] = true;
+    }
+  });
+
+  Object.keys(studentsById).forEach(function (studentId) {
+    const shouldWithIds = getSocialRelationIds(studentsById[studentId], "shouldWith").filter(function (targetId) {
+      return Boolean(studentsById[targetId]) && Boolean(assignedStudentIds[targetId]);
+    });
+
+    if (assignedStudentIds[studentId] && shouldWithIds.length && !shouldWithSatisfied[studentId]) {
+      hardViolations += 1;
+    }
+  });
+
+  return hardViolations;
+}
+
+function countHardWarningSeatViolations(assignments, neighborPairs, warnedStudentIdsLookup) {
+  let hardViolations = 0;
+
+  (neighborPairs || []).forEach(function (pair) {
+    const leftStudentId = assignments[pair[0]] || "";
+    const rightStudentId = assignments[pair[1]] || "";
+
+    if (leftStudentId && rightStudentId && warnedStudentIdsLookup[leftStudentId] && warnedStudentIdsLookup[rightStudentId]) {
+      hardViolations += 1;
+    }
+  });
+
+  return hardViolations;
+}
+
+function getRecentWarningStudentIdsLookup(rawSnapshot, classId, referenceDateValue) {
+  const lookup = {};
+  const referenceDate = new Date(String(referenceDateValue || getReferenceDateValue()) + "T12:00:00");
+  const earliestDate = new Date(referenceDate);
+  let earliestValue;
+
+  if (Number.isNaN(referenceDate.getTime())) {
+    return lookup;
+  }
+
+  earliestDate.setDate(earliestDate.getDate() - 28);
+  earliestValue = earliestDate.getFullYear()
+    + "-" + String(earliestDate.getMonth() + 1).padStart(2, "0")
+    + "-" + String(earliestDate.getDate()).padStart(2, "0");
+
+  getWarningRecordsCollection(rawSnapshot).forEach(function (record) {
+    const studentId = String(record && record.studentId || "").trim();
+    const recordClassId = String(record && record.classId || "").trim();
+    const warningDateValue = String(record && (record.lessonDate || record.recordedAt) || "").slice(0, 10);
+
+    if (!studentId || recordClassId !== String(classId || "").trim() || !warningDateValue) {
+      return;
+    }
+
+    if (compareDateValues(warningDateValue, earliestValue) >= 0 && compareDateValues(warningDateValue, referenceDateValue) <= 0) {
+      lookup[studentId] = true;
+    }
+  });
+
+  return lookup;
+}
+
+function optimizeSocialSeatAssignments(students, slotAssignments, neighborPairs, lockedStudentIdsLookup, options) {
+  const settings = options || {};
+  const studentsById = {};
+  const normalizedWishLimit = normalizeSeatPlanWishLimit(settings.wishLimit);
+  const shouldRespectSocialRelations = Boolean(settings.respectSocialRelations);
+  const shouldMixGender = Boolean(settings.mixGender);
+  const shouldSeparateWarnings = Boolean(settings.separateWarnings);
+  const warnedStudentIdsLookup = settings.warnedStudentIdsLookup && typeof settings.warnedStudentIdsLookup === "object"
+    ? settings.warnedStudentIdsLookup
+    : {};
+  let bestAssignments;
+  let bestScore;
+  let iteration;
+
+  function hasRelation(studentId, relationKey, otherStudentId) {
+    const student = studentsById[studentId];
+    return getSocialRelationIds(student, relationKey).indexOf(otherStudentId) >= 0;
+  }
+
+  function scoreAssignments(assignments) {
+    const likedNeighborCounts = {};
+    let score = 0;
+    let hardViolations = 0;
+
+    neighborPairs.forEach(function (pair) {
+      const leftStudentId = assignments[pair[0]] || "";
+      const rightStudentId = assignments[pair[1]] || "";
+
+      if (!leftStudentId || !rightStudentId) {
+        return;
+      }
+
+      if (shouldRespectSocialRelations) {
+        if (hasRelation(leftStudentId, "likesWith", rightStudentId)) {
+          likedNeighborCounts[leftStudentId] = (likedNeighborCounts[leftStudentId] || 0) + 1;
+        }
+
+        if (hasRelation(rightStudentId, "likesWith", leftStudentId)) {
+          likedNeighborCounts[rightStudentId] = (likedNeighborCounts[rightStudentId] || 0) + 1;
+        }
+
+        if (hasRelation(leftStudentId, "dislikesWith", rightStudentId)) {
+          score -= 24;
+        }
+
+        if (hasRelation(rightStudentId, "dislikesWith", leftStudentId)) {
+          score -= 24;
+        }
+      }
+
+      if (shouldMixGender) {
+        const leftGender = normalizeStudentGenderValue(studentsById[leftStudentId]);
+        const rightGender = normalizeStudentGenderValue(studentsById[rightStudentId]);
+
+        if (leftGender && rightGender) {
+          score += leftGender !== rightGender ? 9 : -9;
+        }
+      }
+    });
+
+    if (shouldRespectSocialRelations) {
+      Object.keys(studentsById).forEach(function (studentId) {
+        const likedCount = likedNeighborCounts[studentId] || 0;
+        const countedLikes = normalizedWishLimit > 0 ? Math.min(likedCount, normalizedWishLimit) : 0;
+        const overLimit = Math.max(likedCount - normalizedWishLimit, 0);
+
+        score += countedLikes * 14;
+        score -= overLimit * 18;
+      });
+
+      hardViolations += countHardSocialSeatViolations(students, assignments, neighborPairs);
+    }
+
+    if (shouldSeparateWarnings) {
+      hardViolations += countHardWarningSeatViolations(assignments, neighborPairs, warnedStudentIdsLookup);
+    }
+
+    return score - (hardViolations * 10000);
+  }
+
+  function cloneAssignments(assignments) {
+    return Object.assign({}, assignments);
+  }
+
+  (students || []).forEach(function (student) {
+    if (student && student.id) {
+      studentsById[student.id] = student;
+    }
+  });
+
+  bestAssignments = cloneAssignments(slotAssignments);
+  bestScore = scoreAssignments(bestAssignments);
+
+  for (iteration = 0; iteration < 80; iteration += 1) {
+    const occupiedFreeSlotKeys = Object.keys(bestAssignments).filter(function (slotKey) {
+      const studentId = bestAssignments[slotKey];
+      return studentId && !lockedStudentIdsLookup[studentId];
+    });
+    let bestSwap = null;
+
+    if (occupiedFreeSlotKeys.length < 2) {
+      break;
+    }
+
+    occupiedFreeSlotKeys.forEach(function (leftSlotKey, leftIndex) {
+      occupiedFreeSlotKeys.slice(leftIndex + 1).forEach(function (rightSlotKey) {
+        const nextAssignments = cloneAssignments(bestAssignments);
+        const firstStudentId = nextAssignments[leftSlotKey];
+        let candidateScore;
+
+        nextAssignments[leftSlotKey] = nextAssignments[rightSlotKey];
+        nextAssignments[rightSlotKey] = firstStudentId;
+        candidateScore = scoreAssignments(nextAssignments);
+
+        if (candidateScore > bestScore && (!bestSwap || candidateScore > bestSwap.score)) {
+          bestSwap = {
+            leftSlotKey: leftSlotKey,
+            rightSlotKey: rightSlotKey,
+            score: candidateScore
+          };
+        }
+      });
+    });
+
+    if (!bestSwap) {
+      break;
+    }
+
+    const swappedStudentId = bestAssignments[bestSwap.leftSlotKey];
+    bestAssignments[bestSwap.leftSlotKey] = bestAssignments[bestSwap.rightSlotKey];
+    bestAssignments[bestSwap.rightSlotKey] = swappedStudentId;
+    bestScore = bestSwap.score;
+  }
+
+  return bestAssignments;
+}
+
+function shuffleSeatAssignments(options) {
+  const settings = options || {};
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
   const activeClass = schoolService ? schoolService.getActiveClass() : null;
   const seatPlan = currentRawSnapshot && activeClass
@@ -10874,15 +11567,15 @@ function shuffleSeatAssignments() {
       )
     : null;
   const students = activeClass ? schoolService.getStudentsForClass(activeClass.id).slice() : [];
-  let desks = deskLayoutSeatPlan && Array.isArray(deskLayoutSeatPlan.deskLayoutItems)
-    ? deskLayoutSeatPlan.deskLayoutItems.filter(function (item) {
-        return item && ["single", "double"].indexOf(String(item.type || "")) >= 0;
-      }).slice()
-    : [];
+  let slots = getAutomaticSeatSlots(deskLayoutSeatPlan);
   let index = 0;
+  const slotKeysLookup = slots.reduce(function (lookup, slot) {
+    lookup[slot.key] = true;
+    return lookup;
+  }, {});
   const lockedSeats = seatPlan && Array.isArray(seatPlan.seats)
     ? seatPlan.seats.filter(function (seat) {
-        return seat && seat.isLocked;
+        return seat && seat.isLocked && slotKeysLookup[seat.deskItemId + "::" + seat.slot];
       }).map(function (seat) {
         return {
           id: seat.id || createSeatAssignmentId(),
@@ -10901,7 +11594,14 @@ function shuffleSeatAssignments() {
   const lockedSlotKeys = lockedSeats.map(function (seat) {
     return seat.deskItemId + "::" + seat.slot;
   });
+  const lockedStudentIdsLookup = lockedStudentIds.reduce(function (lookup, studentId) {
+    lookup[studentId] = true;
+    return lookup;
+  }, {});
   let shuffledStudents;
+  let optimizedAssignments;
+  let neighborPairs;
+  let warnedStudentIdsLookup;
 
   function shuffleItems(items) {
     let currentIndex = items.length;
@@ -10919,11 +11619,11 @@ function shuffleSeatAssignments() {
     return items;
   }
 
-  if (!repository || !schoolService || !seatPlan || !students.length || !desks.length) {
+  if (!repository || !schoolService || !seatPlan || !students.length || !slots.length) {
     return false;
   }
 
-  desks = shuffleItems(desks);
+  slots = shuffleItems(slots);
   shuffledStudents = shuffleItems(students.filter(function (student) {
     return lockedStudentIds.indexOf(student.id) === -1;
   }));
@@ -10931,24 +11631,69 @@ function shuffleSeatAssignments() {
 
   index = 0;
 
-  desks.forEach(function (desk) {
-    getDeskSeatSlots(String(desk.type || "")).forEach(function (slot) {
-      if (lockedSlotKeys.indexOf(desk.id + "::" + slot) >= 0) {
-        return;
-      }
+  slots.forEach(function (slot) {
+    if (lockedSlotKeys.indexOf(slot.key) >= 0) {
+      return;
+    }
 
-      if (index < shuffledStudents.length) {
-        seatPlan.seats.push({
-          id: createSeatAssignmentId(),
-          studentId: shuffledStudents[index].id,
-          deskItemId: desk.id,
-          slot: slot,
-          isLocked: false
-        });
-        index += 1;
-      }
-    });
+    if (index < shuffledStudents.length) {
+      seatPlan.seats.push({
+        id: createSeatAssignmentId(),
+        studentId: shuffledStudents[index].id,
+        deskItemId: slot.deskItemId,
+        slot: slot.slot,
+        isLocked: false
+      });
+      index += 1;
+    }
   });
+
+  if (settings.respectSocialRelations || settings.mixGender || settings.separateWarnings) {
+    optimizedAssignments = seatPlan.seats.reduce(function (assignments, seat) {
+      if (seat && seat.studentId) {
+        assignments[seat.deskItemId + "::" + seat.slot] = seat.studentId;
+      }
+      return assignments;
+    }, {});
+    neighborPairs = buildSeatNeighborPairs(deskLayoutSeatPlan, slotKeysLookup);
+    warnedStudentIdsLookup = settings.separateWarnings
+      ? getRecentWarningStudentIdsLookup(
+          currentRawSnapshot,
+          activeClass.id,
+          seatPlan && seatPlan.validFrom ? seatPlan.validFrom : getReferenceDateValue()
+        )
+      : {};
+    optimizedAssignments = optimizeSocialSeatAssignments(
+      students,
+      optimizedAssignments,
+      neighborPairs,
+      lockedStudentIdsLookup,
+      {
+        respectSocialRelations: settings.respectSocialRelations,
+        mixGender: settings.mixGender,
+        separateWarnings: settings.separateWarnings,
+        warnedStudentIdsLookup: warnedStudentIdsLookup,
+        wishLimit: settings.wishLimit
+      }
+    );
+
+    if (settings.respectSocialRelations && countHardSocialSeatViolations(students, optimizedAssignments, neighborPairs) > 0) {
+      window.alert("Die automatische Sitzordnung konnte die harten Sozialgefuege-Regeln mit den aktuellen Fixierungen und Nachbartischen nicht vollstaendig erfuellen.");
+      return false;
+    }
+
+    if (settings.separateWarnings && countHardWarningSeatViolations(optimizedAssignments, neighborPairs, warnedStudentIdsLookup) > 0) {
+      window.alert("Die automatische Sitzordnung konnte Schueler mit Verwarnungen aus den letzten 4 Wochen mit den aktuellen Fixierungen und Nachbartischen nicht vollstaendig trennen.");
+      return false;
+    }
+
+    seatPlan.seats = seatPlan.seats.map(function (seat) {
+      const slotKey = seat.deskItemId + "::" + seat.slot;
+      return Object.assign({}, seat, {
+        studentId: optimizedAssignments[slotKey] || seat.studentId
+      });
+    });
+  }
 
   if (!seatPlan.seats.length) {
     return false;
@@ -14528,24 +15273,14 @@ window.UnterrichtsassistentApp.handleUnterrichtMathObservationPointerEnd = funct
   activeUnterrichtMathObservationPress = null;
 
   if (pressState.menuVisible && pressState.selection && activeClass) {
-    const liveObservationContext = getUnterrichtLiveObservationContextForRecord();
-
-    activeUnterrichtMathObservationDraft = {
-      studentId: pressState.studentId,
-      classId: activeClass.id,
-      lessonId: pressState.lessonId,
-      lessonDate: lessonDate,
-      lessonStartTime: pressState.lessonStartTime,
-      lessonRoom: pressState.lessonRoom,
-      primaryCompetency: pressState.selection.primaryCompetency,
-      competencyIds: pressState.selection.competencyIds,
-      processQuality: pressState.selection.processQuality,
-      situationType: liveObservationContext.situationType,
-      demandLevel: liveObservationContext.demandLevel,
-      lessonPlanId: liveObservationContext.lessonPlanId,
-      lessonPhaseId: liveObservationContext.lessonPhaseId,
-      lessonStepId: liveObservationContext.lessonStepId
-    };
+    activeUnterrichtMathObservationDraft = Object.assign(
+      createUnterrichtMathObservationDraftFromPressState(pressState, activeClass, lessonDate),
+      {
+        primaryCompetency: pressState.selection.primaryCompetency,
+        competencyIds: pressState.selection.competencyIds,
+        processQuality: pressState.selection.processQuality
+      }
+    );
     hideUnterrichtMathObservationProcessOverlay();
     showUnterrichtMathObservationMarkerMenu(pressState.anchorX, pressState.anchorY);
     event.preventDefault();
@@ -14553,6 +15288,11 @@ window.UnterrichtsassistentApp.handleUnterrichtMathObservationPointerEnd = funct
   }
 
   hideUnterrichtMathObservationProcessOverlay();
+  if (!pressState.moved && activeClass) {
+    window.UnterrichtsassistentApp.openUnterrichtMathObservationCompactModal(
+      createUnterrichtMathObservationDraftFromPressState(pressState, activeClass, lessonDate)
+    );
+  }
   event.preventDefault();
   return false;
 };
@@ -14662,24 +15402,14 @@ window.UnterrichtsassistentApp.handleUnterrichtMathObservationTouchEnd = functio
   activeUnterrichtMathObservationPress = null;
 
   if (pressState.menuVisible && pressState.selection && activeClass) {
-    const liveObservationContext = getUnterrichtLiveObservationContextForRecord();
-
-    activeUnterrichtMathObservationDraft = {
-      studentId: pressState.studentId,
-      classId: activeClass.id,
-      lessonId: pressState.lessonId,
-      lessonDate: lessonDate,
-      lessonStartTime: pressState.lessonStartTime,
-      lessonRoom: pressState.lessonRoom,
-      primaryCompetency: pressState.selection.primaryCompetency,
-      competencyIds: pressState.selection.competencyIds,
-      processQuality: pressState.selection.processQuality,
-      situationType: liveObservationContext.situationType,
-      demandLevel: liveObservationContext.demandLevel,
-      lessonPlanId: liveObservationContext.lessonPlanId,
-      lessonPhaseId: liveObservationContext.lessonPhaseId,
-      lessonStepId: liveObservationContext.lessonStepId
-    };
+    activeUnterrichtMathObservationDraft = Object.assign(
+      createUnterrichtMathObservationDraftFromPressState(pressState, activeClass, lessonDate),
+      {
+        primaryCompetency: pressState.selection.primaryCompetency,
+        competencyIds: pressState.selection.competencyIds,
+        processQuality: pressState.selection.processQuality
+      }
+    );
     hideUnterrichtMathObservationProcessOverlay();
     showUnterrichtMathObservationMarkerMenu(pressState.anchorX, pressState.anchorY);
     event.preventDefault();
@@ -14687,6 +15417,11 @@ window.UnterrichtsassistentApp.handleUnterrichtMathObservationTouchEnd = functio
   }
 
   hideUnterrichtMathObservationProcessOverlay();
+  if (!pressState.moved && activeClass) {
+    window.UnterrichtsassistentApp.openUnterrichtMathObservationCompactModal(
+      createUnterrichtMathObservationDraftFromPressState(pressState, activeClass, lessonDate)
+    );
+  }
   event.preventDefault();
   return false;
 };
@@ -20274,6 +21009,204 @@ window.UnterrichtsassistentApp.cancelPlanningRangeSelection = function () {
 
   return false;
 };
+window.UnterrichtsassistentApp.openUnterrichtMathObservationCompactModal = function (draft) {
+  const modal = ensureUnterrichtMathObservationCompactModal();
+  const header = document.getElementById("unterrichtMathObservationCompactStudent");
+  const dateLabel = document.getElementById("unterrichtMathObservationCompactDate");
+  const noteInput = document.getElementById("unterrichtMathObservationCompactNote");
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const student = schoolService && draft
+    ? schoolService.snapshot.students.find(function (entry) {
+        return entry.id === draft.studentId;
+      }) || null
+    : null;
+  const firstButton = modal ? modal.querySelector("[data-compact-quality]") : null;
+
+  if (!modal || !draft) {
+    return false;
+  }
+
+  activeUnterrichtMathObservationCompactDraft = Object.assign({}, draft, { markers: [] });
+  activeUnterrichtMathObservationDraft = null;
+  isUnterrichtMathObservationModalOpen = true;
+  modal.hidden = false;
+  modal.classList.add("is-open");
+
+  if (header) {
+    header.textContent = student
+      ? [String(student.firstName || "").trim(), String(student.lastName || "").trim()].filter(Boolean).join(" ")
+      : "Schueler";
+  }
+  if (dateLabel) {
+    dateLabel.textContent = [activeClass ? ((activeClass.name || "") + " " + (activeClass.subject || "")).trim() : "", formatDateLabel(draft.lessonDate)].filter(Boolean).join(" - ");
+  }
+  Array.from(modal.querySelectorAll("[data-compact-competency-quality]")).forEach(function (input) {
+    input.value = "";
+  });
+  if (noteInput) {
+    noteInput.value = "";
+  }
+  syncUnterrichtMathObservationCompactUi();
+
+  if (firstButton) {
+    window.setTimeout(function () {
+      firstButton.focus();
+    }, 0);
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.closeUnterrichtMathObservationCompactModal = function () {
+  const modal = getUnterrichtMathObservationCompactModal();
+
+  if (modal) {
+    modal.hidden = true;
+    modal.classList.remove("is-open");
+  }
+
+  isUnterrichtMathObservationModalOpen = false;
+  activeUnterrichtMathObservationCompactDraft = null;
+  return false;
+};
+window.UnterrichtsassistentApp.selectUnterrichtMathObservationCompactQuality = function (competency, quality) {
+  const normalizedCompetency = normalizeMathObservationCompetencyValue(competency);
+  const normalizedQuality = String(normalizeMathObservationQualityValue(quality));
+  const input = normalizedCompetency
+    ? document.querySelector('[data-compact-competency-quality="' + normalizedCompetency.replace(/"/g, '\\"') + '"]')
+    : null;
+
+  if (input) {
+    input.value = String(input.value || "") === normalizedQuality ? "" : normalizedQuality;
+  }
+  syncUnterrichtMathObservationCompactUi();
+  return false;
+};
+window.UnterrichtsassistentApp.addUnterrichtMathObservationCompactMarker = function () {
+  if (!activeUnterrichtMathObservationCompactDraft) {
+    return false;
+  }
+
+  if (!Array.isArray(activeUnterrichtMathObservationCompactDraft.markers)) {
+    activeUnterrichtMathObservationCompactDraft.markers = [];
+  }
+  activeUnterrichtMathObservationCompactDraft.markers.push({
+    marker: "beitrag",
+    markerDirection: "",
+    markerQuality: ""
+  });
+  syncUnterrichtMathObservationCompactUi();
+  return false;
+};
+window.UnterrichtsassistentApp.removeUnterrichtMathObservationCompactMarker = function (index) {
+  const markerIndex = Math.max(0, Math.floor(Number(index) || 0));
+
+  if (activeUnterrichtMathObservationCompactDraft && Array.isArray(activeUnterrichtMathObservationCompactDraft.markers)) {
+    activeUnterrichtMathObservationCompactDraft.markers.splice(markerIndex, 1);
+  }
+  syncUnterrichtMathObservationCompactUi();
+  return false;
+};
+window.UnterrichtsassistentApp.updateUnterrichtMathObservationCompactMarker = function (index, field, value) {
+  const markerIndex = Math.max(0, Math.floor(Number(index) || 0));
+  const markerEntry = activeUnterrichtMathObservationCompactDraft && Array.isArray(activeUnterrichtMathObservationCompactDraft.markers)
+    ? activeUnterrichtMathObservationCompactDraft.markers[markerIndex]
+    : null;
+  const normalizedField = String(field || "").trim();
+
+  if (!markerEntry) {
+    return false;
+  }
+
+  if (normalizedField === "marker") {
+    markerEntry.marker = normalizeMathObservationMarkerValue(value) || "beitrag";
+    markerEntry.markerDirection = "";
+    markerEntry.markerQuality = "";
+  } else if (normalizedField === "direction") {
+    markerEntry.markerDirection = normalizeMathObservationMarkerDirectionValue(value);
+  } else if (normalizedField === "quality") {
+    markerEntry.markerQuality = String(normalizeOptionalMathObservationMarkerQualityValue(value));
+  }
+  syncUnterrichtMathObservationCompactUi();
+  return false;
+};
+window.UnterrichtsassistentApp.submitUnterrichtMathObservationCompactModal = function (event) {
+  const currentRawSnapshot = schoolService && serializeSnapshot ? serializeSnapshot(schoolService.snapshot) : null;
+  const draft = activeUnterrichtMathObservationCompactDraft;
+  const noteInput = document.getElementById("unterrichtMathObservationCompactNote");
+  const note = String(noteInput && noteInput.value || "").trim();
+  const competencySelections = Array.from(document.querySelectorAll("[data-compact-competency-quality]")).map(function (input) {
+    return {
+      competency: normalizeMathObservationCompetencyValue(input.getAttribute("data-compact-competency-quality")),
+      quality: String(input.value || "").trim()
+    };
+  }).filter(function (entry) {
+    return entry.competency && entry.quality !== "";
+  });
+  const markers = draft && Array.isArray(draft.markers) ? draft.markers.slice() : [];
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  if (!currentRawSnapshot || !draft) {
+    return window.UnterrichtsassistentApp.closeUnterrichtMathObservationCompactModal();
+  }
+
+  competencySelections.forEach(function (selection) {
+    appendUnterrichtMathObservationRecord(currentRawSnapshot, draft, {
+      primaryCompetency: selection.competency,
+      competencyIds: [selection.competency],
+      processQuality: selection.quality,
+      marker: "",
+      markerDirection: "",
+      markerQuality: "",
+      situationType: draft.situationType,
+      demandLevel: draft.demandLevel,
+      lessonPlanId: draft.lessonPlanId,
+      lessonPhaseId: draft.lessonPhaseId,
+      lessonStepId: draft.lessonStepId,
+      note: note
+    });
+  });
+  markers.forEach(function (markerEntry) {
+    appendUnterrichtMathObservationRecord(currentRawSnapshot, draft, {
+      primaryCompetency: "",
+      competencyIds: [],
+      processQuality: 0,
+      marker: markerEntry.marker,
+      markerDirection: markerEntry.markerDirection,
+      markerQuality: markerEntry.markerQuality,
+      situationType: draft.situationType,
+      demandLevel: draft.demandLevel,
+      lessonPlanId: draft.lessonPlanId,
+      lessonPhaseId: draft.lessonPhaseId,
+      lessonStepId: draft.lessonStepId,
+      note: note
+    });
+  });
+  if (!competencySelections.length && !markers.length && note) {
+    appendUnterrichtMathObservationRecord(currentRawSnapshot, draft, {
+      primaryCompetency: "",
+      competencyIds: [],
+      processQuality: 0,
+      marker: "",
+      markerDirection: "",
+      markerQuality: "",
+      situationType: draft.situationType,
+      demandLevel: draft.demandLevel,
+      lessonPlanId: draft.lessonPlanId,
+      lessonPhaseId: draft.lessonPhaseId,
+      lessonStepId: draft.lessonStepId,
+      note: note
+    });
+  }
+
+  if (competencySelections.length || markers.length || note) {
+    saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
+  }
+
+  return window.UnterrichtsassistentApp.closeUnterrichtMathObservationCompactModal();
+};
 window.UnterrichtsassistentApp.openUnterrichtMathObservationModal = function () {
   const modal = getUnterrichtMathObservationModal();
   const header = document.getElementById("unterrichtMathObservationStudent");
@@ -20485,6 +21418,7 @@ window.UnterrichtsassistentApp.submitUnterrichtMathObservationModal = function (
   const situationInput = document.getElementById("unterrichtMathObservationSituationType");
   const demandLevelInput = document.getElementById("unterrichtMathObservationDemandLevel");
   const noteInput = document.getElementById("unterrichtMathObservationNote");
+  const liveObservationContext = getUnterrichtLiveObservationContextForRecord();
 
   if (event && typeof event.preventDefault === "function") {
     event.preventDefault();
@@ -20965,6 +21899,18 @@ window.UnterrichtsassistentApp.handleUnterrichtHomeworkPointerEnd = function (ev
 window.UnterrichtsassistentApp.getClassViewMode = function () {
   return classViewMode;
 };
+window.UnterrichtsassistentApp.getActiveClassStudentAnalysisStudentId = function () {
+  return activeClassStudentAnalysisStudentId;
+};
+window.UnterrichtsassistentApp.selectClassStudentAnalysisStudent = function (studentId) {
+  activeClassStudentAnalysisStudentId = String(studentId || "").trim();
+
+  if (activeViewId === "klasse") {
+    setActiveView("klasse");
+  }
+
+  return false;
+};
 window.UnterrichtsassistentApp.getActiveClassAnalysisDetailDraft = function () {
   return activeClassAnalysisDetailDraft
     ? {
@@ -21426,7 +22372,10 @@ window.UnterrichtsassistentApp.submitClassAnalysisRecordEditModal = function (ev
 };
 window.UnterrichtsassistentApp.setClassViewMode = function (nextMode) {
   const previousClassViewMode = classViewMode;
-  classViewMode = nextMode === "verwalten" ? "verwalten" : "analyse";
+  const normalizedMode = String(nextMode || "").trim();
+  classViewMode = ["analyse", "schueler", "verwalten"].indexOf(normalizedMode) >= 0
+    ? normalizedMode
+    : "analyse";
   if (previousClassViewMode !== "verwalten" && classViewMode === "verwalten") {
     classBasisdatenExpanded = false;
     classSozialgefuegeExpanded = false;
@@ -21578,6 +22527,37 @@ window.UnterrichtsassistentApp.setTimetableViewMode = function (nextMode) {
 };
 window.UnterrichtsassistentApp.getSeatPlanViewMode = function () {
   return seatPlanViewMode;
+};
+window.UnterrichtsassistentApp.shouldSeatPlanRespectSocialRelations = function () {
+  return Boolean(seatPlanRespectSocialRelations);
+};
+window.UnterrichtsassistentApp.shouldSeatPlanMixGender = function () {
+  return Boolean(seatPlanMixGender);
+};
+window.UnterrichtsassistentApp.shouldSeatPlanSeparateWarnings = function () {
+  return Boolean(seatPlanSeparateWarnings);
+};
+window.UnterrichtsassistentApp.getSeatPlanSocialWishLimit = function () {
+  return normalizeSeatPlanWishLimit(seatPlanSocialWishLimit);
+};
+window.UnterrichtsassistentApp.updateSeatPlanSocialOptimizationSetting = function (fieldName, nextValue) {
+  if (fieldName === "respectSocialRelations") {
+    seatPlanRespectSocialRelations = Boolean(nextValue);
+  }
+
+  if (fieldName === "mixGender") {
+    seatPlanMixGender = Boolean(nextValue);
+  }
+
+  if (fieldName === "separateWarnings") {
+    seatPlanSeparateWarnings = Boolean(nextValue);
+  }
+
+  if (fieldName === "wishLimit") {
+    seatPlanSocialWishLimit = normalizeSeatPlanWishLimit(nextValue);
+  }
+
+  return false;
 };
 window.UnterrichtsassistentApp.getPlanningViewMode = function () {
   return planningViewMode;
@@ -25402,7 +26382,12 @@ window.UnterrichtsassistentApp.resetSeatAssignments = function () {
   return resetSeatAssignments();
 };
 window.UnterrichtsassistentApp.shuffleSeatAssignments = function () {
-  return shuffleSeatAssignments();
+  return shuffleSeatAssignments({
+    respectSocialRelations: seatPlanRespectSocialRelations,
+    mixGender: seatPlanMixGender,
+    separateWarnings: seatPlanSeparateWarnings,
+    wishLimit: seatPlanSocialWishLimit
+  });
 };
 window.UnterrichtsassistentApp.toggleSeatLock = function (deskItemId, slotName) {
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;

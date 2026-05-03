@@ -30,6 +30,18 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
     const seatPlanMirrorMode = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getSeatPlanMirrorMode === "function"
       ? window.UnterrichtsassistentApp.getSeatPlanMirrorMode()
       : "horizontal";
+    const shouldRespectSocialRelations = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.shouldSeatPlanRespectSocialRelations === "function"
+      ? window.UnterrichtsassistentApp.shouldSeatPlanRespectSocialRelations()
+      : false;
+    const shouldMixGender = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.shouldSeatPlanMixGender === "function"
+      ? window.UnterrichtsassistentApp.shouldSeatPlanMixGender()
+      : false;
+    const shouldSeparateWarnings = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.shouldSeatPlanSeparateWarnings === "function"
+      ? window.UnterrichtsassistentApp.shouldSeatPlanSeparateWarnings()
+      : false;
+    const socialWishLimit = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getSeatPlanSocialWishLimit === "function"
+      ? window.UnterrichtsassistentApp.getSeatPlanSocialWishLimit()
+      : 1;
     const availableRooms = activeClass ? service.getRoomsForClass(activeClass.id) : [];
     const selectedRoom = activeClass ? String(service.snapshot.activeSeatPlanRoom || "").trim() : "";
     const liveRoom = activeClass && String(service.snapshot.activeDateTimeMode || "live") === "live" && typeof service.getLiveRoomForClass === "function"
@@ -820,8 +832,24 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
           : '<div class="seat-order-student-list__empty">Alle Schueler sind aktuell zugeordnet.</div>',
         '<div class="seat-order-student-actions">',
         '<button class="seat-order-action" type="button" onclick="return window.UnterrichtsassistentApp.resetSeatAssignments()">Reset</button>',
-        '<button class="seat-order-action" type="button" onclick="return window.UnterrichtsassistentApp.shuffleSeatAssignments()">Zufaellig</button>',
+        '<button class="seat-order-action" type="button" onclick="return window.UnterrichtsassistentApp.shuffleSeatAssignments()">Automatisch</button>',
         '</div>',
+        '<label class="seat-order-social-option">',
+        '<input type="checkbox"', shouldRespectSocialRelations ? ' checked' : '', ' onchange="return window.UnterrichtsassistentApp.updateSeatPlanSocialOptimizationSetting(\'respectSocialRelations\', this.checked)">',
+        '<span>Sozialgef&uuml;ge beachten</span>',
+        '</label>',
+        '<label class="seat-order-social-option">',
+        '<input type="checkbox"', shouldMixGender ? ' checked' : '', ' onchange="return window.UnterrichtsassistentApp.updateSeatPlanSocialOptimizationSetting(\'mixGender\', this.checked)">',
+        '<span>Geschlecht mischen</span>',
+        '</label>',
+        '<label class="seat-order-social-option">',
+        '<input type="checkbox"', shouldSeparateWarnings ? ' checked' : '', ' onchange="return window.UnterrichtsassistentApp.updateSeatPlanSocialOptimizationSetting(\'separateWarnings\', this.checked)">',
+        '<span>Verwarnungen trennen</span>',
+        '</label>',
+        '<label class="seat-order-social-wishes">',
+        '<span>Anzahl W&uuml;nsche</span>',
+        '<input class="student-table__input" type="number" min="0" max="4" step="1" value="', escapeValue(socialWishLimit), '" onchange="return window.UnterrichtsassistentApp.updateSeatPlanSocialOptimizationSetting(\'wishLimit\', this.value)">',
+        '</label>',
         '</aside>',
         '<div class="desk-layout-builder desk-layout-builder--readonly">',
         '<div class="desk-layout-builder__canvas-wrap desk-layout-builder__canvas-wrap--readonly">',
