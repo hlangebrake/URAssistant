@@ -8949,11 +8949,17 @@ button {
   cursor: pointer;
 }
 
+.seat-order-rule {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.4rem;
+  margin-top: 0.65rem;
+}
+
 .seat-order-social-option,
 .seat-order-social-wishes {
   display: grid;
   gap: 0.35rem;
-  margin-top: 0.65rem;
   color: var(--text);
   font-size: 0.82rem;
   font-weight: 700;
@@ -8962,6 +8968,10 @@ button {
 .seat-order-social-option {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
+}
+
+.seat-order-social-wishes {
+  margin-top: 0.65rem;
 }
 
 .seat-order-social-option input {
@@ -8973,6 +8983,21 @@ button {
 .seat-order-social-wishes input {
   width: 100%;
   min-width: 0;
+}
+
+.seat-order-rule-priority {
+  display: grid;
+  gap: 0.3rem;
+  color: var(--text-soft);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.seat-order-rule-priority select {
+  width: 100%;
+  min-width: 0;
+  padding-block: 0.35rem;
+  font-size: 0.8rem;
 }
 
 .desk-layout-builder {
@@ -9347,6 +9372,31 @@ button {
 .seat-order-desk__label.is-locked {
   background: rgba(199, 104, 55, 0.16);
   color: #8f3d18;
+}
+
+.seat-order-desk__label.is-wish-fulfilled {
+  background: rgba(86, 142, 94, 0.18);
+  color: #285f35;
+  box-shadow: 0 6px 16px rgba(61, 112, 70, 0.14);
+}
+
+.seat-order-desk__label.is-wish-unfulfilled {
+  background: rgba(164, 81, 72, 0.15);
+  color: #7a332e;
+  box-shadow: 0 6px 16px rgba(164, 81, 72, 0.13);
+}
+
+.seat-order-desk__label.has-recent-warning {
+  gap: 0.28rem;
+}
+
+.seat-order-desk__warning {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #b98508;
+  font-size: 0.82em;
+  line-height: 1;
 }
 
 .seat-order-desk__placeholder {

@@ -160,6 +160,12 @@ let seatPlanMixGender = false;
 let seatPlanSeparateWarnings = false;
 let seatPlanRespectPreviousPlan = false;
 let seatPlanSocialWishLimit = 1;
+let seatPlanOptimizationPriorities = {
+  respectSocialRelations: "normal",
+  mixGender: "normal",
+  separateWarnings: "normal",
+  respectPreviousPlan: "normal"
+};
 const timetableWeekdayKeys = ["1", "2", "3", "4", "5"];
 let liveDateTimeIntervalId = null;
 let isClassImportModalOpen = false;
@@ -11031,6 +11037,41 @@ function normalizeSeatPlanWishLimit(value) {
   return clampValue(Math.round(Number(value) || 1), 0, 4);
 }
 
+function normalizeSeatPlanOptimizationPriority(value) {
+  const normalizedValue = String(value || "").trim().toLowerCase();
+
+  return ["niedrig", "normal", "hoch", "sehr_hoch"].indexOf(normalizedValue) >= 0
+    ? normalizedValue
+    : "normal";
+}
+
+function getSeatPlanOptimizationPriorityWeight(value) {
+  const normalizedPriority = normalizeSeatPlanOptimizationPriority(value);
+
+  if (normalizedPriority === "niedrig") {
+    return 0.55;
+  }
+
+  if (normalizedPriority === "hoch") {
+    return 1.75;
+  }
+
+  if (normalizedPriority === "sehr_hoch") {
+    return 3;
+  }
+
+  return 1;
+}
+
+function getSeatPlanOptimizationPrioritiesSnapshot() {
+  return {
+    respectSocialRelations: normalizeSeatPlanOptimizationPriority(seatPlanOptimizationPriorities.respectSocialRelations),
+    mixGender: normalizeSeatPlanOptimizationPriority(seatPlanOptimizationPriorities.mixGender),
+    separateWarnings: normalizeSeatPlanOptimizationPriority(seatPlanOptimizationPriorities.separateWarnings),
+    respectPreviousPlan: normalizeSeatPlanOptimizationPriority(seatPlanOptimizationPriorities.respectPreviousPlan)
+  };
+}
+
 function getSocialRelationIds(student, relationKey) {
   const relations = student && student.socialRelations && typeof student.socialRelations === "object"
     ? student.socialRelations
@@ -11535,6 +11576,69 @@ function buildPreviousSeatPlanZoneLookup(rawSnapshot, previousSeatOrder, classId
   return lookup;
 }
 
+function buildPreviousUnfulfilledWishStudentLookup(rawSnapshot, previousSeatOrder, classId, roomValue) {
+  const lookup = {};
+  const fulfilledLookup = {};
+  const studentsById = {};
+  const previousDeskLayoutSeatPlan = previousSeatOrder
+    ? getSeatPlanFromSnapshotForDateValue(
+        rawSnapshot,
+        classId,
+        roomValue,
+        previousSeatOrder.validFrom || getReferenceDateValue()
+      )
+    : null;
+  const availableSlotKeysLookup = getAutomaticSeatSlots(previousDeskLayoutSeatPlan).reduce(function (slotLookup, slot) {
+    slotLookup[slot.key] = true;
+    return slotLookup;
+  }, {});
+  const previousAssignments = {};
+  const previousNeighborPairs = buildSeatNeighborPairs(previousDeskLayoutSeatPlan, availableSlotKeysLookup);
+
+  (Array.isArray(rawSnapshot && rawSnapshot.students) ? rawSnapshot.students : []).forEach(function (student) {
+    if (student && student.id) {
+      studentsById[student.id] = student;
+    }
+  });
+
+  (previousSeatOrder && Array.isArray(previousSeatOrder.seats) ? previousSeatOrder.seats : []).forEach(function (seat) {
+    const studentId = String(seat && seat.studentId || "").trim();
+    const slotKey = seat ? (seat.deskItemId + "::" + seat.slot) : "";
+    const student = studentsById[studentId];
+
+    if (studentId && slotKey) {
+      previousAssignments[slotKey] = studentId;
+    }
+
+    if (studentId && getSocialRelationIds(student, "likesWith").length > 0) {
+      lookup[studentId] = true;
+    }
+  });
+
+  previousNeighborPairs.forEach(function (pair) {
+    const leftStudentId = previousAssignments[pair[0]] || "";
+    const rightStudentId = previousAssignments[pair[1]] || "";
+
+    if (!leftStudentId || !rightStudentId) {
+      return;
+    }
+
+    if (getSocialRelationIds(studentsById[leftStudentId], "likesWith").indexOf(rightStudentId) >= 0) {
+      fulfilledLookup[leftStudentId] = true;
+    }
+
+    if (getSocialRelationIds(studentsById[rightStudentId], "likesWith").indexOf(leftStudentId) >= 0) {
+      fulfilledLookup[rightStudentId] = true;
+    }
+  });
+
+  Object.keys(fulfilledLookup).forEach(function (studentId) {
+    delete lookup[studentId];
+  });
+
+  return lookup;
+}
+
 function optimizeSocialSeatAssignments(students, slotAssignments, neighborPairs, lockedStudentIdsLookup, options) {
   const settings = options || {};
   const studentsById = {};
@@ -11543,6 +11647,11 @@ function optimizeSocialSeatAssignments(students, slotAssignments, neighborPairs,
   const shouldMixGender = Boolean(settings.mixGender);
   const shouldSeparateWarnings = Boolean(settings.separateWarnings);
   const shouldRespectPreviousPlan = Boolean(settings.respectPreviousPlan);
+  const prioritySettings = settings.priorities && typeof settings.priorities === "object" ? settings.priorities : {};
+  const socialPriorityWeight = getSeatPlanOptimizationPriorityWeight(prioritySettings.respectSocialRelations);
+  const genderPriorityWeight = getSeatPlanOptimizationPriorityWeight(prioritySettings.mixGender);
+  const warningPriorityWeight = getSeatPlanOptimizationPriorityWeight(prioritySettings.separateWarnings);
+  const previousPlanPriorityWeight = getSeatPlanOptimizationPriorityWeight(prioritySettings.respectPreviousPlan);
   const warnedStudentIdsLookup = settings.warnedStudentIdsLookup && typeof settings.warnedStudentIdsLookup === "object"
     ? settings.warnedStudentIdsLookup
     : {};
@@ -11551,6 +11660,9 @@ function optimizeSocialSeatAssignments(students, slotAssignments, neighborPairs,
     : {};
   const currentSeatZonesBySlotKey = settings.currentSeatZonesBySlotKey && typeof settings.currentSeatZonesBySlotKey === "object"
     ? settings.currentSeatZonesBySlotKey
+    : {};
+  const previousUnfulfilledWishStudentIdsLookup = settings.previousUnfulfilledWishStudentIdsLookup && typeof settings.previousUnfulfilledWishStudentIdsLookup === "object"
+    ? settings.previousUnfulfilledWishStudentIdsLookup
     : {};
   let bestAssignments;
   let bestScore;
@@ -11584,11 +11696,11 @@ function optimizeSocialSeatAssignments(students, slotAssignments, neighborPairs,
         }
 
         if (hasRelation(leftStudentId, "dislikesWith", rightStudentId)) {
-          score -= 24;
+          score -= 24 * socialPriorityWeight;
         }
 
         if (hasRelation(rightStudentId, "dislikesWith", leftStudentId)) {
-          score -= 24;
+          score -= 24 * socialPriorityWeight;
         }
       }
 
@@ -11597,7 +11709,7 @@ function optimizeSocialSeatAssignments(students, slotAssignments, neighborPairs,
         const rightGender = normalizeStudentGenderValue(studentsById[rightStudentId]);
 
         if (leftGender && rightGender) {
-          score += leftGender !== rightGender ? 9 : -9;
+          score += (leftGender !== rightGender ? 9 : -9) * genderPriorityWeight;
         }
       }
     });
@@ -11608,15 +11720,21 @@ function optimizeSocialSeatAssignments(students, slotAssignments, neighborPairs,
         const countedLikes = normalizedWishLimit > 0 ? Math.min(likedCount, normalizedWishLimit) : 0;
         const overLimit = Math.max(likedCount - normalizedWishLimit, 0);
 
-        score += countedLikes * 14;
-        score -= overLimit * 18;
+        score += countedLikes * 14 * socialPriorityWeight;
+        score -= overLimit * 18 * socialPriorityWeight;
+
+        if (shouldRespectPreviousPlan && previousUnfulfilledWishStudentIdsLookup[studentId]) {
+          score += countedLikes > 0
+            ? 36 * socialPriorityWeight * previousPlanPriorityWeight
+            : -20 * socialPriorityWeight * previousPlanPriorityWeight;
+        }
       });
 
-      hardViolations += countHardSocialSeatViolations(students, assignments, neighborPairs);
+      hardViolations += countHardSocialSeatViolations(students, assignments, neighborPairs) * socialPriorityWeight;
     }
 
     if (shouldSeparateWarnings) {
-      hardViolations += countHardWarningSeatViolations(assignments, neighborPairs, warnedStudentIdsLookup);
+      hardViolations += countHardWarningSeatViolations(assignments, neighborPairs, warnedStudentIdsLookup) * warningPriorityWeight;
     }
 
     if (shouldRespectPreviousPlan) {
@@ -11634,19 +11752,19 @@ function optimizeSocialSeatAssignments(students, slotAssignments, neighborPairs,
           + Math.abs(Number(currentZone.row) - Number(previousZone.row));
 
         if (distance >= 2) {
-          score += 16 + (distance * 4);
+          score += (16 + (distance * 4)) * previousPlanPriorityWeight;
         } else if (distance === 1) {
-          score += 3;
+          score += 3 * previousPlanPriorityWeight;
         } else {
-          score -= 22;
+          score -= 22 * previousPlanPriorityWeight;
         }
 
         if (Number(currentZone.column) === Number(previousZone.column)) {
-          score -= 6;
+          score -= 6 * previousPlanPriorityWeight;
         }
 
         if (Number(currentZone.row) === Number(previousZone.row)) {
-          score -= 6;
+          score -= 6 * previousPlanPriorityWeight;
         }
       });
     }
@@ -11764,6 +11882,7 @@ function shuffleSeatAssignments(options) {
   let warnedStudentIdsLookup;
   let previousSeatOrder;
   let previousSeatZonesByStudentId;
+  let previousUnfulfilledWishStudentIdsLookup;
   let currentSeatZonesBySlotKey;
 
   function shuffleItems(items) {
@@ -11842,6 +11961,14 @@ function shuffleSeatAssignments(options) {
           getActiveSeatPlanRoomFromSnapshot(currentRawSnapshot, activeClass)
         )
       : {};
+    previousUnfulfilledWishStudentIdsLookup = previousSeatOrder && settings.respectSocialRelations
+      ? buildPreviousUnfulfilledWishStudentLookup(
+          currentRawSnapshot,
+          previousSeatOrder,
+          activeClass.id,
+          getActiveSeatPlanRoomFromSnapshot(currentRawSnapshot, activeClass)
+        )
+      : {};
     currentSeatZonesBySlotKey = settings.respectPreviousPlan
       ? buildSeatSlotZoneLookup(deskLayoutSeatPlan)
       : {};
@@ -11857,7 +11984,9 @@ function shuffleSeatAssignments(options) {
         warnedStudentIdsLookup: warnedStudentIdsLookup,
         respectPreviousPlan: settings.respectPreviousPlan,
         previousSeatZonesByStudentId: previousSeatZonesByStudentId,
+        previousUnfulfilledWishStudentIdsLookup: previousUnfulfilledWishStudentIdsLookup,
         currentSeatZonesBySlotKey: currentSeatZonesBySlotKey,
+        priorities: settings.priorities,
         wishLimit: settings.wishLimit
       }
     );
@@ -22728,6 +22857,9 @@ window.UnterrichtsassistentApp.shouldSeatPlanRespectPreviousPlan = function () {
 window.UnterrichtsassistentApp.getSeatPlanSocialWishLimit = function () {
   return normalizeSeatPlanWishLimit(seatPlanSocialWishLimit);
 };
+window.UnterrichtsassistentApp.getSeatPlanOptimizationPriorities = function () {
+  return getSeatPlanOptimizationPrioritiesSnapshot();
+};
 window.UnterrichtsassistentApp.updateSeatPlanSocialOptimizationSetting = function (fieldName, nextValue) {
   if (fieldName === "respectSocialRelations") {
     seatPlanRespectSocialRelations = Boolean(nextValue);
@@ -22747,6 +22879,22 @@ window.UnterrichtsassistentApp.updateSeatPlanSocialOptimizationSetting = functio
 
   if (fieldName === "wishLimit") {
     seatPlanSocialWishLimit = normalizeSeatPlanWishLimit(nextValue);
+  }
+
+  if (fieldName === "priorityRespectSocialRelations") {
+    seatPlanOptimizationPriorities.respectSocialRelations = normalizeSeatPlanOptimizationPriority(nextValue);
+  }
+
+  if (fieldName === "priorityMixGender") {
+    seatPlanOptimizationPriorities.mixGender = normalizeSeatPlanOptimizationPriority(nextValue);
+  }
+
+  if (fieldName === "prioritySeparateWarnings") {
+    seatPlanOptimizationPriorities.separateWarnings = normalizeSeatPlanOptimizationPriority(nextValue);
+  }
+
+  if (fieldName === "priorityRespectPreviousPlan") {
+    seatPlanOptimizationPriorities.respectPreviousPlan = normalizeSeatPlanOptimizationPriority(nextValue);
   }
 
   return false;
@@ -26579,6 +26727,7 @@ window.UnterrichtsassistentApp.shuffleSeatAssignments = function () {
     mixGender: seatPlanMixGender,
     separateWarnings: seatPlanSeparateWarnings,
     respectPreviousPlan: seatPlanRespectPreviousPlan,
+    priorities: getSeatPlanOptimizationPrioritiesSnapshot(),
     wishLimit: seatPlanSocialWishLimit
   });
 };
