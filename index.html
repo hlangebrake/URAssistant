@@ -121,6 +121,7 @@
         </div>
       </header>
       <div class="content__secondary-actions" id="viewSecondaryActions" hidden></div>
+      <input id="evidenceToolCsvImportInput" type="file" accept=".csv,text/csv,text/plain" hidden onchange="return window.UnterrichtsassistentApp.importEvidenceToolFromCsvFile(event)">
 
       <section class="view is-active" id="unterricht" data-view></section>
       <section class="view" id="klasse" data-view hidden></section>

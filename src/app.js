@@ -18,6 +18,7 @@ const liveDateTimeButton = document.getElementById("liveDateTimeButton");
 const collapsedLiveDateTimeButton = document.getElementById("collapsedLiveDateTimeButton");
 const persistenceButton = document.getElementById("persistenceButton");
 const appDataImportInput = document.getElementById("appDataImportInput");
+const evidenceToolCsvImportInput = document.getElementById("evidenceToolCsvImportInput");
 const appDataImportPasswordModal = document.getElementById("appDataImportPasswordModal");
 const appDataImportPasswordMeta = document.getElementById("appDataImportPasswordMeta");
 const appDataImportPasswordInput = document.getElementById("appDataImportPasswordInput");
@@ -86,7 +87,7 @@ let bewertungTaskSheetSectionExpanded = true;
 let bewertungAnalysisSectionExpanded = true;
 let bewertungPlannedEvaluationsExpanded = false;
 let bewertungPlannedEvaluationDetailsExpanded = false;
-let evidenceToolExpandedNodeIds = ["root", "faecher", "jahrgaenge", "aspekte", "hauptebene"];
+let evidenceToolExpandedNodeIds = ["root", "faecher", "jahrgaenge", "aspekte", "haupt-main"];
 let activeEvidenceToolDrag = null;
 let activeEvidenceLevelDesignDraft = null;
 let activePerformedPlannedEvaluationId = "";
@@ -5500,6 +5501,10 @@ function buildManageActionButtonsHtml(deleteAction, deleteLabel, createAction, c
     + '<button class="circle-action" type="button" aria-label="' + escapeHtml(createLabel) + '" onclick="return ' + createAction + '">+</button>';
 }
 
+function buildSecondaryTextActionButtonHtml(action, label) {
+  return '<button class="secondary-text-action" type="button" onclick="return ' + action + '">' + escapeHtml(label) + '</button>';
+}
+
 function getSeatPlansForActiveRoom() {
   const activeClass = getActiveSeatPlanClass();
   const activeRoom = getActiveSeatPlanRoom(activeClass);
@@ -5990,6 +5995,14 @@ function updateSecondaryActions(viewId) {
       );
   } else if (viewId === "bewertung" && bewertungViewMode === "evidenz") {
     html = buildEvidenceToolDropdownHtml()
+      + buildSecondaryTextActionButtonHtml(
+        "window.UnterrichtsassistentApp.openEvidenceToolCsvImport()",
+        "Import"
+      )
+      + buildSecondaryTextActionButtonHtml(
+        "window.UnterrichtsassistentApp.exportActiveEvidenceToolCsv()",
+        "Export"
+      )
       + buildManageActionButtonsHtml(
         "window.UnterrichtsassistentApp.deleteActiveEvidenceTool()",
         "Aktuelles Bewertungswerkzeug loeschen",
@@ -13002,6 +13015,452 @@ function createEvidenceToolRecord() {
       }
     }
   };
+}
+
+const EVIDENCE_TOOL_CSV_HEADERS = [
+  "typ",
+  "titel",
+  "symbol",
+  "wert",
+  "aspekt_id",
+  "dimension_id",
+  "stufe_id",
+  "owner_aspekt_id",
+  "ebene_typ",
+  "reihenfolge",
+  "bezeichnung",
+  "information",
+  "beispiel",
+  "x",
+  "y",
+  "breite",
+  "hoehe",
+  "bounds_x",
+  "bounds_y",
+  "bounds_breite",
+  "bounds_hoehe"
+];
+
+function normalizeEvidenceCsvType(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, "_").replace(/-/g, "_");
+}
+
+function getEvidenceCsvCell(row, name) {
+  return String(row && row[String(name || "").toLowerCase()] || "").trim();
+}
+
+function parseEvidenceCsvNumber(value, fallback) {
+  const normalizedValue = String(value || "").trim().replace(",", ".");
+  const parsedValue = Number(normalizedValue);
+
+  return Number.isFinite(parsedValue) ? parsedValue : fallback;
+}
+
+function parseEvidenceCsvOrder(value, fallback) {
+  return Math.max(0, Math.round(parseEvidenceCsvNumber(value, fallback)));
+}
+
+function createEvidenceCsvId(prefix, fallback) {
+  return String(fallback || "").trim() || prefix + "-" + Date.now() + "-" + Math.floor(Math.random() * 1000000);
+}
+
+function getEvidenceCsvDelimiter(firstLine) {
+  const candidates = [";", "\t", ","];
+  let bestDelimiter = ";";
+  let bestCount = -1;
+
+  candidates.forEach(function (delimiter) {
+    const count = String(firstLine || "").split(delimiter).length;
+
+    if (count > bestCount) {
+      bestCount = count;
+      bestDelimiter = delimiter;
+    }
+  });
+
+  return bestDelimiter;
+}
+
+function parseEvidenceCsvText(text) {
+  const normalizedText = String(text || "").replace(/^\uFEFF/, "");
+  const firstLine = normalizedText.split(/\r?\n/).find(function (line) {
+    return String(line || "").trim();
+  }) || "";
+  const delimiter = getEvidenceCsvDelimiter(firstLine);
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let inQuotes = false;
+  let index;
+
+  function pushCell() {
+    row.push(cell);
+    cell = "";
+  }
+
+  function pushRow() {
+    if (row.some(function (value) { return String(value || "").trim(); })) {
+      rows.push(row.slice());
+    }
+    row = [];
+  }
+
+  for (index = 0; index < normalizedText.length; index += 1) {
+    const character = normalizedText.charAt(index);
+    const nextCharacter = normalizedText.charAt(index + 1);
+
+    if (character === '"') {
+      if (inQuotes && nextCharacter === '"') {
+        cell += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (character === delimiter && !inQuotes) {
+      pushCell();
+    } else if ((character === "\n" || character === "\r") && !inQuotes) {
+      pushCell();
+      pushRow();
+      if (character === "\r" && nextCharacter === "\n") {
+        index += 1;
+      }
+    } else {
+      cell += character;
+    }
+  }
+
+  pushCell();
+  pushRow();
+
+  if (!rows.length) {
+    return [];
+  }
+
+  const headers = rows[0].map(function (header) {
+    return String(header || "").trim().toLowerCase();
+  });
+
+  return rows.slice(1).map(function (cells) {
+    const result = {};
+
+    headers.forEach(function (header, headerIndex) {
+      if (header) {
+        result[header] = String(cells[headerIndex] || "").trim();
+      }
+    });
+
+    return result;
+  }).filter(function (item) {
+    return Boolean(getEvidenceCsvCell(item, "typ"));
+  });
+}
+
+function evidenceCsvEscape(value) {
+  const text = String(value === undefined || value === null ? "" : value);
+
+  return /[;"\r\n]/.test(text)
+    ? '"' + text.replace(/"/g, '""') + '"'
+    : text;
+}
+
+function buildEvidenceCsvLine(values) {
+  return EVIDENCE_TOOL_CSV_HEADERS.map(function (header) {
+    return evidenceCsvEscape(values && Object.prototype.hasOwnProperty.call(values, header) ? values[header] : "");
+  }).join(";");
+}
+
+function normalizeImportedEvidenceLevel(level) {
+  const sourceLevel = ensureEvidenceLevel(level);
+
+  sourceLevel.layout.boundingBox = sourceLevel.layout.boundingBox && typeof sourceLevel.layout.boundingBox === "object"
+    ? {
+        x: Math.round(Number(sourceLevel.layout.boundingBox.x) || 0),
+        y: Math.round(Number(sourceLevel.layout.boundingBox.y) || 0),
+        width: Math.max(0, Math.round(Number(sourceLevel.layout.boundingBox.width) || 0)),
+        height: Math.max(0, Math.round(Number(sourceLevel.layout.boundingBox.height) || 0))
+      }
+    : { x: 0, y: 0, width: 0, height: 0 };
+
+  return sourceLevel;
+}
+
+function buildEvidenceToolFromCsvRows(rows) {
+  const typedRows = (Array.isArray(rows) ? rows : []).map(function (row, index) {
+    return {
+      row: row,
+      type: normalizeEvidenceCsvType(getEvidenceCsvCell(row, "typ")),
+      order: parseEvidenceCsvOrder(getEvidenceCsvCell(row, "reihenfolge"), index + 1),
+      index: index
+    };
+  });
+  const toolRow = typedRows.find(function (entry) { return entry.type === "werkzeug"; });
+  const aspectRows = typedRows.filter(function (entry) { return entry.type === "aspekt"; }).sort(function (left, right) {
+    return left.order - right.order || left.index - right.index;
+  });
+  const aspectIdMap = {};
+  const dimensionIdMap = {};
+  const stageIdMap = {};
+  const nextTool = {
+    id: createEvidenceToolId(),
+    titel: getEvidenceCsvCell(toolRow && toolRow.row, "titel") || "Importiertes Bewertungswerkzeug",
+    symbol: getEvidenceCsvCell(toolRow && toolRow.row, "symbol") || "+",
+    faecher: [],
+    jahrgaenge: [],
+    aspekte: [],
+    hauptebene: createEvidenceLevelRecord()
+  };
+
+  typedRows.filter(function (entry) { return entry.type === "fach"; }).sort(function (left, right) {
+    return left.order - right.order || left.index - right.index;
+  }).forEach(function (entry) {
+    const value = getEvidenceCsvCell(entry.row, "wert");
+
+    if (value) {
+      nextTool.faecher.push(value);
+    }
+  });
+
+  typedRows.filter(function (entry) { return entry.type === "jahrgang"; }).sort(function (left, right) {
+    return left.order - right.order || left.index - right.index;
+  }).forEach(function (entry) {
+    const year = Math.max(5, Math.min(13, Math.round(parseEvidenceCsvNumber(getEvidenceCsvCell(entry.row, "wert"), 5))));
+
+    if (nextTool.jahrgaenge.indexOf(year) === -1) {
+      nextTool.jahrgaenge.push(year);
+    }
+  });
+
+  aspectRows.forEach(function (entry) {
+    const sourceId = createEvidenceCsvId("aspekt", getEvidenceCsvCell(entry.row, "aspekt_id") || String(entry.order));
+    const nextAspect = {
+      id: createEvidenceAspectId(),
+      titel: getEvidenceCsvCell(entry.row, "titel") || "Neuer Aspekt",
+      folgeEbene: createEvidenceLevelRecord(),
+      information: getEvidenceCsvCell(entry.row, "information"),
+      beispiel: getEvidenceCsvCell(entry.row, "beispiel"),
+      aspektDimensionen: []
+    };
+
+    aspectIdMap[sourceId] = nextAspect.id;
+    nextTool.aspekte.push(nextAspect);
+  });
+
+  typedRows.filter(function (entry) { return entry.type === "dimension"; }).sort(function (left, right) {
+    const leftAspect = getEvidenceCsvCell(left.row, "aspekt_id");
+    const rightAspect = getEvidenceCsvCell(right.row, "aspekt_id");
+
+    return leftAspect.localeCompare(rightAspect, "de-DE") || left.order - right.order || left.index - right.index;
+  }).forEach(function (entry) {
+    const sourceAspectId = getEvidenceCsvCell(entry.row, "aspekt_id");
+    const targetAspect = getEvidenceAspectById(nextTool, aspectIdMap[sourceAspectId]);
+    const sourceDimensionId = createEvidenceCsvId("dimension", getEvidenceCsvCell(entry.row, "dimension_id") || sourceAspectId + "-" + String(entry.order));
+    const nextDimension = {
+      id: createEvidenceDimensionId(),
+      bezeichnung: getEvidenceCsvCell(entry.row, "bezeichnung") || "Neue Dimension",
+      stufen: []
+    };
+
+    if (!targetAspect) {
+      return;
+    }
+
+    dimensionIdMap[sourceDimensionId] = nextDimension.id;
+    targetAspect.aspektDimensionen.push(nextDimension);
+  });
+
+  typedRows.filter(function (entry) { return entry.type === "stufe"; }).sort(function (left, right) {
+    const leftKey = getEvidenceCsvCell(left.row, "aspekt_id") + "::" + getEvidenceCsvCell(left.row, "dimension_id");
+    const rightKey = getEvidenceCsvCell(right.row, "aspekt_id") + "::" + getEvidenceCsvCell(right.row, "dimension_id");
+
+    return leftKey.localeCompare(rightKey, "de-DE") || left.order - right.order || left.index - right.index;
+  }).forEach(function (entry) {
+    const sourceAspectId = getEvidenceCsvCell(entry.row, "aspekt_id");
+    const sourceDimensionId = getEvidenceCsvCell(entry.row, "dimension_id");
+    const targetDimension = getEvidenceDimensionById(nextTool, aspectIdMap[sourceAspectId], dimensionIdMap[sourceDimensionId]);
+    const sourceStageId = createEvidenceCsvId("stufe", getEvidenceCsvCell(entry.row, "stufe_id") || sourceDimensionId + "-" + String(entry.order));
+    const nextStage = {
+      id: createEvidenceStageId(),
+      bezeichnung: getEvidenceCsvCell(entry.row, "bezeichnung") || "Neue Stufe",
+      beispiel: getEvidenceCsvCell(entry.row, "beispiel"),
+      information: getEvidenceCsvCell(entry.row, "information")
+    };
+
+    if (!targetDimension) {
+      return;
+    }
+
+    stageIdMap[sourceStageId] = nextStage.id;
+    targetDimension.stufen.push(nextStage);
+  });
+
+  typedRows.filter(function (entry) { return entry.type === "ebene_aspekt"; }).sort(function (left, right) {
+    const leftKey = getEvidenceCsvCell(left.row, "ebene_typ") + "::" + getEvidenceCsvCell(left.row, "owner_aspekt_id");
+    const rightKey = getEvidenceCsvCell(right.row, "ebene_typ") + "::" + getEvidenceCsvCell(right.row, "owner_aspekt_id");
+
+    return leftKey.localeCompare(rightKey, "de-DE") || left.order - right.order || left.index - right.index;
+  }).forEach(function (entry) {
+    const sourceOwnerAspectId = getEvidenceCsvCell(entry.row, "owner_aspekt_id");
+    const sourceAspectId = getEvidenceCsvCell(entry.row, "aspekt_id");
+    const levelType = normalizeEvidenceCsvType(getEvidenceCsvCell(entry.row, "ebene_typ")) === "folge" ? "folge" : "haupt";
+    const ownerAspectId = levelType === "folge" ? aspectIdMap[sourceOwnerAspectId] : "";
+    const targetAspectId = aspectIdMap[sourceAspectId];
+    const level = getEvidenceToolLevel(nextTool, levelType, ownerAspectId);
+
+    if (!targetAspectId || (levelType === "folge" && !ownerAspectId)) {
+      return;
+    }
+
+    if (level.ebenenAspekte.indexOf(targetAspectId) === -1) {
+      level.ebenenAspekte.push(targetAspectId);
+    }
+
+    level.layout.aspectPositions[targetAspectId] = {
+      x: Math.round(parseEvidenceCsvNumber(getEvidenceCsvCell(entry.row, "x"), 0)),
+      y: Math.round(parseEvidenceCsvNumber(getEvidenceCsvCell(entry.row, "y"), 0))
+    };
+    level.layout.aspectSizes[targetAspectId] = {
+      width: Math.max(24, Math.round(parseEvidenceCsvNumber(getEvidenceCsvCell(entry.row, "breite"), 150))),
+      height: Math.max(18, Math.round(parseEvidenceCsvNumber(getEvidenceCsvCell(entry.row, "hoehe"), 22)))
+    };
+    level.layout.boundingBox = {
+      x: Math.round(parseEvidenceCsvNumber(getEvidenceCsvCell(entry.row, "bounds_x"), level.layout.boundingBox.x)),
+      y: Math.round(parseEvidenceCsvNumber(getEvidenceCsvCell(entry.row, "bounds_y"), level.layout.boundingBox.y)),
+      width: Math.max(0, Math.round(parseEvidenceCsvNumber(getEvidenceCsvCell(entry.row, "bounds_breite"), level.layout.boundingBox.width))),
+      height: Math.max(0, Math.round(parseEvidenceCsvNumber(getEvidenceCsvCell(entry.row, "bounds_hoehe"), level.layout.boundingBox.height)))
+    };
+  });
+
+  typedRows.filter(function (entry) { return entry.type === "ebene_stufe"; }).forEach(function (entry) {
+    const sourceOwnerAspectId = getEvidenceCsvCell(entry.row, "owner_aspekt_id");
+    const sourceStageId = getEvidenceCsvCell(entry.row, "stufe_id");
+    const levelType = normalizeEvidenceCsvType(getEvidenceCsvCell(entry.row, "ebene_typ")) === "folge" ? "folge" : "haupt";
+    const ownerAspectId = levelType === "folge" ? aspectIdMap[sourceOwnerAspectId] : "";
+    const targetStageId = stageIdMap[sourceStageId];
+    const level = getEvidenceToolLevel(nextTool, levelType, ownerAspectId);
+
+    if (!targetStageId || (levelType === "folge" && !ownerAspectId)) {
+      return;
+    }
+
+    level.layout.stageSizes[targetStageId] = {
+      width: Math.max(24, Math.round(parseEvidenceCsvNumber(getEvidenceCsvCell(entry.row, "breite"), 118))),
+      height: Math.max(18, Math.round(parseEvidenceCsvNumber(getEvidenceCsvCell(entry.row, "hoehe"), 20)))
+    };
+  });
+
+  if (!nextTool.aspekte.length) {
+    nextTool.aspekte.push(createEvidenceAspectRecord());
+  }
+
+  if (!nextTool.hauptebene.ebenenAspekte.length) {
+    nextTool.hauptebene.ebenenAspekte = nextTool.aspekte[0] ? [nextTool.aspekte[0].id] : [];
+  }
+
+  nextTool.hauptebene = normalizeImportedEvidenceLevel(nextTool.hauptebene);
+  nextTool.aspekte.forEach(function (aspect) {
+    aspect.folgeEbene = normalizeImportedEvidenceLevel(aspect.folgeEbene);
+  });
+
+  return nextTool;
+}
+
+function buildEvidenceToolCsv(tool) {
+  const rows = [];
+
+  rows.push(EVIDENCE_TOOL_CSV_HEADERS.join(";"));
+  rows.push(buildEvidenceCsvLine({
+    typ: "werkzeug",
+    titel: tool && tool.titel,
+    symbol: tool && tool.symbol
+  }));
+
+  (Array.isArray(tool && tool.faecher) ? tool.faecher : []).forEach(function (value, index) {
+    rows.push(buildEvidenceCsvLine({ typ: "fach", wert: value, reihenfolge: index + 1 }));
+  });
+  (Array.isArray(tool && tool.jahrgaenge) ? tool.jahrgaenge : []).forEach(function (value, index) {
+    rows.push(buildEvidenceCsvLine({ typ: "jahrgang", wert: value, reihenfolge: index + 1 }));
+  });
+  (Array.isArray(tool && tool.aspekte) ? tool.aspekte : []).forEach(function (aspect, aspectIndex) {
+    const aspectId = String(aspect && aspect.id || "").trim();
+
+    rows.push(buildEvidenceCsvLine({
+      typ: "aspekt",
+      aspekt_id: aspectId,
+      reihenfolge: aspectIndex + 1,
+      titel: aspect && aspect.titel,
+      information: aspect && aspect.information,
+      beispiel: aspect && aspect.beispiel
+    }));
+    (Array.isArray(aspect && aspect.aspektDimensionen) ? aspect.aspektDimensionen : []).forEach(function (dimension, dimensionIndex) {
+      const dimensionId = String(dimension && dimension.id || "").trim();
+
+      rows.push(buildEvidenceCsvLine({
+        typ: "dimension",
+        aspekt_id: aspectId,
+        dimension_id: dimensionId,
+        reihenfolge: dimensionIndex + 1,
+        bezeichnung: dimension && dimension.bezeichnung
+      }));
+      (Array.isArray(dimension && dimension.stufen) ? dimension.stufen : []).forEach(function (stage, stageIndex) {
+        rows.push(buildEvidenceCsvLine({
+          typ: "stufe",
+          aspekt_id: aspectId,
+          dimension_id: dimensionId,
+          stufe_id: String(stage && stage.id || "").trim(),
+          reihenfolge: stageIndex + 1,
+          bezeichnung: stage && stage.bezeichnung,
+          information: stage && stage.information,
+          beispiel: stage && stage.beispiel
+        }));
+      });
+    });
+  });
+
+  function appendLevelRows(level, levelType, ownerAspectId) {
+    const sourceLevel = ensureEvidenceLevel(level);
+    const ownerId = String(ownerAspectId || "").trim();
+    const bounds = sourceLevel.layout.boundingBox || {};
+
+    sourceLevel.ebenenAspekte.forEach(function (aspectId, index) {
+      const position = sourceLevel.layout.aspectPositions[aspectId] || {};
+      const size = sourceLevel.layout.aspectSizes[aspectId] || {};
+
+      rows.push(buildEvidenceCsvLine({
+        typ: "ebene_aspekt",
+        ebene_typ: levelType,
+        owner_aspekt_id: ownerId,
+        aspekt_id: aspectId,
+        reihenfolge: index + 1,
+        x: Math.round(Number(position.x) || 0),
+        y: Math.round(Number(position.y) || 0),
+        breite: Math.round(Number(size.width) || 0),
+        hoehe: Math.round(Number(size.height) || 0),
+        bounds_x: Math.round(Number(bounds.x) || 0),
+        bounds_y: Math.round(Number(bounds.y) || 0),
+        bounds_breite: Math.round(Number(bounds.width) || 0),
+        bounds_hoehe: Math.round(Number(bounds.height) || 0)
+      }));
+    });
+    Object.keys(sourceLevel.layout.stageSizes || {}).forEach(function (stageId) {
+      const size = sourceLevel.layout.stageSizes[stageId] || {};
+
+      rows.push(buildEvidenceCsvLine({
+        typ: "ebene_stufe",
+        ebene_typ: levelType,
+        owner_aspekt_id: ownerId,
+        stufe_id: stageId,
+        breite: Math.round(Number(size.width) || 0),
+        hoehe: Math.round(Number(size.height) || 0)
+      }));
+    });
+  }
+
+  appendLevelRows(tool && tool.hauptebene, "haupt", "");
+  (Array.isArray(tool && tool.aspekte) ? tool.aspekte : []).forEach(function (aspect) {
+    appendLevelRows(aspect && aspect.folgeEbene, "folge", String(aspect && aspect.id || "").trim());
+  });
+
+  return "\uFEFF" + rows.join("\r\n");
 }
 
 function createPlannedEvaluationRecord(classId, typeValue, evaluationSheetId, dateValue, studentIds) {
@@ -23562,8 +24021,90 @@ window.UnterrichtsassistentApp.createEvidenceTool = function () {
 
   getMutableEvidenceToolsCollection(currentRawSnapshot).unshift(nextTool);
   currentRawSnapshot.activeEvidenceToolId = nextTool.id;
-  evidenceToolExpandedNodeIds = ["root", "faecher", "jahrgaenge", "aspekte", "hauptebene"];
+  evidenceToolExpandedNodeIds = ["root", "faecher", "jahrgaenge", "aspekte", "haupt-main"];
   saveAndRefreshSnapshot(currentRawSnapshot, "bewertung", { forcePersist: true });
+  return false;
+};
+window.UnterrichtsassistentApp.openEvidenceToolCsvImport = function () {
+  if (!evidenceToolCsvImportInput) {
+    return false;
+  }
+
+  evidenceToolCsvImportInput.value = "";
+  evidenceToolCsvImportInput.click();
+  return false;
+};
+window.UnterrichtsassistentApp.importEvidenceToolFromCsvFile = function (event) {
+  const input = event && event.target ? event.target : evidenceToolCsvImportInput;
+  const file = input && input.files ? input.files[0] : null;
+  const reader = new FileReader();
+
+  if (!file || !repository || !schoolService) {
+    return false;
+  }
+
+  reader.onload = function () {
+    try {
+      const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
+      const importedTool = buildEvidenceToolFromCsvRows(parseEvidenceCsvText(String(reader.result || "")));
+
+      getMutableEvidenceToolsCollection(currentRawSnapshot).unshift(importedTool);
+      currentRawSnapshot.activeEvidenceToolId = importedTool.id;
+      evidenceToolExpandedNodeIds = ["root", "faecher", "jahrgaenge", "aspekte", "haupt-main"];
+      saveAndRefreshSnapshot(currentRawSnapshot, "bewertung", { forcePersist: true });
+    } catch (error) {
+      console.error("Import des Bewertungswerkzeugs fehlgeschlagen.", error);
+      window.alert("Die CSV-Datei konnte nicht als Bewertungswerkzeug importiert werden.");
+    } finally {
+      if (input) {
+        input.value = "";
+      }
+    }
+  };
+
+  reader.onerror = function () {
+    if (input) {
+      input.value = "";
+    }
+    window.alert("Die CSV-Datei konnte nicht gelesen werden.");
+  };
+
+  reader.readAsText(file, "utf-8");
+  return false;
+};
+window.UnterrichtsassistentApp.exportActiveEvidenceToolCsv = function () {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeTool = currentRawSnapshot ? getActiveEvidenceToolForSnapshot(currentRawSnapshot) : null;
+  let downloadUrl = "";
+  let link = null;
+  let safeTitle = "";
+
+  if (!activeTool) {
+    return false;
+  }
+
+  try {
+    safeTitle = String(activeTool.titel || "bewertungswerkzeug")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "bewertungswerkzeug";
+    downloadUrl = URL.createObjectURL(new Blob([buildEvidenceToolCsv(activeTool)], { type: "text/csv;charset=utf-8" }));
+    link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = safeTitle + "-" + getCurrentTimestampFilePart() + ".csv";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(downloadUrl);
+  } catch (error) {
+    if (downloadUrl) {
+      URL.revokeObjectURL(downloadUrl);
+    }
+    console.error("Export des Bewertungswerkzeugs fehlgeschlagen.", error);
+    window.alert("Das Bewertungswerkzeug konnte nicht exportiert werden.");
+  }
+
   return false;
 };
 window.UnterrichtsassistentApp.deleteActiveEvidenceTool = function () {
