@@ -18,7 +18,7 @@ Eine CSV-Datei beschreibt genau ein Bewertungswerkzeug. Die Datei ist fuer Excel
 | `fach` | ein Fach | `reihenfolge`, `wert` |
 | `jahrgang` | ein Jahrgang | `reihenfolge`, `wert` |
 | `aspekt` | ein Aspekt | `aspekt_id`, `reihenfolge`, `titel`, `information`, `beispiel` |
-| `dimension` | eine Dimension eines Aspekts | `aspekt_id`, `dimension_id`, `reihenfolge`, `bezeichnung` |
+| `dimension` | eine Dimension eines Aspekts | `aspekt_id`, `dimension_id`, `reihenfolge`, `bezeichnung`, `information`, `beispiel` |
 | `stufe` | eine Stufe einer Dimension | `aspekt_id`, `dimension_id`, `stufe_id`, `reihenfolge`, `bezeichnung`, `information`, `beispiel` |
 | `ebene_aspekt` | Aspekt-Zuordnung in Haupt- oder FolgeEbene samt Layout | `ebene_typ`, `owner_aspekt_id`, `aspekt_id`, `reihenfolge`, `x`, `y`, `breite`, `hoehe`, `bounds_x`, `bounds_y`, `bounds_breite`, `bounds_hoehe` |
 | `ebene_stufe` | Stufen-Groesse in einer Haupt- oder FolgeEbene | `ebene_typ`, `owner_aspekt_id`, `stufe_id`, `breite`, `hoehe` |

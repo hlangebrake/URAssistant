@@ -12980,6 +12980,8 @@ function createEvidenceDimensionRecord() {
   return {
     id: createEvidenceDimensionId(),
     bezeichnung: "Neue Dimension",
+    information: "",
+    beispiel: "",
     stufen: [createEvidenceStageRecord()]
   };
 }
@@ -13257,6 +13259,8 @@ function buildEvidenceToolFromCsvRows(rows) {
     const nextDimension = {
       id: createEvidenceDimensionId(),
       bezeichnung: getEvidenceCsvCell(entry.row, "bezeichnung") || "Neue Dimension",
+      information: getEvidenceCsvCell(entry.row, "information"),
+      beispiel: getEvidenceCsvCell(entry.row, "beispiel"),
       stufen: []
     };
 
@@ -13399,7 +13403,9 @@ function buildEvidenceToolCsv(tool) {
         aspekt_id: aspectId,
         dimension_id: dimensionId,
         reihenfolge: dimensionIndex + 1,
-        bezeichnung: dimension && dimension.bezeichnung
+        bezeichnung: dimension && dimension.bezeichnung,
+        information: dimension && dimension.information,
+        beispiel: dimension && dimension.beispiel
       }));
       (Array.isArray(dimension && dimension.stufen) ? dimension.stufen : []).forEach(function (stage, stageIndex) {
         rows.push(buildEvidenceCsvLine({
@@ -16555,7 +16561,7 @@ function renderUnterrichtEvidenceOverlay(drag, level, startX, startY) {
     const title = String(rect.aspect && rect.aspect.titel || "").trim() || "Aspekt";
 
     return '<button class="unterricht-evidence-overlay__aspect" type="button" data-evidence-aspect-id="' + escapeHtml(rect.aspectId) + '" style="left:calc(var(--origin-x) + ' + escapeHtml(String(rect.x)) + 'px);top:calc(var(--origin-y) + ' + escapeHtml(String(rect.y)) + 'px);width:' + escapeHtml(String(rect.width)) + 'px;height:' + escapeHtml(String(rect.height)) + 'px" onpointerdown="return window.UnterrichtsassistentApp.startUnterrichtEvidenceOverlayAspectPointer(event, \'' + escapeHtml(rect.aspectId) + '\')">' + escapeHtml(title) + '</button>';
-  }).join("") + '<div class="unterricht-evidence-overlay__dimensions"></div>';
+  }).join("") + '<div class="unterricht-evidence-overlay__dimensions"></div><div class="unterricht-evidence-overlay__text-box unterricht-evidence-overlay__text-box--aspect-info" hidden></div><div class="unterricht-evidence-overlay__text-box unterricht-evidence-overlay__text-box--dimension-info" hidden></div><div class="unterricht-evidence-overlay__text-box unterricht-evidence-overlay__text-box--examples" hidden></div>';
   document.body.appendChild(overlay);
   positionUnterrichtEvidenceOverlay(overlay, startX, startY, bounds);
   overlay.style.setProperty("--origin-x", overlay.dataset.originX + "px");
@@ -16571,9 +16577,117 @@ function renderUnterrichtEvidenceOverlay(drag, level, startX, startY) {
   drag.activeStages = [];
 }
 
+function getEvidenceDimensionFromAspect(aspect, dimensionId) {
+  const normalizedDimensionId = String(dimensionId || "").trim();
+
+  return (Array.isArray(aspect && aspect.aspektDimensionen) ? aspect.aspektDimensionen : []).find(function (dimension) {
+    return String(dimension && dimension.id || "").trim() === normalizedDimensionId;
+  }) || null;
+}
+
+function getEvidenceStageFromDimension(dimension, stageId) {
+  const normalizedStageId = String(stageId || "").trim();
+
+  return (Array.isArray(dimension && dimension.stufen) ? dimension.stufen : []).find(function (stage) {
+    return String(stage && stage.id || "").trim() === normalizedStageId;
+  }) || null;
+}
+
+function buildUnterrichtEvidenceTextBoxHtml(title, items) {
+  const normalizedItems = (Array.isArray(items) ? items : []).map(function (item) {
+    return {
+      label: String(item && item.label || "").trim(),
+      text: String(item && item.text || "").trim()
+    };
+  }).filter(function (item) {
+    return Boolean(item.text);
+  });
+
+  if (!normalizedItems.length) {
+    return "";
+  }
+
+  return '<strong>' + escapeHtml(title) + '</strong>' + normalizedItems.map(function (item) {
+    return '<span>' + (item.label ? '<em>' + escapeHtml(item.label) + '</em>' : '') + escapeHtml(item.text) + '</span>';
+  }).join("");
+}
+
+function updateUnterrichtEvidenceTextBoxes(overlay, aspect, activeStages) {
+  const aspectInfoBox = overlay ? overlay.querySelector(".unterricht-evidence-overlay__text-box--aspect-info") : null;
+  const dimensionInfoBox = overlay ? overlay.querySelector(".unterricht-evidence-overlay__text-box--dimension-info") : null;
+  const examplesBox = overlay ? overlay.querySelector(".unterricht-evidence-overlay__text-box--examples") : null;
+  const selectedStages = [];
+  const selectedStageLookup = {};
+  let aspectInfoHtml = "";
+  let dimensionInfoHtml = "";
+  let examplesHtml = "";
+
+  if (!overlay) {
+    return;
+  }
+
+  (Array.isArray(activeStages) ? activeStages : []).forEach(function (entry) {
+    const dimensionId = String(entry && entry.dimensionId || "").trim();
+    const stageId = String(entry && entry.stageId || "").trim();
+    const stageKey = dimensionId + "::" + stageId;
+    const dimension = dimensionId ? getEvidenceDimensionFromAspect(aspect, dimensionId) : null;
+    const stage = stageId && !selectedStageLookup[stageKey]
+      ? getEvidenceStageFromDimension(dimension, stageId)
+      : null;
+
+    if (dimension && stage) {
+      selectedStageLookup[stageKey] = true;
+      selectedStages.push({
+        dimension: dimension,
+        stage: stage
+      });
+    }
+  });
+
+  aspectInfoHtml = buildUnterrichtEvidenceTextBoxHtml("Aspekt", [{
+    label: String(aspect && aspect.titel || "").trim(),
+    text: aspect && aspect.information
+  }]);
+  dimensionInfoHtml = buildUnterrichtEvidenceTextBoxHtml("Stufe", selectedStages.map(function (entry) {
+    const dimensionLabel = String(entry.dimension && entry.dimension.bezeichnung || "").trim();
+    const stageLabel = String(entry.stage && entry.stage.bezeichnung || "").trim();
+
+    return {
+      label: [dimensionLabel, stageLabel].filter(Boolean).join(" - "),
+      text: entry.stage && entry.stage.information
+    };
+  }));
+  examplesHtml = buildUnterrichtEvidenceTextBoxHtml("Beispiele", [{
+    label: String(aspect && aspect.titel || "").trim(),
+    text: aspect && aspect.beispiel
+  }].concat(selectedStages.map(function (entry) {
+    const dimensionLabel = String(entry.dimension && entry.dimension.bezeichnung || "").trim();
+    const stageLabel = String(entry.stage && entry.stage.bezeichnung || "").trim();
+
+    return {
+      label: [dimensionLabel, stageLabel].filter(Boolean).join(" - "),
+      text: entry.stage && entry.stage.beispiel
+    };
+  })));
+
+  [
+    { element: aspectInfoBox, html: aspectInfoHtml },
+    { element: dimensionInfoBox, html: dimensionInfoHtml },
+    { element: examplesBox, html: examplesHtml }
+  ].forEach(function (entry) {
+    if (!entry.element) {
+      return;
+    }
+
+    entry.element.innerHTML = entry.html;
+    entry.element.hidden = !entry.html;
+  });
+}
+
 function updateUnterrichtEvidenceOverlaySelection(clientX, clientY) {
   const drag = activeUnterrichtEvidenceDrag;
   const overlay = unterrichtEvidenceOverlay;
+  const hideMargin = 20;
   let nearestAspect = null;
   let nearestDistance = Infinity;
   let dimensionsWrap;
@@ -16583,16 +16697,17 @@ function updateUnterrichtEvidenceOverlaySelection(clientX, clientY) {
     return;
   }
 
-  const expandedLeft = drag.originX + drag.bounds.x - (drag.bounds.width * 2);
-  const expandedRight = drag.originX + drag.bounds.x + drag.bounds.width + (drag.bounds.width * 2);
-  const expandedTop = drag.originY + drag.bounds.y - (drag.bounds.height * 2);
-  const expandedBottom = drag.originY + drag.bounds.y + drag.bounds.height + (drag.bounds.height * 2);
+  const expandedLeft = drag.originX + drag.bounds.x - hideMargin;
+  const expandedRight = drag.originX + drag.bounds.x + drag.bounds.width + hideMargin;
+  const expandedTop = drag.originY + drag.bounds.y - hideMargin;
+  const expandedBottom = drag.originY + drag.bounds.y + drag.bounds.height + hideMargin;
   drag.isHidden = clientX < expandedLeft || clientX > expandedRight || clientY < expandedTop || clientY > expandedBottom;
   overlay.classList.toggle("is-hidden", drag.isHidden);
 
   if (drag.isHidden) {
     drag.activeAspectId = "";
     drag.activeStages = [];
+    updateUnterrichtEvidenceTextBoxes(overlay, null, []);
     return;
   }
 
@@ -16614,6 +16729,7 @@ function updateUnterrichtEvidenceOverlaySelection(clientX, clientY) {
 
   dimensionsWrap = overlay.querySelector(".unterricht-evidence-overlay__dimensions");
   if (!dimensionsWrap || !nearestAspect) {
+    updateUnterrichtEvidenceTextBoxes(overlay, nearestAspect && nearestAspect.aspect, []);
     return;
   }
 
@@ -16642,6 +16758,7 @@ function updateUnterrichtEvidenceOverlaySelection(clientX, clientY) {
       return item.dimensionId === dimensionId && item.stageId === stageId;
     }));
   });
+  updateUnterrichtEvidenceTextBoxes(overlay, nearestAspect.aspect, drag.activeStages);
 }
 
 function finishUnterrichtEvidenceSelection() {
@@ -16651,7 +16768,14 @@ function finishUnterrichtEvidenceSelection() {
     ? aspect.folgeEbene
     : null;
 
-  if (!drag || drag.isHidden || !aspect) {
+  if (!drag) {
+    return false;
+  }
+
+  if (drag.isHidden || !aspect) {
+    if (drag.selections.length) {
+      appendUnterrichtEvidenceObservationRecord(drag);
+    }
     activeUnterrichtEvidenceDrag = null;
     removeUnterrichtEvidenceOverlay();
     return false;
@@ -16696,6 +16820,9 @@ function appendUnterrichtEvidenceObservationRecord(drag) {
     toolId: String(drag.tool && drag.tool.id || "").trim(),
     situationType: context.situationType,
     demandLevel: context.demandLevel,
+    lessonPlanId: context.lessonPlanId,
+    lessonPhaseId: context.lessonPhaseId,
+    lessonStepId: context.lessonStepId,
     selections: drag.selections
   });
   saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
@@ -16766,6 +16893,10 @@ window.UnterrichtsassistentApp.handleUnterrichtEvidencePointerEnd = function () 
 window.UnterrichtsassistentApp.handleUnterrichtEvidenceOverlayBackgroundPointer = function (event) {
   if (event && event.target && event.target.closest && event.target.closest(".unterricht-evidence-overlay__aspect, .unterricht-evidence-overlay__stage")) {
     return false;
+  }
+
+  if (activeUnterrichtEvidenceDrag && activeUnterrichtEvidenceDrag.selections && activeUnterrichtEvidenceDrag.selections.length) {
+    appendUnterrichtEvidenceObservationRecord(activeUnterrichtEvidenceDrag);
   }
   activeUnterrichtEvidenceDrag = null;
   removeUnterrichtEvidenceOverlay();
@@ -24485,12 +24616,12 @@ window.UnterrichtsassistentApp.updateEvidenceToolTextField = function (scope, pr
       return true;
     }
 
-    if (normalizedScope === "dimension" && normalizedField === "bezeichnung") {
+    if (normalizedScope === "dimension" && ["bezeichnung", "information", "beispiel"].indexOf(normalizedField) >= 0) {
       dimension = getEvidenceDimensionById(tool, primaryId, secondaryId);
       if (!dimension) {
         return false;
       }
-      dimension.bezeichnung = String(nextValue || "").trim();
+      dimension[normalizedField] = String(nextValue || "").trim();
       return true;
     }
 
@@ -24661,6 +24792,9 @@ window.UnterrichtsassistentApp.startEvidenceToolListDrag = function (event, list
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", activeEvidenceToolDrag.itemId);
   }
+  if (event && typeof event.stopPropagation === "function") {
+    event.stopPropagation();
+  }
 
   return true;
 };
@@ -24668,19 +24802,31 @@ window.UnterrichtsassistentApp.allowEvidenceToolDrop = function (event) {
   if (event && typeof event.preventDefault === "function") {
     event.preventDefault();
   }
+  if (event && typeof event.stopPropagation === "function") {
+    event.stopPropagation();
+  }
   return false;
 };
 window.UnterrichtsassistentApp.dropEvidenceToolListItem = function (event, listType, targetId, aspectId, dimensionId, levelType) {
   const drag = activeEvidenceToolDrag;
   const normalizedType = String(listType || "").trim();
   const normalizedTargetId = String(targetId || "").trim();
+  const normalizedAspectId = String(aspectId || "").trim();
 
   if (event && typeof event.preventDefault === "function") {
     event.preventDefault();
   }
+
+  if (!drag || drag.listType !== normalizedType) {
+    return false;
+  }
+
+  if (event && typeof event.stopPropagation === "function") {
+    event.stopPropagation();
+  }
   activeEvidenceToolDrag = null;
 
-  if (!drag || drag.listType !== normalizedType || drag.itemId === normalizedTargetId) {
+  if (drag.itemId === normalizedTargetId) {
     return false;
   }
 
@@ -24689,8 +24835,12 @@ window.UnterrichtsassistentApp.dropEvidenceToolListItem = function (event, listT
     let fromIndex;
     let toIndex;
     let moved;
-    const ownerAspect = getEvidenceAspectById(tool, aspectId);
+    const ownerAspect = getEvidenceAspectById(tool, normalizedAspectId);
     const ownerDimension = getEvidenceDimensionById(tool, aspectId, dimensionId);
+
+    if (normalizedType === "dimensionen" && drag.aspectId !== normalizedAspectId) {
+      return false;
+    }
 
     if (normalizedType === "faecher") {
       list = tool.faecher;

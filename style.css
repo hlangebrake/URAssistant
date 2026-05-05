@@ -6544,6 +6544,68 @@ button {
   pointer-events: none;
 }
 
+.unterricht-evidence-overlay__text-box {
+  position: fixed;
+  z-index: 5;
+  box-sizing: border-box;
+  display: grid;
+  gap: 0.35rem;
+  width: min(320px, calc(50vw - 28px));
+  max-height: min(28vh, 220px);
+  overflow: auto;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(23, 49, 62, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--text);
+  box-shadow: 0 14px 36px rgba(23, 49, 62, 0.16);
+  pointer-events: none;
+}
+
+.unterricht-evidence-overlay__text-box[hidden] {
+  display: none !important;
+}
+
+.unterricht-evidence-overlay__text-box strong {
+  color: var(--sidebar);
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.unterricht-evidence-overlay__text-box span {
+  display: grid;
+  gap: 0.16rem;
+  font-size: 0.82rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.unterricht-evidence-overlay__text-box em {
+  color: var(--text-soft);
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.unterricht-evidence-overlay__text-box--aspect-info {
+  left: 12px;
+  bottom: 12px;
+}
+
+.unterricht-evidence-overlay__text-box--dimension-info {
+  right: 12px;
+  bottom: 12px;
+}
+
+.unterricht-evidence-overlay__text-box--examples {
+  top: 12px;
+  right: 12px;
+}
+
 .assessment-category-buttons {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
