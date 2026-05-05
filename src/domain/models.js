@@ -539,8 +539,10 @@ class MathObservationRecord {
     recordedAt = "",
     primaryCompetency = "",
     competencyIds = [],
+    competencyQualities = [],
     processQuality = 0,
     marker = "",
+    markers = [],
     markerDirection = "",
     markerQuality = "",
     situationType = "",
@@ -570,7 +572,7 @@ class MathObservationRecord {
       "vorgehen_reflektiert"
     ];
     const normalizedPrimary = String(primaryCompetency || "").trim().toLowerCase();
-    const effectivePrimary = allowedCompetencies.indexOf(normalizedPrimary) >= 0
+    let effectivePrimary = allowedCompetencies.indexOf(normalizedPrimary) >= 0
       ? normalizedPrimary
       : "";
     const numericProcessQuality = Number(processQuality);
@@ -578,6 +580,36 @@ class MathObservationRecord {
     const numericMarkerQuality = Number(markerQuality);
     const normalizedSituationType = String(situationType || "").trim().toLowerCase();
     const normalizedDemandLevel = String(demandLevel || "").trim().toLowerCase();
+    const normalizedCompetencyQualities = (Array.isArray(competencyQualities) ? competencyQualities : []).map(function (entry) {
+      const source = entry && typeof entry === "object" ? entry : {};
+      const competencyId = String(source.competencyId || source.competency || "").trim().toLowerCase();
+      const numericQuality = Number(source.quality);
+
+      return {
+        competencyId: allowedCompetencies.indexOf(competencyId) >= 0 ? competencyId : "",
+        quality: Number.isFinite(numericQuality) ? Math.max(-2, Math.min(2, Math.round(numericQuality))) : ""
+      };
+    }).filter(function (entry) {
+      return Boolean(entry.competencyId && entry.quality !== "");
+    });
+    const normalizedMarkers = (Array.isArray(markers) ? markers : []).map(function (entry) {
+      const source = entry && typeof entry === "object" ? entry : {};
+      const entryMarker = String(source.marker || "").trim().toLowerCase();
+      const normalizedEntryMarker = !entryMarker ? "" : (allowedMarkers.indexOf(entryMarker) >= 0 ? entryMarker : "beitrag");
+      const numericEntryMarkerQuality = Number(source.markerQuality);
+
+      return {
+        marker: normalizedEntryMarker,
+        markerDirection: ["left", "right"].indexOf(String(source.markerDirection || "").trim().toLowerCase()) >= 0
+          ? String(source.markerDirection || "").trim().toLowerCase()
+          : "",
+        markerQuality: String(source.markerQuality || "").trim() === ""
+          ? ""
+          : (Number.isFinite(numericEntryMarkerQuality) ? Math.max(-2, Math.min(2, Math.round(numericEntryMarkerQuality))) : "")
+      };
+    }).filter(function (entry) {
+      return Boolean(entry.marker);
+    });
 
     this.id = id;
     this.studentId = studentId;
@@ -586,22 +618,52 @@ class MathObservationRecord {
     this.lessonDate = lessonDate;
     this.room = room;
     this.recordedAt = recordedAt;
+    if (!effectivePrimary && normalizedCompetencyQualities.length) {
+      effectivePrimary = normalizedCompetencyQualities[0].competencyId;
+    }
+
     this.primaryCompetency = effectivePrimary;
-    this.competencyIds = Array.from(new Set((effectivePrimary ? [effectivePrimary] : []).concat(Array.isArray(competencyIds) ? competencyIds : []).map(function (competencyId) {
+    this.competencyIds = Array.from(new Set((effectivePrimary ? [effectivePrimary] : [])
+      .concat(Array.isArray(competencyIds) ? competencyIds : [])
+      .concat(normalizedCompetencyQualities.map(function (entry) {
+        return entry.competencyId;
+      })).map(function (competencyId) {
       return String(competencyId || "").trim().toLowerCase();
     }).filter(function (competencyId) {
       return allowedCompetencies.indexOf(competencyId) >= 0;
     })));
-    this.processQuality = Number.isFinite(numericProcessQuality)
+    this.competencyQualities = normalizedCompetencyQualities.length
+      ? normalizedCompetencyQualities
+      : (effectivePrimary ? [{ competencyId: effectivePrimary, quality: Number.isFinite(numericProcessQuality) ? Math.max(-2, Math.min(2, Math.round(numericProcessQuality))) : 0 }] : []);
+    this.processQuality = this.competencyQualities.length
+      ? this.competencyQualities[0].quality
+      : (Number.isFinite(numericProcessQuality)
       ? Math.max(-2, Math.min(2, Math.round(numericProcessQuality)))
-      : 0;
-    this.marker = !normalizedMarker ? "" : (allowedMarkers.indexOf(normalizedMarker) >= 0 ? normalizedMarker : "beitrag");
-    this.markerDirection = ["left", "right"].indexOf(String(markerDirection || "").trim().toLowerCase()) >= 0
-      ? String(markerDirection || "").trim().toLowerCase()
-      : "";
-    this.markerQuality = String(markerQuality || "").trim() === ""
-      ? ""
-      : (Number.isFinite(numericMarkerQuality) ? Math.max(-2, Math.min(2, Math.round(numericMarkerQuality))) : "");
+      : 0);
+    this.marker = !normalizedMarker
+      ? (normalizedMarkers.length ? normalizedMarkers[0].marker : "")
+      : (allowedMarkers.indexOf(normalizedMarker) >= 0 ? normalizedMarker : "beitrag");
+    this.markers = normalizedMarkers.length
+      ? normalizedMarkers
+      : (this.marker ? [{
+        marker: this.marker,
+        markerDirection: ["left", "right"].indexOf(String(markerDirection || "").trim().toLowerCase()) >= 0
+          ? String(markerDirection || "").trim().toLowerCase()
+          : "",
+        markerQuality: String(markerQuality || "").trim() === ""
+          ? ""
+          : (Number.isFinite(numericMarkerQuality) ? Math.max(-2, Math.min(2, Math.round(numericMarkerQuality))) : "")
+      }] : []);
+    this.markerDirection = this.markers.length
+      ? this.markers[0].markerDirection
+      : (["left", "right"].indexOf(String(markerDirection || "").trim().toLowerCase()) >= 0
+        ? String(markerDirection || "").trim().toLowerCase()
+        : "");
+    this.markerQuality = this.markers.length
+      ? this.markers[0].markerQuality
+      : (String(markerQuality || "").trim() === ""
+        ? ""
+        : (Number.isFinite(numericMarkerQuality) ? Math.max(-2, Math.min(2, Math.round(numericMarkerQuality))) : ""));
     this.situationType = ["lernen", "leisten"].indexOf(normalizedSituationType) >= 0 ? normalizedSituationType : "";
     this.demandLevel = ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(normalizedDemandLevel) >= 0 ? normalizedDemandLevel : "";
     this.lessonPlanId = String(lessonPlanId || "").trim();
@@ -612,7 +674,7 @@ class MathObservationRecord {
 }
 
 class EvidenceObservationRecord {
-  constructor({ id, studentId, classId, lessonId = "", lessonDate = "", room = "", recordedAt = "", toolId = "", situationType = "", demandLevel = "", selections = [] }) {
+  constructor({ id, studentId, classId, lessonId = "", lessonDate = "", room = "", recordedAt = "", toolId = "", situationType = "", demandLevel = "", lessonPlanId = "", lessonPhaseId = "", lessonStepId = "", note = "", selections = [] }) {
     this.id = id;
     this.studentId = String(studentId || "").trim();
     this.classId = String(classId || "").trim();
@@ -627,6 +689,10 @@ class EvidenceObservationRecord {
     this.demandLevel = ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(String(demandLevel || "").trim().toLowerCase()) >= 0
       ? String(demandLevel || "").trim().toLowerCase()
       : "";
+    this.lessonPlanId = String(lessonPlanId || "").trim();
+    this.lessonPhaseId = String(lessonPhaseId || "").trim();
+    this.lessonStepId = String(lessonStepId || "").trim();
+    this.note = String(note || "").trim();
     this.selections = (Array.isArray(selections) ? selections : []).map(function (selection) {
       const source = selection && typeof selection === "object" ? selection : {};
 

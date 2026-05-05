@@ -972,15 +972,8 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       const activePhaseId = String(activePhase && activePhase.id || "").trim();
       const fallbackLessonPlanId = activeSegment && activeSegment.lessonPlan
         ? String(activeSegment.lessonPlan.id || "").trim()
-        : [
-            "__live__",
-            String(activeClass && activeClass.id || "").trim(),
-            toIsoDate(referenceDate),
-            String(currentClassLesson && currentClassLesson.sourceRowId || "").trim() || "nosourcerow",
-            String(currentClassLesson && currentClassLesson.startTime || "").trim() || "nostart",
-            String(currentClassLesson && currentClassLesson.endTime || "").trim() || "noend"
-          ].join("::");
-      const fallbackPhaseId = activePhaseId || "__fallback__";
+        : "";
+      const fallbackPhaseId = activePhaseId;
       const liveOverride = activePhaseId && activeSegment && window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getCurriculumLessonPhaseLiveOverride === "function"
         ? window.UnterrichtsassistentApp.getCurriculumLessonPhaseLiveOverride(
             String(activeClass && activeClass.id || "").trim(),
@@ -988,14 +981,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
             String(activeSegment && activeSegment.lessonPlan && activeSegment.lessonPlan.id || "").trim(),
             activePhaseId
           )
-        : (window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getCurriculumLessonPhaseLiveOverride === "function"
-          ? window.UnterrichtsassistentApp.getCurriculumLessonPhaseLiveOverride(
-              String(activeClass && activeClass.id || "").trim(),
-              String(lessonFlowData && lessonFlowData.lessonDate || toIsoDate(referenceDate) || "").trim(),
-              fallbackLessonPlanId,
-              fallbackPhaseId
-            )
-          : null);
+        : null;
       const normalizedSituation = String(liveOverride && liveOverride.situationType || activePhase && activePhase.situationType || "").trim().toLowerCase();
       const normalizedDemandLevel = String(liveOverride && liveOverride.demandLevel || activePhase && activePhase.demandLevel || "").trim().toLowerCase();
       const activePhaseSteps = activePhaseId ? getOrderedCurriculumLessonStepsForPhase(activePhaseId) : [];
@@ -1348,7 +1334,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         const lastSegment = result.length ? result[result.length - 1] : null;
         const phases = lessonPlan ? getOrderedCurriculumLessonPhasesForLesson(lessonId) : [];
 
-        if (!lessonPlan || !phases.length) {
+        if (!lessonPlan) {
           return result;
         }
 
@@ -3281,7 +3267,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         '</div>',
         '<div class="import-modal" id="unterrichtKnowledgeGapModal" hidden>',
         '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeUnterrichtKnowledgeGapModal()"></div>',
-        '<div class="import-modal__dialog import-modal__dialog--knowledge-gap" role="dialog" aria-modal="true" aria-labelledby="unterrichtKnowledgeGapStudent">',
+        '<div class="import-modal__dialog import-modal__dialog--knowledge-gap" role="dialog" aria-modal="true" aria-labelledby="unterrichtKnowledgeGapStudent" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()">',
         '<div class="import-modal__header">',
         '<div>',
         '<h3 id="unterrichtKnowledgeGapStudent">Schueler</h3>',

@@ -197,6 +197,7 @@ let activeUnterrichtAssessmentPress = null;
 let unterrichtAssessmentQuickMenu = null;
 let unterrichtAssessmentQuickOverlay = null;
 let isUnterrichtKnowledgeGapModalOpen = false;
+let suppressUnterrichtKnowledgeGapSeatClickUntil = 0;
 let isUnterrichtMathObservationModalOpen = false;
 let activeUnterrichtMathObservationDraft = null;
 let activeUnterrichtMathObservationCompactDraft = null;
@@ -209,6 +210,7 @@ let unterrichtMathObservationMarkerMenu = null;
 let unterrichtMathObservationMarkerOverlay = null;
 let unterrichtEvidenceOverlay = null;
 let activeUnterrichtEvidenceDrag = null;
+let activeUnterrichtEvidenceModalDraft = null;
 let lastUnterrichtMathObservationTouchStartAt = 0;
 let activeClassAnalysisDragScroll = null;
 let activePlanningCurriculumDragScroll = null;
@@ -6863,6 +6865,39 @@ function normalizeOptionalMathObservationMarkerQualityValue(qualityValue) {
   return normalized === "" ? "" : normalizeMathObservationQualityValue(normalized);
 }
 
+function normalizeMathObservationCompetencyQualityEntries(entries) {
+  return (Array.isArray(entries) ? entries : []).map(function (entry) {
+    const source = entry && typeof entry === "object" ? entry : {};
+    const competencyId = normalizeMathObservationCompetencyValue(source.competencyId || source.competency);
+    const quality = source.quality === "" || source.quality === undefined || source.quality === null
+      ? ""
+      : normalizeMathObservationQualityValue(source.quality);
+
+    return {
+      competencyId: competencyId,
+      quality: quality
+    };
+  }).filter(function (entry) {
+    return entry.competencyId && entry.quality !== "";
+  });
+}
+
+function normalizeMathObservationMarkerEntries(entries) {
+  return (Array.isArray(entries) ? entries : []).map(function (entry) {
+    const source = entry && typeof entry === "object" ? entry : {};
+    const marker = normalizeMathObservationMarkerValue(source.marker);
+    const isSwipableMarker = isMathObservationSwipeMarker(marker);
+
+    return {
+      marker: marker,
+      markerDirection: isSwipableMarker ? normalizeMathObservationMarkerDirectionValue(source.markerDirection) : "",
+      markerQuality: isSwipableMarker ? normalizeOptionalMathObservationMarkerQualityValue(source.markerQuality) : ""
+    };
+  }).filter(function (entry) {
+    return Boolean(entry.marker);
+  });
+}
+
 function normalizeMathObservationSituationTypeValue(situationValue) {
   const normalized = String(situationValue || "").trim().toLowerCase();
 
@@ -6877,6 +6912,11 @@ function normalizeMathObservationDemandLevelValue(demandValue) {
 
 function getUnterrichtLiveObservationContextForRecord() {
   const contextElement = document.getElementById("unterrichtLiveObservationContext");
+  function getCurriculumReferenceAttribute(name) {
+    const value = String(contextElement && contextElement.getAttribute(name) || "").trim();
+
+    return value.indexOf("__") === 0 ? "" : value;
+  }
 
   if (!contextElement) {
     return {
@@ -6891,9 +6931,9 @@ function getUnterrichtLiveObservationContextForRecord() {
   return {
     situationType: normalizeMathObservationSituationTypeValue(contextElement.getAttribute("data-situation-type")),
     demandLevel: normalizeMathObservationDemandLevelValue(contextElement.getAttribute("data-demand-level")),
-    lessonPlanId: String(contextElement.getAttribute("data-lesson-plan-id") || "").trim(),
-    lessonPhaseId: String(contextElement.getAttribute("data-lesson-phase-id") || "").trim(),
-    lessonStepId: String(contextElement.getAttribute("data-lesson-step-id") || "").trim()
+    lessonPlanId: getCurriculumReferenceAttribute("data-lesson-plan-id"),
+    lessonPhaseId: getCurriculumReferenceAttribute("data-lesson-phase-id"),
+    lessonStepId: getCurriculumReferenceAttribute("data-lesson-step-id")
   };
 }
 
@@ -8677,13 +8717,42 @@ function appendUnterrichtKnowledgeGapRecord(rawSnapshot, draft, values) {
 
 function appendUnterrichtMathObservationRecord(rawSnapshot, draft, values) {
   const recordedAt = String(values && values.recordedAt || getReferenceDateTimeValue()).trim();
-  const primaryCompetency = normalizeMathObservationCompetencyValue(values && values.primaryCompetency);
-  const competencyIds = normalizeMathObservationCompetencyIds(primaryCompetency, values && values.competencyIds);
-  const marker = normalizeMathObservationMarkerValue(values && values.marker);
+  let competencyQualities = normalizeMathObservationCompetencyQualityEntries(values && values.competencyQualities);
+  let primaryCompetency = normalizeMathObservationCompetencyValue(values && values.primaryCompetency);
+  let competencyIds;
+  const processQuality = normalizeMathObservationQualityValue(values && values.processQuality);
+  let markers = normalizeMathObservationMarkerEntries(values && values.markers);
+  let marker = normalizeMathObservationMarkerValue(values && values.marker);
   const isSwipableMarker = isMathObservationSwipeMarker(marker);
 
   if (!rawSnapshot || !draft) {
     return;
+  }
+
+  if (!competencyQualities.length && primaryCompetency) {
+    competencyQualities = [{
+      competencyId: primaryCompetency,
+      quality: processQuality
+    }];
+  }
+  if (!primaryCompetency && competencyQualities.length) {
+    primaryCompetency = competencyQualities[0].competencyId;
+  }
+  competencyIds = normalizeMathObservationCompetencyIds(
+    primaryCompetency,
+    competencyQualities.length
+      ? competencyQualities.map(function (entry) { return entry.competencyId; })
+      : values && values.competencyIds
+  );
+  if (!markers.length && marker) {
+    markers = [{
+      marker: marker,
+      markerDirection: isSwipableMarker ? normalizeMathObservationMarkerDirectionValue(values && values.markerDirection) : "",
+      markerQuality: isSwipableMarker ? normalizeOptionalMathObservationMarkerQualityValue(values && values.markerQuality) : ""
+    }];
+  }
+  if (!marker && markers.length) {
+    marker = markers[0].marker;
   }
 
   getMutableMathObservationRecordsCollection(rawSnapshot).push({
@@ -8696,10 +8765,12 @@ function appendUnterrichtMathObservationRecord(rawSnapshot, draft, values) {
     recordedAt: recordedAt,
     primaryCompetency: primaryCompetency,
     competencyIds: competencyIds,
-    processQuality: normalizeMathObservationQualityValue(values && values.processQuality),
+    competencyQualities: competencyQualities,
+    processQuality: competencyQualities.length ? competencyQualities[0].quality : processQuality,
     marker: marker,
-    markerDirection: isSwipableMarker ? normalizeMathObservationMarkerDirectionValue(values && values.markerDirection) : "",
-    markerQuality: isSwipableMarker ? normalizeOptionalMathObservationMarkerQualityValue(values && values.markerQuality) : "",
+    markers: markers,
+    markerDirection: markers.length ? markers[0].markerDirection : (isSwipableMarker ? normalizeMathObservationMarkerDirectionValue(values && values.markerDirection) : ""),
+    markerQuality: markers.length ? markers[0].markerQuality : (isSwipableMarker ? normalizeOptionalMathObservationMarkerQualityValue(values && values.markerQuality) : ""),
     situationType: normalizeMathObservationSituationTypeValue(values && values.situationType),
     demandLevel: normalizeMathObservationDemandLevelValue(values && values.demandLevel),
     lessonPlanId: String(values && values.lessonPlanId || "").trim(),
@@ -15390,6 +15461,11 @@ window.UnterrichtsassistentApp.toggleUnterrichtSeatPlanRotation = function () {
   return false;
 };
 window.UnterrichtsassistentApp.handleUnterrichtSeatClick = function (studentId, lessonId, lessonStartTime, lessonRoom, homeworkQuality, homeworkAction) {
+  if (unterrichtToolMode === "knowledgeGap"
+    && (isUnterrichtKnowledgeGapModalOpen || Date.now() < suppressUnterrichtKnowledgeGapSeatClickUntil)) {
+    return false;
+  }
+
   const activeClass = schoolService ? schoolService.getActiveClass() : null;
   const currentRawSnapshot = schoolService && serializeSnapshot ? serializeSnapshot(schoolService.snapshot) : null;
   const referenceDate = schoolService ? schoolService.getReferenceDate() : new Date();
@@ -16513,8 +16589,12 @@ function getEvidenceAspectDimensionStageRects(rect) {
         stageId: item.stageId,
         stage: item.stage,
         direction: direction,
-        x: direction === 1 || direction === 3 ? dimensionX + previousOffset : dimensionX,
-        y: direction === 0 || direction === 2 ? dimensionY + previousOffset : dimensionY,
+        x: direction === 3
+          ? rect.x - previousOffset - item.width
+          : (direction === 1 ? dimensionX + previousOffset : dimensionX),
+        y: direction === 0
+          ? rect.y - previousOffset - item.height
+          : (direction === 2 ? dimensionY + previousOffset : dimensionY),
         width: item.width,
         height: item.height
       });
@@ -16569,11 +16649,14 @@ function renderUnterrichtEvidenceOverlay(drag, level, startX, startY) {
   overlay.querySelector(".unterricht-evidence-overlay__bounds").setAttribute("style", "left:calc(var(--origin-x) + " + String(Math.round(bounds.x)) + "px);top:calc(var(--origin-y) + " + String(Math.round(bounds.y)) + "px);width:" + String(Math.round(bounds.width)) + "px;height:" + String(Math.round(bounds.height)) + "px");
   unterrichtEvidenceOverlay = overlay;
   drag.level = level;
+  drag.levelDepth = Array.isArray(drag.selections) ? drag.selections.length : 0;
   drag.levelRects = rects;
   drag.bounds = bounds;
   drag.originX = Number(overlay.dataset.originX) || 0;
   drag.originY = Number(overlay.dataset.originY) || 0;
   drag.activeAspectId = "";
+  drag.lockedAspectId = "";
+  drag.hideInactiveLevelAspects = false;
   drag.activeStages = [];
 }
 
@@ -16711,20 +16794,29 @@ function updateUnterrichtEvidenceOverlaySelection(clientX, clientY) {
     return;
   }
 
-  drag.levelRects.forEach(function (rect) {
-    const centerX = drag.originX + rect.x + (rect.width / 2);
-    const centerY = drag.originY + rect.y + (rect.height / 2);
-    const distance = Math.hypot(clientX - centerX, clientY - centerY);
+  if (drag.lockedAspectId) {
+    nearestAspect = drag.levelRects.find(function (rect) {
+      return String(rect && rect.aspectId || "").trim() === String(drag.lockedAspectId || "").trim();
+    }) || null;
+  } else {
+    drag.levelRects.forEach(function (rect) {
+      const centerX = drag.originX + rect.x + (rect.width / 2);
+      const centerY = drag.originY + rect.y + (rect.height / 2);
+      const distance = Math.hypot(clientX - centerX, clientY - centerY);
 
-    if (distance < nearestDistance) {
-      nearestDistance = distance;
-      nearestAspect = rect;
-    }
-  });
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestAspect = rect;
+      }
+    });
+  }
 
   drag.activeAspectId = nearestAspect ? nearestAspect.aspectId : "";
   Array.prototype.slice.call(overlay.querySelectorAll(".unterricht-evidence-overlay__aspect")).forEach(function (element) {
-    element.classList.toggle("is-active", element.getAttribute("data-evidence-aspect-id") === drag.activeAspectId);
+    const aspectId = element.getAttribute("data-evidence-aspect-id");
+
+    element.classList.toggle("is-active", aspectId === drag.activeAspectId);
+    element.classList.toggle("is-suppressed", Boolean(drag.hideInactiveLevelAspects && aspectId !== drag.activeAspectId));
   });
 
   dimensionsWrap = overlay.querySelector(".unterricht-evidence-overlay__dimensions");
@@ -16823,10 +16915,307 @@ function appendUnterrichtEvidenceObservationRecord(drag) {
     lessonPlanId: context.lessonPlanId,
     lessonPhaseId: context.lessonPhaseId,
     lessonStepId: context.lessonStepId,
+    note: String(drag.note || "").trim(),
     selections: drag.selections
   });
   saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
   return false;
+}
+
+function getEvidenceModalMainAspectIds(tool) {
+  return Array.isArray(tool && tool.hauptebene && tool.hauptebene.ebenenAspekte)
+    ? tool.hauptebene.ebenenAspekte.map(function (item) { return String(item || "").trim(); }).filter(Boolean)
+    : [];
+}
+
+function getEvidenceModalExtraAspects(tool) {
+  const mainLookup = getEvidenceModalMainAspectIds(tool).reduce(function (lookup, aspectId) {
+    lookup[aspectId] = true;
+    return lookup;
+  }, {});
+
+  return (Array.isArray(tool && tool.aspekte) ? tool.aspekte : []).filter(function (aspect) {
+    const aspectId = String(aspect && aspect.id || "").trim();
+    return aspectId && !mainLookup[aspectId];
+  });
+}
+
+function getEvidenceAspectDimensions(aspect) {
+  return Array.isArray(aspect && aspect.aspektDimensionen) ? aspect.aspektDimensionen : [];
+}
+
+function buildEvidenceStageOptionsHtml(stages, selectedStageId) {
+  const normalizedSelectedStageId = String(selectedStageId || "").trim();
+
+  return '<option value="">-</option>' + (Array.isArray(stages) ? stages : []).map(function (stage) {
+    const stageId = String(stage && stage.id || "").trim();
+    const label = String(stage && stage.bezeichnung || "").trim() || "Stufe";
+    return '<option value="' + escapeHtml(stageId) + '"' + (stageId === normalizedSelectedStageId ? ' selected' : '') + '>' + escapeHtml(label) + '</option>';
+  }).join("");
+}
+
+function buildEvidenceModalStageButtonsHtml(aspect, dimension, selectedStageId) {
+  const aspectId = String(aspect && aspect.id || "").trim();
+  const dimensionId = String(dimension && dimension.id || "").trim();
+  const stages = Array.isArray(dimension && dimension.stufen) ? dimension.stufen : [];
+
+  return '<div class="evidence-observation-modal__stage-buttons" data-evidence-modal-stage-group="' + escapeHtml(aspectId) + '::' + escapeHtml(dimensionId) + '">' + stages.map(function (stage) {
+    const stageId = String(stage && stage.id || "").trim();
+    const label = String(stage && stage.bezeichnung || "").trim() || "Stufe";
+    return '<button class="assessment-grade-button evidence-observation-modal__stage-button" type="button" data-evidence-modal-stage-button="' + escapeHtml(aspectId) + '::' + escapeHtml(dimensionId) + '::' + escapeHtml(stageId) + '" onclick="return window.UnterrichtsassistentApp.selectUnterrichtEvidenceModalMainStage(\'' + escapeHtml(aspectId) + '\', \'' + escapeHtml(dimensionId) + '\', \'' + escapeHtml(stageId) + '\')">' + escapeHtml(label) + '</button>';
+  }).join("") + '<input type="hidden" data-evidence-modal-main-stage="' + escapeHtml(aspectId) + '::' + escapeHtml(dimensionId) + '" value="' + escapeHtml(String(selectedStageId || "")) + '"></div>';
+}
+
+function captureUnterrichtEvidenceModalMainStages() {
+  const modal = document.getElementById("unterrichtEvidenceObservationModal");
+  const draft = activeUnterrichtEvidenceModalDraft;
+
+  if (!modal || !draft) {
+    return;
+  }
+
+  draft.mainStages = {};
+  Array.from(modal.querySelectorAll("[data-evidence-modal-main-stage]")).forEach(function (input) {
+    const key = String(input.getAttribute("data-evidence-modal-main-stage") || "").trim();
+    const value = String(input.value || "").trim();
+
+    if (key && value) {
+      draft.mainStages[key] = value;
+    }
+  });
+}
+
+function renderEvidenceObservationModalContent() {
+  const draft = activeUnterrichtEvidenceModalDraft;
+  const modal = document.getElementById("unterrichtEvidenceObservationModal");
+  const body = document.getElementById("unterrichtEvidenceObservationBody");
+  const header = document.getElementById("unterrichtEvidenceObservationStudent");
+  const meta = document.getElementById("unterrichtEvidenceObservationDate");
+  const note = document.getElementById("unterrichtEvidenceObservationNote");
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const student = schoolService && draft
+    ? schoolService.snapshot.students.find(function (entry) {
+        return String(entry && entry.id || "").trim() === String(draft.studentId || "").trim();
+      }) || null
+    : null;
+  const tool = draft && draft.tool;
+  const mainAspectIds = getEvidenceModalMainAspectIds(tool);
+  const extraAspects = getEvidenceModalExtraAspects(tool);
+  const mainStages = draft && draft.mainStages && typeof draft.mainStages === "object" ? draft.mainStages : {};
+
+  if (!modal || !body || !draft || !tool) {
+    return;
+  }
+
+  if (header) {
+    header.textContent = student
+      ? [String(student.firstName || "").trim(), String(student.lastName || "").trim()].filter(Boolean).join(" ")
+      : "Schueler";
+  }
+  if (meta) {
+    meta.textContent = [String(tool.titel || "").trim(), activeClass ? ((activeClass.name || "") + " " + (activeClass.subject || "")).trim() : "", formatDateLabel(draft.lessonDate)].filter(Boolean).join(" - ");
+  }
+
+  body.innerHTML = [
+    '<div class="evidence-observation-modal">',
+    '<section class="evidence-observation-modal__main">',
+    '<h4 class="assessment-column__title">Hauptebene</h4>',
+    mainAspectIds.map(function (aspectId) {
+      const aspect = getEvidenceAspectById(tool, aspectId);
+      const dimensions = getEvidenceAspectDimensions(aspect);
+      if (!aspect) {
+        return "";
+      }
+      return [
+        '<article class="evidence-observation-modal__aspect">',
+        '<div class="evidence-observation-modal__aspect-title">' + escapeHtml(String(aspect.titel || "").trim() || "Aspekt") + '</div>',
+        '<div class="evidence-observation-modal__dimensions">',
+        dimensions.map(function (dimension) {
+          return [
+            '<div class="evidence-observation-modal__dimension">',
+            '<span>' + escapeHtml(String(dimension && dimension.bezeichnung || "").trim() || "Dimension") + '</span>',
+            buildEvidenceModalStageButtonsHtml(aspect, dimension, mainStages[String(aspect.id || "").trim() + "::" + String(dimension && dimension.id || "").trim()]),
+            '</div>'
+          ].join("");
+        }).join("") || '<div class="import-box__hint">Keine Aspektdimensionen</div>',
+        '</div>',
+        '</article>'
+      ].join("");
+    }).join("") || '<div class="import-box__hint">Keine Aspekte auf der Hauptebene</div>',
+    '</section>',
+    '<section class="evidence-observation-modal__extra">',
+    '<div class="evidence-observation-modal__extra-header"><h4 class="assessment-column__title">Weitere Aspekte</h4><button class="circle-action" type="button" aria-label="Aspekt hinzufuegen" onclick="return window.UnterrichtsassistentApp.addUnterrichtEvidenceModalExtraAspect()">+</button></div>',
+    '<div class="evidence-observation-modal__extra-list">',
+    (Array.isArray(draft.extraSelections) ? draft.extraSelections : []).map(function (selection, index) {
+      const selectedAspectId = String(selection && selection.aspectId || "").trim();
+      const selectedAspect = getEvidenceAspectById(tool, selectedAspectId) || extraAspects[0] || null;
+      const selectedStages = selection && selection.stages && typeof selection.stages === "object" ? selection.stages : {};
+      return [
+        '<article class="evidence-observation-modal__extra-row" data-evidence-modal-extra-index="' + String(index) + '">',
+        '<div class="evidence-observation-modal__extra-row-head">',
+        '<select class="student-table__input student-table__select" onchange="return window.UnterrichtsassistentApp.updateUnterrichtEvidenceModalExtraAspect(' + String(index) + ', this.value)">',
+        extraAspects.map(function (aspect) {
+          const optionAspectId = String(aspect && aspect.id || "").trim();
+          return '<option value="' + escapeHtml(optionAspectId) + '"' + (selectedAspect && optionAspectId === String(selectedAspect.id || "").trim() ? ' selected' : '') + '>' + escapeHtml(String(aspect && aspect.titel || "").trim() || "Aspekt") + '</option>';
+        }).join(""),
+        '</select>',
+        '<button class="circle-action circle-action--danger" type="button" aria-label="Aspekt entfernen" onclick="return window.UnterrichtsassistentApp.removeUnterrichtEvidenceModalExtraAspect(' + String(index) + ')">-</button>',
+        '</div>',
+        selectedAspect ? getEvidenceAspectDimensions(selectedAspect).map(function (dimension) {
+          const dimensionId = String(dimension && dimension.id || "").trim();
+          return [
+            '<label class="import-modal__field evidence-observation-modal__extra-dimension">',
+            '<span>' + escapeHtml(String(dimension && dimension.bezeichnung || "").trim() || "Dimension") + '</span>',
+            '<select class="student-table__input student-table__select" onchange="return window.UnterrichtsassistentApp.updateUnterrichtEvidenceModalExtraStage(' + String(index) + ', \'' + escapeHtml(dimensionId) + '\', this.value)">',
+            buildEvidenceStageOptionsHtml(dimension && dimension.stufen, selectedStages[dimensionId]),
+            '</select>',
+            '</label>'
+          ].join("");
+        }).join("") : '<div class="import-box__hint">Keine weiteren Aspekte vorhanden</div>',
+        '</article>'
+      ].join("");
+    }).join("") || '<div class="import-box__hint">Mit + weitere Aspekte hinzufuegen.</div>',
+    '</div>',
+    '<label class="import-modal__field"><span>Notiz</span><textarea id="unterrichtEvidenceObservationNote" maxlength="360" placeholder="Freie Notiz" autocomplete="off" autocapitalize="sentences" spellcheck="true">' + escapeHtml(String(draft.note || "")) + '</textarea></label>',
+    '</section>',
+    '</div>'
+  ].join("");
+
+  if (note) {
+    note.value = String(draft.note || "");
+  }
+  syncUnterrichtEvidenceModalMainStageButtons();
+}
+
+function ensureUnterrichtEvidenceObservationModal() {
+  let modal = document.getElementById("unterrichtEvidenceObservationModal");
+
+  if (modal) {
+    return modal;
+  }
+
+  modal = document.createElement("div");
+  modal.className = "import-modal";
+  modal.id = "unterrichtEvidenceObservationModal";
+  modal.hidden = true;
+  modal.innerHTML = [
+    '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeUnterrichtEvidenceObservationModal()"></div>',
+    '<div class="import-modal__dialog import-modal__dialog--evidence-observation" role="dialog" aria-modal="true" aria-labelledby="unterrichtEvidenceObservationStudent" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()">',
+    '<div class="import-modal__header">',
+    '<div><h3 id="unterrichtEvidenceObservationStudent">Schueler</h3><div class="import-modal__meta" id="unterrichtEvidenceObservationDate"></div></div>',
+    '<div class="import-modal__icon-actions">',
+    '<button class="import-modal__icon-button import-modal__icon-button--confirm" type="submit" form="unterrichtEvidenceObservationForm" aria-label="Bewertung speichern">&#10003;</button>',
+    '<button class="import-modal__icon-button import-modal__icon-button--cancel" type="button" aria-label="Bewertung verwerfen" onclick="return window.UnterrichtsassistentApp.closeUnterrichtEvidenceObservationModal()">&#10005;</button>',
+    '</div></div>',
+    '<form class="import-modal__form" id="unterrichtEvidenceObservationForm" autocomplete="off" method="post" action="about:blank" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitUnterrichtEvidenceObservationModal(event)">',
+    '<div id="unterrichtEvidenceObservationBody"></div>',
+    '</form></div>'
+  ].join("");
+  document.body.appendChild(modal);
+  return modal;
+}
+
+function syncUnterrichtEvidenceModalMainStageButtons() {
+  const modal = document.getElementById("unterrichtEvidenceObservationModal");
+
+  if (!modal) {
+    return;
+  }
+
+  Array.from(modal.querySelectorAll("[data-evidence-modal-stage-button]")).forEach(function (button) {
+    const parts = String(button.getAttribute("data-evidence-modal-stage-button") || "").split("::");
+    const input = modal.querySelector('[data-evidence-modal-main-stage="' + parts[0] + "::" + parts[1] + '"]');
+    const isActive = input && String(input.value || "") === String(parts[2] || "");
+
+    button.classList.toggle("is-active", Boolean(isActive));
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+}
+
+function buildUnterrichtEvidenceModalSelections() {
+  const modal = document.getElementById("unterrichtEvidenceObservationModal");
+  const draft = activeUnterrichtEvidenceModalDraft;
+  const selectionsByAspect = {};
+
+  if (!modal || !draft) {
+    return [];
+  }
+
+  Array.from(modal.querySelectorAll("[data-evidence-modal-main-stage]")).forEach(function (input) {
+    const parts = String(input.getAttribute("data-evidence-modal-main-stage") || "").split("::");
+    const aspectId = String(parts[0] || "").trim();
+    const dimensionId = String(parts[1] || "").trim();
+    const stageId = String(input.value || "").trim();
+
+    if (!aspectId || !dimensionId || !stageId) {
+      return;
+    }
+    if (!selectionsByAspect[aspectId]) {
+      selectionsByAspect[aspectId] = { aspectId: aspectId, stages: [] };
+    }
+    selectionsByAspect[aspectId].stages.push({ dimensionId: dimensionId, stageId: stageId });
+  });
+
+  (Array.isArray(draft.extraSelections) ? draft.extraSelections : []).forEach(function (selection) {
+    const aspectId = String(selection && selection.aspectId || "").trim();
+    const stages = selection && selection.stages && typeof selection.stages === "object" ? selection.stages : {};
+    const stageItems = Object.keys(stages).map(function (dimensionId) {
+      return {
+        dimensionId: String(dimensionId || "").trim(),
+        stageId: String(stages[dimensionId] || "").trim()
+      };
+    }).filter(function (stage) {
+      return Boolean(stage.dimensionId && stage.stageId);
+    });
+
+    if (aspectId && stageItems.length) {
+      if (!selectionsByAspect[aspectId]) {
+        selectionsByAspect[aspectId] = { aspectId: aspectId, stages: [] };
+      }
+      selectionsByAspect[aspectId].stages = selectionsByAspect[aspectId].stages.concat(stageItems);
+    }
+  });
+
+  return Object.keys(selectionsByAspect).map(function (aspectId) {
+    return selectionsByAspect[aspectId];
+  });
+}
+
+function getEvidenceModalDraftStateFromSelections(tool, selections) {
+  const mainAspectIds = getEvidenceModalMainAspectIds(tool);
+  const state = {
+    mainStages: {},
+    extraSelections: []
+  };
+
+  (Array.isArray(selections) ? selections : []).forEach(function (selection) {
+    const aspectId = String(selection && selection.aspectId || "").trim();
+    const stageMap = {};
+
+    (Array.isArray(selection && selection.stages) ? selection.stages : []).forEach(function (stageRef) {
+      const dimensionId = String(stageRef && stageRef.dimensionId || "").trim();
+      const stageId = String(stageRef && stageRef.stageId || "").trim();
+
+      if (!dimensionId || !stageId) {
+        return;
+      }
+
+      if (mainAspectIds.indexOf(aspectId) >= 0) {
+        state.mainStages[aspectId + "::" + dimensionId] = stageId;
+      } else {
+        stageMap[dimensionId] = stageId;
+      }
+    });
+
+    if (aspectId && mainAspectIds.indexOf(aspectId) < 0 && Object.keys(stageMap).length) {
+      state.extraSelections.push({
+        aspectId: aspectId,
+        stages: stageMap
+      });
+    }
+  });
+
+  return state;
 }
 
 window.UnterrichtsassistentApp.startUnterrichtEvidencePointer = function (event, studentId, lessonId, lessonStartTime, lessonRoom, toolId) {
@@ -16851,21 +17240,25 @@ window.UnterrichtsassistentApp.startUnterrichtEvidencePointer = function (event,
     startY: Number(event.clientY) || 0,
     lastClientX: Number(event.clientX) || 0,
     lastClientY: Number(event.clientY) || 0,
+    moved: false,
+    overlayStarted: false,
     selections: []
   };
-  renderUnterrichtEvidenceOverlay(activeUnterrichtEvidenceDrag, tool.hauptebene, event.clientX, event.clientY);
-  updateUnterrichtEvidenceOverlaySelection(event.clientX, event.clientY);
   window.addEventListener("pointermove", window.UnterrichtsassistentApp.handleUnterrichtEvidencePointerMove);
   window.addEventListener("pointerup", window.UnterrichtsassistentApp.handleUnterrichtEvidencePointerEnd);
   window.addEventListener("pointercancel", window.UnterrichtsassistentApp.handleUnterrichtEvidencePointerEnd);
   return false;
 };
 
-window.UnterrichtsassistentApp.startUnterrichtEvidenceOverlayAspectPointer = function (event) {
+window.UnterrichtsassistentApp.startUnterrichtEvidenceOverlayAspectPointer = function (event, aspectId) {
   if (!activeUnterrichtEvidenceDrag) {
     return false;
   }
   event.preventDefault();
+  if (activeUnterrichtEvidenceDrag.levelDepth > 0) {
+    activeUnterrichtEvidenceDrag.lockedAspectId = String(aspectId || "").trim();
+    activeUnterrichtEvidenceDrag.hideInactiveLevelAspects = Boolean(activeUnterrichtEvidenceDrag.lockedAspectId);
+  }
   updateUnterrichtEvidenceOverlaySelection(event.clientX, event.clientY);
   window.addEventListener("pointermove", window.UnterrichtsassistentApp.handleUnterrichtEvidencePointerMove);
   window.addEventListener("pointerup", window.UnterrichtsassistentApp.handleUnterrichtEvidencePointerEnd);
@@ -16879,15 +17272,215 @@ window.UnterrichtsassistentApp.handleUnterrichtEvidencePointerMove = function (e
   }
   activeUnterrichtEvidenceDrag.lastClientX = Number(event.clientX) || 0;
   activeUnterrichtEvidenceDrag.lastClientY = Number(event.clientY) || 0;
+  if (Math.abs(activeUnterrichtEvidenceDrag.lastClientX - activeUnterrichtEvidenceDrag.startX) >= 8
+    || Math.abs(activeUnterrichtEvidenceDrag.lastClientY - activeUnterrichtEvidenceDrag.startY) >= 8) {
+    activeUnterrichtEvidenceDrag.moved = true;
+  }
+  if (activeUnterrichtEvidenceDrag.moved && !activeUnterrichtEvidenceDrag.overlayStarted) {
+    activeUnterrichtEvidenceDrag.overlayStarted = true;
+    renderUnterrichtEvidenceOverlay(
+      activeUnterrichtEvidenceDrag,
+      activeUnterrichtEvidenceDrag.tool.hauptebene,
+      activeUnterrichtEvidenceDrag.startX,
+      activeUnterrichtEvidenceDrag.startY
+    );
+  }
+  if (!activeUnterrichtEvidenceDrag.overlayStarted) {
+    return false;
+  }
   updateUnterrichtEvidenceOverlaySelection(event.clientX, event.clientY);
   return false;
 };
 
-window.UnterrichtsassistentApp.handleUnterrichtEvidencePointerEnd = function () {
+window.UnterrichtsassistentApp.handleUnterrichtEvidencePointerEnd = function (event) {
+  const drag = activeUnterrichtEvidenceDrag;
+
   window.removeEventListener("pointermove", window.UnterrichtsassistentApp.handleUnterrichtEvidencePointerMove);
   window.removeEventListener("pointerup", window.UnterrichtsassistentApp.handleUnterrichtEvidencePointerEnd);
   window.removeEventListener("pointercancel", window.UnterrichtsassistentApp.handleUnterrichtEvidencePointerEnd);
+
+  if (drag && event && event.type !== "pointercancel" && !drag.overlayStarted && !drag.moved && !drag.selections.length) {
+    activeUnterrichtEvidenceDrag = null;
+    return window.UnterrichtsassistentApp.openUnterrichtEvidenceObservationModal(drag);
+  }
+
+  if (drag && !drag.overlayStarted) {
+    activeUnterrichtEvidenceDrag = null;
+    return false;
+  }
+
   return finishUnterrichtEvidenceSelection();
+};
+
+window.UnterrichtsassistentApp.openUnterrichtEvidenceObservationModal = function (draft) {
+  const modal = ensureUnterrichtEvidenceObservationModal();
+  const draftState = draft && draft.tool
+    ? getEvidenceModalDraftStateFromSelections(draft.tool, draft.selections)
+    : { mainStages: {}, extraSelections: [] };
+
+  if (!modal || !draft || !draft.tool) {
+    return false;
+  }
+
+  activeUnterrichtEvidenceModalDraft = Object.assign({}, draft, {
+    extraSelections: draftState.extraSelections,
+    mainStages: draftState.mainStages,
+    note: String(draft.note || "")
+  });
+  modal.hidden = false;
+  modal.classList.add("is-open");
+  renderEvidenceObservationModalContent();
+  return false;
+};
+
+window.UnterrichtsassistentApp.closeUnterrichtEvidenceObservationModal = function () {
+  const modal = document.getElementById("unterrichtEvidenceObservationModal");
+
+  if (modal) {
+    modal.hidden = true;
+    modal.classList.remove("is-open");
+  }
+  activeUnterrichtEvidenceModalDraft = null;
+  return false;
+};
+
+window.UnterrichtsassistentApp.selectUnterrichtEvidenceModalMainStage = function (aspectId, dimensionId, stageId) {
+  const modal = document.getElementById("unterrichtEvidenceObservationModal");
+  const input = modal ? modal.querySelector('[data-evidence-modal-main-stage="' + String(aspectId || "").trim() + "::" + String(dimensionId || "").trim() + '"]') : null;
+  const normalizedStageId = String(stageId || "").trim();
+
+  if (!input) {
+    return false;
+  }
+
+  input.value = String(input.value || "") === normalizedStageId ? "" : normalizedStageId;
+  if (!activeUnterrichtEvidenceModalDraft.mainStages || typeof activeUnterrichtEvidenceModalDraft.mainStages !== "object") {
+    activeUnterrichtEvidenceModalDraft.mainStages = {};
+  }
+  if (input.value) {
+    activeUnterrichtEvidenceModalDraft.mainStages[String(aspectId || "").trim() + "::" + String(dimensionId || "").trim()] = input.value;
+  } else {
+    delete activeUnterrichtEvidenceModalDraft.mainStages[String(aspectId || "").trim() + "::" + String(dimensionId || "").trim()];
+  }
+  syncUnterrichtEvidenceModalMainStageButtons();
+  return false;
+};
+
+window.UnterrichtsassistentApp.addUnterrichtEvidenceModalExtraAspect = function () {
+  const draft = activeUnterrichtEvidenceModalDraft;
+  const extraAspects = draft ? getEvidenceModalExtraAspects(draft.tool) : [];
+  const firstAspect = extraAspects[0] || null;
+
+  if (!draft || !firstAspect) {
+    return false;
+  }
+
+  if (!Array.isArray(draft.extraSelections)) {
+    draft.extraSelections = [];
+  }
+  captureUnterrichtEvidenceModalMainStages();
+  draft.note = String(document.getElementById("unterrichtEvidenceObservationNote") && document.getElementById("unterrichtEvidenceObservationNote").value || "").trim();
+  draft.extraSelections.push({
+    aspectId: String(firstAspect.id || "").trim(),
+    stages: {}
+  });
+  renderEvidenceObservationModalContent();
+  return false;
+};
+
+window.UnterrichtsassistentApp.removeUnterrichtEvidenceModalExtraAspect = function (index) {
+  const draft = activeUnterrichtEvidenceModalDraft;
+  const itemIndex = Math.max(0, Math.floor(Number(index) || 0));
+
+  if (!draft || !Array.isArray(draft.extraSelections)) {
+    return false;
+  }
+
+  captureUnterrichtEvidenceModalMainStages();
+  draft.note = String(document.getElementById("unterrichtEvidenceObservationNote") && document.getElementById("unterrichtEvidenceObservationNote").value || "").trim();
+  draft.extraSelections.splice(itemIndex, 1);
+  renderEvidenceObservationModalContent();
+  return false;
+};
+
+window.UnterrichtsassistentApp.updateUnterrichtEvidenceModalExtraAspect = function (index, aspectId) {
+  const draft = activeUnterrichtEvidenceModalDraft;
+  const itemIndex = Math.max(0, Math.floor(Number(index) || 0));
+
+  if (!draft || !Array.isArray(draft.extraSelections) || !draft.extraSelections[itemIndex]) {
+    return false;
+  }
+
+  captureUnterrichtEvidenceModalMainStages();
+  draft.note = String(document.getElementById("unterrichtEvidenceObservationNote") && document.getElementById("unterrichtEvidenceObservationNote").value || "").trim();
+  draft.extraSelections[itemIndex] = {
+    aspectId: String(aspectId || "").trim(),
+    stages: {}
+  };
+  renderEvidenceObservationModalContent();
+  return false;
+};
+
+window.UnterrichtsassistentApp.updateUnterrichtEvidenceModalExtraStage = function (index, dimensionId, stageId) {
+  const draft = activeUnterrichtEvidenceModalDraft;
+  const itemIndex = Math.max(0, Math.floor(Number(index) || 0));
+  const normalizedDimensionId = String(dimensionId || "").trim();
+  const normalizedStageId = String(stageId || "").trim();
+
+  if (!draft || !Array.isArray(draft.extraSelections) || !draft.extraSelections[itemIndex] || !normalizedDimensionId) {
+    return false;
+  }
+
+  if (!draft.extraSelections[itemIndex].stages || typeof draft.extraSelections[itemIndex].stages !== "object") {
+    draft.extraSelections[itemIndex].stages = {};
+  }
+  if (normalizedStageId) {
+    draft.extraSelections[itemIndex].stages[normalizedDimensionId] = normalizedStageId;
+  } else {
+    delete draft.extraSelections[itemIndex].stages[normalizedDimensionId];
+  }
+  return false;
+};
+
+window.UnterrichtsassistentApp.submitUnterrichtEvidenceObservationModal = function (event) {
+  const draft = activeUnterrichtEvidenceModalDraft;
+  const selections = buildUnterrichtEvidenceModalSelections();
+  const noteInput = document.getElementById("unterrichtEvidenceObservationNote");
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+  if (event && typeof event.stopPropagation === "function") {
+    event.stopPropagation();
+  }
+
+  if (!draft) {
+    return window.UnterrichtsassistentApp.closeUnterrichtEvidenceObservationModal();
+  }
+
+  if (currentRawSnapshot && String(draft.editRecordId || "").trim()) {
+    const record = getEvidenceObservationRecordsCollection(currentRawSnapshot).find(function (entry) {
+      return String(entry && entry.id || "").trim() === String(draft.editRecordId || "").trim();
+    }) || null;
+
+    if (record) {
+      record.selections = selections;
+      record.note = String(noteInput && noteInput.value || "").trim();
+      saveAndRefreshSnapshot(currentRawSnapshot, "klasse");
+    }
+
+    return window.UnterrichtsassistentApp.closeUnterrichtEvidenceObservationModal();
+  }
+
+  if (selections.length || String(noteInput && noteInput.value || "").trim()) {
+    appendUnterrichtEvidenceObservationRecord(Object.assign({}, draft, {
+      selections: selections,
+      note: String(noteInput && noteInput.value || "").trim()
+    }));
+  }
+
+  return window.UnterrichtsassistentApp.closeUnterrichtEvidenceObservationModal();
 };
 
 window.UnterrichtsassistentApp.handleUnterrichtEvidenceOverlayBackgroundPointer = function (event) {
@@ -21930,7 +22523,9 @@ window.UnterrichtsassistentApp.openUnterrichtMathObservationCompactModal = funct
     return false;
   }
 
-  activeUnterrichtMathObservationCompactDraft = Object.assign({}, draft, { markers: [] });
+  activeUnterrichtMathObservationCompactDraft = Object.assign({}, draft, {
+    markers: normalizeMathObservationMarkerEntries(draft.markers)
+  });
   activeUnterrichtMathObservationDraft = null;
   isUnterrichtMathObservationModalOpen = true;
   modal.hidden = false;
@@ -21945,10 +22540,14 @@ window.UnterrichtsassistentApp.openUnterrichtMathObservationCompactModal = funct
     dateLabel.textContent = [activeClass ? ((activeClass.name || "") + " " + (activeClass.subject || "")).trim() : "", formatDateLabel(draft.lessonDate)].filter(Boolean).join(" - ");
   }
   Array.from(modal.querySelectorAll("[data-compact-competency-quality]")).forEach(function (input) {
-    input.value = "";
+    const competency = normalizeMathObservationCompetencyValue(input.getAttribute("data-compact-competency-quality"));
+    const selectedEntry = normalizeMathObservationCompetencyQualityEntries(draft.competencyQualities).find(function (entry) {
+      return entry.competencyId === competency;
+    }) || null;
+    input.value = selectedEntry ? String(selectedEntry.quality) : "";
   });
   if (noteInput) {
-    noteInput.value = "";
+    noteInput.value = String(draft.note || "");
   }
   syncUnterrichtMathObservationCompactUi();
 
@@ -22056,56 +22655,58 @@ window.UnterrichtsassistentApp.submitUnterrichtMathObservationCompactModal = fun
     return window.UnterrichtsassistentApp.closeUnterrichtMathObservationCompactModal();
   }
 
-  competencySelections.forEach(function (selection) {
-    appendUnterrichtMathObservationRecord(currentRawSnapshot, draft, {
-      primaryCompetency: selection.competency,
-      competencyIds: [selection.competency],
-      processQuality: selection.quality,
-      marker: "",
-      markerDirection: "",
-      markerQuality: "",
-      situationType: draft.situationType,
-      demandLevel: draft.demandLevel,
-      lessonPlanId: draft.lessonPlanId,
-      lessonPhaseId: draft.lessonPhaseId,
-      lessonStepId: draft.lessonStepId,
-      note: note
-    });
-  });
-  markers.forEach(function (markerEntry) {
-    appendUnterrichtMathObservationRecord(currentRawSnapshot, draft, {
-      primaryCompetency: "",
-      competencyIds: [],
-      processQuality: 0,
-      marker: markerEntry.marker,
-      markerDirection: markerEntry.markerDirection,
-      markerQuality: markerEntry.markerQuality,
-      situationType: draft.situationType,
-      demandLevel: draft.demandLevel,
-      lessonPlanId: draft.lessonPlanId,
-      lessonPhaseId: draft.lessonPhaseId,
-      lessonStepId: draft.lessonStepId,
-      note: note
-    });
-  });
-  if (!competencySelections.length && !markers.length && note) {
-    appendUnterrichtMathObservationRecord(currentRawSnapshot, draft, {
-      primaryCompetency: "",
-      competencyIds: [],
-      processQuality: 0,
-      marker: "",
-      markerDirection: "",
-      markerQuality: "",
-      situationType: draft.situationType,
-      demandLevel: draft.demandLevel,
-      lessonPlanId: draft.lessonPlanId,
-      lessonPhaseId: draft.lessonPhaseId,
-      lessonStepId: draft.lessonStepId,
-      note: note
-    });
+  if (String(draft.editRecordId || "").trim()) {
+    const record = getMathObservationRecordsCollection(currentRawSnapshot).find(function (entry) {
+      return String(entry && entry.id || "").trim() === String(draft.editRecordId || "").trim();
+    }) || null;
+
+    if (record) {
+      record.primaryCompetency = competencySelections.length ? competencySelections[0].competency : "";
+      record.competencyIds = normalizeMathObservationCompetencyIds(record.primaryCompetency, competencySelections.map(function (selection) {
+        return selection.competency;
+      }));
+      record.competencyQualities = normalizeMathObservationCompetencyQualityEntries(competencySelections.map(function (selection) {
+        return {
+          competencyId: selection.competency,
+          quality: selection.quality
+        };
+      }));
+      record.processQuality = record.competencyQualities.length ? record.competencyQualities[0].quality : 0;
+      record.markers = normalizeMathObservationMarkerEntries(markers);
+      record.marker = record.markers.length ? record.markers[0].marker : "";
+      record.markerDirection = record.markers.length ? record.markers[0].markerDirection : "";
+      record.markerQuality = record.markers.length ? record.markers[0].markerQuality : "";
+      record.note = note;
+      saveAndRefreshSnapshot(currentRawSnapshot, "klasse");
+    }
+
+    return window.UnterrichtsassistentApp.closeUnterrichtMathObservationCompactModal();
   }
 
   if (competencySelections.length || markers.length || note) {
+    appendUnterrichtMathObservationRecord(currentRawSnapshot, draft, {
+      primaryCompetency: competencySelections.length ? competencySelections[0].competency : "",
+      competencyIds: competencySelections.map(function (selection) {
+        return selection.competency;
+      }),
+      competencyQualities: competencySelections.map(function (selection) {
+        return {
+          competencyId: selection.competency,
+          quality: selection.quality
+        };
+      }),
+      processQuality: competencySelections.length ? competencySelections[0].quality : 0,
+      marker: markers.length ? markers[0].marker : "",
+      markers: markers,
+      markerDirection: markers.length ? markers[0].markerDirection : "",
+      markerQuality: markers.length ? markers[0].markerQuality : "",
+      situationType: draft.situationType,
+      demandLevel: draft.demandLevel,
+      lessonPlanId: draft.lessonPlanId,
+      lessonPhaseId: draft.lessonPhaseId,
+      lessonStepId: draft.lessonStepId,
+      note: note
+    });
     saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
   }
 
@@ -22522,6 +23123,7 @@ window.UnterrichtsassistentApp.openUnterrichtKnowledgeGapModal = function () {
 };
 window.UnterrichtsassistentApp.closeUnterrichtKnowledgeGapModal = function () {
   const modal = getUnterrichtKnowledgeGapModal();
+  const wasOpen = isUnterrichtKnowledgeGapModalOpen || (modal && !modal.hidden);
 
   closeKnowledgeGapSuggestions();
 
@@ -22531,6 +23133,9 @@ window.UnterrichtsassistentApp.closeUnterrichtKnowledgeGapModal = function () {
   }
 
   isUnterrichtKnowledgeGapModalOpen = false;
+  if (wasOpen) {
+    suppressUnterrichtKnowledgeGapSeatClickUntil = Date.now() + 450;
+  }
   activeUnterrichtKnowledgeGapDraft = null;
   return false;
 };
@@ -22543,6 +23148,9 @@ window.UnterrichtsassistentApp.submitUnterrichtKnowledgeGapModal = function (eve
 
   if (event && typeof event.preventDefault === "function") {
     event.preventDefault();
+  }
+  if (event && typeof event.stopPropagation === "function") {
+    event.stopPropagation();
   }
 
   if (!currentRawSnapshot || !draft || !String(contentInput && contentInput.value || "").trim()) {
@@ -23001,13 +23609,69 @@ window.UnterrichtsassistentApp.closeClassAnalysisRecordEditModal = function () {
   return false;
 };
 window.UnterrichtsassistentApp.openClassAnalysisRecordEdit = function (recordType, recordId) {
+  const currentRawSnapshot = schoolService && serializeSnapshot ? serializeSnapshot(schoolService.snapshot) : null;
+  const normalizedRecordType = String(recordType || "").trim();
+  const normalizedRecordId = String(recordId || "").trim();
+  let record;
+  let tool;
+
   if (!recordType || !recordId || activeViewId !== "klasse") {
     return false;
   }
 
+  record = currentRawSnapshot ? getClassAnalysisRecordByDraft(currentRawSnapshot, {
+    recordType: normalizedRecordType,
+    recordId: normalizedRecordId
+  }) : null;
+
+  if (normalizedRecordType === "mathObservation" && record) {
+    return window.UnterrichtsassistentApp.openUnterrichtMathObservationCompactModal({
+      editRecordId: normalizedRecordId,
+      studentId: String(record.studentId || "").trim(),
+      classId: String(record.classId || "").trim(),
+      lessonId: String(record.lessonId || "").trim(),
+      lessonDate: normalizeDateValue(record.lessonDate || record.recordedAt || getReferenceDateValue()),
+      lessonStartTime: String(record.lessonStartTime || "").trim(),
+      lessonRoom: String(record.room || "").trim(),
+      situationType: normalizeMathObservationSituationTypeValue(record.situationType),
+      demandLevel: normalizeMathObservationDemandLevelValue(record.demandLevel),
+      lessonPlanId: String(record.lessonPlanId || "").trim(),
+      lessonPhaseId: String(record.lessonPhaseId || "").trim(),
+      lessonStepId: String(record.lessonStepId || "").trim(),
+      competencyQualities: normalizeMathObservationCompetencyQualityEntries(record.competencyQualities && record.competencyQualities.length
+        ? record.competencyQualities
+        : (record.primaryCompetency ? [{ competencyId: record.primaryCompetency, quality: record.processQuality }] : [])),
+      markers: normalizeMathObservationMarkerEntries(record.markers && record.markers.length
+        ? record.markers
+        : (record.marker ? [{ marker: record.marker, markerDirection: record.markerDirection, markerQuality: record.markerQuality }] : [])),
+      note: String(record.note || "").trim()
+    });
+  }
+
+  if (normalizedRecordType === "evidenceObservation" && record) {
+    tool = getEvidenceToolsCollection(currentRawSnapshot).find(function (item) {
+      return String(item && item.id || "").trim() === String(record.toolId || "").trim();
+    }) || null;
+
+    if (tool) {
+      return window.UnterrichtsassistentApp.openUnterrichtEvidenceObservationModal({
+        editRecordId: normalizedRecordId,
+        studentId: String(record.studentId || "").trim(),
+        classId: String(record.classId || "").trim(),
+        lessonId: String(record.lessonId || "").trim(),
+        lessonDate: normalizeDateValue(record.lessonDate || record.recordedAt || getReferenceDateValue()),
+        lessonStartTime: String(record.lessonStartTime || "").trim(),
+        lessonRoom: String(record.room || "").trim(),
+        tool: tool,
+        selections: Array.isArray(record.selections) ? record.selections : [],
+        note: String(record.note || "").trim()
+      });
+    }
+  }
+
   activeClassAnalysisRecordEditDraft = {
-    recordType: String(recordType),
-    recordId: String(recordId)
+    recordType: normalizedRecordType,
+    recordId: normalizedRecordId
   };
   isClassAnalysisRecordEditModalOpen = true;
   setActiveView("klasse");

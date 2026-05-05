@@ -251,7 +251,7 @@ function serializeDomainSnapshot(snapshot) {
   }
 
   function cloneEvidenceObservations(items) {
-    return cloneItems(items || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "toolId", "situationType", "demandLevel", "selections"]).map(function (item) {
+    return cloneItems(items || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "toolId", "situationType", "demandLevel", "lessonPlanId", "lessonPhaseId", "lessonStepId", "note", "selections"]).map(function (item) {
       return Object.assign({}, item, {
         selections: Array.isArray(item.selections)
           ? item.selections.map(function (selection) {
@@ -341,9 +341,19 @@ function serializeDomainSnapshot(snapshot) {
     homeworkRecords: cloneItems(snapshot.homeworkRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "quality", "ignored"]),
     warningRecords: cloneItems(snapshot.warningRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "category", "note"]),
     knowledgeGapRecords: cloneItems(snapshot.knowledgeGapRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "content", "status", "note"]),
-    mathObservationRecords: cloneItems(snapshot.mathObservationRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "primaryCompetency", "competencyIds", "processQuality", "marker", "markerDirection", "markerQuality", "situationType", "demandLevel", "lessonPlanId", "lessonPhaseId", "lessonStepId", "note"]).map(function (item) {
+    mathObservationRecords: cloneItems(snapshot.mathObservationRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "primaryCompetency", "competencyIds", "competencyQualities", "processQuality", "marker", "markers", "markerDirection", "markerQuality", "situationType", "demandLevel", "lessonPlanId", "lessonPhaseId", "lessonStepId", "note"]).map(function (item) {
       return Object.assign({}, item, {
-        competencyIds: Array.isArray(item.competencyIds) ? item.competencyIds.slice() : []
+        competencyIds: Array.isArray(item.competencyIds) ? item.competencyIds.slice() : [],
+        competencyQualities: Array.isArray(item.competencyQualities)
+          ? item.competencyQualities.map(function (entry) {
+              return entry && typeof entry === "object" ? Object.assign({}, entry) : entry;
+            })
+          : [],
+        markers: Array.isArray(item.markers)
+          ? item.markers.map(function (entry) {
+              return entry && typeof entry === "object" ? Object.assign({}, entry) : entry;
+            })
+          : []
       });
     }),
     todos: cloneItems(snapshot.todos, ["id", "title", "description", "category", "dueDate", "relatedClassId", "assignedStudentIds", "assignedStudentStatuses", "priority", "type", "checklistItems", "done", "completedAt"]).map(function (item) {

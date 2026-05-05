@@ -263,8 +263,10 @@ window.Unterrichtsassistent.ui.views.klasse = {
         content: "Inhalt",
         primaryCompetency: "Kompetenz",
         competencyIds: "Komplex",
+        competencyQualities: "Kompetenzen",
         processQuality: "Qualitaet",
         marker: "Marker",
+        markers: "Marker",
         markerDirection: "Richtung",
         markerQuality: "Marker-Stufe",
         situationType: "Situation",
@@ -290,6 +292,285 @@ window.Unterrichtsassistent.ui.views.klasse = {
       }) || null;
     }
 
+    function formatDateForLookup(date) {
+      if (!date || Number.isNaN(date.getTime())) {
+        return "";
+      }
+
+      return [
+        String(date.getFullYear()).padStart(4, "0"),
+        String(date.getMonth() + 1).padStart(2, "0"),
+        String(date.getDate()).padStart(2, "0")
+      ].join("-");
+    }
+
+    function getWeekdayKeyForDateValue(dateValue) {
+      const parsedDate = parseDateValue(dateValue);
+      const weekday = parsedDate ? parsedDate.getDay() : 0;
+
+      return weekday >= 1 && weekday <= 5 ? String(weekday) : "";
+    }
+
+    function orderLinkedCurriculumItems(items, nextKey) {
+      const sourceItems = Array.isArray(items) ? items.slice() : [];
+      const incomingCounts = {};
+      const itemById = {};
+      const ordered = [];
+      let current = null;
+
+      sourceItems.forEach(function (entry) {
+        const entryId = String(entry && entry.id || "").trim();
+
+        if (entryId) {
+          incomingCounts[entryId] = 0;
+          itemById[entryId] = entry;
+        }
+      });
+
+      sourceItems.forEach(function (entry) {
+        const nextId = String(entry && entry[nextKey] || "").trim();
+
+        if (nextId && Object.prototype.hasOwnProperty.call(incomingCounts, nextId)) {
+          incomingCounts[nextId] += 1;
+        }
+      });
+
+      current = sourceItems.find(function (entry) {
+        const entryId = String(entry && entry.id || "").trim();
+        return entryId && incomingCounts[entryId] === 0;
+      }) || sourceItems[0] || null;
+
+      while (current) {
+        const currentId = String(current && current.id || "").trim();
+        const nextId = String(current && current[nextKey] || "").trim();
+
+        if (!currentId || ordered.some(function (entry) {
+          return String(entry && entry.id || "").trim() === currentId;
+        })) {
+          break;
+        }
+
+        ordered.push(current);
+        current = nextId ? itemById[nextId] || null : null;
+      }
+
+      sourceItems.forEach(function (entry) {
+        const entryId = String(entry && entry.id || "").trim();
+
+        if (entryId && !ordered.some(function (orderedEntry) {
+          return String(orderedEntry && orderedEntry.id || "").trim() === entryId;
+        })) {
+          ordered.push(entry);
+        }
+      });
+
+      return ordered;
+    }
+
+    function getOrderedCurriculumSeriesForClass(classId) {
+      return orderLinkedCurriculumItems((Array.isArray(service.snapshot && service.snapshot.curriculumSeries)
+        ? service.snapshot.curriculumSeries
+        : []).filter(function (entry) {
+        return String(entry && entry.classId || "").trim() === String(classId || "").trim();
+      }), "nextSeriesId");
+    }
+
+    function getOrderedCurriculumSequencesForSeries(seriesId) {
+      return orderLinkedCurriculumItems((Array.isArray(service.snapshot && service.snapshot.curriculumSequences)
+        ? service.snapshot.curriculumSequences
+        : []).filter(function (entry) {
+        return String(entry && entry.seriesId || "").trim() === String(seriesId || "").trim();
+      }), "nextSequenceId");
+    }
+
+    function getOrderedCurriculumLessonsForSequence(sequenceId) {
+      return orderLinkedCurriculumItems((Array.isArray(service.snapshot && service.snapshot.curriculumLessonPlans)
+        ? service.snapshot.curriculumLessonPlans
+        : []).filter(function (entry) {
+        return String(entry && entry.sequenceId || "").trim() === String(sequenceId || "").trim();
+      }), "nextLessonId");
+    }
+
+    function getCurriculumLessonHourDemand(lessonItem) {
+      return String(lessonItem && lessonItem.hourType || "").trim() === "double" ? 2 : 1;
+    }
+
+    function buildCurriculumAssignmentSlotsForClass(classId) {
+      const normalizedClassId = String(classId || "").trim();
+      const startDate = parseDateValue(service.snapshot && service.snapshot.schoolYearStart);
+      const endDate = parseDateValue(service.snapshot && service.snapshot.schoolYearEnd);
+      const cursor = startDate ? new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()) : null;
+      const lastDate = endDate ? new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate()) : null;
+      const lessonSlots = [];
+      const orderedSeries = getOrderedCurriculumSeriesForClass(normalizedClassId);
+      let previousSeriesLastAssignedSlotIndex = -1;
+
+      if (!normalizedClassId || !cursor || !lastDate || !service || typeof service.getLessonUnitsForClass !== "function") {
+        return [];
+      }
+
+      while (cursor <= lastDate) {
+        const isoDate = formatDateForLookup(cursor);
+        const lessonStatus = (Array.isArray(service.snapshot && service.snapshot.planningInstructionLessonStatuses)
+          ? service.snapshot.planningInstructionLessonStatuses
+          : []).find(function (statusItem) {
+          return String(statusItem && statusItem.classId || "").trim() === normalizedClassId
+            && String(statusItem && statusItem.date || "").slice(0, 10) === isoDate;
+        }) || null;
+
+        if (!(lessonStatus && lessonStatus.isCancelled)) {
+          service.getLessonUnitsForClass(normalizedClassId, cursor).forEach(function (lessonUnit) {
+            const sourceRowId = String(lessonUnit && lessonUnit.sourceRowId || "").trim();
+            const startTime = String(lessonUnit && lessonUnit.startTime || "").trim();
+            const endTime = String(lessonUnit && lessonUnit.endTime || "").trim();
+            const weekdayKey = String(Number(lessonUnit && lessonUnit.weekday));
+            const currentTimetable = typeof service.getCurrentTimetable === "function" ? service.getCurrentTimetable(cursor) : null;
+            const timetableRows = currentTimetable && typeof service.getTimetableRows === "function" ? service.getTimetableRows(currentTimetable) : [];
+            const lessonCount = timetableRows.filter(function (row) {
+              const cell = row && row.cells ? row.cells[weekdayKey] : null;
+              const effectiveClassId = row && row.type === "lesson" && cell ? (cell.isBlocked ? cell.inheritedClassId : cell.classId) : "";
+              const effectiveSourceRowId = row && row.type === "lesson" && cell ? String(cell.isBlocked ? (cell.sourceRowId || row.id) : row.id).trim() : "";
+
+              return effectiveClassId === normalizedClassId && effectiveSourceRowId === sourceRowId;
+            }).length || 1;
+            let partIndex = 0;
+
+            if (!sourceRowId) {
+              return;
+            }
+
+            while (partIndex < Math.max(1, lessonCount)) {
+              lessonSlots.push({
+                lessonDate: isoDate,
+                sourceRowId: sourceRowId,
+                startTime: startTime,
+                endTime: endTime,
+                assignedSeriesId: "",
+                assignedSequenceId: "",
+                assignedLessonId: ""
+              });
+              partIndex += 1;
+            }
+          });
+        }
+
+        cursor.setDate(cursor.getDate() + 1);
+      }
+
+      orderedSeries.forEach(function (seriesItem) {
+        const seriesId = String(seriesItem && seriesItem.id || "").trim();
+        const startMode = String(seriesItem && seriesItem.startMode || "").trim() === "manual" ? "manual" : "automatic";
+        const manualStartDate = String(seriesItem && seriesItem.startDate || "").slice(0, 10);
+        let remainingDemand = Math.max(0, Number(seriesItem && seriesItem.hourDemand) || 0);
+        const earliestAllowedSlotIndex = previousSeriesLastAssignedSlotIndex + 1;
+        let startIndex = -1;
+        let cursorIndex;
+        let lastAssignedSlotIndex = -1;
+
+        if (!seriesId || !remainingDemand) {
+          return;
+        }
+
+        startIndex = lessonSlots.findIndex(function (slot, slotIndex) {
+          if (slotIndex < earliestAllowedSlotIndex || slot.assignedSeriesId) {
+            return false;
+          }
+
+          return startMode === "manual" && manualStartDate ? String(slot.lessonDate || "") >= manualStartDate : true;
+        });
+
+        cursorIndex = startIndex;
+        while (cursorIndex >= 0 && cursorIndex < lessonSlots.length && remainingDemand > 0) {
+          if (!lessonSlots[cursorIndex].assignedSeriesId) {
+            lessonSlots[cursorIndex].assignedSeriesId = seriesId;
+            remainingDemand -= 1;
+            lastAssignedSlotIndex = cursorIndex;
+          }
+          cursorIndex += 1;
+        }
+
+        if (lastAssignedSlotIndex >= 0) {
+          previousSeriesLastAssignedSlotIndex = lastAssignedSlotIndex;
+        }
+      });
+
+      orderedSeries.forEach(function (seriesItem) {
+        const seriesId = String(seriesItem && seriesItem.id || "").trim();
+        const seriesSlots = lessonSlots.filter(function (slot) {
+          return String(slot && slot.assignedSeriesId || "").trim() === seriesId;
+        });
+        let seriesSlotIndex = 0;
+
+        getOrderedCurriculumSequencesForSeries(seriesId).forEach(function (sequenceItem) {
+          const sequenceId = String(sequenceItem && sequenceItem.id || "").trim();
+          let remainingDemand = Math.max(0, Number(sequenceItem && sequenceItem.hourDemand) || 0);
+
+          while (seriesSlotIndex < seriesSlots.length && remainingDemand > 0) {
+            seriesSlots[seriesSlotIndex].assignedSequenceId = sequenceId;
+            remainingDemand -= 1;
+            seriesSlotIndex += 1;
+          }
+        });
+      });
+
+      (Array.isArray(service.snapshot && service.snapshot.curriculumSequences) ? service.snapshot.curriculumSequences : []).forEach(function (sequenceItem) {
+        const sequenceId = String(sequenceItem && sequenceItem.id || "").trim();
+        const sequenceSlots = lessonSlots.filter(function (slot) {
+          return String(slot && slot.assignedSequenceId || "").trim() === sequenceId;
+        });
+        let sequenceSlotIndex = 0;
+
+        getOrderedCurriculumLessonsForSequence(sequenceId).forEach(function (lessonItem) {
+          const lessonId = String(lessonItem && lessonItem.id || "").trim();
+          let remainingDemand = getCurriculumLessonHourDemand(lessonItem);
+
+          while (sequenceSlotIndex < sequenceSlots.length && remainingDemand > 0) {
+            sequenceSlots[sequenceSlotIndex].assignedLessonId = lessonId;
+            remainingDemand -= 1;
+            sequenceSlotIndex += 1;
+          }
+        });
+      });
+
+      return lessonSlots;
+    }
+
+    function getLiveLessonPlanLabel(value) {
+      const parts = String(value || "").split("::");
+      const classId = String(parts[1] || "").trim();
+      const lessonDate = String(parts[2] || "").slice(0, 10);
+      const sourceRowId = String(parts[3] || "").trim();
+      const startTime = String(parts[4] || "").trim();
+      const endTime = String(parts[5] || "").trim();
+      const assignedSlot = buildCurriculumAssignmentSlotsForClass(classId).find(function (slot) {
+        return String(slot && slot.lessonDate || "").slice(0, 10) === lessonDate
+          && String(slot && slot.sourceRowId || "").trim() === sourceRowId
+          && (!startTime || startTime === "nostart" || String(slot && slot.startTime || "").trim() === startTime)
+          && (!endTime || endTime === "noend" || String(slot && slot.endTime || "").trim() === endTime);
+      }) || null;
+      const assignedLesson = assignedSlot ? findCurriculumItemById("curriculumLessonPlans", assignedSlot.assignedLessonId) : null;
+      const weekdayKey = getWeekdayKeyForDateValue(lessonDate);
+      const timetables = Array.isArray(service.snapshot && service.snapshot.timetables) ? service.snapshot.timetables : [];
+      let timetableTopic = "";
+
+      timetables.some(function (timetable) {
+        return (Array.isArray(timetable && timetable.rows) ? timetable.rows : []).some(function (row) {
+          const dayEntry = row && row.days ? row.days[weekdayKey] : null;
+          const effectiveRowId = String(row && row.id || "").trim();
+          const effectiveClassId = String(dayEntry && dayEntry.classId || "").trim();
+
+          if (effectiveRowId !== sourceRowId || effectiveClassId !== classId) {
+            return false;
+          }
+
+          timetableTopic = String(dayEntry && (dayEntry.topic || dayEntry.title || dayEntry.subject) || "").trim();
+          return Boolean(timetableTopic);
+        });
+      });
+
+      return String(assignedLesson && (assignedLesson.topic || assignedLesson.title) || "").trim() || timetableTopic;
+    }
+
     function formatCurriculumReferenceValue(key, value) {
       const normalizedValue = String(value || "").trim();
       let item = null;
@@ -299,7 +580,14 @@ window.Unterrichtsassistent.ui.views.klasse = {
         return "";
       }
 
+      if (normalizedValue === "__fallback__" || normalizedValue.indexOf("__fallback__::") === 0) {
+        return "";
+      }
+
       if (key === "lessonPlanId") {
+        if (normalizedValue.indexOf("__live__::") === 0) {
+          return getLiveLessonPlanLabel(normalizedValue);
+        }
         item = findCurriculumItemById("curriculumLessonPlans", normalizedValue);
         label = String(item && (item.topic || item.title) || "").trim();
       } else if (key === "lessonPhaseId") {
@@ -310,11 +598,47 @@ window.Unterrichtsassistent.ui.views.klasse = {
         label = String(item && item.title || "").trim();
       }
 
-      return label || normalizedValue;
+      return label || (normalizedValue.indexOf("__") === 0 ? "" : normalizedValue);
     }
 
     function formatDetailValue(key, value) {
       const normalizedValue = value === undefined || value === null ? "" : String(value).trim();
+      const competencyLabels = {
+        k1: "K1",
+        k2: "K2",
+        k3: "K3",
+        k4: "K4",
+        k5: "K5",
+        k6: "K6"
+      };
+      const qualityLabels = {
+        "-2": "--",
+        "-1": "-",
+        "0": "0",
+        "1": "+",
+        "2": "++"
+      };
+
+      if (key === "competencyQualities") {
+        return (Array.isArray(value) ? value : []).map(function (entry) {
+          const source = entry && typeof entry === "object" ? entry : {};
+          const competencyKey = String(source.competencyId || source.competency || "").trim().toLowerCase();
+          const qualityValue = String(source.quality === undefined || source.quality === null ? "" : source.quality).trim();
+
+          return [competencyLabels[competencyKey] || competencyKey, qualityLabels[qualityValue] || qualityValue].filter(Boolean).join(" ");
+        }).filter(Boolean).join(", ");
+      }
+
+      if (key === "markers") {
+        return (Array.isArray(value) ? value : []).map(function (entry) {
+          const source = entry && typeof entry === "object" ? entry : {};
+          const markerLabel = formatDetailValue("marker", source.marker);
+          const directionLabel = formatDetailValue("markerDirection", source.markerDirection);
+          const qualityLabel = formatDetailValue("markerQuality", source.markerQuality);
+
+          return [markerLabel, directionLabel, qualityLabel].filter(Boolean).join(" ");
+        }).filter(Boolean).join(", ");
+      }
 
       if (!normalizedValue) {
         return "";
@@ -361,25 +685,12 @@ window.Unterrichtsassistent.ui.views.klasse = {
         return normalizedValue.split(",").map(function (entry) {
           const competencyKey = String(entry || "").trim().toLowerCase();
 
-          return {
-            k1: "K1",
-            k2: "K2",
-            k3: "K3",
-            k4: "K4",
-            k5: "K5",
-            k6: "K6"
-          }[competencyKey] || String(entry || "").trim();
+          return competencyLabels[competencyKey] || String(entry || "").trim();
         }).filter(Boolean).join(", ");
       }
 
       if (key === "processQuality" || key === "markerQuality") {
-        return {
-          "-2": "--",
-          "-1": "-",
-          "0": "0",
-          "1": "+",
-          "2": "++"
-        }[normalizedValue] || normalizedValue;
+        return qualityLabels[normalizedValue] || normalizedValue;
       }
 
       if (key === "marker") {
@@ -443,10 +754,21 @@ window.Unterrichtsassistent.ui.views.klasse = {
     }
 
     function buildAnalysisDetailSummary(record) {
-      const orderedKeys = ["status", "quality", "category", "content", "primaryCompetency", "competencyIds", "processQuality", "marker", "markerDirection", "markerQuality", "situationType", "demandLevel", "lessonPlanId", "lessonPhaseId", "lessonStepId", "note", "afb1", "afb2", "afb3", "workBehavior", "socialBehavior", "knowledgeGap"];
+      const hasCompetencyQualities = Array.isArray(record && record.competencyQualities) && record.competencyQualities.length > 0;
+      const hasMarkers = Array.isArray(record && record.markers) && record.markers.length > 0;
+      const orderedKeys = ["status", "quality", "category", "content", "competencyQualities", "primaryCompetency", "competencyIds", "processQuality", "markers", "marker", "markerDirection", "markerQuality", "situationType", "demandLevel", "lessonPlanId", "lessonPhaseId", "lessonStepId", "note", "afb1", "afb2", "afb3", "workBehavior", "socialBehavior", "knowledgeGap"];
 
       return orderedKeys.filter(function (key) {
         const value = record[key];
+        if (hasCompetencyQualities && (key === "primaryCompetency" || key === "competencyIds" || key === "processQuality")) {
+          return false;
+        }
+        if (hasMarkers && (key === "marker" || key === "markerDirection" || key === "markerQuality")) {
+          return false;
+        }
+        if (key === "competencyQualities" || key === "markers") {
+          return Array.isArray(value) && value.length > 0;
+        }
         if (key === "competencyIds") {
           const competencyIds = Array.isArray(value)
             ? value
@@ -495,7 +817,10 @@ window.Unterrichtsassistent.ui.views.klasse = {
       const toolTitle = String(tool && tool.titel || "").trim() || "Bewertungswerkzeug";
       const contextParts = [
         formatDetailValue("situationType", record && record.situationType),
-        formatDetailValue("demandLevel", record && record.demandLevel)
+        formatDetailValue("demandLevel", record && record.demandLevel),
+        formatDetailValue("lessonPlanId", record && record.lessonPlanId),
+        formatDetailValue("lessonPhaseId", record && record.lessonPhaseId),
+        formatDetailValue("lessonStepId", record && record.lessonStepId)
       ].filter(Boolean);
       const selectionParts = (Array.isArray(record && record.selections) ? record.selections : []).map(function (selection) {
         const aspect = getEvidenceAspectById(tool, selection && selection.aspectId);
@@ -985,8 +1310,23 @@ window.Unterrichtsassistent.ui.views.klasse = {
         const raw = record && record.raw || {};
 
         if (record.type === "mathObservation") {
-          (Array.isArray(raw.competencyIds) ? raw.competencyIds : [raw.primaryCompetency]).forEach(function (competencyId) {
-            const key = String(competencyId || "").trim().toLowerCase();
+          const competencyEntries = Array.isArray(raw.competencyQualities) && raw.competencyQualities.length
+            ? raw.competencyQualities.map(function (entry) {
+                const source = entry && typeof entry === "object" ? entry : {};
+                return {
+                  competencyId: source.competencyId || source.competency,
+                  quality: source.quality
+                };
+              })
+            : (Array.isArray(raw.competencyIds) ? raw.competencyIds : [raw.primaryCompetency]).map(function (competencyId) {
+                return {
+                  competencyId: competencyId,
+                  quality: raw.processQuality
+                };
+              });
+
+          competencyEntries.forEach(function (entry) {
+            const key = String(entry && entry.competencyId || "").trim().toLowerCase();
             if (!key) {
               return;
             }
@@ -994,7 +1334,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
               mathStats[key] = { count: 0, qualities: [], latest: "" };
             }
             mathStats[key].count += 1;
-            mathStats[key].qualities.push(Number(raw.processQuality));
+            mathStats[key].qualities.push(Number(entry.quality));
             mathStats[key].latest = record.date > mathStats[key].latest ? record.date : mathStats[key].latest;
           });
         } else if (record.type === "evidenceObservation") {

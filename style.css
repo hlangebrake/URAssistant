@@ -6531,6 +6531,10 @@ button {
   color: #ffffff;
 }
 
+.unterricht-evidence-overlay__aspect.is-suppressed {
+  display: none;
+}
+
 .unterricht-evidence-overlay__stage.is-active {
   z-index: 3;
   background: rgba(231, 181, 64, 0.95);
@@ -7374,6 +7378,90 @@ button {
 .import-modal__dialog--knowledge-gap {
   width: min(620px, calc(100% - 2rem));
   max-width: 620px;
+}
+
+.import-modal__dialog--evidence-observation {
+  width: min(1120px, calc(100% - 2rem));
+  max-width: 1120px;
+  max-height: min(88vh, 960px);
+  overflow-y: auto;
+}
+
+.evidence-observation-modal {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.85fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.evidence-observation-modal__main,
+.evidence-observation-modal__extra {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.evidence-observation-modal__aspect,
+.evidence-observation-modal__extra-row {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(23, 49, 62, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.evidence-observation-modal__aspect-title {
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 900;
+}
+
+.evidence-observation-modal__dimensions {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.evidence-observation-modal__dimension {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.32fr) minmax(0, 1fr);
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.evidence-observation-modal__dimension > span {
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.evidence-observation-modal__stage-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.evidence-observation-modal__stage-button {
+  min-width: 42px;
+  width: auto;
+  padding: 0 0.65rem;
+}
+
+.evidence-observation-modal__extra-header,
+.evidence-observation-modal__extra-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.evidence-observation-modal__extra-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.evidence-observation-modal__extra-dimension {
+  gap: 0.28rem;
 }
 
 .import-modal__meta {
