@@ -161,6 +161,10 @@ let seatPlanMixGender = false;
 let seatPlanSeparateWarnings = false;
 let seatPlanRespectPreviousPlan = false;
 let seatPlanSocialWishLimit = 1;
+let seatPlanWarningLookbackWeeks = 4;
+let seatPlanOptimizationMode = "mehrfachstart";
+let seatPlanOptimizationIterations = 80;
+let seatPlanOptimizationRestarts = 4;
 let seatPlanOptimizationPriorities = {
   respectSocialRelations: "normal",
   mixGender: "normal",
@@ -11121,6 +11125,29 @@ function normalizeSeatPlanWishLimit(value) {
   return clampValue(Math.round(Number(value) || 1), 0, 4);
 }
 
+function normalizeSeatPlanWarningLookbackWeeks(value) {
+  const numberValue = Number(value);
+  return clampValue(Math.round(Number.isFinite(numberValue) ? numberValue : 4), 0, 52);
+}
+
+function normalizeSeatPlanOptimizationMode(value) {
+  const normalizedValue = String(value || "").trim().toLowerCase();
+
+  return ["schnell", "mehrfachstart", "exakt"].indexOf(normalizedValue) >= 0
+    ? normalizedValue
+    : "mehrfachstart";
+}
+
+function normalizeSeatPlanOptimizationIterations(value) {
+  const numberValue = Number(value);
+  return clampValue(Math.round(Number.isFinite(numberValue) ? numberValue : 80), 1, 2000);
+}
+
+function normalizeSeatPlanOptimizationRestarts(value) {
+  const numberValue = Number(value);
+  return clampValue(Math.round(Number.isFinite(numberValue) ? numberValue : 4), 1, 100);
+}
+
 function normalizeSeatPlanOptimizationPriority(value) {
   const normalizedValue = String(value || "").trim().toLowerCase();
 
@@ -11584,17 +11611,19 @@ function countHardWarningSeatViolations(assignments, neighborPairs, warnedStuden
   return hardViolations;
 }
 
-function getRecentWarningStudentIdsLookup(rawSnapshot, classId, referenceDateValue) {
+function getRecentWarningStudentIdsLookup(rawSnapshot, classId, referenceDateValue, warningLookbackWeeks) {
   const lookup = {};
-  const referenceDate = new Date(String(referenceDateValue || getReferenceDateValue()) + "T12:00:00");
+  const normalizedReferenceDateValue = normalizeDateValue(referenceDateValue || getReferenceDateValue());
+  const referenceDate = new Date(normalizedReferenceDateValue + "T12:00:00");
   const earliestDate = new Date(referenceDate);
+  const normalizedWarningLookbackWeeks = normalizeSeatPlanWarningLookbackWeeks(warningLookbackWeeks);
   let earliestValue;
 
   if (Number.isNaN(referenceDate.getTime())) {
     return lookup;
   }
 
-  earliestDate.setDate(earliestDate.getDate() - 28);
+  earliestDate.setDate(earliestDate.getDate() - (normalizedWarningLookbackWeeks * 7));
   earliestValue = earliestDate.getFullYear()
     + "-" + String(earliestDate.getMonth() + 1).padStart(2, "0")
     + "-" + String(earliestDate.getDate()).padStart(2, "0");
@@ -11608,12 +11637,48 @@ function getRecentWarningStudentIdsLookup(rawSnapshot, classId, referenceDateVal
       return;
     }
 
-    if (compareDateValues(warningDateValue, earliestValue) >= 0 && compareDateValues(warningDateValue, referenceDateValue) <= 0) {
+    if (compareDateValues(warningDateValue, earliestValue) >= 0 && compareDateValues(warningDateValue, normalizedReferenceDateValue) <= 0) {
       lookup[studentId] = true;
     }
   });
 
   return lookup;
+}
+
+function refreshSeatOrderWarningBadges() {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const referenceDateValue = getReferenceDateValue();
+  const warningLookbackWeeks = normalizeSeatPlanWarningLookbackWeeks(seatPlanWarningLookbackWeeks);
+  const warnedStudentIdsLookup = currentRawSnapshot && activeClass
+    ? getRecentWarningStudentIdsLookup(currentRawSnapshot, activeClass.id, referenceDateValue, warningLookbackWeeks)
+    : {};
+  const warningLabel = "Verwarnung in den letzten " + warningLookbackWeeks + " Wochen";
+
+  Array.from(document.querySelectorAll(".seat-order-desk__label[data-seat-order-student-id]")).forEach(function (labelElement) {
+    const studentId = String(labelElement.getAttribute("data-seat-order-student-id") || "").trim();
+    const hasRecentWarning = Boolean(studentId && warnedStudentIdsLookup[studentId]);
+    let warningElement = labelElement.querySelector(".seat-order-desk__warning");
+
+    labelElement.classList.toggle("has-recent-warning", hasRecentWarning);
+
+    if (!hasRecentWarning) {
+      if (warningElement && warningElement.parentNode) {
+        warningElement.parentNode.removeChild(warningElement);
+      }
+      return;
+    }
+
+    if (!warningElement) {
+      warningElement = document.createElement("span");
+      warningElement.className = "seat-order-desk__warning";
+      warningElement.textContent = "\u26a0";
+      labelElement.insertBefore(warningElement, labelElement.firstChild);
+    }
+
+    warningElement.setAttribute("aria-label", warningLabel);
+    warningElement.setAttribute("title", warningLabel);
+  });
 }
 
 function getPreviousSeatOrderForOptimization(rawSnapshot, currentSeatOrder, classId, roomValue) {
@@ -11748,9 +11813,12 @@ function optimizeSocialSeatAssignments(students, slotAssignments, neighborPairs,
   const previousUnfulfilledWishStudentIdsLookup = settings.previousUnfulfilledWishStudentIdsLookup && typeof settings.previousUnfulfilledWishStudentIdsLookup === "object"
     ? settings.previousUnfulfilledWishStudentIdsLookup
     : {};
+  const optimizationMode = normalizeSeatPlanOptimizationMode(settings.optimizationMode);
+  const iterationLimit = normalizeSeatPlanOptimizationIterations(settings.optimizationIterations);
+  const restartCount = optimizationMode === "schnell" ? 1 : normalizeSeatPlanOptimizationRestarts(settings.optimizationRestarts);
+  const exactFreeSeatLimit = 9;
   let bestAssignments;
   let bestScore;
-  let iteration;
 
   function hasRelation(studentId, relationKey, otherStudentId) {
     const student = studentsById[studentId];
@@ -11860,57 +11928,168 @@ function optimizeSocialSeatAssignments(students, slotAssignments, neighborPairs,
     return Object.assign({}, assignments);
   }
 
+  function getOccupiedFreeSlotKeys(assignments) {
+    return Object.keys(assignments || {}).filter(function (slotKey) {
+      const studentId = assignments[slotKey];
+      return studentId && !lockedStudentIdsLookup[studentId];
+    });
+  }
+
+  function shuffleValues(values) {
+    const shuffledValues = values.slice();
+    let currentIndex = shuffledValues.length;
+    let temporaryValue;
+    let randomIndex;
+
+    while (currentIndex > 0) {
+      randomIndex = Math.floor(Math.random() * currentIndex);
+      currentIndex -= 1;
+      temporaryValue = shuffledValues[currentIndex];
+      shuffledValues[currentIndex] = shuffledValues[randomIndex];
+      shuffledValues[randomIndex] = temporaryValue;
+    }
+
+    return shuffledValues;
+  }
+
+  function randomizeFreeAssignments(assignments) {
+    const nextAssignments = cloneAssignments(assignments);
+    const occupiedFreeSlotKeys = getOccupiedFreeSlotKeys(assignments);
+    const shuffledStudentIds = shuffleValues(occupiedFreeSlotKeys.map(function (slotKey) {
+      return assignments[slotKey];
+    }));
+
+    occupiedFreeSlotKeys.forEach(function (slotKey, slotIndex) {
+      nextAssignments[slotKey] = shuffledStudentIds[slotIndex];
+    });
+
+    return nextAssignments;
+  }
+
+  function improveAssignments(initialAssignments) {
+    let localBestAssignments = cloneAssignments(initialAssignments);
+    let localBestScore = scoreAssignments(localBestAssignments);
+    let iteration;
+
+    for (iteration = 0; iteration < iterationLimit; iteration += 1) {
+      const occupiedFreeSlotKeys = getOccupiedFreeSlotKeys(localBestAssignments);
+      let bestSwap = null;
+
+      if (occupiedFreeSlotKeys.length < 2) {
+        break;
+      }
+
+      occupiedFreeSlotKeys.forEach(function (leftSlotKey, leftIndex) {
+        occupiedFreeSlotKeys.slice(leftIndex + 1).forEach(function (rightSlotKey) {
+          const nextAssignments = cloneAssignments(localBestAssignments);
+          const firstStudentId = nextAssignments[leftSlotKey];
+          let candidateScore;
+
+          nextAssignments[leftSlotKey] = nextAssignments[rightSlotKey];
+          nextAssignments[rightSlotKey] = firstStudentId;
+          candidateScore = scoreAssignments(nextAssignments);
+
+          if (candidateScore > localBestScore && (!bestSwap || candidateScore > bestSwap.score)) {
+            bestSwap = {
+              leftSlotKey: leftSlotKey,
+              rightSlotKey: rightSlotKey,
+              score: candidateScore
+            };
+          }
+        });
+      });
+
+      if (!bestSwap) {
+        break;
+      }
+
+      const swappedStudentId = localBestAssignments[bestSwap.leftSlotKey];
+      localBestAssignments[bestSwap.leftSlotKey] = localBestAssignments[bestSwap.rightSlotKey];
+      localBestAssignments[bestSwap.rightSlotKey] = swappedStudentId;
+      localBestScore = bestSwap.score;
+    }
+
+    return {
+      assignments: localBestAssignments,
+      score: localBestScore
+    };
+  }
+
+  function solveExactAssignments(initialAssignments) {
+    const occupiedFreeSlotKeys = getOccupiedFreeSlotKeys(initialAssignments);
+    const freeStudentIds = occupiedFreeSlotKeys.map(function (slotKey) {
+      return initialAssignments[slotKey];
+    });
+    const candidateAssignments = cloneAssignments(initialAssignments);
+    let exactBestAssignments = cloneAssignments(initialAssignments);
+    let exactBestScore = scoreAssignments(exactBestAssignments);
+
+    if (occupiedFreeSlotKeys.length > exactFreeSeatLimit) {
+      return {
+        assignments: exactBestAssignments,
+        score: exactBestScore,
+        exactLimitExceeded: true,
+        exactFreeSeatCount: occupiedFreeSlotKeys.length,
+        exactFreeSeatLimit: exactFreeSeatLimit
+      };
+    }
+
+    function visit(slotIndex, remainingStudentIds) {
+      if (slotIndex >= occupiedFreeSlotKeys.length) {
+        const candidateScore = scoreAssignments(candidateAssignments);
+
+        if (candidateScore > exactBestScore) {
+          exactBestScore = candidateScore;
+          exactBestAssignments = cloneAssignments(candidateAssignments);
+        }
+        return;
+      }
+
+      remainingStudentIds.forEach(function (studentId, studentIndex) {
+        const nextRemainingStudentIds = remainingStudentIds.slice();
+
+        candidateAssignments[occupiedFreeSlotKeys[slotIndex]] = studentId;
+        nextRemainingStudentIds.splice(studentIndex, 1);
+        visit(slotIndex + 1, nextRemainingStudentIds);
+      });
+    }
+
+    visit(0, freeStudentIds);
+
+    return {
+      assignments: exactBestAssignments,
+      score: exactBestScore,
+      exactLimitExceeded: false
+    };
+  }
+
   (students || []).forEach(function (student) {
     if (student && student.id) {
       studentsById[student.id] = student;
     }
   });
 
-  bestAssignments = cloneAssignments(slotAssignments);
-  bestScore = scoreAssignments(bestAssignments);
-
-  for (iteration = 0; iteration < 80; iteration += 1) {
-    const occupiedFreeSlotKeys = Object.keys(bestAssignments).filter(function (slotKey) {
-      const studentId = bestAssignments[slotKey];
-      return studentId && !lockedStudentIdsLookup[studentId];
-    });
-    let bestSwap = null;
-
-    if (occupiedFreeSlotKeys.length < 2) {
-      break;
-    }
-
-    occupiedFreeSlotKeys.forEach(function (leftSlotKey, leftIndex) {
-      occupiedFreeSlotKeys.slice(leftIndex + 1).forEach(function (rightSlotKey) {
-        const nextAssignments = cloneAssignments(bestAssignments);
-        const firstStudentId = nextAssignments[leftSlotKey];
-        let candidateScore;
-
-        nextAssignments[leftSlotKey] = nextAssignments[rightSlotKey];
-        nextAssignments[rightSlotKey] = firstStudentId;
-        candidateScore = scoreAssignments(nextAssignments);
-
-        if (candidateScore > bestScore && (!bestSwap || candidateScore > bestSwap.score)) {
-          bestSwap = {
-            leftSlotKey: leftSlotKey,
-            rightSlotKey: rightSlotKey,
-            score: candidateScore
-          };
-        }
-      });
-    });
-
-    if (!bestSwap) {
-      break;
-    }
-
-    const swappedStudentId = bestAssignments[bestSwap.leftSlotKey];
-    bestAssignments[bestSwap.leftSlotKey] = bestAssignments[bestSwap.rightSlotKey];
-    bestAssignments[bestSwap.rightSlotKey] = swappedStudentId;
-    bestScore = bestSwap.score;
+  if (optimizationMode === "exakt") {
+    return solveExactAssignments(slotAssignments);
   }
 
-  return bestAssignments;
+  Array.from({ length: restartCount }).forEach(function (_, restartIndex) {
+    const initialAssignments = restartIndex === 0
+      ? cloneAssignments(slotAssignments)
+      : randomizeFreeAssignments(slotAssignments);
+    const candidateResult = improveAssignments(initialAssignments);
+
+    if (!bestAssignments || candidateResult.score > bestScore) {
+      bestAssignments = candidateResult.assignments;
+      bestScore = candidateResult.score;
+    }
+  });
+
+  return {
+    assignments: bestAssignments,
+    score: bestScore,
+    exactLimitExceeded: false
+  };
 }
 
 function shuffleSeatAssignments(options) {
@@ -11968,6 +12147,7 @@ function shuffleSeatAssignments(options) {
   let previousSeatZonesByStudentId;
   let previousUnfulfilledWishStudentIdsLookup;
   let currentSeatZonesBySlotKey;
+  let optimizationResult;
 
   function shuffleItems(items) {
     let currentIndex = items.length;
@@ -12026,7 +12206,8 @@ function shuffleSeatAssignments(options) {
       ? getRecentWarningStudentIdsLookup(
           currentRawSnapshot,
           activeClass.id,
-          seatPlan && seatPlan.validFrom ? seatPlan.validFrom : getReferenceDateValue()
+          getReferenceDateValue(),
+          settings.warningLookbackWeeks
         )
       : {};
     previousSeatOrder = settings.respectPreviousPlan
@@ -12056,7 +12237,7 @@ function shuffleSeatAssignments(options) {
     currentSeatZonesBySlotKey = settings.respectPreviousPlan
       ? buildSeatSlotZoneLookup(deskLayoutSeatPlan)
       : {};
-    optimizedAssignments = optimizeSocialSeatAssignments(
+    optimizationResult = optimizeSocialSeatAssignments(
       students,
       optimizedAssignments,
       neighborPairs,
@@ -12071,9 +12252,21 @@ function shuffleSeatAssignments(options) {
         previousUnfulfilledWishStudentIdsLookup: previousUnfulfilledWishStudentIdsLookup,
         currentSeatZonesBySlotKey: currentSeatZonesBySlotKey,
         priorities: settings.priorities,
-        wishLimit: settings.wishLimit
+        wishLimit: settings.wishLimit,
+        optimizationMode: settings.optimizationMode,
+        optimizationIterations: settings.optimizationIterations,
+        optimizationRestarts: settings.optimizationRestarts
       }
     );
+
+    if (optimizationResult && optimizationResult.exactLimitExceeded) {
+      window.alert("Der exakte Solver kann fuer " + optimizationResult.exactFreeSeatCount + " nicht fixierte belegte Plaetze keine garantierte optimale Loesung im Browser berechnen. Maximal exakt: " + optimizationResult.exactFreeSeatLimit + ". Bitte fixiere weitere Plaetze oder nutze Mehrfachstart.");
+      return false;
+    }
+
+    optimizedAssignments = optimizationResult && optimizationResult.assignments
+      ? optimizationResult.assignments
+      : optimizedAssignments;
 
     if (settings.respectSocialRelations && countHardSocialSeatViolations(students, optimizedAssignments, neighborPairs) > 0) {
       window.alert("Die automatische Sitzordnung konnte die harten Sozialgefuege-Regeln mit den aktuellen Fixierungen und Nachbartischen nicht vollstaendig erfuellen.");
@@ -12081,7 +12274,7 @@ function shuffleSeatAssignments(options) {
     }
 
     if (settings.separateWarnings && countHardWarningSeatViolations(optimizedAssignments, neighborPairs, warnedStudentIdsLookup) > 0) {
-      window.alert("Die automatische Sitzordnung konnte Schueler mit Verwarnungen aus den letzten 4 Wochen mit den aktuellen Fixierungen und Nachbartischen nicht vollstaendig trennen.");
+      window.alert("Die automatische Sitzordnung konnte Schueler mit Verwarnungen aus den letzten " + normalizeSeatPlanWarningLookbackWeeks(settings.warningLookbackWeeks) + " Wochen mit den aktuellen Fixierungen und Nachbartischen nicht vollstaendig trennen.");
       return false;
     }
 
@@ -24111,6 +24304,18 @@ window.UnterrichtsassistentApp.shouldSeatPlanRespectPreviousPlan = function () {
 window.UnterrichtsassistentApp.getSeatPlanSocialWishLimit = function () {
   return normalizeSeatPlanWishLimit(seatPlanSocialWishLimit);
 };
+window.UnterrichtsassistentApp.getSeatPlanWarningLookbackWeeks = function () {
+  return normalizeSeatPlanWarningLookbackWeeks(seatPlanWarningLookbackWeeks);
+};
+window.UnterrichtsassistentApp.getSeatPlanOptimizationMode = function () {
+  return normalizeSeatPlanOptimizationMode(seatPlanOptimizationMode);
+};
+window.UnterrichtsassistentApp.getSeatPlanOptimizationIterations = function () {
+  return normalizeSeatPlanOptimizationIterations(seatPlanOptimizationIterations);
+};
+window.UnterrichtsassistentApp.getSeatPlanOptimizationRestarts = function () {
+  return normalizeSeatPlanOptimizationRestarts(seatPlanOptimizationRestarts);
+};
 window.UnterrichtsassistentApp.getSeatPlanOptimizationPriorities = function () {
   return getSeatPlanOptimizationPrioritiesSnapshot();
 };
@@ -24133,6 +24338,23 @@ window.UnterrichtsassistentApp.updateSeatPlanSocialOptimizationSetting = functio
 
   if (fieldName === "wishLimit") {
     seatPlanSocialWishLimit = normalizeSeatPlanWishLimit(nextValue);
+  }
+
+  if (fieldName === "warningLookbackWeeks") {
+    seatPlanWarningLookbackWeeks = normalizeSeatPlanWarningLookbackWeeks(nextValue);
+    refreshSeatOrderWarningBadges();
+  }
+
+  if (fieldName === "optimizationMode") {
+    seatPlanOptimizationMode = normalizeSeatPlanOptimizationMode(nextValue);
+  }
+
+  if (fieldName === "optimizationIterations") {
+    seatPlanOptimizationIterations = normalizeSeatPlanOptimizationIterations(nextValue);
+  }
+
+  if (fieldName === "optimizationRestarts") {
+    seatPlanOptimizationRestarts = normalizeSeatPlanOptimizationRestarts(nextValue);
   }
 
   if (fieldName === "priorityRespectSocialRelations") {
@@ -28083,7 +28305,11 @@ window.UnterrichtsassistentApp.shuffleSeatAssignments = function () {
     separateWarnings: seatPlanSeparateWarnings,
     respectPreviousPlan: seatPlanRespectPreviousPlan,
     priorities: getSeatPlanOptimizationPrioritiesSnapshot(),
-    wishLimit: seatPlanSocialWishLimit
+    wishLimit: seatPlanSocialWishLimit,
+    warningLookbackWeeks: seatPlanWarningLookbackWeeks,
+    optimizationMode: seatPlanOptimizationMode,
+    optimizationIterations: seatPlanOptimizationIterations,
+    optimizationRestarts: seatPlanOptimizationRestarts
   });
 };
 window.UnterrichtsassistentApp.toggleSeatLock = function (deskItemId, slotName) {

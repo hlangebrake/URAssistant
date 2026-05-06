@@ -9143,6 +9143,10 @@ button {
   margin-top: 0.65rem;
 }
 
+.seat-order-social-wishes--compact {
+  margin-top: 0;
+}
+
 .seat-order-social-option input {
   width: 1rem;
   height: 1rem;

@@ -45,6 +45,18 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
     const socialWishLimit = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getSeatPlanSocialWishLimit === "function"
       ? window.UnterrichtsassistentApp.getSeatPlanSocialWishLimit()
       : 1;
+    const warningLookbackWeeks = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getSeatPlanWarningLookbackWeeks === "function"
+      ? window.UnterrichtsassistentApp.getSeatPlanWarningLookbackWeeks()
+      : 4;
+    const optimizationMode = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getSeatPlanOptimizationMode === "function"
+      ? window.UnterrichtsassistentApp.getSeatPlanOptimizationMode()
+      : "mehrfachstart";
+    const optimizationIterations = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getSeatPlanOptimizationIterations === "function"
+      ? window.UnterrichtsassistentApp.getSeatPlanOptimizationIterations()
+      : 80;
+    const optimizationRestarts = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getSeatPlanOptimizationRestarts === "function"
+      ? window.UnterrichtsassistentApp.getSeatPlanOptimizationRestarts()
+      : 4;
     const optimizationPriorities = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getSeatPlanOptimizationPriorities === "function"
       ? window.UnterrichtsassistentApp.getSeatPlanOptimizationPriorities()
       : {};
@@ -144,6 +156,28 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
         '<select class="student-table__input" onchange="return window.UnterrichtsassistentApp.updateSeatPlanSocialOptimizationSetting(\'', escapeValue(fieldName), '\', this.value)">',
         options.map(function (option) {
           return '<option value="' + escapeValue(option.value) + '"' + (option.value === normalizedPriority ? ' selected' : '') + '>' + escapeValue(option.label) + '</option>';
+        }).join(""),
+        '</select>',
+        '</label>'
+      ].join("");
+    }
+
+    function renderOptimizationModeSelect() {
+      const normalizedMode = ["schnell", "mehrfachstart", "exakt"].indexOf(String(optimizationMode || "")) >= 0
+        ? String(optimizationMode || "")
+        : "mehrfachstart";
+      const options = [
+        { value: "schnell", label: "Schnell" },
+        { value: "mehrfachstart", label: "Mehrfachstart" },
+        { value: "exakt", label: "Exakt" }
+      ];
+
+      return [
+        '<label class="seat-order-social-wishes">',
+        '<span>Suchmodus</span>',
+        '<select class="student-table__input" onchange="return window.UnterrichtsassistentApp.updateSeatPlanSocialOptimizationSetting(\'optimizationMode\', this.value)">',
+        options.map(function (option) {
+          return '<option value="' + escapeValue(option.value) + '"' + (option.value === normalizedMode ? ' selected' : '') + '>' + escapeValue(option.label) + '</option>';
         }).join(""),
         '</select>',
         '</label>'
@@ -414,17 +448,24 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
       return pairs;
     }
 
-    function buildRecentWarningStudentLookup(referenceDateValue) {
+    function normalizeWarningLookbackWeeks(value) {
+      const numberValue = Number(value);
+      return Math.max(0, Math.min(52, Math.round(Number.isFinite(numberValue) ? numberValue : 4)));
+    }
+
+    function buildRecentWarningStudentLookup(referenceDateValue, lookbackWeeks) {
       const lookup = {};
-      const referenceDate = new Date(String(referenceDateValue || "").slice(0, 10) + "T12:00:00");
+      const normalizedReferenceDateValue = String(referenceDateValue || "").slice(0, 10);
+      const referenceDate = new Date(normalizedReferenceDateValue + "T12:00:00");
       const earliestDate = new Date(referenceDate);
+      const normalizedLookbackWeeks = normalizeWarningLookbackWeeks(lookbackWeeks);
       let earliestValue;
 
       if (!activeClass || Number.isNaN(referenceDate.getTime())) {
         return lookup;
       }
 
-      earliestDate.setDate(earliestDate.getDate() - 28);
+      earliestDate.setDate(earliestDate.getDate() - (normalizedLookbackWeeks * 7));
       earliestValue = earliestDate.getFullYear()
         + "-" + String(earliestDate.getMonth() + 1).padStart(2, "0")
         + "-" + String(earliestDate.getDate()).padStart(2, "0");
@@ -433,7 +474,7 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
         const studentId = String(record && record.studentId || "").trim();
         const warningDateValue = String(record && (record.lessonDate || record.recordedAt) || "").slice(0, 10);
 
-        if (studentId && String(record && record.classId || "") === String(activeClass.id || "") && warningDateValue >= earliestValue && warningDateValue <= String(referenceDateValue || "").slice(0, 10)) {
+        if (studentId && String(record && record.classId || "") === String(activeClass.id || "") && warningDateValue >= earliestValue && warningDateValue <= normalizedReferenceDateValue) {
           lookup[studentId] = true;
         }
       });
@@ -484,7 +525,7 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
       const isInteractive = settings.interactive !== false;
       const assignmentBySlotKey = {};
       const wishStateByStudentId = {};
-      const recentWarningStudentLookup = buildRecentWarningStudentLookup(seatOrder && seatOrder.validFrom ? seatOrder.validFrom : formatDateObjectValue(service.getReferenceDate()));
+      const recentWarningStudentLookup = buildRecentWarningStudentLookup(formatDateObjectValue(service.getReferenceDate()), warningLookbackWeeks);
 
       seatAssignments.forEach(function (seat) {
         if (seat && seat.studentId) {
@@ -544,7 +585,7 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
             : "";
           const warningClass = hasRecentWarning ? " has-recent-warning" : "";
           const warningHtml = hasRecentWarning
-            ? '<span class="seat-order-desk__warning" aria-label="Verwarnung in den letzten 4 Wochen" title="Verwarnung in den letzten 4 Wochen">&#9888;</span>'
+            ? '<span class="seat-order-desk__warning" aria-label="Verwarnung in den letzten ' + escapeValue(warningLookbackWeeks) + ' Wochen" title="Verwarnung in den letzten ' + escapeValue(warningLookbackWeeks) + ' Wochen">&#9888;</span>'
             : "";
           let chipHtml;
 
@@ -558,8 +599,8 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
 
           if (assignedStudent) {
             chipHtml = isInteractive
-              ? '<span class="seat-order-desk__label' + (isLocked ? ' is-locked' : '') + highlightClass + warningClass + '" draggable="true" onclick="event.stopPropagation(); return window.UnterrichtsassistentApp.toggleSeatLockFromClick(\'' + escapeValue(item.id) + '\', \'' + escapeValue(slotName) + '\')" ondragstart="return window.UnterrichtsassistentApp.startSeatAssignmentDrag(event, \'' + escapeValue(assignedStudent.id) + '\')" ondragend="return window.UnterrichtsassistentApp.endSeatAssignmentDrag(event, \'' + escapeValue(assignedStudent.id) + '\', \'desk\')" onpointerdown="return window.UnterrichtsassistentApp.startSeatAssignmentPointerDrag(event, \'' + escapeValue(assignedStudent.id) + '\', \'desk\')">' + warningHtml + '<span>' + escapeValue(studentLabel) + "</span></span>"
-              : '<span class="seat-order-desk__label' + (isLocked ? ' is-locked' : '') + highlightClass + warningClass + '">' + warningHtml + '<span>' + escapeValue(studentLabel) + "</span></span>";
+              ? '<span class="seat-order-desk__label' + (isLocked ? ' is-locked' : '') + highlightClass + warningClass + '" data-seat-order-student-id="' + escapeValue(assignedStudent.id) + '" draggable="true" onclick="event.stopPropagation(); return window.UnterrichtsassistentApp.toggleSeatLockFromClick(\'' + escapeValue(item.id) + '\', \'' + escapeValue(slotName) + '\')" ondragstart="return window.UnterrichtsassistentApp.startSeatAssignmentDrag(event, \'' + escapeValue(assignedStudent.id) + '\')" ondragend="return window.UnterrichtsassistentApp.endSeatAssignmentDrag(event, \'' + escapeValue(assignedStudent.id) + '\', \'desk\')" onpointerdown="return window.UnterrichtsassistentApp.startSeatAssignmentPointerDrag(event, \'' + escapeValue(assignedStudent.id) + '\', \'desk\')">' + warningHtml + '<span>' + escapeValue(studentLabel) + "</span></span>"
+              : '<span class="seat-order-desk__label' + (isLocked ? ' is-locked' : '') + highlightClass + warningClass + '" data-seat-order-student-id="' + escapeValue(assignedStudent.id) + '">' + warningHtml + '<span>' + escapeValue(studentLabel) + "</span></span>";
           } else {
             chipHtml = '<span class="seat-order-desk__placeholder' + (isLocked ? ' is-locked' : '') + '">' + escapeValue(isLocked ? "Frei" : slotLabel) + "</span>";
           }
@@ -1108,6 +1149,10 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
         '<span>Verwarnungen trennen</span>',
         '</label>',
         renderOptimizationPrioritySelect("prioritySeparateWarnings", optimizationPriorities.separateWarnings),
+        '<label class="seat-order-social-wishes seat-order-social-wishes--compact">',
+        '<span>Verwarnungen z&auml;hlen f&uuml;r Wochen</span>',
+        '<input class="student-table__input" type="number" min="0" max="52" step="1" value="', escapeValue(warningLookbackWeeks), '" oninput="return window.UnterrichtsassistentApp.updateSeatPlanSocialOptimizationSetting(\'warningLookbackWeeks\', this.value)" onchange="return window.UnterrichtsassistentApp.updateSeatPlanSocialOptimizationSetting(\'warningLookbackWeeks\', this.value)">',
+        '</label>',
         '</div>',
         '<div class="seat-order-rule">',
         '<label class="seat-order-social-option">',
@@ -1119,6 +1164,15 @@ window.Unterrichtsassistent.ui.views.sitzplan = {
         '<label class="seat-order-social-wishes">',
         '<span>Anzahl W&uuml;nsche</span>',
         '<input class="student-table__input" type="number" min="0" max="4" step="1" value="', escapeValue(socialWishLimit), '" onchange="return window.UnterrichtsassistentApp.updateSeatPlanSocialOptimizationSetting(\'wishLimit\', this.value)">',
+        '</label>',
+        renderOptimizationModeSelect(),
+        '<label class="seat-order-social-wishes">',
+        '<span>Iterationen je Suche</span>',
+        '<input class="student-table__input" type="number" min="1" max="2000" step="1" value="', escapeValue(optimizationIterations), '" onchange="return window.UnterrichtsassistentApp.updateSeatPlanSocialOptimizationSetting(\'optimizationIterations\', this.value)">',
+        '</label>',
+        '<label class="seat-order-social-wishes">',
+        '<span>Neustarts / Neubewertungen</span>',
+        '<input class="student-table__input" type="number" min="1" max="100" step="1" value="', escapeValue(optimizationRestarts), '" onchange="return window.UnterrichtsassistentApp.updateSeatPlanSocialOptimizationSetting(\'optimizationRestarts\', this.value)">',
         '</label>',
         '</aside>',
         '<div class="desk-layout-builder desk-layout-builder--readonly">',
