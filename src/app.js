@@ -85,6 +85,7 @@ let bewertungViewMode = "bewerten";
 let bewertungCurriculumSectionExpanded = true;
 let bewertungTaskSheetSectionExpanded = true;
 let bewertungAnalysisSectionExpanded = true;
+let bewertungAnalysisOverviewSectionExpanded = true;
 let bewertungPlannedEvaluationsExpanded = false;
 let bewertungPlannedEvaluationDetailsExpanded = false;
 let evidenceToolExpandedNodeIds = ["root", "faecher", "jahrgaenge", "aspekte", "haupt-main"];
@@ -93,6 +94,8 @@ let activeEvidenceLevelDesignDraft = null;
 let activePerformedPlannedEvaluationId = "";
 let activePerformedEvaluationStudentId = "";
 let activePerformedEvaluationStudentFilter = "alle";
+let activeAnalysisPlannedEvaluationId = "";
+let bewertungAnalysisSort = { key: "student", direction: "asc" };
 let performedCompetencyGridMode = "kompakt";
 let activePerformedEvaluationDetailModal = null;
 let isClassAnalysisPerformedEvaluationModalOpen = false;
@@ -13514,6 +13517,7 @@ function createEvaluationSheetRecord(classId, typeValue, titleValue) {
     title: String(titleValue || "").trim(),
     createdAt: getCurrentTimestamp(),
     workingTimeMinutes: 0,
+    competencySourceToolId: "",
     curriculumSeriesIds: [],
     curriculumSequenceIds: [],
     curriculumLessonIds: [],
@@ -15213,12 +15217,119 @@ function normalizeEvaluationTaskSheet(rawTaskSheet) {
             afb: ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(String(subtaskSource.afb || "").trim().toLowerCase()) >= 0
               ? String(subtaskSource.afb || "").trim().toLowerCase()
               : "afb1",
-            be: Math.max(0, Number.isFinite(Number(subtaskSource.be)) ? Math.round(Number(subtaskSource.be)) : 0)
+            be: Math.max(0, Number.isFinite(Number(subtaskSource.be)) ? Math.round(Number(subtaskSource.be)) : 0),
+            competencyAspectIds: normalizeEvaluationCompetencyAspectIds(subtaskSource.competencyAspectIds)
           };
         })
       };
     })
   };
+}
+
+function normalizeEvaluationCompetencyAspectIds(rawValue) {
+  const sourceItems = Array.isArray(rawValue)
+    ? rawValue
+    : String(rawValue || "").split("|");
+  const seen = {};
+
+  return sourceItems.map(function (item) {
+    return String(item || "").trim();
+  }).filter(function (item) {
+    if (!item || seen[item]) {
+      return false;
+    }
+
+    seen[item] = true;
+    return true;
+  });
+}
+
+function getEvaluationCompetencySourceOptionsForSnapshot(rawSnapshot) {
+  return [
+    { id: "", label: "Keine Kompetenzquelle" },
+    { id: "mathObservation", label: "K-Werkzeug: Mathematikkompetenzen" }
+  ].concat(getSortedEvidenceTools(rawSnapshot).map(function (tool) {
+    const toolId = String(tool && tool.id || "").trim();
+
+    return {
+      id: toolId ? "evidence:" + toolId : "",
+      label: String(tool && tool.titel || "").trim() || "Bewertungswerkzeug"
+    };
+  }).filter(function (option) {
+    return Boolean(option.id);
+  }));
+}
+
+function getEvaluationCompetencyAspectOptionsForSnapshot(rawSnapshot, sourceToolId) {
+  const normalizedSourceId = String(sourceToolId || "").trim();
+
+  if (normalizedSourceId === "mathObservation") {
+    return MATH_OBSERVATION_COMPETENCIES.map(function (competency) {
+      return {
+        id: "math:competency:" + String(competency && competency.key || "").trim(),
+        label: String(competency && competency.label || "").trim() || "Kompetenz"
+      };
+    }).concat(MATH_OBSERVATION_MARKERS.filter(function (marker) {
+      return Boolean(marker && marker.swipable);
+    }).map(function (marker) {
+      return {
+        id: "math:marker:" + String(marker && marker.key || "").trim(),
+        label: String(marker && marker.label || "").trim() || "Marker"
+      };
+    })).concat(MATH_OBSERVATION_MARKERS.filter(function (marker) {
+      return !Boolean(marker && marker.swipable);
+    }).map(function (marker) {
+      return {
+        id: "math:marker:" + String(marker && marker.key || "").trim(),
+        label: String(marker && marker.label || "").trim() || "Marker"
+      };
+    })).filter(function (option) {
+      return Boolean(option.id);
+    });
+  }
+
+  if (normalizedSourceId.indexOf("evidence:") === 0) {
+    const evidenceToolId = normalizedSourceId.slice("evidence:".length);
+    const tool = getEvidenceToolsCollection(rawSnapshot).find(function (item) {
+      return String(item && item.id || "").trim() === evidenceToolId;
+    }) || null;
+    const aspects = Array.isArray(tool && tool.aspekte) ? tool.aspekte : [];
+    const mainAspectIds = ensureEvidenceLevel(tool && tool.hauptebene).ebenenAspekte;
+    const seen = {};
+
+    return mainAspectIds.concat(aspects.map(function (aspect) {
+      return String(aspect && aspect.id || "").trim();
+    })).map(function (aspectId) {
+      const aspect = getEvidenceAspectById(tool, aspectId);
+
+      if (!aspect || seen[aspectId]) {
+        return null;
+      }
+
+      seen[aspectId] = true;
+      return {
+        id: "evidence:" + evidenceToolId + ":aspect:" + aspectId,
+        label: String(aspect && aspect.titel || "").trim() || "Aspekt"
+      };
+    }).filter(Boolean);
+  }
+
+  return [];
+}
+
+function sanitizeEvaluationTaskSheetCompetencyLinks(taskSheet, sourceToolId, rawSnapshot) {
+  const validLookup = getEvaluationCompetencyAspectOptionsForSnapshot(rawSnapshot, sourceToolId).reduce(function (lookup, option) {
+    lookup[String(option && option.id || "").trim()] = true;
+    return lookup;
+  }, {});
+
+  (Array.isArray(taskSheet && taskSheet.tasks) ? taskSheet.tasks : []).forEach(function (task) {
+    (Array.isArray(task && task.subtasks) ? task.subtasks : []).forEach(function (subtask) {
+      subtask.competencyAspectIds = normalizeEvaluationCompetencyAspectIds(subtask && subtask.competencyAspectIds).filter(function (aspectId) {
+        return Boolean(validLookup[aspectId]);
+      });
+    });
+  });
 }
 
 function getMutableEvaluationTaskSheet(evaluationSheet) {
@@ -15314,7 +15425,8 @@ function createEvaluationSubtaskRecord() {
     title: "",
     topics: "",
     afb: "afb1",
-    be: 0
+    be: 0,
+    competencyAspectIds: []
   };
 }
 
@@ -15357,6 +15469,7 @@ function cloneEvaluationSheetAttributes(sheet) {
     curriculumSequenceIds: Array.isArray(source.curriculumSequenceIds) ? source.curriculumSequenceIds.slice() : [],
     curriculumLessonIds: Array.isArray(source.curriculumLessonIds) ? source.curriculumLessonIds.slice() : [],
     workingTimeMinutes: normalizeEvaluationWorkingTimeMinutes(source.workingTimeMinutes),
+    competencySourceToolId: String(source.competencySourceToolId || "").trim(),
     taskSheet: source.taskSheet && typeof source.taskSheet === "object"
       ? JSON.parse(JSON.stringify(source.taskSheet))
       : {},
@@ -24986,6 +25099,12 @@ window.UnterrichtsassistentApp.getActiveEvidenceLevelDesignDraft = function () {
 window.UnterrichtsassistentApp.getActiveEvaluationSheetDraft = function () {
   return activeEvaluationSheetDraft;
 };
+window.UnterrichtsassistentApp.getEvaluationCompetencySourceOptions = function () {
+  return getEvaluationCompetencySourceOptionsForSnapshot(schoolService ? schoolService.snapshot : null);
+};
+window.UnterrichtsassistentApp.getEvaluationCompetencyAspectOptions = function (sourceToolId) {
+  return getEvaluationCompetencyAspectOptionsForSnapshot(schoolService ? schoolService.snapshot : null, sourceToolId);
+};
 window.UnterrichtsassistentApp.getActivePlannedEvaluationDraft = function () {
   return activePlannedEvaluationDraft;
 };
@@ -25039,6 +25158,15 @@ function getClasstimeImportDropTargetFromPoint(clientX, clientY) {
 window.UnterrichtsassistentApp.getActivePerformedPlannedEvaluationId = function () {
   return activePerformedPlannedEvaluationId;
 };
+window.UnterrichtsassistentApp.getActiveAnalysisPlannedEvaluationId = function () {
+  return activeAnalysisPlannedEvaluationId;
+};
+window.UnterrichtsassistentApp.getBewertungAnalysisSort = function () {
+  return {
+    key: String(bewertungAnalysisSort && bewertungAnalysisSort.key || "student"),
+    direction: String(bewertungAnalysisSort && bewertungAnalysisSort.direction || "asc") === "desc" ? "desc" : "asc"
+  };
+};
 window.UnterrichtsassistentApp.getActivePerformedEvaluationStudentId = function () {
   return activePerformedEvaluationStudentId;
 };
@@ -25085,6 +25213,9 @@ window.UnterrichtsassistentApp.isBewertungTaskSheetSectionExpanded = function ()
 };
 window.UnterrichtsassistentApp.isBewertungAnalysisSectionExpanded = function () {
   return bewertungAnalysisSectionExpanded !== false;
+};
+window.UnterrichtsassistentApp.isBewertungAnalysisOverviewSectionExpanded = function () {
+  return bewertungAnalysisOverviewSectionExpanded !== false;
 };
 window.UnterrichtsassistentApp.isBewertungPlannedEvaluationsExpanded = function () {
   return bewertungPlannedEvaluationsExpanded === true;
@@ -25241,6 +25372,8 @@ window.UnterrichtsassistentApp.toggleBewertungSection = function (sectionName) {
     bewertungTaskSheetSectionExpanded = !bewertungTaskSheetSectionExpanded;
   } else if (normalizedSectionName === "analysis") {
     bewertungAnalysisSectionExpanded = !bewertungAnalysisSectionExpanded;
+  } else if (normalizedSectionName === "analysisoverview") {
+    bewertungAnalysisOverviewSectionExpanded = !bewertungAnalysisOverviewSectionExpanded;
   } else if (normalizedSectionName === "planneddetail") {
     bewertungPlannedEvaluationDetailsExpanded = !bewertungPlannedEvaluationDetailsExpanded;
   } else {
@@ -26940,6 +27073,45 @@ window.UnterrichtsassistentApp.selectPlannedEvaluationForExecution = function (p
 
   return false;
 };
+window.UnterrichtsassistentApp.selectPlannedEvaluationForAnalysis = function (plannedEvaluationId) {
+  activeAnalysisPlannedEvaluationId = String(plannedEvaluationId || "").trim();
+
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.toggleBewertungAnalysisSort = function (sortKey) {
+  const normalizedSortKey = String(sortKey || "").trim() || "student";
+  const currentKey = String(bewertungAnalysisSort && bewertungAnalysisSort.key || "student");
+  const currentDirection = String(bewertungAnalysisSort && bewertungAnalysisSort.direction || "asc") === "desc" ? "desc" : "asc";
+  const tableWrap = document.querySelector(".bewertung-analysis-table__wrap");
+  const scrollState = tableWrap
+    ? { left: tableWrap.scrollLeft, top: tableWrap.scrollTop }
+    : null;
+
+  bewertungAnalysisSort = {
+    key: normalizedSortKey,
+    direction: currentKey === normalizedSortKey && currentDirection === "asc" ? "desc" : "asc"
+  };
+
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
+    if (scrollState) {
+      window.setTimeout(function () {
+        const nextTableWrap = document.querySelector(".bewertung-analysis-table__wrap");
+
+        if (nextTableWrap) {
+          nextTableWrap.scrollLeft = scrollState.left;
+          nextTableWrap.scrollTop = scrollState.top;
+        }
+      }, 0);
+    }
+  }
+
+  return false;
+};
 window.UnterrichtsassistentApp.selectPerformedEvaluationStudent = function (studentId) {
   activePerformedEvaluationStudentId = String(studentId || "").trim();
   activePerformedEvaluationDetailModal = null;
@@ -27907,7 +28079,9 @@ window.UnterrichtsassistentApp.submitEvaluationSheetModal = function (event) {
     nextSheet.workingTimeMinutes = workingTimeValue;
     if (copySource) {
       nextSheet.workingTimeMinutes = workingTimeValue;
+      nextSheet.competencySourceToolId = clonedAttributes.competencySourceToolId;
       nextSheet.taskSheet = normalizeEvaluationTaskSheet(clonedAttributes.taskSheet);
+      sanitizeEvaluationTaskSheetCompetencyLinks(nextSheet.taskSheet, nextSheet.competencySourceToolId, currentRawSnapshot);
       nextSheet.competencyGrid = clonedAttributes.competencyGrid;
     }
     getMutableEvaluationSheetsCollection(currentRawSnapshot).unshift(nextSheet);
@@ -27953,7 +28127,7 @@ window.UnterrichtsassistentApp.updateActiveEvaluationSheetField = function (fiel
     : null;
   const normalizedFieldName = String(fieldName || "").trim();
 
-  if (!repository || !schoolService || !currentRawSnapshot || !activeSheet || ["title", "type", "workingTimeMinutes"].indexOf(normalizedFieldName) === -1) {
+  if (!repository || !schoolService || !currentRawSnapshot || !activeSheet || ["title", "type", "workingTimeMinutes", "competencySourceToolId"].indexOf(normalizedFieldName) === -1) {
     return false;
   }
 
@@ -27979,6 +28153,13 @@ window.UnterrichtsassistentApp.updateActiveEvaluationSheetField = function (fiel
 
   if (normalizedFieldName === "workingTimeMinutes") {
     activeSheet.workingTimeMinutes = normalizeEvaluationWorkingTimeMinutes(nextValue);
+  }
+
+  if (normalizedFieldName === "competencySourceToolId") {
+    activeSheet.competencySourceToolId = getEvaluationCompetencySourceOptionsForSnapshot(currentRawSnapshot).some(function (option) {
+      return String(option && option.id || "").trim() === String(nextValue || "").trim();
+    }) ? String(nextValue || "").trim() : "";
+    sanitizeEvaluationTaskSheetCompetencyLinks(getMutableEvaluationTaskSheet(activeSheet), activeSheet.competencySourceToolId, currentRawSnapshot);
   }
 
   currentRawSnapshot.activeEvaluationSheetId = activeSheet.id;
@@ -28124,6 +28305,15 @@ window.UnterrichtsassistentApp.updateEvaluationSubtaskField = function (taskId, 
       : "afb1";
   } else if (normalizedFieldName === "be") {
     subtask.be = beValue;
+  } else if (normalizedFieldName === "competencyAspectIds") {
+    const validLookup = getEvaluationCompetencyAspectOptionsForSnapshot(currentRawSnapshot, activeSheet.competencySourceToolId).reduce(function (lookup, option) {
+      lookup[String(option && option.id || "").trim()] = true;
+      return lookup;
+    }, {});
+
+    subtask.competencyAspectIds = normalizeEvaluationCompetencyAspectIds(nextValue).filter(function (aspectId) {
+      return Boolean(validLookup[aspectId]);
+    });
   } else {
     return false;
   }

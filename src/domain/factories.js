@@ -122,7 +122,7 @@ function serializeDomainSnapshot(snapshot) {
   }
 
   function cloneEvaluationSheets(items) {
-    return cloneItems(items || [], ["id", "classId", "type", "title", "createdAt", "workingTimeMinutes", "taskSheet", "competencyGrid", "curriculumSeriesIds", "curriculumSequenceIds", "curriculumLessonIds"]).map(function (item) {
+    return cloneItems(items || [], ["id", "classId", "type", "title", "createdAt", "workingTimeMinutes", "competencySourceToolId", "taskSheet", "competencyGrid", "curriculumSeriesIds", "curriculumSequenceIds", "curriculumLessonIds"]).map(function (item) {
       return Object.assign({}, item, {
         taskSheet: item.taskSheet && typeof item.taskSheet === "object"
           ? JSON.parse(JSON.stringify(item.taskSheet))

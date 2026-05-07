@@ -137,7 +137,7 @@ class Assessment {
 }
 
 class EvaluationSheet {
-  constructor({ id, classId = "", type = "aufgabenbogen", title = "", createdAt = "", workingTimeMinutes = 0, taskSheet = {}, competencyGrid = {}, curriculumSeriesIds = [], curriculumSequenceIds = [], curriculumLessonIds = [] }) {
+  constructor({ id, classId = "", type = "aufgabenbogen", title = "", createdAt = "", workingTimeMinutes = 0, taskSheet = {}, competencyGrid = {}, competencySourceToolId = "", curriculumSeriesIds = [], curriculumSequenceIds = [], curriculumLessonIds = [] }) {
     const normalizedType = String(type || "").trim().toLowerCase() === "kompetenzraster"
       ? "kompetenzraster"
       : "aufgabenbogen";
@@ -161,7 +161,12 @@ class EvaluationSheet {
                 title: String(subtaskSource.title || "").trim(),
                 topics: String(subtaskSource.topics || "").trim(),
                 afb: String(subtaskSource.afb || "").trim(),
-                be: Math.max(0, Number.isFinite(Number(subtaskSource.be)) ? Math.round(Number(subtaskSource.be)) : 0)
+                be: Math.max(0, Number.isFinite(Number(subtaskSource.be)) ? Math.round(Number(subtaskSource.be)) : 0),
+                competencyAspectIds: Array.isArray(subtaskSource.competencyAspectIds)
+                  ? subtaskSource.competencyAspectIds.map(function (aspectId) {
+                      return String(aspectId || "").trim();
+                    }).filter(Boolean)
+                  : []
               };
             })
           };
@@ -240,6 +245,7 @@ class EvaluationSheet {
     this.title = String(title || "").trim();
     this.createdAt = String(createdAt || "").trim();
     this.workingTimeMinutes = Math.max(0, Number.isFinite(Number(workingTimeMinutes)) ? Math.round(Number(workingTimeMinutes)) : 0);
+    this.competencySourceToolId = String(competencySourceToolId || "").trim();
     this.curriculumSeriesIds = Array.isArray(curriculumSeriesIds) ? curriculumSeriesIds.slice() : [];
     this.curriculumSequenceIds = Array.isArray(curriculumSequenceIds) ? curriculumSequenceIds.slice() : [];
     this.curriculumLessonIds = Array.isArray(curriculumLessonIds) ? curriculumLessonIds.slice() : [];

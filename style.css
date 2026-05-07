@@ -11648,11 +11648,15 @@ body.is-desk-dragging {
 
 .bewertung-task-sheet__subtask-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1.2fr) minmax(220px, 1.8fr) 110px 90px auto;
+  grid-template-columns: minmax(160px, 1.1fr) minmax(190px, 1.4fr) 100px 84px minmax(190px, 1.3fr) auto;
   gap: 0.55rem;
   align-items: start;
   position: relative;
   overflow: visible;
+}
+
+.bewertung-task-sheet__field--competency select {
+  min-height: 86px;
 }
 
 .bewertung-task-sheet__field {
@@ -12057,8 +12061,211 @@ body.is-competency-grid-dragging {
   line-height: 1.45;
 }
 
+.bewertung-analysis-run {
+  display: grid;
+  gap: 1rem;
+}
+
+.bewertung-analysis-run__selector {
+  max-width: 420px;
+}
+
+.bewertung-analysis-run__section {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.bewertung-analysis-run__section.is-collapsed {
+  gap: 0;
+}
+
+.bewertung-analysis-run__section-body {
+  display: grid;
+  gap: 1rem;
+}
+
+.bewertung-analysis-table__wrap {
+  overflow-x: auto;
+  border: 1px solid rgba(23, 49, 62, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.bewertung-analysis-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.8rem;
+}
+
+.bewertung-analysis-table th,
+.bewertung-analysis-table td {
+  min-width: 112px;
+  padding: 0.45rem 0.55rem;
+  border-right: 1px solid rgba(23, 49, 62, 0.08);
+  border-bottom: 1px solid rgba(23, 49, 62, 0.08);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.bewertung-analysis-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: rgba(250, 248, 243, 0.98);
+}
+
+.bewertung-analysis-table__student,
+.bewertung-analysis-table__student-head {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  min-width: 170px;
+  max-width: 220px;
+  background: rgba(250, 248, 243, 0.98);
+  color: var(--sidebar);
+  font-weight: 800;
+}
+
+.bewertung-analysis-table__student {
+  z-index: 1;
+  background: rgba(255, 253, 248, 0.98);
+}
+
+.bewertung-analysis-table__score-head {
+  max-width: 170px;
+}
+
+.bewertung-analysis-table__sort {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--sidebar);
+  font: inherit;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bewertung-analysis-table__sort span,
+.bewertung-analysis-table__max {
+  color: rgba(23, 49, 62, 0.48);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.bewertung-analysis-table__cell {
+  text-align: center;
+  color: rgba(31, 36, 48, 0.74);
+  font-variant-numeric: tabular-nums;
+}
+
+.bewertung-analysis-table__cell span {
+  display: inline-block;
+  min-width: 3.2rem;
+}
+
+.bewertung-analysis-table__cell.is-low {
+  background: rgba(194, 74, 64, 0.24);
+}
+
+.bewertung-analysis-table__cell.is-mid {
+  background: rgba(204, 154, 48, 0.27);
+}
+
+.bewertung-analysis-table__cell.is-high {
+  background: rgba(78, 143, 96, 0.27);
+}
+
+.bewertung-analysis-table__cell.is-total,
+.bewertung-analysis-table__score-head.is-total {
+  font-weight: 800;
+}
+
+.bewertung-analysis-table .is-task-start {
+  border-left: 3px solid rgba(23, 49, 62, 0.22);
+}
+
+.bewertung-analysis-stages {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.8fr);
+  gap: 1rem;
+}
+
+.bewertung-analysis-stages__bars,
+.bewertung-analysis-stages__thresholds {
+  padding: 0.9rem;
+  border: 1px solid rgba(23, 49, 62, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.bewertung-analysis-stages__bars {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.bewertung-analysis-stages__bar-row {
+  display: grid;
+  grid-template-columns: minmax(80px, 0.42fr) minmax(120px, 1fr) 2.4rem;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.bewertung-analysis-stages__label {
+  min-width: 0;
+  color: var(--sidebar);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.bewertung-analysis-stages__track {
+  height: 0.72rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(23, 49, 62, 0.08);
+}
+
+.bewertung-analysis-stages__track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: rgba(78, 143, 96, 0.64);
+}
+
+.bewertung-analysis-stages__bar-row strong {
+  color: var(--text);
+  font-size: 0.84rem;
+  text-align: right;
+}
+
+.bewertung-analysis-stages__thresholds {
+  overflow-x: auto;
+}
+
+.bewertung-analysis-stages__thresholds table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.bewertung-analysis-stages__thresholds th,
+.bewertung-analysis-stages__thresholds td {
+  padding: 0.45rem 0.5rem;
+  border-bottom: 1px solid rgba(23, 49, 62, 0.08);
+  text-align: left;
+}
+
+.bewertung-analysis-stages__thresholds th {
+  color: var(--sidebar);
+  font-weight: 800;
+}
+
 @media (max-width: 980px) {
   .bewertung-analysis__layout,
+  .bewertung-analysis-stages,
   .bewertung-working-time__grid,
   .bewertung-task-sheet__task-row,
   .bewertung-task-sheet__subtask-row,

@@ -49,6 +49,8 @@ window.Unterrichtsassistent.ui.views.bewertung = {
       || window.UnterrichtsassistentApp.isBewertungTaskSheetSectionExpanded();
     const isAnalysisSectionExpanded = !(window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.isBewertungAnalysisSectionExpanded === "function")
       || window.UnterrichtsassistentApp.isBewertungAnalysisSectionExpanded();
+    const isAnalysisOverviewSectionExpanded = !(window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.isBewertungAnalysisOverviewSectionExpanded === "function")
+      || window.UnterrichtsassistentApp.isBewertungAnalysisOverviewSectionExpanded();
     const isPlannedEvaluationsExpanded = Boolean(window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.isBewertungPlannedEvaluationsExpanded === "function"
       && window.UnterrichtsassistentApp.isBewertungPlannedEvaluationsExpanded());
     const isPlannedEvaluationDetailsExpanded = !(window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.isBewertungPlannedEvaluationDetailsExpanded === "function")
@@ -56,6 +58,12 @@ window.Unterrichtsassistent.ui.views.bewertung = {
     const activePerformedPlannedEvaluationId = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActivePerformedPlannedEvaluationId === "function"
       ? String(window.UnterrichtsassistentApp.getActivePerformedPlannedEvaluationId() || "").trim()
       : "";
+    const activeAnalysisPlannedEvaluationId = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveAnalysisPlannedEvaluationId === "function"
+      ? String(window.UnterrichtsassistentApp.getActiveAnalysisPlannedEvaluationId() || "").trim()
+      : "";
+    const bewertungAnalysisSort = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getBewertungAnalysisSort === "function"
+      ? window.UnterrichtsassistentApp.getBewertungAnalysisSort()
+      : { key: "student", direction: "asc" };
     const activePerformedEvaluationStudentId = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActivePerformedEvaluationStudentId === "function"
       ? String(window.UnterrichtsassistentApp.getActivePerformedEvaluationStudentId() || "").trim()
       : "";
@@ -134,6 +142,10 @@ window.Unterrichtsassistent.ui.views.bewertung = {
       }
 
       return roundedValue.toFixed(1).replace(".", ",");
+    }
+
+    function formatCompactPointsLabel(value) {
+      return formatPointsLabel(value);
     }
 
     function formatDateTimeLabel(dateTimeValue) {
@@ -1215,6 +1227,60 @@ window.Unterrichtsassistent.ui.views.bewertung = {
 
     function getBeValue(item) {
       return Math.max(0, Number.isFinite(Number(item && item.be)) ? Math.round(Number(item.be)) : 0);
+    }
+
+    function getCompetencySourceOptions() {
+      return window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getEvaluationCompetencySourceOptions === "function"
+        ? window.UnterrichtsassistentApp.getEvaluationCompetencySourceOptions()
+        : [{ id: "", label: "Keine Kompetenzquelle" }];
+    }
+
+    function getCompetencyAspectOptions(sourceToolId) {
+      return window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getEvaluationCompetencyAspectOptions === "function"
+        ? window.UnterrichtsassistentApp.getEvaluationCompetencyAspectOptions(sourceToolId)
+        : [];
+    }
+
+    function buildCompetencySourceField(activeSheet) {
+      const selectedSourceId = String(activeSheet && activeSheet.competencySourceToolId || "").trim();
+      const options = getCompetencySourceOptions();
+
+      return [
+        '<label class="import-modal__field bewertung-editor__field">',
+        '<span>Kompetenz Quelle</span>',
+        '<select onchange="return window.UnterrichtsassistentApp.updateActiveEvaluationSheetField(\'competencySourceToolId\', this.value)">',
+        options.map(function (option) {
+          const optionId = String(option && option.id || "").trim();
+          const optionLabel = String(option && option.label || "").trim() || "Kompetenzquelle";
+
+          return '<option value="' + escapeValue(optionId) + '"' + (optionId === selectedSourceId ? ' selected' : '') + '>' + escapeValue(optionLabel) + '</option>';
+        }).join(""),
+        '</select>',
+        '</label>'
+      ].join("");
+    }
+
+    function buildSubtaskCompetencySelect(taskId, subtaskId, subtask, activeSheet) {
+      const sourceToolId = String(activeSheet && activeSheet.competencySourceToolId || "").trim();
+      const selectedLookup = (Array.isArray(subtask && subtask.competencyAspectIds) ? subtask.competencyAspectIds : []).reduce(function (lookup, aspectId) {
+        lookup[String(aspectId || "").trim()] = true;
+        return lookup;
+      }, {});
+      const options = sourceToolId ? getCompetencyAspectOptions(sourceToolId) : [];
+
+      return [
+        '<label class="bewertung-task-sheet__field bewertung-task-sheet__field--competency">',
+        '<span class="bewertung-task-sheet__field-label">Kompetenz</span>',
+        '<select multiple size="4"', options.length ? '' : ' disabled', ' onchange="return window.UnterrichtsassistentApp.updateEvaluationSubtaskField(\'', escapeValue(taskId), '\', \'', escapeValue(subtaskId), '\', \'competencyAspectIds\', Array.prototype.slice.call(this.selectedOptions).map(function(option) { return option.value; }).filter(Boolean).join(\'|\'))">',
+        options.length ? options.map(function (option) {
+          const optionId = String(option && option.id || "").trim();
+          const optionLabel = String(option && option.label || "").trim() || "Kompetenz";
+
+          return '<option value="' + escapeValue(optionId) + '"' + (selectedLookup[optionId] ? ' selected' : '') + '>' + escapeValue(optionLabel) + '</option>';
+        }).join("") : '<option value="">Keine Quelle gewaehlt</option>',
+        '</select>',
+        '</label>'
+      ].join("");
     }
 
     function getAfbWeightMap(afbValue) {
@@ -2608,6 +2674,444 @@ window.Unterrichtsassistent.ui.views.bewertung = {
       ].join("");
     }
 
+    function renderAnalysisMode() {
+      const sheets = getSheetsForActiveClass();
+      const students = getStudentsForActiveClass();
+      const plannedEvaluations = getPlannedEvaluationsForActiveClass();
+      const performedEvaluations = Array.isArray(snapshot.performedEvaluations) ? snapshot.performedEvaluations : [];
+      const sheetLookup = sheets.reduce(function (lookup, sheet) {
+        const sheetId = String(sheet && sheet.id || "").trim();
+
+        if (sheetId) {
+          lookup[sheetId] = sheet;
+        }
+
+        return lookup;
+      }, {});
+      const studentLookup = students.reduce(function (lookup, student) {
+        const studentId = String(student && student.id || "").trim();
+
+        if (studentId) {
+          lookup[studentId] = student;
+        }
+
+        return lookup;
+      }, {});
+      const selectedPlannedEvaluation = plannedEvaluations.find(function (plannedEvaluation) {
+        return String(plannedEvaluation && plannedEvaluation.id || "").trim() === activeAnalysisPlannedEvaluationId;
+      }) || plannedEvaluations[0] || null;
+      const selectedPlannedEvaluationId = String(selectedPlannedEvaluation && selectedPlannedEvaluation.id || "").trim();
+      const selectedSheet = selectedPlannedEvaluation
+        ? sheetLookup[String(selectedPlannedEvaluation && selectedPlannedEvaluation.evaluationSheetId || "").trim()] || null
+        : null;
+      const tasks = String(selectedSheet && selectedSheet.type || "").trim() === "aufgabenbogen"
+        ? getTaskSheetTasks(selectedSheet)
+        : [];
+      const assignedStudents = selectedPlannedEvaluation && Array.isArray(selectedPlannedEvaluation.studentIds)
+        ? selectedPlannedEvaluation.studentIds.map(function (studentId) {
+            return studentLookup[String(studentId || "").trim()] || null;
+          }).filter(Boolean)
+        : [];
+      const performedLookup = performedEvaluations.reduce(function (lookup, entry) {
+        const studentId = String(entry && entry.studentId || "").trim();
+
+        if (studentId && String(entry && entry.plannedEvaluationId || "").trim() === selectedPlannedEvaluationId) {
+          lookup[studentId] = entry;
+        }
+
+        return lookup;
+      }, {});
+      const columns = tasks.reduce(function (result, task, taskIndex) {
+        const taskId = String(task && task.id || "").trim();
+        const subtasks = getSubtasksForTask(task);
+        const taskLabel = "Aufgabe " + String(taskIndex + 1);
+        const taskTitle = String(task && task.title || "").trim();
+
+        if (subtasks.length === 1) {
+          const subtask = subtasks[0];
+          result.push({
+            key: "subtask:" + String(subtask && subtask.id || "").trim(),
+            type: "subtask",
+            taskId: taskId,
+            subtaskId: String(subtask && subtask.id || "").trim(),
+            label: taskTitle ? taskLabel + ": " + taskTitle : taskLabel,
+            max: getBeValue(subtask),
+            isTaskStart: true
+          });
+          return result;
+        }
+
+        result.push({
+          key: "task:" + taskId,
+          type: "task",
+          taskId: taskId,
+          subtaskIds: subtasks.map(function (subtask) {
+            return String(subtask && subtask.id || "").trim();
+          }).filter(Boolean),
+          label: taskTitle ? taskLabel + ": " + taskTitle : taskLabel,
+          max: subtasks.reduce(function (sum, subtask) {
+            return sum + getBeValue(subtask);
+          }, 0),
+          isTaskStart: true
+        });
+
+        subtasks.forEach(function (subtask, subtaskIndex) {
+          const subtaskTitle = String(subtask && subtask.title || "").trim();
+
+          result.push({
+            key: "subtask:" + String(subtask && subtask.id || "").trim(),
+            type: "subtask",
+            taskId: taskId,
+            subtaskId: String(subtask && subtask.id || "").trim(),
+            label: subtaskTitle || taskLabel + "." + String(subtaskIndex + 1),
+            max: getBeValue(subtask),
+            isTaskStart: false
+          });
+        });
+
+        return result;
+      }, []);
+      const totalColumn = {
+        key: "total",
+        type: "total",
+        label: "Gesamtpunktzahl",
+        max: columns.filter(function (column) {
+          return column.type === "task" || column.isTaskStart;
+        }).reduce(function (sum, column) {
+          return sum + (column.type === "task" || column.isTaskStart ? Math.max(0, Number(column.max) || 0) : 0);
+        }, 0),
+        isTaskStart: true
+      };
+      const sortKey = String(bewertungAnalysisSort && bewertungAnalysisSort.key || "student");
+      const sortDirection = String(bewertungAnalysisSort && bewertungAnalysisSort.direction || "asc") === "desc" ? "desc" : "asc";
+      const sortedStudents = assignedStudents.slice().sort(function (left, right) {
+        const directionFactor = sortDirection === "desc" ? -1 : 1;
+        let comparison = 0;
+
+        function getColumnAchieved(student, column) {
+          const performedEvaluation = performedLookup[String(student && student.id || "").trim()] || null;
+          const subtaskLookup = performedEvaluation && Array.isArray(performedEvaluation.subtaskResults)
+            ? performedEvaluation.subtaskResults.reduce(function (lookup, entry) {
+                const subtaskId = String(entry && entry.subtaskId || "").trim();
+
+                if (subtaskId) {
+                  lookup[subtaskId] = Math.max(0, Number(entry && entry.points) || 0);
+                }
+
+                return lookup;
+              }, {})
+            : {};
+
+          if (column.type === "task") {
+            return (Array.isArray(column.subtaskIds) ? column.subtaskIds : []).reduce(function (sum, subtaskId) {
+              return sum + (subtaskLookup[subtaskId] || 0);
+            }, 0);
+          }
+
+          if (column.type === "total") {
+            return columns.filter(function (entry) {
+              return entry.type === "task" || entry.isTaskStart;
+            }).reduce(function (sum, entry) {
+              return sum + getColumnAchieved(student, entry);
+            }, 0);
+          }
+
+          return subtaskLookup[String(column.subtaskId || "").trim()] || 0;
+        }
+
+        if (sortKey === "student") {
+          comparison = sortStudentsByFirstName(left, right);
+        } else {
+          const column = [totalColumn].concat(columns).find(function (item) {
+            return String(item && item.key || "").trim() === sortKey;
+          }) || null;
+
+          if (column) {
+            comparison = getColumnAchieved(left, column) - getColumnAchieved(right, column);
+          }
+        }
+
+        if (comparison === 0 && sortKey !== "student") {
+          return sortStudentsByFirstName(left, right);
+        }
+
+        return comparison * directionFactor;
+      });
+
+      function buildSortButton(label, key) {
+        const normalizedKey = String(key || "").trim();
+        const isActive = sortKey === normalizedKey;
+        const indicator = isActive ? (sortDirection === "desc" ? " v" : " ^") : "";
+
+        return [
+          '<button class="bewertung-analysis-table__sort" type="button" onclick="return window.UnterrichtsassistentApp.toggleBewertungAnalysisSort(\'', escapeValue(normalizedKey), '\')">',
+          escapeValue(label),
+          '<span>', escapeValue(indicator), '</span>',
+          '</button>'
+        ].join("");
+      }
+
+      function getStudentColumnValue(student, column) {
+        const performedEvaluation = performedLookup[String(student && student.id || "").trim()] || null;
+        const subtaskLookup = performedEvaluation && Array.isArray(performedEvaluation.subtaskResults)
+          ? performedEvaluation.subtaskResults.reduce(function (lookup, entry) {
+              const subtaskId = String(entry && entry.subtaskId || "").trim();
+
+              if (subtaskId) {
+                lookup[subtaskId] = Math.max(0, Number(entry && entry.points) || 0);
+              }
+
+              return lookup;
+            }, {})
+          : {};
+
+          if (column.type === "task") {
+            return (Array.isArray(column.subtaskIds) ? column.subtaskIds : []).reduce(function (sum, subtaskId) {
+              return sum + (subtaskLookup[subtaskId] || 0);
+            }, 0);
+          }
+
+          if (column.type === "total") {
+            return columns.filter(function (entry) {
+              return entry.type === "task" || entry.isTaskStart;
+            }).reduce(function (sum, entry) {
+              return sum + getStudentColumnValue(student, entry);
+            }, 0);
+          }
+
+          return subtaskLookup[String(column.subtaskId || "").trim()] || 0;
+        }
+
+      function getNormalizedAnalysisGradingSystem(plannedEvaluation) {
+        return (Array.isArray(plannedEvaluation && plannedEvaluation.gradingSystem) ? plannedEvaluation.gradingSystem : []).map(function (entry) {
+          return {
+            id: String(entry && entry.id || "").trim(),
+            label: String(entry && entry.label || "").trim(),
+            minPercent: Math.max(0, Math.min(100, Number.isFinite(Number(entry && entry.minPercent)) ? Number(entry.minPercent) : 0))
+          };
+        }).filter(function (entry) {
+          return Boolean(entry.id);
+        }).sort(function (left, right) {
+          if (left.minPercent === right.minPercent) {
+            return left.label.localeCompare(right.label, "de-DE");
+          }
+
+          return right.minPercent - left.minPercent;
+        });
+      }
+
+      function getAnalysisStageForPoints(pointsValue, maxValue, gradingStages) {
+        const percent = Math.max(0, Number(maxValue) || 0) > 0
+          ? (Math.max(0, Number(pointsValue) || 0) / Math.max(0, Number(maxValue) || 0)) * 100
+          : 0;
+
+        return gradingStages.find(function (stage) {
+          return percent >= Number(stage && stage.minPercent);
+        }) || null;
+      }
+
+      function formatHalfPointThreshold(value) {
+        const normalizedValue = Math.ceil((Math.max(0, Number(value) || 0) - 0.000001) * 2) / 2;
+
+        return formatCompactPointsLabel(normalizedValue);
+      }
+
+      function buildClassOverviewContent() {
+        if (!selectedSheet) {
+          return '<p class="empty-message">Der verknuepfte Bewertungsbogen wurde nicht gefunden.</p>';
+        }
+
+        if (String(selectedSheet.type || "").trim() !== "aufgabenbogen") {
+          return '<p class="empty-message">Diese Analyse ist aktuell fuer Aufgabenboegen verfuegbar.</p>';
+        }
+
+        if (!columns.length) {
+          return '<p class="empty-message">Der Aufgabenbogen enthaelt noch keine Teilaufgaben.</p>';
+        }
+
+        return [
+          '<div class="bewertung-analysis-table__wrap">',
+          '<table class="bewertung-analysis-table">',
+          '<thead><tr>',
+          '<th class="bewertung-analysis-table__student-head">', buildSortButton("Schueler", "student"), '</th>',
+          '<th class="bewertung-analysis-table__score-head is-total is-task-start">',
+          buildSortButton(totalColumn.label, totalColumn.key),
+          '<span class="bewertung-analysis-table__max">/', escapeValue(formatCompactPointsLabel(totalColumn.max)), '</span>',
+          '</th>',
+          columns.map(function (column) {
+            return [
+              '<th class="bewertung-analysis-table__score-head', column.isTaskStart ? ' is-task-start' : '', '">',
+              buildSortButton(column.label, column.key),
+              '<span class="bewertung-analysis-table__max">/', escapeValue(formatCompactPointsLabel(column.max)), '</span>',
+              '</th>'
+            ].join("");
+          }).join(""),
+          '</tr></thead>',
+          '<tbody>',
+          sortedStudents.map(function (student) {
+            return [
+              '<tr>',
+              '<th class="bewertung-analysis-table__student">', escapeValue([String(student && student.firstName || "").trim(), String(student && student.lastName || "").trim()].filter(Boolean).join(" ") || "Ohne Namen"), '</th>',
+              (function () {
+                const achieved = getStudentColumnValue(student, totalColumn);
+                const maxValue = Math.max(0, Number(totalColumn.max) || 0);
+
+                return [
+                  '<td class="bewertung-analysis-table__cell is-total ', escapeValue(getCellTone(achieved, maxValue)), ' is-task-start">',
+                  '<span>', escapeValue(formatCompactPointsLabel(achieved)), ' / ', escapeValue(formatCompactPointsLabel(maxValue)), '</span>',
+                  '</td>'
+                ].join("");
+              }()),
+              columns.map(function (column) {
+                const achieved = getStudentColumnValue(student, column);
+                const maxValue = Math.max(0, Number(column && column.max) || 0);
+
+                return [
+                  '<td class="bewertung-analysis-table__cell ', escapeValue(getCellTone(achieved, maxValue)), column.isTaskStart ? ' is-task-start' : '', '">',
+                  '<span>', escapeValue(formatCompactPointsLabel(achieved)), ' / ', escapeValue(formatCompactPointsLabel(maxValue)), '</span>',
+                  '</td>'
+                ].join("");
+              }).join(""),
+              '</tr>'
+            ].join("");
+          }).join(""),
+          '</tbody>',
+          '</table>',
+          '</div>'
+        ].join("");
+      }
+
+      function buildEvaluationOverviewContent() {
+        const gradingStages = getNormalizedAnalysisGradingSystem(selectedPlannedEvaluation);
+        const maxValue = Math.max(0, Number(totalColumn.max) || 0);
+        const countsByStageId = gradingStages.reduce(function (lookup, stage) {
+          lookup[String(stage && stage.id || "").trim()] = 0;
+          return lookup;
+        }, {});
+        const noStageKey = "__none";
+
+        if (!selectedSheet || String(selectedSheet.type || "").trim() !== "aufgabenbogen" || !columns.length) {
+          return '<p class="empty-message">Waehle eine geplante Bewertung mit Aufgabenbogen, um Bewertungsstufen auszuwerten.</p>';
+        }
+
+        if (!gradingStages.length) {
+          return '<p class="empty-message">Fuer diese geplante Bewertung ist noch kein Bewertungssystem definiert.</p>';
+        }
+
+        assignedStudents.forEach(function (student) {
+          const achieved = getStudentColumnValue(student, totalColumn);
+          const stage = getAnalysisStageForPoints(achieved, maxValue, gradingStages);
+          const stageId = String(stage && stage.id || noStageKey).trim();
+
+          countsByStageId[stageId] = (countsByStageId[stageId] || 0) + 1;
+        });
+
+        return [
+          '<div class="bewertung-analysis-stages">',
+          '<div class="bewertung-analysis-stages__bars">',
+          gradingStages.map(function (stage) {
+            const stageId = String(stage && stage.id || "").trim();
+            const count = countsByStageId[stageId] || 0;
+            const percent = assignedStudents.length ? (count / assignedStudents.length) * 100 : 0;
+
+            return [
+              '<div class="bewertung-analysis-stages__bar-row">',
+              '<span class="bewertung-analysis-stages__label">', escapeValue(String(stage && stage.label || "").trim() || "Ohne Stufe"), '</span>',
+              '<div class="bewertung-analysis-stages__track"><span style="width:', escapeValue(String(percent > 0 ? Math.max(2, percent) : 0)), '%;"></span></div>',
+              '<strong>', escapeValue(String(count)), '</strong>',
+              '</div>'
+            ].join("");
+          }).join(""),
+          '</div>',
+          '<div class="bewertung-analysis-stages__thresholds">',
+          '<table>',
+          '<thead><tr><th>Bewertungsstufe</th><th>ab Punkten</th><th>Prozentgrenze</th></tr></thead>',
+          '<tbody>',
+          gradingStages.map(function (stage) {
+            const threshold = maxValue * (Math.max(0, Number(stage && stage.minPercent) || 0) / 100);
+
+            return [
+              '<tr>',
+              '<td>', escapeValue(String(stage && stage.label || "").trim() || "Ohne Stufe"), '</td>',
+              '<td>', escapeValue(formatHalfPointThreshold(threshold)), '</td>',
+              '<td>', escapeValue(String(Number(stage && stage.minPercent) || 0).replace(".", ",")), ' %</td>',
+              '</tr>'
+            ].join("");
+          }).join(""),
+          '</tbody>',
+          '</table>',
+          '</div>',
+          '</div>'
+        ].join("");
+      }
+
+      function getCellTone(achieved, maxValue) {
+        const percent = Math.max(0, Number(maxValue) || 0) > 0 ? (Math.max(0, Number(achieved) || 0) / Math.max(0, Number(maxValue) || 0)) * 100 : 0;
+
+        if (percent >= 75) {
+          return "is-high";
+        }
+
+        if (percent >= 50) {
+          return "is-mid";
+        }
+
+        return "is-low";
+      }
+
+      function buildPlannedEvaluationOptions() {
+        return plannedEvaluations.map(function (plannedEvaluation) {
+          const plannedEvaluationId = String(plannedEvaluation && plannedEvaluation.id || "").trim();
+          const sheet = sheetLookup[String(plannedEvaluation && plannedEvaluation.evaluationSheetId || "").trim()] || null;
+          const sheetTitle = String(sheet && sheet.title || "").trim() || "Ohne Bewertungsbogen";
+          const dateLabel = formatShortDateLabel(plannedEvaluation && plannedEvaluation.date);
+
+          return '<option value="' + escapeValue(plannedEvaluationId) + '"' + (plannedEvaluationId === selectedPlannedEvaluationId ? ' selected' : '') + '>' + escapeValue([dateLabel, sheetTitle].filter(Boolean).join(" | ")) + '</option>';
+        }).join("");
+      }
+
+      if (!activeClass) {
+        return [
+          '<div class="unterricht-layout">',
+          '<article class="panel unterricht-layout__content">',
+          '<p class="empty-message">Waehle zuerst eine Lerngruppe, damit du geplante Bewertungen analysieren kannst.</p>',
+          '</article>',
+          '</div>'
+        ].join("");
+      }
+
+      return [
+        '<div class="bewertung-layout">',
+        '<article class="panel bewertung-analysis-run">',
+        '<div class="bewertung-planung__header">',
+        '<div>',
+        '<h2 class="bewertung-planung__title">Bewertungsanalyse</h2>',
+        '<p class="bewertung-planung__hint">Auswertung der geplanten Bewertungen fuer die aktuelle Lerngruppe.</p>',
+        '</div>',
+        '</div>',
+        plannedEvaluations.length ? [
+          '<label class="import-modal__field bewertung-analysis-run__selector">',
+          '<span>Geplante Bewertung</span>',
+          '<select onchange="return window.UnterrichtsassistentApp.selectPlannedEvaluationForAnalysis(this.value)">',
+          buildPlannedEvaluationOptions(),
+          '</select>',
+          '</label>'
+        ].join("") : '',
+        !plannedEvaluations.length ? '<p class="empty-message">Fuer diese Lerngruppe gibt es noch keine geplanten Bewertungen.</p>' : [
+          '<section class="bewertung-analysis-run__section', isAnalysisSectionExpanded ? '' : ' is-collapsed', '">',
+          buildSectionHeader("Lerngruppe Übersicht", "analysis", isAnalysisSectionExpanded),
+          isAnalysisSectionExpanded ? '<div class="bewertung-analysis-run__section-body">' + buildClassOverviewContent() + '</div>' : '',
+          '</section>',
+          '<section class="bewertung-analysis-run__section', isAnalysisOverviewSectionExpanded ? '' : ' is-collapsed', '">',
+          buildSectionHeader("Bewertungen Übersicht", "analysisoverview", isAnalysisOverviewSectionExpanded),
+          isAnalysisOverviewSectionExpanded ? '<div class="bewertung-analysis-run__section-body">' + buildEvaluationOverviewContent() + '</div>' : '',
+          '</section>'
+        ].join(""),
+        '</article>',
+        '</div>'
+      ].join("");
+    }
+
     function buildCompetencyGridEditor(activeSheet) {
       const grid = activeSheet && activeSheet.competencyGrid && typeof activeSheet.competencyGrid === "object"
         ? activeSheet.competencyGrid
@@ -2713,7 +3217,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
         buildSectionHeader("Aufgabenbogen", "tasksheet", isTaskSheetSectionExpanded),
         isTaskSheetSectionExpanded ? [
         '<div class="bewertung-task-sheet__header">',
-        '<p class="bewertung-task-sheet__hint">Aufgaben werden nacheinander aufgebaut. Teilaufgaben koennen Themen, Anforderungsbereich und Bewertungseinheiten erhalten.</p>',
+        '<p class="bewertung-task-sheet__hint">Aufgaben werden nacheinander aufgebaut. Teilaufgaben koennen Themen, Anforderungsbereich, Bewertungseinheiten und Kompetenzen erhalten.</p>',
         '</div>',
         '<div class="bewertung-task-sheet__body">',
         tasks.map(function (task, taskIndex) {
@@ -2759,6 +3263,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
                 '<span class="bewertung-task-sheet__field-label">BE</span>',
                 '<input type="number" min="0" step="1" value="', escapeValue(String(Number(subtask && subtask.be) || 0)), '" onchange="return window.UnterrichtsassistentApp.updateEvaluationSubtaskField(\'', escapeValue(taskId), '\', \'', escapeValue(subtaskId), '\', \'be\', this.value)">',
                 '</label>',
+                buildSubtaskCompetencySelect(taskId, subtaskId, subtask, activeSheet),
                 '<button class="bewertung-task-sheet__delete" type="button" onclick="return window.UnterrichtsassistentApp.deleteEvaluationSubtask(\'', escapeValue(taskId), '\', \'', escapeValue(subtaskId), '\')">Loeschen</button>',
                 '</div>'
               ].join("");
@@ -2822,6 +3327,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
             "return window.UnterrichtsassistentApp.updateActiveEvaluationSheetField('workingTimeMinutes', ((Number(document.getElementById('__DAYS_ID__') && document.getElementById('__DAYS_ID__').value) || 0) * 1440) + ((Number(document.getElementById('__HOURS_ID__') && document.getElementById('__HOURS_ID__').value) || 0) * 60) + (Number(document.getElementById('__MINUTES_ID__') && document.getElementById('__MINUTES_ID__').value) || 0))"
           ),
           '</div>',
+          String(activeSheet.type || "").trim() === "aufgabenbogen" ? buildCompetencySourceField(activeSheet) : '',
           '</div>',
           '</article>',
           '<article class="panel bewertung-curriculum__panel', isCurriculumSectionExpanded ? '' : ' is-collapsed', '">',
@@ -3344,6 +3850,10 @@ window.Unterrichtsassistent.ui.views.bewertung = {
 
     if (mode === "bewerten") {
       return renderBewertenMode();
+    }
+
+    if (mode === "analysieren") {
+      return renderAnalysisMode();
     }
 
     if (mode === "evidenz") {
