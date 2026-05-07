@@ -663,6 +663,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
           beitrag: "Beitrag",
           ueberpruefung: "Ueberpruefung",
           praesentation: "Praesentation",
+          nachtrag: "Nachtrag",
           abgabe: "Abgabe",
           stoerung: "Stoerung",
           material: "Material",
@@ -730,6 +731,16 @@ window.Unterrichtsassistent.ui.views.klasse = {
 
       if (key === "demandLevel") {
         return normalizedValue.toUpperCase();
+      }
+
+      if (key === "category") {
+        return {
+          ueberpruefung: "Ueberpruefung",
+          praesentation: "Praesentation",
+          beitrag: "Beitrag",
+          nachtrag: "Nachtrag",
+          abgabe: "Abgabe"
+        }[normalizedValue.toLowerCase()] || normalizedValue;
       }
 
       if (key === "lessonPlanId" || key === "lessonPhaseId" || key === "lessonStepId") {
@@ -818,6 +829,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
       const contextParts = [
         formatDetailValue("situationType", record && record.situationType),
         formatDetailValue("demandLevel", record && record.demandLevel),
+        formatDetailValue("category", record && record.category),
         formatDetailValue("lessonPlanId", record && record.lessonPlanId),
         formatDetailValue("lessonPhaseId", record && record.lessonPhaseId),
         formatDetailValue("lessonStepId", record && record.lessonStepId)
@@ -2326,12 +2338,29 @@ window.Unterrichtsassistent.ui.views.klasse = {
           '<div class="assessment-columns">',
           '<section class="assessment-column">',
           '<h4 class="assessment-column__title">Leistung</h4>',
-          '<div class="import-modal__field"><span>Kategorie</span><div class="assessment-category-buttons">',
-          '<button class="assessment-category-button class-analysis-assessment-category-button', analysisEditRecord.raw && analysisEditRecord.raw.category === "beitrag" ? " is-active" : "", '" type="button" data-category="beitrag" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisAssessmentCategory(\'beitrag\')">Beitrag</button>',
-          '<button class="assessment-category-button class-analysis-assessment-category-button', analysisEditRecord.raw && analysisEditRecord.raw.category === "ueberpruefung" ? " is-active" : "", '" type="button" data-category="ueberpruefung" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisAssessmentCategory(\'ueberpruefung\')">Ueberpruefung</button>',
-          '<button class="assessment-category-button class-analysis-assessment-category-button', analysisEditRecord.raw && analysisEditRecord.raw.category === "praesentation" ? " is-active" : "", '" type="button" data-category="praesentation" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisAssessmentCategory(\'praesentation\')">Praesentation</button>',
-          '<button class="assessment-category-button class-analysis-assessment-category-button', analysisEditRecord.raw && analysisEditRecord.raw.category === "abgabe" ? " is-active" : "", '" type="button" data-category="abgabe" onclick="return window.UnterrichtsassistentApp.toggleClassAnalysisAssessmentCategory(\'abgabe\')">Abgabe</button>',
-          '</div><input id="classAnalysisAssessmentCategory" type="hidden" value="', escapeValue(analysisEditRecord.raw && analysisEditRecord.raw.category || ""), '"></div>',
+          '<div class="import-modal__field import-modal__field--compact-select"><span>Bewertungskontext</span><select id="classAnalysisAssessmentCategory" class="student-table__select observation-context-select">',
+          '<option value="">-</option>',
+          '<option value="ueberpruefung"', analysisEditRecord.raw && analysisEditRecord.raw.category === "ueberpruefung" ? " selected" : "", '>Ueberpruefung</option>',
+          '<option value="praesentation"', analysisEditRecord.raw && analysisEditRecord.raw.category === "praesentation" ? " selected" : "", '>Praesentation</option>',
+          '<option value="beitrag"', analysisEditRecord.raw && analysisEditRecord.raw.category === "beitrag" ? " selected" : "", '>Beitrag</option>',
+          '<option value="abgabe"', analysisEditRecord.raw && analysisEditRecord.raw.category === "abgabe" ? " selected" : "", '>Abgabe</option>',
+          '<option value="nachtrag"', analysisEditRecord.raw && analysisEditRecord.raw.category === "nachtrag" ? " selected" : "", '>Nachtrag</option>',
+          '</select></div>',
+          '<div class="observation-context-pair">',
+          '<div class="import-modal__field import-modal__field--compact-select"><span>Leisten/Lernen</span><select id="classAnalysisAssessmentSituationType" class="student-table__select observation-context-select">',
+          '<option value="">-</option>',
+          '<option value="lernen"', analysisEditRecord.raw && analysisEditRecord.raw.situationType === "lernen" ? " selected" : "", '>Lernen</option>',
+          '<option value="leisten"', analysisEditRecord.raw && analysisEditRecord.raw.situationType === "leisten" ? " selected" : "", '>Leisten</option>',
+          '</select></div>',
+          '<div class="import-modal__field import-modal__field--compact-select"><span>Anforderungsbereich</span><select id="classAnalysisAssessmentDemandLevel" class="student-table__select observation-context-select">',
+          '<option value="">-</option>',
+          '<option value="afb1"', analysisEditRecord.raw && analysisEditRecord.raw.demandLevel === "afb1" ? " selected" : "", '>AFB 1</option>',
+          '<option value="afb1/2"', analysisEditRecord.raw && analysisEditRecord.raw.demandLevel === "afb1/2" ? " selected" : "", '>AFB 1/2</option>',
+          '<option value="afb2"', analysisEditRecord.raw && analysisEditRecord.raw.demandLevel === "afb2" ? " selected" : "", '>AFB 2</option>',
+          '<option value="afb2/3"', analysisEditRecord.raw && analysisEditRecord.raw.demandLevel === "afb2/3" ? " selected" : "", '>AFB 2/3</option>',
+          '<option value="afb3"', analysisEditRecord.raw && analysisEditRecord.raw.demandLevel === "afb3" ? " selected" : "", '>AFB 3</option>',
+          '</select></div>',
+          '</div>',
           '<div class="import-modal__field"><span>AFB-Bewertung</span><div class="assessment-grid-chart" onpointerdown="return window.UnterrichtsassistentApp.startClassAnalysisAssessmentGridPointer(event)" onpointermove="return window.UnterrichtsassistentApp.handleClassAnalysisAssessmentGridPointerMove(event)" onpointerup="return window.UnterrichtsassistentApp.handleClassAnalysisAssessmentGridPointerUp(event)" onpointercancel="return window.UnterrichtsassistentApp.handleClassAnalysisAssessmentGridPointerUp(event)"><svg class="assessment-grid-chart__svg" id="classAnalysisAssessmentGridSvg" viewBox="0 0 360 260" role="img" aria-label="AFB Bewertungsraster"></svg></div><input id="classAnalysisAssessmentAfb1" type="hidden" value="', escapeValue(analysisEditRecord.raw && analysisEditRecord.raw.afb1 !== undefined && analysisEditRecord.raw.afb1 !== null ? analysisEditRecord.raw.afb1 : ""), '"><input id="classAnalysisAssessmentAfb2" type="hidden" value="', escapeValue(analysisEditRecord.raw && analysisEditRecord.raw.afb2 !== undefined && analysisEditRecord.raw.afb2 !== null ? analysisEditRecord.raw.afb2 : ""), '"><input id="classAnalysisAssessmentAfb3" type="hidden" value="', escapeValue(analysisEditRecord.raw && analysisEditRecord.raw.afb3 !== undefined && analysisEditRecord.raw.afb3 !== null ? analysisEditRecord.raw.afb3 : ""), '"></div>',
           '</section>',
           '<section class="assessment-column"><h4 class="assessment-column__title">Verhalten</h4><div class="assessment-behavior-grid">',

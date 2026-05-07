@@ -2784,6 +2784,20 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         { key: "mathObservation", label: "Mathematik-Beobachtung", symbol: "K" },
         { key: "knowledgeGap", label: "Wissensluecke", symbol: "Buch" }
       ];
+      const evidenceToolOptions = evidenceTools.map(function (tool) {
+        const toolId = String(tool && tool.id || "").trim();
+        return toolId
+          ? { key: "evidence:" + toolId, label: String(tool && tool.titel || "").trim() || "Bewertungswerkzeug", symbol: String(tool && tool.symbol || "").trim() || "E" }
+          : null;
+      }).filter(Boolean);
+      const allTools = standardTools.concat(evidenceToolOptions);
+      const defaultToolKey = String(snapshot && snapshot.unterrichtLiveDefaultTool || "").trim();
+      const normalizedDefaultToolKey = allTools.some(function (tool) { return tool.key === defaultToolKey; })
+        ? defaultToolKey
+        : "";
+      const defaultOptions = allTools.map(function (tool) {
+        return '<option value="' + escapeValue(tool.key) + '"' + (tool.key === normalizedDefaultToolKey ? ' selected' : '') + '>' + escapeValue(tool.label) + '</option>';
+      }).join("");
       const rows = standardTools.map(function (tool) {
         return '<label class="unterricht-live-tool-manager__row"><input type="checkbox"' + (isToolEnabled(tool.key) ? ' checked' : '') + ' onchange="return window.UnterrichtsassistentApp.updateUnterrichtLiveToolEnabled(\'' + escapeValue(tool.key) + '\', this.checked)"><span class="unterricht-live-tool-manager__symbol">' + escapeValue(tool.symbol) + '</span><span>' + escapeValue(tool.label) + '</span></label>';
       }).join("") + evidenceTools.map(function (tool) {
@@ -2801,7 +2815,21 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         return "";
       }
 
-      return '<article class="panel unterricht-live-tool-manager"><h2 class="unterricht-live-tool-manager__title">Live-Werkzeuge</h2><div class="unterricht-live-tool-manager__rows">' + rows + '</div></article>';
+      return [
+        '<article class="panel unterricht-live-tool-manager">',
+        '<h2 class="unterricht-live-tool-manager__title">Live-Werkzeuge</h2>',
+        '<label class="unterricht-live-tool-manager__default">',
+        '<span>Standard-Werkzeug</span>',
+        '<select class="student-table__select" onchange="return window.UnterrichtsassistentApp.updateUnterrichtLiveDefaultTool(this.value)">',
+        '<option value="">automatisch</option>',
+        defaultOptions,
+        '</select>',
+        '</label>',
+        '<div class="unterricht-live-tool-manager__rows">',
+        rows,
+        '</div>',
+        '</article>'
+      ].join("");
     }
 
     function buildLiveTodoPanelHeader(activeClassDisplayName, count) {
@@ -3232,6 +3260,14 @@ window.Unterrichtsassistent.ui.views.unterricht = {
     if (viewMode === "live") {
       const liveLessonFlowData = getCurrentAssignedCurriculumLessonFlow();
 
+      if (isLiveManageMode) {
+        return [
+          '<div class="unterricht-layout unterricht-layout--live unterricht-layout--live-manage">',
+          renderLiveToolManagementPanel(),
+          '</div>'
+        ].join("");
+      }
+
       return [
         '<div class="unterricht-layout unterricht-layout--live' + (liveLessonFlowData ? ' has-live-flow' : '') + '">',
         renderLiveNotice(),
@@ -3316,15 +3352,20 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         '<div class="assessment-columns">',
         '<section class="assessment-column">',
         '<h4 class="assessment-column__title">Leistung</h4>',
-        '<div class="import-modal__field">',
-        '<span>Kategorie</span>',
-        '<div class="assessment-category-buttons" id="unterrichtAssessmentCategoryGroup">',
-        '<button class="assessment-category-button" type="button" data-category="beitrag" onclick="return window.UnterrichtsassistentApp.toggleUnterrichtAssessmentCategory(\'beitrag\')">Beitrag</button>',
-        '<button class="assessment-category-button" type="button" data-category="ueberpruefung" onclick="return window.UnterrichtsassistentApp.toggleUnterrichtAssessmentCategory(\'ueberpruefung\')">Ueberpruefung</button>',
-        '<button class="assessment-category-button" type="button" data-category="praesentation" onclick="return window.UnterrichtsassistentApp.toggleUnterrichtAssessmentCategory(\'praesentation\')">Praesentation</button>',
-        '<button class="assessment-category-button" type="button" data-category="abgabe" onclick="return window.UnterrichtsassistentApp.toggleUnterrichtAssessmentCategory(\'abgabe\')">Abgabe</button>',
+        '<div class="import-modal__field import-modal__field--compact-select">',
+        '<span>Bewertungskontext</span>',
+        '<select id="unterrichtAssessmentCategory" class="student-table__select observation-context-select">',
+        '<option value="">-</option>',
+        '<option value="ueberpruefung">Ueberpruefung</option>',
+        '<option value="praesentation">Praesentation</option>',
+        '<option value="beitrag">Beitrag</option>',
+        '<option value="abgabe">Abgabe</option>',
+        '<option value="nachtrag">Nachtrag</option>',
+        '</select>',
         '</div>',
-        '<input id="unterrichtAssessmentCategory" type="hidden" value="">',
+        '<div class="observation-context-pair">',
+        '<div class="import-modal__field import-modal__field--compact-select"><span>Leisten/Lernen</span><select id="unterrichtAssessmentSituationType" class="student-table__select observation-context-select"><option value="">-</option><option value="lernen">Lernen</option><option value="leisten">Leisten</option></select></div>',
+        '<div class="import-modal__field import-modal__field--compact-select"><span>Anforderungsbereich</span><select id="unterrichtAssessmentDemandLevel" class="student-table__select observation-context-select"><option value="">-</option><option value="afb1">AFB 1</option><option value="afb1/2">AFB 1/2</option><option value="afb2">AFB 2</option><option value="afb2/3">AFB 2/3</option><option value="afb3">AFB 3</option></select></div>',
         '</div>',
         '<div class="import-modal__field">',
         '<span>AFB-Bewertung</span>',

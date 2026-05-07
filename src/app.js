@@ -173,6 +173,7 @@ let seatPlanOptimizationPriorities = {
 };
 const timetableWeekdayKeys = ["1", "2", "3", "4", "5"];
 let liveDateTimeIntervalId = null;
+let lastLiveDateTimeRenderSignature = "";
 let isClassImportModalOpen = false;
 let isClassAnalysisDetailModalOpen = false;
 let activeClassAnalysisDetailDraft = null;
@@ -290,6 +291,24 @@ const MATH_OBSERVATION_QUALITY_LABELS = [
   { value: 0, label: "0 sachgerecht im vertrauten Rahmen" },
   { value: -1, label: "- ansatzweise tragfaehig, aber unvollstaendig" },
   { value: -2, label: "-- fachlich nicht tragfaehig" }
+];
+const OBSERVATION_SITUATION_OPTIONS = [
+  { value: "lernen", label: "Lernen" },
+  { value: "leisten", label: "Leisten" }
+];
+const OBSERVATION_DEMAND_LEVEL_OPTIONS = [
+  { value: "afb1", label: "AFB 1" },
+  { value: "afb1/2", label: "AFB 1/2" },
+  { value: "afb2", label: "AFB 2" },
+  { value: "afb2/3", label: "AFB 2/3" },
+  { value: "afb3", label: "AFB 3" }
+];
+const OBSERVATION_ASSESSMENT_CONTEXT_OPTIONS = [
+  { value: "ueberpruefung", label: "Ueberpruefung" },
+  { value: "praesentation", label: "Praesentation" },
+  { value: "beitrag", label: "Beitrag" },
+  { value: "abgabe", label: "Abgabe" },
+  { value: "nachtrag", label: "Nachtrag" }
 ];
 const MATH_OBSERVATION_COMPETENCY_INFO = {
   k1: "Fragen stellen, Vermutungen formulieren, Beispiele und Gegenbeispiele nutzen, schluessig begruenden, Widerlegungen pruefen, Argumentationen bewerten.",
@@ -1126,12 +1145,140 @@ function isEditingFocusableInput() {
   return isTextInput || isEditableContent;
 }
 
-function syncLiveDateTimeUi() {
-  if (!schoolService || !isLiveDateTimeMode() || activeDeskLayoutDrag || activeDeskLayoutResize || activeUnterrichtMathObservationPress || activeUnterrichtMathObservationMarkerPress || isClassImportModalOpen || isClassAnalysisDetailModalOpen || isClassAnalysisRecordEditModalOpen || isUnterrichtAssessmentModalOpen || isUnterrichtKnowledgeGapModalOpen || isUnterrichtMathObservationModalOpen || isEditingFocusableInput()) {
+function getLiveDateTimeRenderSignature() {
+  const parts = getActiveDateTimeParts();
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const lesson = schoolService && activeClass
+    ? schoolService.getRelevantLessonForClass(activeClass.id, schoolService.getReferenceDate())
+    : null;
+
+  return [
+    activeViewId,
+    String(parts.date || ""),
+    String(parts.time || ""),
+    String(activeClass && activeClass.id || ""),
+    String(lesson && lesson.id || ""),
+    String(lesson && lesson.startTime || ""),
+    String(lesson && lesson.endTime || "")
+  ].join("|");
+}
+
+function getStableScrollElementKey(element, root) {
+  const keyAttributes = ["data-todo-scroll-key", "data-scroll-key", "data-record-id", "data-student-id", "data-class-id"];
+  const id = String(element && element.id || "").trim();
+  let node = element;
+  const parts = [];
+
+  if (id) {
+    return "id:" + id;
+  }
+
+  for (let index = 0; index < keyAttributes.length; index += 1) {
+    const key = String(element && element.getAttribute && element.getAttribute(keyAttributes[index]) || "").trim();
+
+    if (key) {
+      return keyAttributes[index] + ":" + key;
+    }
+  }
+
+  while (node && node !== root && node.nodeType === 1) {
+    const parent = node.parentElement;
+    const tagName = String(node.tagName || "").toLowerCase();
+    const className = String(node.className || "").trim().split(/\s+/).filter(Boolean).slice(0, 2).join(".");
+    let siblingIndex = 0;
+
+    if (parent) {
+      siblingIndex = Array.from(parent.children).filter(function (sibling) {
+        return sibling.tagName === node.tagName;
+      }).indexOf(node);
+    }
+    parts.unshift(tagName + (className ? "." + className : "") + ":" + String(Math.max(0, siblingIndex)));
+    node = parent;
+  }
+
+  return parts.join(">");
+}
+
+function captureActiveViewScrollState() {
+  const activeView = document.querySelector(".view.is-active");
+  const scrollingElement = document.scrollingElement || document.documentElement;
+  const state = {
+    windowTop: scrollingElement ? scrollingElement.scrollTop || 0 : 0,
+    windowLeft: scrollingElement ? scrollingElement.scrollLeft || 0 : 0,
+    elements: {}
+  };
+
+  if (!activeView) {
+    return state;
+  }
+
+  [activeView].concat(Array.from(activeView.querySelectorAll("*"))).forEach(function (element) {
+    const canScrollY = element.scrollHeight > element.clientHeight + 1;
+    const canScrollX = element.scrollWidth > element.clientWidth + 1;
+    const top = element.scrollTop || 0;
+    const left = element.scrollLeft || 0;
+
+    if (!canScrollY && !canScrollX && !top && !left) {
+      return;
+    }
+
+    state.elements[getStableScrollElementKey(element, activeView)] = {
+      top: top,
+      left: left
+    };
+  });
+
+  return state;
+}
+
+function restoreActiveViewScrollState(scrollState) {
+  const activeView = document.querySelector(".view.is-active");
+  const scrollingElement = document.scrollingElement || document.documentElement;
+
+  if (!scrollState) {
     return;
   }
 
+  if (scrollingElement) {
+    scrollingElement.scrollTop = Number(scrollState.windowTop) || 0;
+    scrollingElement.scrollLeft = Number(scrollState.windowLeft) || 0;
+  }
+
+  if (!activeView) {
+    return;
+  }
+
+  [activeView].concat(Array.from(activeView.querySelectorAll("*"))).forEach(function (element) {
+    const state = scrollState.elements[getStableScrollElementKey(element, activeView)];
+
+    if (!state) {
+      return;
+    }
+
+    element.scrollTop = Number(state.top) || 0;
+    element.scrollLeft = Number(state.left) || 0;
+  });
+}
+
+function syncLiveDateTimeUi() {
+  if (!schoolService || !isLiveDateTimeMode() || activeDeskLayoutDrag || activeDeskLayoutResize || activeUnterrichtMathObservationPress || activeUnterrichtMathObservationMarkerPress || isClassImportModalOpen || isClassAnalysisDetailModalOpen || isClassAnalysisRecordEditModalOpen || isUnterrichtAssessmentModalOpen || isUnterrichtKnowledgeGapModalOpen || isUnterrichtMathObservationModalOpen || activeUnterrichtEvidenceModalDraft || isEditingFocusableInput()) {
+    return;
+  }
+
+  const nextSignature = getLiveDateTimeRenderSignature();
+  const scrollState = captureActiveViewScrollState();
+
+  renderActiveClassContext();
+
+  if (nextSignature === lastLiveDateTimeRenderSignature) {
+    return;
+  }
+
+  lastLiveDateTimeRenderSignature = nextSignature;
   setActiveView(activeViewId);
+  window.requestAnimationFrame(function () {
+    restoreActiveViewScrollState(scrollState);
+  });
 }
 
 function ensureLiveDateTimeRefresh() {
@@ -6350,11 +6497,11 @@ function setActiveView(viewId) {
   if (viewId === "unterricht" && previousViewId !== "unterricht") {
     unterrichtViewMode = "live";
     if (schoolService && rawState) {
-      unterrichtToolMode = shouldDefaultToAssessmentTool(
+      unterrichtToolMode = getUnterrichtLiveDefaultTool(
         rawState,
         schoolService.getActiveClass(),
         schoolService.getReferenceDate()
-      ) ? "assessment" : "attendance";
+      );
     } else {
       unterrichtToolMode = "attendance";
     }
@@ -6912,6 +7059,29 @@ function normalizeMathObservationDemandLevelValue(demandValue) {
   const normalized = String(demandValue || "").trim().toLowerCase();
 
   return ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(normalized) >= 0 ? normalized : "";
+}
+
+function normalizeObservationAssessmentContextValue(contextValue) {
+  const normalized = String(contextValue || "").trim().toLowerCase();
+
+  return ["ueberpruefung", "praesentation", "beitrag", "abgabe", "nachtrag"].indexOf(normalized) >= 0
+    ? normalized
+    : "";
+}
+
+function buildObservationContextSelectHtml(inputId, options, selectedValue, normalizer, onChangeHandler) {
+  const normalizedSelectedValue = typeof normalizer === "function" ? normalizer(selectedValue) : String(selectedValue || "").trim();
+  const onchange = onChangeHandler
+    ? ' onchange="return ' + onChangeHandler + '(this.value)"'
+    : "";
+
+  return '<select id="' + escapeHtml(inputId) + '" class="student-table__select observation-context-select"' + onchange + '>'
+    + '<option value="">-</option>'
+    + (Array.isArray(options) ? options : []).map(function (option) {
+      const optionValue = String(option && option.value || "").trim();
+      return '<option value="' + escapeHtml(optionValue) + '"' + (optionValue === normalizedSelectedValue ? " selected" : "") + '>' + escapeHtml(String(option && option.label || optionValue)) + '</option>';
+    }).join("")
+    + "</select>";
 }
 
 function getUnterrichtLiveObservationContextForRecord() {
@@ -7950,6 +8120,18 @@ function ensureUnterrichtMathObservationCompactModal() {
     }).join(""),
     '</section>',
     '<section class="math-observation-compact-panel math-observation-compact-panel--side">',
+    '<h4 class="assessment-column__title">Einstellungen</h4>',
+    '<div class="observation-context-pair">',
+    '<div class="import-modal__field import-modal__field--compact-select"><span>Leisten/Lernen</span>',
+    buildObservationContextSelectHtml("unterrichtMathObservationCompactSituationType", OBSERVATION_SITUATION_OPTIONS, "", normalizeMathObservationSituationTypeValue),
+    '</div>',
+    '<div class="import-modal__field import-modal__field--compact-select"><span>Anforderungsbereich</span>',
+    buildObservationContextSelectHtml("unterrichtMathObservationCompactDemandLevel", OBSERVATION_DEMAND_LEVEL_OPTIONS, "", normalizeMathObservationDemandLevelValue),
+    '</div>',
+    '</div>',
+    '<div class="import-modal__field import-modal__field--compact-select"><span>Bewertungskontext</span>',
+    buildObservationContextSelectHtml("unterrichtMathObservationCompactAssessmentContext", OBSERVATION_ASSESSMENT_CONTEXT_OPTIONS, "", normalizeObservationAssessmentContextValue),
+    '</div>',
     '<h4 class="assessment-column__title">Marker</h4>',
     '<div class="math-observation-compact-markers" id="unterrichtMathObservationCompactMarkers"></div>',
     '<button class="circle-action math-observation-compact-add" type="button" aria-label="Marker hinzufuegen" onclick="return window.UnterrichtsassistentApp.addUnterrichtMathObservationCompactMarker()">+</button>',
@@ -8462,6 +8644,10 @@ function handleUnterrichtMathObservationDocumentTouchStart(event) {
   const target = event && event.target ? event.target : null;
   const seat = point ? getUnterrichtMathObservationSeatFromPoint(point.clientX, point.clientY) : null;
 
+  if (isUnterrichtMathObservationModalOpen || activeUnterrichtMathObservationCompactDraft) {
+    return;
+  }
+
   if (!point || !seat || activeViewId !== "unterricht" || unterrichtToolMode !== "mathObservation") {
     return;
   }
@@ -8680,7 +8866,9 @@ function appendUnterrichtAssessmentRecord(rawSnapshot, draft, values) {
     lessonDate: draft.lessonDate,
     room: draft.lessonRoom,
     recordedAt: recordedAt,
-    category: String(values && values.category || "").trim(),
+    category: normalizeObservationAssessmentContextValue(values && values.category),
+    situationType: normalizeMathObservationSituationTypeValue(values && values.situationType),
+    demandLevel: normalizeMathObservationDemandLevelValue(values && values.demandLevel),
     afb1: values && values.afb1 !== undefined ? values.afb1 : "",
     afb2: values && values.afb2 !== undefined ? values.afb2 : "",
     afb3: values && values.afb3 !== undefined ? values.afb3 : "",
@@ -8777,6 +8965,7 @@ function appendUnterrichtMathObservationRecord(rawSnapshot, draft, values) {
     markerQuality: markers.length ? markers[0].markerQuality : (isSwipableMarker ? normalizeOptionalMathObservationMarkerQualityValue(values && values.markerQuality) : ""),
     situationType: normalizeMathObservationSituationTypeValue(values && values.situationType),
     demandLevel: normalizeMathObservationDemandLevelValue(values && values.demandLevel),
+    category: normalizeObservationAssessmentContextValue(values && values.category),
     lessonPlanId: String(values && values.lessonPlanId || "").trim(),
     lessonPhaseId: String(values && values.lessonPhaseId || "").trim(),
     lessonStepId: String(values && values.lessonStepId || "").trim(),
@@ -9034,9 +9223,12 @@ function setUnterrichtAssessmentGridValue(afb, qualityValue) {
 
 function syncUnterrichtAssessmentCategoryUi() {
   const hiddenInput = document.getElementById("unterrichtAssessmentCategory");
-  const buttons = Array.from(document.querySelectorAll(".assessment-category-button"));
-  const selectedCategory = hiddenInput ? String(hiddenInput.value || "").trim() : "";
+  const buttons = Array.from(document.querySelectorAll("#unterrichtAssessmentCategoryGroup [data-category]"));
+  const selectedCategory = normalizeObservationAssessmentContextValue(hiddenInput && hiddenInput.value);
 
+  if (hiddenInput) {
+    hiddenInput.value = selectedCategory;
+  }
   buttons.forEach(function (button) {
     const buttonCategory = String(button.getAttribute("data-category") || "").trim();
     const isActive = Boolean(selectedCategory) && buttonCategory === selectedCategory;
@@ -9214,6 +9406,23 @@ function renderUnterrichtMathObservationCompactMarkers() {
 }
 
 function syncUnterrichtMathObservationCompactUi() {
+  const situationInput = document.getElementById("unterrichtMathObservationCompactSituationType");
+  const demandLevelInput = document.getElementById("unterrichtMathObservationCompactDemandLevel");
+  const assessmentContextInput = document.getElementById("unterrichtMathObservationCompactAssessmentContext");
+  const situationType = normalizeMathObservationSituationTypeValue(situationInput && situationInput.value);
+  const demandLevel = normalizeMathObservationDemandLevelValue(demandLevelInput && demandLevelInput.value);
+  const assessmentContext = normalizeObservationAssessmentContextValue(assessmentContextInput && assessmentContextInput.value);
+
+  if (situationInput) {
+    situationInput.value = situationType;
+  }
+  if (demandLevelInput) {
+    demandLevelInput.value = demandLevel;
+  }
+  if (assessmentContextInput) {
+    assessmentContextInput.value = assessmentContext;
+  }
+
   Array.from(document.querySelectorAll("[data-compact-competency-quality]")).forEach(function (input) {
     const competency = String(input.getAttribute("data-compact-competency-quality") || "").trim();
     const selectedQuality = String(input.value || "").trim();
@@ -9223,6 +9432,21 @@ function syncUnterrichtMathObservationCompactUi() {
       button.classList.toggle("is-active", isActive);
       button.setAttribute("aria-pressed", isActive ? "true" : "false");
     });
+  });
+  Array.from(document.querySelectorAll("[data-compact-situation]")).forEach(function (button) {
+    const isActive = Boolean(situationType) && String(button.getAttribute("data-compact-situation") || "").trim() === situationType;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+  Array.from(document.querySelectorAll("[data-compact-demand-level]")).forEach(function (button) {
+    const isActive = Boolean(demandLevel) && String(button.getAttribute("data-compact-demand-level") || "").trim() === demandLevel;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+  Array.from(document.querySelectorAll("[data-compact-assessment-context]")).forEach(function (button) {
+    const isActive = Boolean(assessmentContext) && String(button.getAttribute("data-compact-assessment-context") || "").trim() === assessmentContext;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
   });
   renderUnterrichtMathObservationCompactMarkers();
 }
@@ -9239,6 +9463,7 @@ function createUnterrichtMathObservationDraftFromPressState(pressState, activeCl
     lessonRoom: String(pressState && pressState.lessonRoom || ""),
     situationType: liveObservationContext.situationType,
     demandLevel: liveObservationContext.demandLevel,
+    category: "",
     lessonPlanId: liveObservationContext.lessonPlanId,
     lessonPhaseId: liveObservationContext.lessonPhaseId,
     lessonStepId: liveObservationContext.lessonStepId
@@ -9389,9 +9614,32 @@ function renderClassAnalysisAssessmentGrid() {
 
 function syncClassAnalysisAssessmentCategoryUi() {
   const hiddenInput = document.getElementById("classAnalysisAssessmentCategory");
-  const selectedCategory = hiddenInput ? String(hiddenInput.value || "").trim() : "";
+  const selectedCategory = normalizeObservationAssessmentContextValue(hiddenInput && hiddenInput.value);
+  if (hiddenInput) {
+    hiddenInput.value = selectedCategory;
+  }
   Array.from(document.querySelectorAll(".class-analysis-assessment-category-button")).forEach(function (button) {
     button.classList.toggle("is-active", Boolean(selectedCategory) && String(button.getAttribute("data-category") || "").trim() === selectedCategory);
+  });
+}
+
+function syncClassAnalysisAssessmentContextUi() {
+  const situationInput = document.getElementById("classAnalysisAssessmentSituationType");
+  const demandLevelInput = document.getElementById("classAnalysisAssessmentDemandLevel");
+  const situationType = normalizeMathObservationSituationTypeValue(situationInput && situationInput.value);
+  const demandLevel = normalizeMathObservationDemandLevelValue(demandLevelInput && demandLevelInput.value);
+
+  if (situationInput) {
+    situationInput.value = situationType;
+  }
+  if (demandLevelInput) {
+    demandLevelInput.value = demandLevel;
+  }
+  Array.from(document.querySelectorAll(".class-analysis-assessment-situation-button")).forEach(function (button) {
+    button.classList.toggle("is-active", Boolean(situationType) && String(button.getAttribute("data-situation") || "").trim() === situationType);
+  });
+  Array.from(document.querySelectorAll(".class-analysis-assessment-demand-button")).forEach(function (button) {
+    button.classList.toggle("is-active", Boolean(demandLevel) && String(button.getAttribute("data-demand-level") || "").trim() === demandLevel);
   });
 }
 
@@ -11681,6 +11929,30 @@ function refreshSeatOrderWarningBadges() {
   });
 }
 
+function syncUnterrichtAssessmentContextUi() {
+  const situationInput = document.getElementById("unterrichtAssessmentSituationType");
+  const demandLevelInput = document.getElementById("unterrichtAssessmentDemandLevel");
+  const situationType = normalizeMathObservationSituationTypeValue(situationInput && situationInput.value);
+  const demandLevel = normalizeMathObservationDemandLevelValue(demandLevelInput && demandLevelInput.value);
+
+  if (situationInput) {
+    situationInput.value = situationType;
+  }
+  if (demandLevelInput) {
+    demandLevelInput.value = demandLevel;
+  }
+  Array.from(document.querySelectorAll("[data-assessment-situation]")).forEach(function (button) {
+    const isActive = Boolean(situationType) && String(button.getAttribute("data-assessment-situation") || "").trim() === situationType;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+  Array.from(document.querySelectorAll("[data-assessment-demand-level]")).forEach(function (button) {
+    const isActive = Boolean(demandLevel) && String(button.getAttribute("data-assessment-demand-level") || "").trim() === demandLevel;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+}
+
 function getPreviousSeatOrderForOptimization(rawSnapshot, currentSeatOrder, classId, roomValue) {
   const currentId = String(currentSeatOrder && currentSeatOrder.id || "");
   const currentValidFrom = normalizeDateValue(currentSeatOrder && currentSeatOrder.validFrom) || getReferenceDateValue();
@@ -12506,6 +12778,37 @@ function isUnterrichtLiveToolEnabled(toolKey) {
   const enabledTools = getUnterrichtLiveEnabledTools(schoolService ? schoolService.snapshot : null);
 
   return enabledTools[String(toolKey || "").trim()] !== false;
+}
+
+function getUnterrichtLiveToolKeys(rawSnapshot) {
+  return UNTERRICHT_STANDARD_TOOL_KEYS.concat(getEvidenceToolsCollection(rawSnapshot).map(function (tool) {
+    const toolId = String(tool && tool.id || "").trim();
+    return toolId ? "evidence:" + toolId : "";
+  }).filter(Boolean));
+}
+
+function normalizeUnterrichtLiveToolKey(toolKey, rawSnapshot) {
+  const normalizedToolKey = String(toolKey || "").trim();
+
+  return getUnterrichtLiveToolKeys(rawSnapshot).indexOf(normalizedToolKey) >= 0 ? normalizedToolKey : "";
+}
+
+function getUnterrichtLiveDefaultTool(rawSnapshot, activeClass, referenceDate) {
+  const configuredToolKey = normalizeUnterrichtLiveToolKey(rawSnapshot && rawSnapshot.unterrichtLiveDefaultTool, rawSnapshot);
+  const enabledTools = getUnterrichtLiveEnabledTools(rawSnapshot);
+  const fallbackToolKey = shouldDefaultToAssessmentTool(rawSnapshot, activeClass, referenceDate) ? "assessment" : "attendance";
+
+  if (configuredToolKey && enabledTools[configuredToolKey] !== false) {
+    return configuredToolKey;
+  }
+
+  if (enabledTools[fallbackToolKey] !== false) {
+    return fallbackToolKey;
+  }
+
+  return getUnterrichtLiveToolKeys(rawSnapshot).find(function (toolKey) {
+    return enabledTools[toolKey] !== false;
+  }) || "attendance";
 }
 
 function getSortedEvidenceTools(rawSnapshot) {
@@ -15612,6 +15915,30 @@ window.UnterrichtsassistentApp.updateUnterrichtLiveToolEnabled = function (toolK
   saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
   return false;
 };
+window.UnterrichtsassistentApp.updateUnterrichtLiveDefaultTool = function (toolKey) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const rawToolKey = String(toolKey || "").trim();
+  const normalizedToolKey = normalizeUnterrichtLiveToolKey(toolKey, currentRawSnapshot);
+
+  if (!currentRawSnapshot || (rawToolKey && !normalizedToolKey)) {
+    return false;
+  }
+
+  currentRawSnapshot.unterrichtLiveDefaultTool = normalizedToolKey;
+  currentRawSnapshot.unterrichtLiveEnabledTools = currentRawSnapshot.unterrichtLiveEnabledTools && typeof currentRawSnapshot.unterrichtLiveEnabledTools === "object"
+    ? currentRawSnapshot.unterrichtLiveEnabledTools
+    : {};
+  if (normalizedToolKey) {
+    currentRawSnapshot.unterrichtLiveEnabledTools[normalizedToolKey] = true;
+  }
+  unterrichtToolMode = normalizedToolKey || getUnterrichtLiveDefaultTool(
+    currentRawSnapshot,
+    schoolService.getActiveClass(),
+    schoolService.getReferenceDate()
+  );
+  saveAndRefreshSnapshot(currentRawSnapshot, "unterricht");
+  return false;
+};
 window.UnterrichtsassistentApp.toggleAllPlanningSidebarCategoryFilters = function () {
   if (planningSidebarCategoryFiltersInitialized && !planningSidebarCategoryFilters.length) {
     return window.UnterrichtsassistentApp.selectAllPlanningSidebarCategoryFilters();
@@ -15656,6 +15983,10 @@ window.UnterrichtsassistentApp.toggleUnterrichtSeatPlanRotation = function () {
 window.UnterrichtsassistentApp.handleUnterrichtSeatClick = function (studentId, lessonId, lessonStartTime, lessonRoom, homeworkQuality, homeworkAction) {
   if (unterrichtToolMode === "knowledgeGap"
     && (isUnterrichtKnowledgeGapModalOpen || Date.now() < suppressUnterrichtKnowledgeGapSeatClickUntil)) {
+    return false;
+  }
+  if (String(unterrichtToolMode || "").indexOf("evidence:") === 0
+    && activeUnterrichtEvidenceModalDraft) {
     return false;
   }
 
@@ -15805,13 +16136,17 @@ window.UnterrichtsassistentApp.handleUnterrichtSeatClick = function (studentId, 
   }
 
   if (unterrichtToolMode === "assessment") {
+    const liveObservationContext = getUnterrichtLiveObservationContextForRecord();
+
     activeUnterrichtAssessmentDraft = {
       studentId: String(studentId),
       classId: activeClass.id,
       lessonId: lesson.id,
       lessonDate: lessonDate,
       lessonStartTime: String(lesson.startTime || ""),
-      lessonRoom: String(lesson.room || "").trim()
+      lessonRoom: String(lesson.room || "").trim(),
+      situationType: liveObservationContext.situationType,
+      demandLevel: liveObservationContext.demandLevel
     };
     window.UnterrichtsassistentApp.openUnterrichtAssessmentModal();
     return false;
@@ -16220,6 +16555,10 @@ window.UnterrichtsassistentApp.handleUnterrichtAssessmentPointerEnd = function (
   return false;
 };
 window.UnterrichtsassistentApp.startUnterrichtMathObservationPointer = function (event, studentId, lessonId, lessonStartTime, lessonRoom) {
+  if (isUnterrichtMathObservationModalOpen || activeUnterrichtMathObservationCompactDraft) {
+    return false;
+  }
+
   if (event && event.pointerType === "touch" && Date.now() - lastUnterrichtMathObservationTouchStartAt < 700) {
     if (typeof event.preventDefault === "function") {
       event.preventDefault();
@@ -16347,6 +16686,10 @@ window.UnterrichtsassistentApp.handleUnterrichtMathObservationPointerEnd = funct
 window.UnterrichtsassistentApp.startUnterrichtMathObservationTouch = function (event, studentId, lessonId, lessonStartTime, lessonRoom) {
   const point = getMathObservationTouchPoint(event, false);
 
+  if (isUnterrichtMathObservationModalOpen || activeUnterrichtMathObservationCompactDraft) {
+    return false;
+  }
+
   lastUnterrichtMathObservationTouchStartAt = Date.now();
   if (unterrichtToolMode !== "mathObservation" || !studentId || !lessonId || !point) {
     return false;
@@ -16404,6 +16747,10 @@ window.UnterrichtsassistentApp.startUnterrichtMathObservationTouch = function (e
 };
 window.UnterrichtsassistentApp.startUnterrichtMathObservationCanvasPointer = function (event) {
   const seat = event ? getUnterrichtMathObservationSeatFromPoint(event.clientX, event.clientY) : null;
+
+  if (isUnterrichtMathObservationModalOpen || activeUnterrichtMathObservationCompactDraft) {
+    return false;
+  }
 
   if (!seat) {
     return false;
@@ -17103,8 +17450,9 @@ function appendUnterrichtEvidenceObservationRecord(drag) {
     room: String(drag.lessonRoom || "").trim(),
     recordedAt: getCurrentTimestamp(),
     toolId: String(drag.tool && drag.tool.id || "").trim(),
-    situationType: context.situationType,
-    demandLevel: context.demandLevel,
+    situationType: normalizeMathObservationSituationTypeValue(drag.situationType) || context.situationType,
+    demandLevel: normalizeMathObservationDemandLevelValue(drag.demandLevel) || context.demandLevel,
+    category: normalizeObservationAssessmentContextValue(drag.category),
     lessonPlanId: context.lessonPlanId,
     lessonPhaseId: context.lessonPhaseId,
     lessonStepId: context.lessonStepId,
@@ -17269,6 +17617,18 @@ function renderEvidenceObservationModalContent() {
       ].join("");
     }).join("") || '<div class="import-box__hint">Mit + weitere Aspekte hinzufuegen.</div>',
     '</div>',
+    '<h4 class="assessment-column__title">Einstellungen</h4>',
+    '<div class="observation-context-pair">',
+    '<div class="import-modal__field import-modal__field--compact-select"><span>Leisten/Lernen</span>',
+    buildObservationContextSelectHtml("unterrichtEvidenceObservationSituationType", OBSERVATION_SITUATION_OPTIONS, draft.situationType, normalizeMathObservationSituationTypeValue),
+    '</div>',
+    '<div class="import-modal__field import-modal__field--compact-select"><span>Anforderungsbereich</span>',
+    buildObservationContextSelectHtml("unterrichtEvidenceObservationDemandLevel", OBSERVATION_DEMAND_LEVEL_OPTIONS, draft.demandLevel, normalizeMathObservationDemandLevelValue),
+    '</div>',
+    '</div>',
+    '<div class="import-modal__field import-modal__field--compact-select"><span>Bewertungskontext</span>',
+    buildObservationContextSelectHtml("unterrichtEvidenceObservationAssessmentContext", OBSERVATION_ASSESSMENT_CONTEXT_OPTIONS, draft.category, normalizeObservationAssessmentContextValue),
+    '</div>',
     '<label class="import-modal__field"><span>Notiz</span><textarea id="unterrichtEvidenceObservationNote" maxlength="360" placeholder="Freie Notiz" autocomplete="off" autocapitalize="sentences" spellcheck="true">' + escapeHtml(String(draft.note || "")) + '</textarea></label>',
     '</section>',
     '</div>'
@@ -17278,6 +17638,7 @@ function renderEvidenceObservationModalContent() {
     note.value = String(draft.note || "");
   }
   syncUnterrichtEvidenceModalMainStageButtons();
+  syncUnterrichtEvidenceObservationContextUi();
 }
 
 function ensureUnterrichtEvidenceObservationModal() {
@@ -17323,6 +17684,56 @@ function syncUnterrichtEvidenceModalMainStageButtons() {
     button.classList.toggle("is-active", Boolean(isActive));
     button.setAttribute("aria-pressed", isActive ? "true" : "false");
   });
+}
+
+function syncUnterrichtEvidenceObservationContextUi() {
+  const modal = document.getElementById("unterrichtEvidenceObservationModal");
+  const situationInput = document.getElementById("unterrichtEvidenceObservationSituationType");
+  const demandLevelInput = document.getElementById("unterrichtEvidenceObservationDemandLevel");
+  const assessmentContextInput = document.getElementById("unterrichtEvidenceObservationAssessmentContext");
+  const situationType = normalizeMathObservationSituationTypeValue(situationInput && situationInput.value);
+  const demandLevel = normalizeMathObservationDemandLevelValue(demandLevelInput && demandLevelInput.value);
+  const assessmentContext = normalizeObservationAssessmentContextValue(assessmentContextInput && assessmentContextInput.value);
+
+  if (!modal) {
+    return;
+  }
+  if (situationInput) {
+    situationInput.value = situationType;
+  }
+  if (demandLevelInput) {
+    demandLevelInput.value = demandLevel;
+  }
+  if (assessmentContextInput) {
+    assessmentContextInput.value = assessmentContext;
+  }
+  Array.from(modal.querySelectorAll("[data-evidence-situation]")).forEach(function (button) {
+    const isActive = Boolean(situationType) && String(button.getAttribute("data-evidence-situation") || "").trim() === situationType;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+  Array.from(modal.querySelectorAll("[data-evidence-demand-level]")).forEach(function (button) {
+    const isActive = Boolean(demandLevel) && String(button.getAttribute("data-evidence-demand-level") || "").trim() === demandLevel;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+  Array.from(modal.querySelectorAll("[data-evidence-assessment-context]")).forEach(function (button) {
+    const isActive = Boolean(assessmentContext) && String(button.getAttribute("data-evidence-assessment-context") || "").trim() === assessmentContext;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+}
+
+function captureUnterrichtEvidenceObservationContextInputs() {
+  const draft = activeUnterrichtEvidenceModalDraft;
+
+  if (!draft) {
+    return;
+  }
+
+  draft.situationType = normalizeMathObservationSituationTypeValue(document.getElementById("unterrichtEvidenceObservationSituationType") && document.getElementById("unterrichtEvidenceObservationSituationType").value);
+  draft.demandLevel = normalizeMathObservationDemandLevelValue(document.getElementById("unterrichtEvidenceObservationDemandLevel") && document.getElementById("unterrichtEvidenceObservationDemandLevel").value);
+  draft.category = normalizeObservationAssessmentContextValue(document.getElementById("unterrichtEvidenceObservationAssessmentContext") && document.getElementById("unterrichtEvidenceObservationAssessmentContext").value);
 }
 
 function buildUnterrichtEvidenceModalSelections() {
@@ -17417,6 +17828,10 @@ window.UnterrichtsassistentApp.startUnterrichtEvidencePointer = function (event,
     return String(item && item.id || "").trim() === String(toolId || "").trim();
   }) || null;
 
+  if (activeUnterrichtEvidenceModalDraft) {
+    return false;
+  }
+
   if (!event || !tool || !tool.hauptebene) {
     return false;
   }
@@ -17510,6 +17925,7 @@ window.UnterrichtsassistentApp.openUnterrichtEvidenceObservationModal = function
   const draftState = draft && draft.tool
     ? getEvidenceModalDraftStateFromSelections(draft.tool, draft.selections)
     : { mainStages: {}, extraSelections: [] };
+  const context = getUnterrichtLiveObservationContextForRecord();
 
   if (!modal || !draft || !draft.tool) {
     return false;
@@ -17518,6 +17934,9 @@ window.UnterrichtsassistentApp.openUnterrichtEvidenceObservationModal = function
   activeUnterrichtEvidenceModalDraft = Object.assign({}, draft, {
     extraSelections: draftState.extraSelections,
     mainStages: draftState.mainStages,
+    situationType: normalizeMathObservationSituationTypeValue(draft.situationType) || context.situationType,
+    demandLevel: normalizeMathObservationDemandLevelValue(draft.demandLevel) || context.demandLevel,
+    category: normalizeObservationAssessmentContextValue(draft.category),
     note: String(draft.note || "")
   });
   modal.hidden = false;
@@ -17559,6 +17978,48 @@ window.UnterrichtsassistentApp.selectUnterrichtEvidenceModalMainStage = function
   return false;
 };
 
+window.UnterrichtsassistentApp.selectUnterrichtEvidenceObservationSituationType = function (situationType) {
+  const input = document.getElementById("unterrichtEvidenceObservationSituationType");
+  const normalizedSituationType = normalizeMathObservationSituationTypeValue(situationType);
+
+  if (input) {
+    input.value = String(input.value || "") === normalizedSituationType ? "" : normalizedSituationType;
+  }
+  if (activeUnterrichtEvidenceModalDraft) {
+    activeUnterrichtEvidenceModalDraft.situationType = normalizeMathObservationSituationTypeValue(input && input.value);
+  }
+  syncUnterrichtEvidenceObservationContextUi();
+  return false;
+};
+
+window.UnterrichtsassistentApp.selectUnterrichtEvidenceObservationDemandLevel = function (demandLevel) {
+  const input = document.getElementById("unterrichtEvidenceObservationDemandLevel");
+  const normalizedDemandLevel = normalizeMathObservationDemandLevelValue(demandLevel);
+
+  if (input) {
+    input.value = String(input.value || "") === normalizedDemandLevel ? "" : normalizedDemandLevel;
+  }
+  if (activeUnterrichtEvidenceModalDraft) {
+    activeUnterrichtEvidenceModalDraft.demandLevel = normalizeMathObservationDemandLevelValue(input && input.value);
+  }
+  syncUnterrichtEvidenceObservationContextUi();
+  return false;
+};
+
+window.UnterrichtsassistentApp.selectUnterrichtEvidenceObservationAssessmentContext = function (assessmentContext) {
+  const input = document.getElementById("unterrichtEvidenceObservationAssessmentContext");
+  const normalizedAssessmentContext = normalizeObservationAssessmentContextValue(assessmentContext);
+
+  if (input) {
+    input.value = String(input.value || "") === normalizedAssessmentContext ? "" : normalizedAssessmentContext;
+  }
+  if (activeUnterrichtEvidenceModalDraft) {
+    activeUnterrichtEvidenceModalDraft.category = normalizeObservationAssessmentContextValue(input && input.value);
+  }
+  syncUnterrichtEvidenceObservationContextUi();
+  return false;
+};
+
 window.UnterrichtsassistentApp.addUnterrichtEvidenceModalExtraAspect = function () {
   const draft = activeUnterrichtEvidenceModalDraft;
   const extraAspects = draft ? getEvidenceModalExtraAspects(draft.tool) : [];
@@ -17572,6 +18033,7 @@ window.UnterrichtsassistentApp.addUnterrichtEvidenceModalExtraAspect = function 
     draft.extraSelections = [];
   }
   captureUnterrichtEvidenceModalMainStages();
+  captureUnterrichtEvidenceObservationContextInputs();
   draft.note = String(document.getElementById("unterrichtEvidenceObservationNote") && document.getElementById("unterrichtEvidenceObservationNote").value || "").trim();
   draft.extraSelections.push({
     aspectId: String(firstAspect.id || "").trim(),
@@ -17590,6 +18052,7 @@ window.UnterrichtsassistentApp.removeUnterrichtEvidenceModalExtraAspect = functi
   }
 
   captureUnterrichtEvidenceModalMainStages();
+  captureUnterrichtEvidenceObservationContextInputs();
   draft.note = String(document.getElementById("unterrichtEvidenceObservationNote") && document.getElementById("unterrichtEvidenceObservationNote").value || "").trim();
   draft.extraSelections.splice(itemIndex, 1);
   renderEvidenceObservationModalContent();
@@ -17605,6 +18068,7 @@ window.UnterrichtsassistentApp.updateUnterrichtEvidenceModalExtraAspect = functi
   }
 
   captureUnterrichtEvidenceModalMainStages();
+  captureUnterrichtEvidenceObservationContextInputs();
   draft.note = String(document.getElementById("unterrichtEvidenceObservationNote") && document.getElementById("unterrichtEvidenceObservationNote").value || "").trim();
   draft.extraSelections[itemIndex] = {
     aspectId: String(aspectId || "").trim(),
@@ -17639,6 +18103,12 @@ window.UnterrichtsassistentApp.submitUnterrichtEvidenceObservationModal = functi
   const draft = activeUnterrichtEvidenceModalDraft;
   const selections = buildUnterrichtEvidenceModalSelections();
   const noteInput = document.getElementById("unterrichtEvidenceObservationNote");
+  const situationInput = document.getElementById("unterrichtEvidenceObservationSituationType");
+  const demandLevelInput = document.getElementById("unterrichtEvidenceObservationDemandLevel");
+  const assessmentContextInput = document.getElementById("unterrichtEvidenceObservationAssessmentContext");
+  const situationType = normalizeMathObservationSituationTypeValue(situationInput && situationInput.value);
+  const demandLevel = normalizeMathObservationDemandLevelValue(demandLevelInput && demandLevelInput.value);
+  const assessmentContext = normalizeObservationAssessmentContextValue(assessmentContextInput && assessmentContextInput.value);
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
 
   if (event && typeof event.preventDefault === "function") {
@@ -17660,6 +18130,9 @@ window.UnterrichtsassistentApp.submitUnterrichtEvidenceObservationModal = functi
     if (record) {
       record.selections = selections;
       record.note = String(noteInput && noteInput.value || "").trim();
+      record.situationType = situationType;
+      record.demandLevel = demandLevel;
+      record.category = assessmentContext;
       saveAndRefreshSnapshot(currentRawSnapshot, "klasse");
     }
 
@@ -17669,6 +18142,9 @@ window.UnterrichtsassistentApp.submitUnterrichtEvidenceObservationModal = functi
   if (selections.length || String(noteInput && noteInput.value || "").trim()) {
     appendUnterrichtEvidenceObservationRecord(Object.assign({}, draft, {
       selections: selections,
+      situationType: situationType,
+      demandLevel: demandLevel,
+      category: assessmentContext,
       note: String(noteInput && noteInput.value || "").trim()
     }));
   }
@@ -22704,6 +23180,9 @@ window.UnterrichtsassistentApp.openUnterrichtMathObservationCompactModal = funct
   const header = document.getElementById("unterrichtMathObservationCompactStudent");
   const dateLabel = document.getElementById("unterrichtMathObservationCompactDate");
   const noteInput = document.getElementById("unterrichtMathObservationCompactNote");
+  const situationInput = document.getElementById("unterrichtMathObservationCompactSituationType");
+  const demandLevelInput = document.getElementById("unterrichtMathObservationCompactDemandLevel");
+  const assessmentContextInput = document.getElementById("unterrichtMathObservationCompactAssessmentContext");
   const activeClass = schoolService ? schoolService.getActiveClass() : null;
   const student = schoolService && draft
     ? schoolService.snapshot.students.find(function (entry) {
@@ -22717,7 +23196,10 @@ window.UnterrichtsassistentApp.openUnterrichtMathObservationCompactModal = funct
   }
 
   activeUnterrichtMathObservationCompactDraft = Object.assign({}, draft, {
-    markers: normalizeMathObservationMarkerEntries(draft.markers)
+    markers: normalizeMathObservationMarkerEntries(draft.markers),
+    situationType: normalizeMathObservationSituationTypeValue(draft.situationType),
+    demandLevel: normalizeMathObservationDemandLevelValue(draft.demandLevel),
+    category: normalizeObservationAssessmentContextValue(draft.category)
   });
   activeUnterrichtMathObservationDraft = null;
   isUnterrichtMathObservationModalOpen = true;
@@ -22741,6 +23223,15 @@ window.UnterrichtsassistentApp.openUnterrichtMathObservationCompactModal = funct
   });
   if (noteInput) {
     noteInput.value = String(draft.note || "");
+  }
+  if (situationInput) {
+    situationInput.value = normalizeMathObservationSituationTypeValue(draft.situationType);
+  }
+  if (demandLevelInput) {
+    demandLevelInput.value = normalizeMathObservationDemandLevelValue(draft.demandLevel);
+  }
+  if (assessmentContextInput) {
+    assessmentContextInput.value = normalizeObservationAssessmentContextValue(draft.category);
   }
   syncUnterrichtMathObservationCompactUi();
 
@@ -22773,6 +23264,36 @@ window.UnterrichtsassistentApp.selectUnterrichtMathObservationCompactQuality = f
 
   if (input) {
     input.value = String(input.value || "") === normalizedQuality ? "" : normalizedQuality;
+  }
+  syncUnterrichtMathObservationCompactUi();
+  return false;
+};
+window.UnterrichtsassistentApp.selectUnterrichtMathObservationCompactSituation = function (situationType) {
+  const input = document.getElementById("unterrichtMathObservationCompactSituationType");
+  const nextValue = normalizeMathObservationSituationTypeValue(situationType);
+
+  if (input) {
+    input.value = input.value === nextValue ? "" : nextValue;
+  }
+  syncUnterrichtMathObservationCompactUi();
+  return false;
+};
+window.UnterrichtsassistentApp.selectUnterrichtMathObservationCompactDemandLevel = function (demandLevel) {
+  const input = document.getElementById("unterrichtMathObservationCompactDemandLevel");
+  const nextValue = normalizeMathObservationDemandLevelValue(demandLevel);
+
+  if (input) {
+    input.value = input.value === nextValue ? "" : nextValue;
+  }
+  syncUnterrichtMathObservationCompactUi();
+  return false;
+};
+window.UnterrichtsassistentApp.selectUnterrichtMathObservationCompactAssessmentContext = function (assessmentContext) {
+  const input = document.getElementById("unterrichtMathObservationCompactAssessmentContext");
+  const nextValue = normalizeObservationAssessmentContextValue(assessmentContext);
+
+  if (input) {
+    input.value = input.value === nextValue ? "" : nextValue;
   }
   syncUnterrichtMathObservationCompactUi();
   return false;
@@ -22829,7 +23350,13 @@ window.UnterrichtsassistentApp.submitUnterrichtMathObservationCompactModal = fun
   const currentRawSnapshot = schoolService && serializeSnapshot ? serializeSnapshot(schoolService.snapshot) : null;
   const draft = activeUnterrichtMathObservationCompactDraft;
   const noteInput = document.getElementById("unterrichtMathObservationCompactNote");
+  const situationInput = document.getElementById("unterrichtMathObservationCompactSituationType");
+  const demandLevelInput = document.getElementById("unterrichtMathObservationCompactDemandLevel");
+  const assessmentContextInput = document.getElementById("unterrichtMathObservationCompactAssessmentContext");
   const note = String(noteInput && noteInput.value || "").trim();
+  const situationType = normalizeMathObservationSituationTypeValue(situationInput && situationInput.value);
+  const demandLevel = normalizeMathObservationDemandLevelValue(demandLevelInput && demandLevelInput.value);
+  const assessmentContext = normalizeObservationAssessmentContextValue(assessmentContextInput && assessmentContextInput.value);
   const competencySelections = Array.from(document.querySelectorAll("[data-compact-competency-quality]")).map(function (input) {
     return {
       competency: normalizeMathObservationCompetencyValue(input.getAttribute("data-compact-competency-quality")),
@@ -22869,6 +23396,9 @@ window.UnterrichtsassistentApp.submitUnterrichtMathObservationCompactModal = fun
       record.marker = record.markers.length ? record.markers[0].marker : "";
       record.markerDirection = record.markers.length ? record.markers[0].markerDirection : "";
       record.markerQuality = record.markers.length ? record.markers[0].markerQuality : "";
+      record.situationType = situationType;
+      record.demandLevel = demandLevel;
+      record.category = assessmentContext;
       record.note = note;
       saveAndRefreshSnapshot(currentRawSnapshot, "klasse");
     }
@@ -22893,8 +23423,9 @@ window.UnterrichtsassistentApp.submitUnterrichtMathObservationCompactModal = fun
       markers: markers,
       markerDirection: markers.length ? markers[0].markerDirection : "",
       markerQuality: markers.length ? markers[0].markerQuality : "",
-      situationType: draft.situationType,
-      demandLevel: draft.demandLevel,
+      situationType: situationType || draft.situationType,
+      demandLevel: demandLevel || draft.demandLevel,
+      category: assessmentContext || draft.category,
       lessonPlanId: draft.lessonPlanId,
       lessonPhaseId: draft.lessonPhaseId,
       lessonStepId: draft.lessonStepId,
@@ -23155,6 +23686,8 @@ window.UnterrichtsassistentApp.openUnterrichtAssessmentModal = function () {
     : null;
   const dateLabel = document.getElementById("unterrichtAssessmentDate");
   const categoryInput = document.getElementById("unterrichtAssessmentCategory");
+  const situationInput = document.getElementById("unterrichtAssessmentSituationType");
+  const demandLevelInput = document.getElementById("unterrichtAssessmentDemandLevel");
   const categoryButton = document.querySelector(".assessment-category-button");
   const afb1Input = document.getElementById("unterrichtAssessmentAfb1");
   const afb2Input = document.getElementById("unterrichtAssessmentAfb2");
@@ -23187,6 +23720,13 @@ window.UnterrichtsassistentApp.openUnterrichtAssessmentModal = function () {
     categoryInput.value = "";
   }
   syncUnterrichtAssessmentCategoryUi();
+  if (situationInput) {
+    situationInput.value = normalizeMathObservationSituationTypeValue(activeUnterrichtAssessmentDraft.situationType);
+  }
+  if (demandLevelInput) {
+    demandLevelInput.value = normalizeMathObservationDemandLevelValue(activeUnterrichtAssessmentDraft.demandLevel);
+  }
+  syncUnterrichtAssessmentContextUi();
 
   [afb1Input, afb2Input, afb3Input].forEach(function (input) {
     if (input) {
@@ -23223,7 +23763,7 @@ window.UnterrichtsassistentApp.openUnterrichtAssessmentModal = function () {
 };
 window.UnterrichtsassistentApp.toggleUnterrichtAssessmentCategory = function (category) {
   const hiddenInput = document.getElementById("unterrichtAssessmentCategory");
-  const nextCategory = String(category || "").trim();
+  const nextCategory = normalizeObservationAssessmentContextValue(category);
 
   if (!hiddenInput) {
     return false;
@@ -23231,6 +23771,26 @@ window.UnterrichtsassistentApp.toggleUnterrichtAssessmentCategory = function (ca
 
   hiddenInput.value = hiddenInput.value === nextCategory ? "" : nextCategory;
   syncUnterrichtAssessmentCategoryUi();
+  return false;
+};
+window.UnterrichtsassistentApp.selectUnterrichtAssessmentSituationType = function (situationType) {
+  const input = document.getElementById("unterrichtAssessmentSituationType");
+  const nextValue = normalizeMathObservationSituationTypeValue(situationType);
+
+  if (input) {
+    input.value = input.value === nextValue ? "" : nextValue;
+  }
+  syncUnterrichtAssessmentContextUi();
+  return false;
+};
+window.UnterrichtsassistentApp.selectUnterrichtAssessmentDemandLevel = function (demandLevel) {
+  const input = document.getElementById("unterrichtAssessmentDemandLevel");
+  const nextValue = normalizeMathObservationDemandLevelValue(demandLevel);
+
+  if (input) {
+    input.value = input.value === nextValue ? "" : nextValue;
+  }
+  syncUnterrichtAssessmentContextUi();
   return false;
 };
 window.UnterrichtsassistentApp.toggleUnterrichtAssessmentGrade = function (target, value) {
@@ -23503,6 +24063,8 @@ window.UnterrichtsassistentApp.submitUnterrichtAssessmentModal = function (event
   const currentRawSnapshot = schoolService && serializeSnapshot ? serializeSnapshot(schoolService.snapshot) : null;
   const draft = activeUnterrichtAssessmentDraft;
   const categoryInput = document.getElementById("unterrichtAssessmentCategory");
+  const situationInput = document.getElementById("unterrichtAssessmentSituationType");
+  const demandLevelInput = document.getElementById("unterrichtAssessmentDemandLevel");
   const afb1Input = document.getElementById("unterrichtAssessmentAfb1");
   const afb2Input = document.getElementById("unterrichtAssessmentAfb2");
   const afb3Input = document.getElementById("unterrichtAssessmentAfb3");
@@ -23520,7 +24082,9 @@ window.UnterrichtsassistentApp.submitUnterrichtAssessmentModal = function (event
   }
 
   appendUnterrichtAssessmentRecord(currentRawSnapshot, draft, {
-    category: String(categoryInput && categoryInput.value || "").trim(),
+    category: normalizeObservationAssessmentContextValue(categoryInput && categoryInput.value),
+    situationType: normalizeMathObservationSituationTypeValue(situationInput && situationInput.value),
+    demandLevel: normalizeMathObservationDemandLevelValue(demandLevelInput && demandLevelInput.value),
     afb1: String(afb1Input && afb1Input.value || "").trim() === "" ? "" : Number(afb1Input.value),
     afb2: String(afb2Input && afb2Input.value || "").trim() === "" ? "" : Number(afb2Input.value),
     afb3: String(afb3Input && afb3Input.value || "").trim() === "" ? "" : Number(afb3Input.value),
@@ -23779,6 +24343,7 @@ window.UnterrichtsassistentApp.openClassAnalysisRecordEditModal = function () {
   modal.hidden = false;
   modal.classList.add("is-open");
   syncClassAnalysisAssessmentCategoryUi();
+  syncClassAnalysisAssessmentContextUi();
   syncClassAnalysisAssessmentGradeUi();
   syncClassAnalysisHomeworkUi();
   syncClassAnalysisWarningUi();
@@ -23828,6 +24393,7 @@ window.UnterrichtsassistentApp.openClassAnalysisRecordEdit = function (recordTyp
       lessonRoom: String(record.room || "").trim(),
       situationType: normalizeMathObservationSituationTypeValue(record.situationType),
       demandLevel: normalizeMathObservationDemandLevelValue(record.demandLevel),
+      category: normalizeObservationAssessmentContextValue(record.category),
       lessonPlanId: String(record.lessonPlanId || "").trim(),
       lessonPhaseId: String(record.lessonPhaseId || "").trim(),
       lessonStepId: String(record.lessonStepId || "").trim(),
@@ -23857,6 +24423,9 @@ window.UnterrichtsassistentApp.openClassAnalysisRecordEdit = function (recordTyp
         lessonRoom: String(record.room || "").trim(),
         tool: tool,
         selections: Array.isArray(record.selections) ? record.selections : [],
+        situationType: normalizeMathObservationSituationTypeValue(record.situationType),
+        demandLevel: normalizeMathObservationDemandLevelValue(record.demandLevel),
+        category: normalizeObservationAssessmentContextValue(record.category),
         note: String(record.note || "").trim()
       });
     }
@@ -23989,7 +24558,7 @@ window.UnterrichtsassistentApp.deleteClassAnalysisRecord = function (recordType,
 };
 window.UnterrichtsassistentApp.toggleClassAnalysisAssessmentCategory = function (category) {
   const hiddenInput = document.getElementById("classAnalysisAssessmentCategory");
-  const nextCategory = String(category || "").trim();
+  const nextCategory = normalizeObservationAssessmentContextValue(category);
 
   if (!hiddenInput) {
     return false;
@@ -23997,6 +24566,26 @@ window.UnterrichtsassistentApp.toggleClassAnalysisAssessmentCategory = function 
 
   hiddenInput.value = hiddenInput.value === nextCategory ? "" : nextCategory;
   syncClassAnalysisAssessmentCategoryUi();
+  return false;
+};
+window.UnterrichtsassistentApp.selectClassAnalysisAssessmentSituationType = function (situationType) {
+  const input = document.getElementById("classAnalysisAssessmentSituationType");
+  const nextValue = normalizeMathObservationSituationTypeValue(situationType);
+
+  if (input) {
+    input.value = input.value === nextValue ? "" : nextValue;
+  }
+  syncClassAnalysisAssessmentContextUi();
+  return false;
+};
+window.UnterrichtsassistentApp.selectClassAnalysisAssessmentDemandLevel = function (demandLevel) {
+  const input = document.getElementById("classAnalysisAssessmentDemandLevel");
+  const nextValue = normalizeMathObservationDemandLevelValue(demandLevel);
+
+  if (input) {
+    input.value = input.value === nextValue ? "" : nextValue;
+  }
+  syncClassAnalysisAssessmentContextUi();
   return false;
 };
 window.UnterrichtsassistentApp.toggleClassAnalysisAssessmentGrade = function (target, value) {
@@ -24116,9 +24705,14 @@ window.UnterrichtsassistentApp.submitClassAnalysisRecordEditModal = function (ev
     record.status = normalizeKnowledgeGapStatusValue(document.getElementById("classAnalysisKnowledgeGapStatus") && document.getElementById("classAnalysisKnowledgeGapStatus").value);
     record.note = String(document.getElementById("classAnalysisKnowledgeGapNote") && document.getElementById("classAnalysisKnowledgeGapNote").value || "").trim();
   } else if (draft.recordType === "mathObservation") {
+    record.situationType = normalizeMathObservationSituationTypeValue(record.situationType);
+    record.demandLevel = normalizeMathObservationDemandLevelValue(record.demandLevel);
+    record.category = normalizeObservationAssessmentContextValue(record.category);
     record.note = String(document.getElementById("classAnalysisMathObservationNote") && document.getElementById("classAnalysisMathObservationNote").value || "").trim();
   } else if (draft.recordType === "assessment") {
-    record.category = String(document.getElementById("classAnalysisAssessmentCategory") && document.getElementById("classAnalysisAssessmentCategory").value || "").trim();
+    record.category = normalizeObservationAssessmentContextValue(document.getElementById("classAnalysisAssessmentCategory") && document.getElementById("classAnalysisAssessmentCategory").value);
+    record.situationType = normalizeMathObservationSituationTypeValue(document.getElementById("classAnalysisAssessmentSituationType") && document.getElementById("classAnalysisAssessmentSituationType").value);
+    record.demandLevel = normalizeMathObservationDemandLevelValue(document.getElementById("classAnalysisAssessmentDemandLevel") && document.getElementById("classAnalysisAssessmentDemandLevel").value);
     record.afb1 = String(document.getElementById("classAnalysisAssessmentAfb1") && document.getElementById("classAnalysisAssessmentAfb1").value || "").trim() === "" ? "" : Number(document.getElementById("classAnalysisAssessmentAfb1").value);
     record.afb2 = String(document.getElementById("classAnalysisAssessmentAfb2") && document.getElementById("classAnalysisAssessmentAfb2").value || "").trim() === "" ? "" : Number(document.getElementById("classAnalysisAssessmentAfb2").value);
     record.afb3 = String(document.getElementById("classAnalysisAssessmentAfb3") && document.getElementById("classAnalysisAssessmentAfb3").value || "").trim() === "" ? "" : Number(document.getElementById("classAnalysisAssessmentAfb3").value);

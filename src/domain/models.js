@@ -90,6 +90,8 @@ class Assessment {
     room = "",
     recordedAt = "",
     category = "",
+    situationType = "",
+    demandLevel = "",
     afb1 = "--",
     afb2 = "--",
     afb3 = "--",
@@ -98,6 +100,9 @@ class Assessment {
     knowledgeGap = "",
     note = ""
   }) {
+    const normalizedSituationType = String(situationType || "").trim().toLowerCase();
+    const normalizedDemandLevel = String(demandLevel || "").trim().toLowerCase();
+
     this.id = id;
     this.studentId = studentId;
     this.classId = classId;
@@ -109,7 +114,11 @@ class Assessment {
     this.lessonDate = lessonDate;
     this.room = room;
     this.recordedAt = recordedAt;
-    this.category = category;
+    this.category = ["ueberpruefung", "praesentation", "beitrag", "abgabe", "nachtrag"].indexOf(String(category || "").trim().toLowerCase()) >= 0
+      ? String(category || "").trim().toLowerCase()
+      : category;
+    this.situationType = ["lernen", "leisten"].indexOf(normalizedSituationType) >= 0 ? normalizedSituationType : "";
+    this.demandLevel = ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(normalizedDemandLevel) >= 0 ? normalizedDemandLevel : "";
     this.afb1 = afb1;
     this.afb2 = afb2;
     this.afb3 = afb3;
@@ -547,6 +556,7 @@ class MathObservationRecord {
     markerQuality = "",
     situationType = "",
     demandLevel = "",
+    category = "",
     lessonPlanId = "",
     lessonPhaseId = "",
     lessonStepId = "",
@@ -580,6 +590,7 @@ class MathObservationRecord {
     const numericMarkerQuality = Number(markerQuality);
     const normalizedSituationType = String(situationType || "").trim().toLowerCase();
     const normalizedDemandLevel = String(demandLevel || "").trim().toLowerCase();
+    const normalizedCategory = String(category || "").trim().toLowerCase();
     const normalizedCompetencyQualities = (Array.isArray(competencyQualities) ? competencyQualities : []).map(function (entry) {
       const source = entry && typeof entry === "object" ? entry : {};
       const competencyId = String(source.competencyId || source.competency || "").trim().toLowerCase();
@@ -666,6 +677,7 @@ class MathObservationRecord {
         : (Number.isFinite(numericMarkerQuality) ? Math.max(-2, Math.min(2, Math.round(numericMarkerQuality))) : ""));
     this.situationType = ["lernen", "leisten"].indexOf(normalizedSituationType) >= 0 ? normalizedSituationType : "";
     this.demandLevel = ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(normalizedDemandLevel) >= 0 ? normalizedDemandLevel : "";
+    this.category = ["ueberpruefung", "praesentation", "beitrag", "abgabe", "nachtrag"].indexOf(normalizedCategory) >= 0 ? normalizedCategory : "";
     this.lessonPlanId = String(lessonPlanId || "").trim();
     this.lessonPhaseId = String(lessonPhaseId || "").trim();
     this.lessonStepId = String(lessonStepId || "").trim();
@@ -674,7 +686,7 @@ class MathObservationRecord {
 }
 
 class EvidenceObservationRecord {
-  constructor({ id, studentId, classId, lessonId = "", lessonDate = "", room = "", recordedAt = "", toolId = "", situationType = "", demandLevel = "", lessonPlanId = "", lessonPhaseId = "", lessonStepId = "", note = "", selections = [] }) {
+  constructor({ id, studentId, classId, lessonId = "", lessonDate = "", room = "", recordedAt = "", toolId = "", situationType = "", demandLevel = "", category = "", lessonPlanId = "", lessonPhaseId = "", lessonStepId = "", note = "", selections = [] }) {
     this.id = id;
     this.studentId = String(studentId || "").trim();
     this.classId = String(classId || "").trim();
@@ -688,6 +700,9 @@ class EvidenceObservationRecord {
       : "";
     this.demandLevel = ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(String(demandLevel || "").trim().toLowerCase()) >= 0
       ? String(demandLevel || "").trim().toLowerCase()
+      : "";
+    this.category = ["ueberpruefung", "praesentation", "beitrag", "abgabe", "nachtrag"].indexOf(String(category || "").trim().toLowerCase()) >= 0
+      ? String(category || "").trim().toLowerCase()
       : "";
     this.lessonPlanId = String(lessonPlanId || "").trim();
     this.lessonPhaseId = String(lessonPhaseId || "").trim();
