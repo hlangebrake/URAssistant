@@ -86,6 +86,7 @@ let bewertungCurriculumSectionExpanded = true;
 let bewertungTaskSheetSectionExpanded = true;
 let bewertungAnalysisSectionExpanded = true;
 let bewertungAnalysisOverviewSectionExpanded = true;
+let bewertungDiscussionGroupsSectionExpanded = true;
 let bewertungPlannedEvaluationsExpanded = false;
 let bewertungPlannedEvaluationDetailsExpanded = false;
 let evidenceToolExpandedNodeIds = ["root", "faecher", "jahrgaenge", "aspekte", "haupt-main"];
@@ -96,6 +97,21 @@ let activePerformedEvaluationStudentId = "";
 let activePerformedEvaluationStudentFilter = "alle";
 let activeAnalysisPlannedEvaluationId = "";
 let bewertungAnalysisSort = { key: "student", direction: "asc" };
+let bewertungAnalysisColumnVisibility = { tasks: true, subtasks: true };
+let bewertungDiscussionGroupSettings = {
+  amount: 4,
+  unit: "gruppen",
+  mode: "heterogen",
+  includeWarnings: true,
+  includeGender: true,
+  optimizationIterations: 500,
+  optimizationRestarts: 8,
+  selectedColumns: [],
+  seed: 0,
+  generatedConfig: null,
+  displayMode: "default",
+  displaySeed: 0
+};
 let performedCompetencyGridMode = "kompakt";
 let activePerformedEvaluationDetailModal = null;
 let isClassAnalysisPerformedEvaluationModalOpen = false;
@@ -108,6 +124,8 @@ let activeCompetencyGridPointerDrag = null;
 let activePlannedEvaluationDraft = null;
 let activeClasstimeImportDraft = null;
 let activeClasstimeImportPointerDrag = null;
+let activeClasstimeImportAutoScroll = null;
+let classtimeImportAutoScrollFrameId = 0;
 let lastClasstimeImportPointerDropAt = 0;
 let activePlanningEventDraft = null;
 let activeTodoDraft = null;
@@ -14677,6 +14695,27 @@ function getClasstimeWorksheetCellValue(worksheet, columnName, rowNumber) {
     : undefined;
 }
 
+function getClasstimeColumnIndex(columnName) {
+  return String(columnName || "").toUpperCase().split("").reduce(function (value, character) {
+    const code = character.charCodeAt(0);
+
+    return code >= 65 && code <= 90 ? (value * 26) + (code - 64) : value;
+  }, 0);
+}
+
+function getClasstimeColumnName(columnIndex) {
+  let remaining = Math.max(0, Math.floor(Number(columnIndex) || 0));
+  let columnName = "";
+
+  while (remaining > 0) {
+    remaining -= 1;
+    columnName = String.fromCharCode(65 + (remaining % 26)) + columnName;
+    remaining = Math.floor(remaining / 26);
+  }
+
+  return columnName;
+}
+
 function findClasstimeQuestionNameHeaderRow(worksheet) {
   const rows = worksheet && worksheet.rows ? worksheet.rows : {};
   const rowNumbers = Object.keys(rows).map(function (rowKey) {
@@ -14692,6 +14731,58 @@ function findClasstimeQuestionNameHeaderRow(worksheet) {
   }) || null;
 }
 
+function findClasstimePointsColumnName(worksheet, headerRowNumber) {
+  const headerRow = worksheet && worksheet.rows ? worksheet.rows[headerRowNumber] || {} : {};
+
+  return Object.keys(headerRow).find(function (columnName) {
+    return normalizeClasstimeMatchValue(headerRow[columnName]) === "punkte";
+  }) || "B";
+}
+
+function normalizeClasstimeSubtaskAnswerValue(value) {
+  return String(value === undefined || value === null ? "" : value).trim();
+}
+
+function resolveClasstimeQuestionSubtasks(worksheet, headerRowNumber, pointsColumnName) {
+  const headerRow = worksheet && worksheet.rows ? worksheet.rows[headerRowNumber] || {} : {};
+  const pointsColumnIndex = getClasstimeColumnIndex(pointsColumnName);
+
+  return Object.keys(headerRow).map(function (columnName) {
+    return {
+      columnName: columnName,
+      columnIndex: getClasstimeColumnIndex(columnName),
+      solution: normalizeClasstimeSubtaskAnswerValue(headerRow[columnName])
+    };
+  }).filter(function (entry) {
+    return entry.columnIndex > pointsColumnIndex && entry.solution;
+  }).sort(function (left, right) {
+    return left.columnIndex - right.columnIndex;
+  }).map(function (entry, index) {
+    return {
+      key: entry.columnName || getClasstimeColumnName(pointsColumnIndex + index + 1),
+      columnName: entry.columnName,
+      title: entry.solution,
+      maxPoints: 1
+    };
+  });
+}
+
+function distributeClasstimeSubtaskPoints(totalPoints, subtaskCount) {
+  const normalizedTotal = Math.max(0, Math.round(Number(totalPoints) || 0));
+  const normalizedCount = Math.max(0, Math.round(Number(subtaskCount) || 0));
+
+  if (!normalizedCount) {
+    return [];
+  }
+
+  return Array.from({ length: normalizedCount }, function (_entry, index) {
+    const previousRounded = Math.round((index * normalizedTotal) / normalizedCount);
+    const nextRounded = Math.round(((index + 1) * normalizedTotal) / normalizedCount);
+
+    return Math.max(0, nextRounded - previousRounded);
+  });
+}
+
 function createClasstimeImportedStudentKey(studentName, rowNumber) {
   const normalizedName = normalizeClasstimeMatchValue(studentName);
 
@@ -14702,7 +14793,8 @@ function createClasstimeImportedStudentIdFromKey(studentKey) {
   return "classtime-imported-student-" + encodeURIComponent(String(studentKey || "unknown")).replace(/%/g, "-");
 }
 
-function resolveClasstimeQuestionMaxPoints(worksheet, headerRowNumber) {
+function resolveClasstimeQuestionMaxPoints(worksheet, headerRowNumber, pointsColumnName) {
+  const normalizedPointsColumnName = String(pointsColumnName || "B").trim() || "B";
   const candidateRows = [
     Number(headerRowNumber) || 0,
     (Number(headerRowNumber) || 0) - 1,
@@ -14712,7 +14804,7 @@ function resolveClasstimeQuestionMaxPoints(worksheet, headerRowNumber) {
 
   for (let index = 0; index < candidateRows.length; index += 1) {
     const rowNumber = candidateRows[index];
-    const maxPoints = parseClasstimeWorksheetNumber(getClasstimeWorksheetCellValue(worksheet, "B", rowNumber));
+    const maxPoints = parseClasstimeWorksheetNumber(getClasstimeWorksheetCellValue(worksheet, normalizedPointsColumnName, rowNumber));
 
     if (maxPoints !== null && maxPoints > 0) {
       return maxPoints;
@@ -14745,12 +14837,16 @@ function buildClasstimeWorkbookData(parsedSheets) {
     const headerRowNumber = findClasstimeQuestionNameHeaderRow(worksheet);
     const firstStudentRowNumber = headerRowNumber ? headerRowNumber + 1 : 5;
     const importedStudentsByKey = {};
+    const pointsColumnName = findClasstimePointsColumnName(worksheet, headerRowNumber);
+    const detectedSubtasks = headerRowNumber
+      ? resolveClasstimeQuestionSubtasks(worksheet, headerRowNumber, pointsColumnName)
+      : [];
 
     Object.keys(worksheet.rows || {}).forEach(function (rowKey) {
       const rowNumber = Number(rowKey);
       const rowData = worksheet.rows[rowNumber] || {};
       const studentName = String(rowData.A || "").trim();
-      const scoreValue = parseClasstimeWorksheetNumber(rowData.B);
+      const scoreValue = parseClasstimeWorksheetNumber(rowData[pointsColumnName]);
       const normalizedStudentName = normalizeClasstimeMatchValue(studentName);
       const studentKey = createClasstimeImportedStudentKey(studentName, rowNumber);
 
@@ -14770,7 +14866,17 @@ function buildClasstimeWorkbookData(parsedSheets) {
         id: createClasstimeImportedStudentIdFromKey(studentKey),
         rowNumber: rowNumber,
         sourceName: studentName || ("Zeile " + String(rowNumber)),
-        points: scoreValue
+        points: scoreValue,
+        subtaskResults: detectedSubtasks.map(function (subtask) {
+          const answerValue = normalizeClasstimeSubtaskAnswerValue(rowData[subtask.columnName]);
+          const solutionValue = normalizeClasstimeSubtaskAnswerValue(subtask.title);
+
+          return {
+            key: String(subtask && subtask.key || "").trim(),
+            answer: answerValue,
+            isCorrect: Boolean(solutionValue) && answerValue === solutionValue
+          };
+        })
       };
     });
 
@@ -14779,13 +14885,14 @@ function buildClasstimeWorkbookData(parsedSheets) {
 
       return scoreValue === null ? maxValue : Math.max(maxValue, Number(scoreValue) || 0);
     }, 0);
-    const configuredMaxPoints = resolveClasstimeQuestionMaxPoints(worksheet, headerRowNumber);
+    const configuredMaxPoints = resolveClasstimeQuestionMaxPoints(worksheet, headerRowNumber, pointsColumnName);
 
     return {
       key: String(entry && entry.name || "").trim(),
       order: Number(String(entry && entry.name || "").trim().replace(/[^0-9]/g, "")) || (index + 1),
       title: String(worksheet.cells.C1 || "").trim() || ("Aufgabe " + String(index + 1)),
       maxPoints: Math.max(0, configuredMaxPoints || observedMaxPoints),
+      detectedSubtasks: detectedSubtasks,
       importedStudentsByKey: importedStudentsByKey
     };
   });
@@ -14800,7 +14907,8 @@ function buildClasstimeWorkbookData(parsedSheets) {
           id: createClasstimeImportedStudentIdFromKey(studentKey),
           rowNumber: Number(rowEntry && rowEntry.rowNumber) || 0,
           sourceName: String(rowEntry && rowEntry.sourceName || "").trim(),
-          scoresByQuestionKey: {}
+          scoresByQuestionKey: {},
+          subtaskResultsByQuestionKey: {}
         };
       }
 
@@ -14809,6 +14917,11 @@ function buildClasstimeWorkbookData(parsedSheets) {
       }
 
       importedStudents[studentKey].scoresByQuestionKey[questionSheet.key] = rowEntry ? rowEntry.points : null;
+      importedStudents[studentKey].subtaskResultsByQuestionKey[questionSheet.key] = rowEntry && Array.isArray(rowEntry.subtaskResults)
+        ? rowEntry.subtaskResults.map(function (subtaskResult) {
+            return Object.assign({}, subtaskResult);
+          })
+        : [];
     });
   });
 
@@ -14820,7 +14933,13 @@ function buildClasstimeWorkbookData(parsedSheets) {
         order: questionSheet.order,
         title: questionSheet.title,
         maxPoints: questionSheet.maxPoints,
-        taskTitle: "Aufgabe " + String(index + 1)
+        taskTitle: "Aufgabe " + String(index + 1),
+        detectSubtasks: false,
+        detectedSubtasks: Array.isArray(questionSheet.detectedSubtasks)
+          ? questionSheet.detectedSubtasks.map(function (subtask) {
+              return Object.assign({}, subtask);
+            })
+          : []
       };
     }),
     importedStudents: Object.keys(importedStudents).map(function (studentKey) {
@@ -25113,7 +25232,63 @@ window.UnterrichtsassistentApp.getActiveClasstimeImportDraft = function () {
     ? JSON.parse(JSON.stringify(activeClasstimeImportDraft))
     : null;
 };
+function stopClasstimeImportAutoScroll() {
+  if (classtimeImportAutoScrollFrameId) {
+    window.cancelAnimationFrame(classtimeImportAutoScrollFrameId);
+    classtimeImportAutoScrollFrameId = 0;
+  }
+
+  activeClasstimeImportAutoScroll = null;
+}
+function runClasstimeImportAutoScroll() {
+  if (!activeClasstimeImportAutoScroll || !activeClasstimeImportAutoScroll.scroller) {
+    stopClasstimeImportAutoScroll();
+    return;
+  }
+
+  activeClasstimeImportAutoScroll.scroller.scrollTop += activeClasstimeImportAutoScroll.velocity;
+  classtimeImportAutoScrollFrameId = window.requestAnimationFrame(runClasstimeImportAutoScroll);
+}
+function updateClasstimeImportAutoScroll(clientY) {
+  const scroller = document.querySelector(".import-modal__dialog--classtime-import .classtime-import");
+  const rect = scroller && typeof scroller.getBoundingClientRect === "function"
+    ? scroller.getBoundingClientRect()
+    : null;
+  const threshold = 72;
+  const maxVelocity = 18;
+  const pointerY = Number(clientY) || 0;
+  let velocity = 0;
+
+  if (!scroller || !rect || rect.height <= 0) {
+    stopClasstimeImportAutoScroll();
+    return;
+  }
+
+  if (pointerY < rect.top + threshold) {
+    velocity = -Math.max(2, Math.round(((rect.top + threshold - pointerY) / threshold) * maxVelocity));
+  } else if (pointerY > rect.bottom - threshold) {
+    velocity = Math.max(2, Math.round(((pointerY - (rect.bottom - threshold)) / threshold) * maxVelocity));
+  }
+
+  if ((velocity < 0 && scroller.scrollTop <= 0)
+    || (velocity > 0 && scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1)
+    || velocity === 0) {
+    stopClasstimeImportAutoScroll();
+    return;
+  }
+
+  activeClasstimeImportAutoScroll = {
+    scroller: scroller,
+    velocity: velocity
+  };
+
+  if (!classtimeImportAutoScrollFrameId) {
+    classtimeImportAutoScrollFrameId = window.requestAnimationFrame(runClasstimeImportAutoScroll);
+  }
+}
 function clearClasstimeImportPointerDragState() {
+  stopClasstimeImportAutoScroll();
+
   if (activeClasstimeImportPointerDrag && activeClasstimeImportPointerDrag.target) {
     activeClasstimeImportPointerDrag.target.classList.remove("is-dragging");
     activeClasstimeImportPointerDrag.target.style.transform = "";
@@ -25167,6 +25342,12 @@ window.UnterrichtsassistentApp.getBewertungAnalysisSort = function () {
     direction: String(bewertungAnalysisSort && bewertungAnalysisSort.direction || "asc") === "desc" ? "desc" : "asc"
   };
 };
+window.UnterrichtsassistentApp.getBewertungAnalysisColumnVisibility = function () {
+  return {
+    tasks: !bewertungAnalysisColumnVisibility || bewertungAnalysisColumnVisibility.tasks !== false,
+    subtasks: !bewertungAnalysisColumnVisibility || bewertungAnalysisColumnVisibility.subtasks !== false
+  };
+};
 window.UnterrichtsassistentApp.getActivePerformedEvaluationStudentId = function () {
   return activePerformedEvaluationStudentId;
 };
@@ -25216,6 +25397,26 @@ window.UnterrichtsassistentApp.isBewertungAnalysisSectionExpanded = function () 
 };
 window.UnterrichtsassistentApp.isBewertungAnalysisOverviewSectionExpanded = function () {
   return bewertungAnalysisOverviewSectionExpanded !== false;
+};
+window.UnterrichtsassistentApp.isBewertungDiscussionGroupsSectionExpanded = function () {
+  return bewertungDiscussionGroupsSectionExpanded !== false;
+};
+window.UnterrichtsassistentApp.getBewertungDiscussionGroupSettings = function () {
+  return Object.assign({}, bewertungDiscussionGroupSettings, {
+    selectedColumns: Array.isArray(bewertungDiscussionGroupSettings.selectedColumns)
+      ? bewertungDiscussionGroupSettings.selectedColumns.slice()
+      : [],
+    seed: Number(bewertungDiscussionGroupSettings.seed) || 0,
+    displayMode: String(bewertungDiscussionGroupSettings.displayMode || "default"),
+    displaySeed: Number(bewertungDiscussionGroupSettings.displaySeed) || 0,
+    generatedConfig: bewertungDiscussionGroupSettings.generatedConfig && typeof bewertungDiscussionGroupSettings.generatedConfig === "object"
+      ? Object.assign({}, bewertungDiscussionGroupSettings.generatedConfig, {
+          selectedColumns: Array.isArray(bewertungDiscussionGroupSettings.generatedConfig.selectedColumns)
+            ? bewertungDiscussionGroupSettings.generatedConfig.selectedColumns.slice()
+            : []
+        })
+      : null
+  });
 };
 window.UnterrichtsassistentApp.isBewertungPlannedEvaluationsExpanded = function () {
   return bewertungPlannedEvaluationsExpanded === true;
@@ -25374,6 +25575,8 @@ window.UnterrichtsassistentApp.toggleBewertungSection = function (sectionName) {
     bewertungAnalysisSectionExpanded = !bewertungAnalysisSectionExpanded;
   } else if (normalizedSectionName === "analysisoverview") {
     bewertungAnalysisOverviewSectionExpanded = !bewertungAnalysisOverviewSectionExpanded;
+  } else if (normalizedSectionName === "discussiongroups") {
+    bewertungDiscussionGroupsSectionExpanded = !bewertungDiscussionGroupsSectionExpanded;
   } else if (normalizedSectionName === "planneddetail") {
     bewertungPlannedEvaluationDetailsExpanded = !bewertungPlannedEvaluationDetailsExpanded;
   } else {
@@ -26770,6 +26973,9 @@ window.UnterrichtsassistentApp.handleClasstimeImportPointerMove = function (even
   if (dragState.moved && dragState.target) {
     dragState.target.style.transform = "translate(" + deltaX + "px, " + deltaY + "px)";
     dragState.target.style.zIndex = "3";
+    updateClasstimeImportAutoScroll(event.clientY);
+  } else {
+    stopClasstimeImportAutoScroll();
   }
 
   if (dragState.moved && targetInfo && targetInfo.element && (targetInfo.type === "pool" || (targetInfo.type === "student" && targetInfo.studentId))) {
@@ -26904,6 +27110,29 @@ window.UnterrichtsassistentApp.unassignClasstimeImportedStudent = function (impo
 
   return false;
 };
+window.UnterrichtsassistentApp.toggleClasstimeQuestionSubtasks = function (questionKey, isEnabled) {
+  const normalizedQuestionKey = String(questionKey || "").trim();
+
+  if (!activeClasstimeImportDraft || !normalizedQuestionKey || !Array.isArray(activeClasstimeImportDraft.questions)) {
+    return false;
+  }
+
+  activeClasstimeImportDraft.questions = activeClasstimeImportDraft.questions.map(function (question) {
+    if (String(question && question.key || "").trim() !== normalizedQuestionKey) {
+      return question;
+    }
+
+    return Object.assign({}, question, {
+      detectSubtasks: Boolean(isEnabled)
+    });
+  });
+
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
+  }
+
+  return false;
+};
 window.UnterrichtsassistentApp.dropClasstimeImportAssignmentToPool = function (event) {
   let payload = null;
 
@@ -26968,19 +27197,59 @@ window.UnterrichtsassistentApp.confirmClasstimeImport = function () {
   evaluationSheet = createEvaluationSheetRecord(activeClass.id, "aufgabenbogen", draft.evaluationSheetTitle);
   evaluationSheet.taskSheet = normalizeEvaluationTaskSheet({
     tasks: draft.questions.map(function (question, index) {
-      const subtaskId = createEvaluationSubtaskId();
+      const questionKey = String(question && question.key || "").trim();
+      const shouldDetectSubtasks = Boolean(question && question.detectSubtasks);
+      const detectedSubtasks = shouldDetectSubtasks && Array.isArray(question && question.detectedSubtasks)
+        ? question.detectedSubtasks.filter(function (subtask) {
+            return String(subtask && subtask.key || "").trim() && String(subtask && subtask.title || "").trim();
+          })
+        : [];
+      const distributedSubtaskPoints = distributeClasstimeSubtaskPoints(question && question.maxPoints, detectedSubtasks.length);
+      const subtasks = detectedSubtasks.length
+        ? detectedSubtasks.map(function (subtask, subtaskIndex) {
+            const subtaskId = createEvaluationSubtaskId();
+            const subtaskMaxPoints = Math.max(0, Math.round(Number(distributedSubtaskPoints[subtaskIndex]) || 0));
 
-      questionSubtaskIds[String(question && question.key || "").trim()] = subtaskId;
+            if (!questionSubtaskIds[questionKey]) {
+              questionSubtaskIds[questionKey] = [];
+            }
+
+            questionSubtaskIds[questionKey].push({
+              sourceSubtaskKey: String(subtask && subtask.key || "").trim(),
+              subtaskId: subtaskId,
+              maxPoints: subtaskMaxPoints
+            });
+
+            return {
+              id: subtaskId,
+              title: String(subtask && subtask.title || "").trim(),
+              topics: "",
+              afb: "afb1",
+              be: subtaskMaxPoints
+            };
+          })
+        : (function () {
+            const subtaskId = createEvaluationSubtaskId();
+
+            questionSubtaskIds[questionKey] = [{
+              sourceSubtaskKey: "",
+              subtaskId: subtaskId,
+              maxPoints: Math.max(0, Math.round(Number(question && question.maxPoints) || 0))
+            }];
+
+            return [{
+              id: subtaskId,
+              title: String(question && question.title || "Aufgabe " + String(index + 1)).trim(),
+              topics: "",
+              afb: "afb1",
+              be: Math.max(0, Math.round(Number(question && question.maxPoints) || 0))
+            }];
+          }());
+
       return {
         id: createEvaluationTaskId(),
         title: String(question && question.taskTitle || "Aufgabe " + String(index + 1)).trim(),
-        subtasks: [{
-          id: subtaskId,
-          title: String(question && question.title || "Aufgabe " + String(index + 1)).trim(),
-          topics: "",
-          afb: "afb1",
-          be: Math.max(0, Math.round(Number(question && question.maxPoints) || 0))
-        }]
+        subtasks: subtasks
       };
     })
   });
@@ -27006,27 +27275,62 @@ window.UnterrichtsassistentApp.confirmClasstimeImport = function () {
     const importedStudent = importedStudentsById[String(draft.assignmentsByStudentId[studentId] || "").trim()] || null;
     const performedEvaluation = createPerformedEvaluationRecord(plannedEvaluation, studentId);
 
-    performedEvaluation.subtaskResults = draft.questions.map(function (question) {
+    performedEvaluation.subtaskResults = draft.questions.reduce(function (results, question) {
       const questionKey = String(question && question.key || "").trim();
+      const subtaskMappings = Array.isArray(questionSubtaskIds[questionKey]) ? questionSubtaskIds[questionKey] : [];
       const scoreValue = importedStudent && importedStudent.scoresByQuestionKey
         ? importedStudent.scoresByQuestionKey[questionKey]
         : null;
       const maxValue = Math.max(0, Number(question && question.maxPoints) || 0);
+      const shouldDetectSubtasks = Boolean(question && question.detectSubtasks);
+      const importedSubtaskResults = importedStudent && importedStudent.subtaskResultsByQuestionKey
+        ? importedStudent.subtaskResultsByQuestionKey[questionKey] || []
+        : [];
+      const importedSubtaskLookup = Array.isArray(importedSubtaskResults)
+        ? importedSubtaskResults.reduce(function (lookup, subtaskResult) {
+            const sourceSubtaskKey = String(subtaskResult && subtaskResult.key || "").trim();
 
-      if (scoreValue === null || scoreValue === undefined || !questionSubtaskIds[questionKey]) {
-        return null;
+            if (sourceSubtaskKey) {
+              lookup[sourceSubtaskKey] = subtaskResult;
+            }
+
+            return lookup;
+          }, {})
+        : {};
+
+      if (!subtaskMappings.length) {
+        return results;
       }
 
-      return {
-        subtaskId: questionSubtaskIds[questionKey],
-        points: normalizePerformedEvaluationPoints(scoreValue, maxValue),
-        negativeNotes: [],
-        positiveNotes: [],
-        generalNote: ""
-      };
-    }).filter(function (entry) {
-      return Boolean(entry);
-    });
+      if (shouldDetectSubtasks && subtaskMappings.some(function (mapping) {
+        return String(mapping && mapping.sourceSubtaskKey || "").trim();
+      })) {
+        subtaskMappings.forEach(function (mapping) {
+          const importedSubtaskResult = importedSubtaskLookup[String(mapping && mapping.sourceSubtaskKey || "").trim()] || null;
+
+          results.push({
+            subtaskId: String(mapping && mapping.subtaskId || "").trim(),
+            points: normalizePerformedEvaluationPoints(importedSubtaskResult && importedSubtaskResult.isCorrect ? 1 : 0, mapping && mapping.maxPoints),
+            negativeNotes: [],
+            positiveNotes: [],
+            generalNote: ""
+          });
+        });
+        return results;
+      }
+
+      if (scoreValue !== null && scoreValue !== undefined) {
+        results.push({
+          subtaskId: String(subtaskMappings[0] && subtaskMappings[0].subtaskId || "").trim(),
+          points: normalizePerformedEvaluationPoints(scoreValue, maxValue),
+          negativeNotes: [],
+          positiveNotes: [],
+          generalNote: ""
+        });
+      }
+
+      return results;
+    }, []);
     performedEvaluation.isCompleted = true;
     performedEvaluation.completedAt = getCurrentTimestamp();
     performedEvaluation.updatedAt = getCurrentTimestamp();
@@ -27108,6 +27412,152 @@ window.UnterrichtsassistentApp.toggleBewertungAnalysisSort = function (sortKey) 
         }
       }, 0);
     }
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.updateBewertungAnalysisColumnVisibility = function (columnType, isVisible) {
+  const normalizedColumnType = String(columnType || "").trim().toLowerCase();
+
+  if (normalizedColumnType !== "tasks" && normalizedColumnType !== "subtasks") {
+    return false;
+  }
+
+  bewertungAnalysisColumnVisibility = Object.assign({
+    tasks: true,
+    subtasks: true
+  }, bewertungAnalysisColumnVisibility || {});
+  bewertungAnalysisColumnVisibility[normalizedColumnType] = Boolean(isVisible);
+
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.updateBewertungDiscussionGroupSetting = function (fieldName, nextValue) {
+  const normalizedFieldName = String(fieldName || "").trim();
+  const nextSettings = Object.assign({}, bewertungDiscussionGroupSettings, {
+    selectedColumns: Array.isArray(bewertungDiscussionGroupSettings.selectedColumns)
+      ? bewertungDiscussionGroupSettings.selectedColumns.slice()
+      : []
+  });
+
+  if (normalizedFieldName === "amount") {
+    nextSettings.amount = Math.max(1, Math.min(10, Math.round(Number(nextValue) || 1)));
+  } else if (normalizedFieldName === "unit") {
+    nextSettings.unit = String(nextValue || "").trim().toLowerCase() === "personen" ? "personen" : "gruppen";
+  } else if (normalizedFieldName === "mode") {
+    nextSettings.mode = ["homogen", "ergaenzend"].indexOf(String(nextValue || "").trim().toLowerCase()) >= 0
+      ? String(nextValue || "").trim().toLowerCase()
+      : "heterogen";
+  } else if (normalizedFieldName === "includeWarnings") {
+    nextSettings.includeWarnings = Boolean(nextValue);
+  } else if (normalizedFieldName === "includeGender") {
+    nextSettings.includeGender = Boolean(nextValue);
+  } else if (normalizedFieldName === "optimizationIterations") {
+    nextSettings.optimizationIterations = Math.max(0, Math.min(5000, Math.round(Number(nextValue) || 0)));
+  } else if (normalizedFieldName === "optimizationRestarts") {
+    nextSettings.optimizationRestarts = Math.max(1, Math.min(50, Math.round(Number(nextValue) || 1)));
+  } else {
+    return false;
+  }
+
+  bewertungDiscussionGroupSettings = nextSettings;
+
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.toggleBewertungDiscussionGroupColumn = function (columnKey) {
+  const normalizedColumnKey = String(columnKey || "").trim();
+  const selectedColumns = Array.isArray(bewertungDiscussionGroupSettings.selectedColumns)
+    ? bewertungDiscussionGroupSettings.selectedColumns.slice()
+    : [];
+  const existingIndex = selectedColumns.indexOf(normalizedColumnKey);
+
+  if (!normalizedColumnKey) {
+    return false;
+  }
+
+  if (existingIndex >= 0) {
+    selectedColumns.splice(existingIndex, 1);
+  } else {
+    selectedColumns.push(normalizedColumnKey);
+  }
+
+  bewertungDiscussionGroupSettings = Object.assign({}, bewertungDiscussionGroupSettings, {
+    selectedColumns: selectedColumns
+  });
+
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.updateBewertungDiscussionGroupColumnsFromInputs = function () {
+  const selectedColumns = Array.from(document.querySelectorAll(".bewertung-discussion-groups__column input[data-discussion-column-key]:checked")).map(function (input) {
+    return String(input.getAttribute("data-discussion-column-key") || "").trim();
+  }).filter(Boolean);
+
+  bewertungDiscussionGroupSettings = Object.assign({}, bewertungDiscussionGroupSettings, {
+    selectedColumns: selectedColumns
+  });
+
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.generateBewertungDiscussionGroups = function () {
+  bewertungDiscussionGroupSettings = Object.assign({}, bewertungDiscussionGroupSettings, {
+    selectedColumns: Array.isArray(bewertungDiscussionGroupSettings.selectedColumns)
+      ? bewertungDiscussionGroupSettings.selectedColumns.slice()
+      : [],
+    seed: Date.now(),
+    displayMode: "default",
+    displaySeed: 0,
+    generatedConfig: {
+      amount: bewertungDiscussionGroupSettings.amount,
+      unit: bewertungDiscussionGroupSettings.unit,
+      mode: bewertungDiscussionGroupSettings.mode,
+      includeWarnings: bewertungDiscussionGroupSettings.includeWarnings,
+      includeGender: bewertungDiscussionGroupSettings.includeGender,
+      optimizationIterations: bewertungDiscussionGroupSettings.optimizationIterations,
+      optimizationRestarts: bewertungDiscussionGroupSettings.optimizationRestarts,
+      selectedColumns: Array.isArray(bewertungDiscussionGroupSettings.selectedColumns)
+        ? bewertungDiscussionGroupSettings.selectedColumns.slice()
+        : []
+    }
+  });
+
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.setBewertungDiscussionGroupDisplayMode = function (displayMode) {
+  const normalizedDisplayMode = String(displayMode || "").trim().toLowerCase();
+
+  if (!bewertungDiscussionGroupSettings || !Number(bewertungDiscussionGroupSettings.seed)) {
+    return false;
+  }
+
+  bewertungDiscussionGroupSettings = Object.assign({}, bewertungDiscussionGroupSettings, {
+    selectedColumns: Array.isArray(bewertungDiscussionGroupSettings.selectedColumns)
+      ? bewertungDiscussionGroupSettings.selectedColumns.slice()
+      : [],
+    displayMode: normalizedDisplayMode === "leistung" ? "leistung" : "zufaellig",
+    displaySeed: normalizedDisplayMode === "leistung" ? 0 : Date.now()
+  });
+
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
   }
 
   return false;

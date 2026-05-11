@@ -6,6 +6,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
   id: "bewertung",
   title: "Bewertung",
   render: function (service) {
+    const viewRuntime = window.Unterrichtsassistent.ui.views.bewertung;
     const activeClass = service && typeof service.getActiveClass === "function"
       ? service.getActiveClass()
       : null;
@@ -51,6 +52,8 @@ window.Unterrichtsassistent.ui.views.bewertung = {
       || window.UnterrichtsassistentApp.isBewertungAnalysisSectionExpanded();
     const isAnalysisOverviewSectionExpanded = !(window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.isBewertungAnalysisOverviewSectionExpanded === "function")
       || window.UnterrichtsassistentApp.isBewertungAnalysisOverviewSectionExpanded();
+    const isDiscussionGroupsSectionExpanded = !(window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.isBewertungDiscussionGroupsSectionExpanded === "function")
+      || window.UnterrichtsassistentApp.isBewertungDiscussionGroupsSectionExpanded();
     const isPlannedEvaluationsExpanded = Boolean(window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.isBewertungPlannedEvaluationsExpanded === "function"
       && window.UnterrichtsassistentApp.isBewertungPlannedEvaluationsExpanded());
     const isPlannedEvaluationDetailsExpanded = !(window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.isBewertungPlannedEvaluationDetailsExpanded === "function")
@@ -64,6 +67,9 @@ window.Unterrichtsassistent.ui.views.bewertung = {
     const bewertungAnalysisSort = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getBewertungAnalysisSort === "function"
       ? window.UnterrichtsassistentApp.getBewertungAnalysisSort()
       : { key: "student", direction: "asc" };
+    const bewertungAnalysisColumnVisibility = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getBewertungAnalysisColumnVisibility === "function"
+      ? window.UnterrichtsassistentApp.getBewertungAnalysisColumnVisibility()
+      : { tasks: true, subtasks: true };
     const activePerformedEvaluationStudentId = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActivePerformedEvaluationStudentId === "function"
       ? String(window.UnterrichtsassistentApp.getActivePerformedEvaluationStudentId() || "").trim()
       : "";
@@ -2572,6 +2578,9 @@ window.Unterrichtsassistent.ui.views.bewertung = {
           const importedStudents = Array.isArray(classtimeImportDraft && classtimeImportDraft.importedStudents)
             ? classtimeImportDraft.importedStudents.slice()
             : [];
+          const classtimeQuestions = Array.isArray(classtimeImportDraft && classtimeImportDraft.questions)
+            ? classtimeImportDraft.questions.slice()
+            : [];
           const importedStudentsById = importedStudents.reduce(function (lookup, entry) {
             const entryId = String(entry && entry.id || "").trim();
 
@@ -2612,6 +2621,40 @@ window.Unterrichtsassistent.ui.views.bewertung = {
             ].join("");
           }
 
+          function renderClasstimeTaskSettings(question, index) {
+            const questionKey = String(question && question.key || "").trim();
+            const detectedSubtasks = Array.isArray(question && question.detectedSubtasks)
+              ? question.detectedSubtasks.filter(function (subtask) {
+                  return String(subtask && subtask.title || "").trim();
+                })
+              : [];
+            const maxPoints = formatPointsLabel(question && question.maxPoints);
+            const isChecked = Boolean(question && question.detectSubtasks);
+            const canDetectSubtasks = detectedSubtasks.length > 0;
+
+            return [
+              '<div class="classtime-import__task-row">',
+              '<div class="classtime-import__task-main">',
+              '<strong>', escapeValue(String(question && question.taskTitle || "Aufgabe " + String(index + 1)).trim()), '</strong>',
+              '<span>', escapeValue(String(question && question.title || "").trim() || "Ohne Titel"), '</span>',
+              '</div>',
+              '<div class="classtime-import__task-points">', escapeValue(maxPoints), ' P.</div>',
+              '<label class="classtime-import__task-toggle">',
+              '<input type="checkbox"', isChecked ? ' checked' : '', canDetectSubtasks ? '' : ' disabled',
+              ' onchange="return window.UnterrichtsassistentApp.toggleClasstimeQuestionSubtasks(\'', escapeValue(questionKey), '\', this.checked)">',
+              '<span>Teilaufgaben erkennen</span>',
+              '</label>',
+              '<div class="classtime-import__subtask-preview">',
+              canDetectSubtasks
+                ? detectedSubtasks.map(function (subtask) {
+                    return '<span>' + escapeValue(String(subtask && subtask.title || "").trim()) + '</span>';
+                  }).join("")
+                : '<em>Keine Teilaufgaben erkannt</em>',
+              '</div>',
+              '</div>'
+            ].join("");
+          }
+
           return [
             '<div class="import-modal" id="classtimeImportModal">',
             '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeClasstimeImportModal()"></div>',
@@ -2628,9 +2671,17 @@ window.Unterrichtsassistent.ui.views.bewertung = {
             '</div>',
             '<div class="classtime-import">',
             '<div class="classtime-import__summary">',
-            '<div class="classtime-import__summary-card"><strong>', escapeValue(String(classtimeImportDraft && classtimeImportDraft.questions && classtimeImportDraft.questions.length || 0)), '</strong><span>Aufgaben</span></div>',
+            '<div class="classtime-import__summary-card"><strong>', escapeValue(String(classtimeQuestions.length)), '</strong><span>Aufgaben</span></div>',
             '<div class="classtime-import__summary-card"><strong>', escapeValue(String(importedStudents.length)), '</strong><span>Classtime-Namen</span></div>',
             '<div class="classtime-import__summary-card"><strong>', escapeValue(String(assignedStudentCount)), ' / ', escapeValue(String(students.length)), '</strong><span>Zugeordnet</span></div>',
+            '</div>',
+            '<div class="classtime-import__tasks">',
+            '<div class="classtime-import__section-title">Aufgaben &amp; Teilaufgaben</div>',
+            '<div class="classtime-import__task-list">',
+            classtimeQuestions.length
+              ? classtimeQuestions.map(renderClasstimeTaskSettings).join("")
+              : '<div class="classtime-import__empty">Keine Aufgaben erkannt.</div>',
+            '</div>',
             '</div>',
             '<div class="classtime-import__pool" data-classtime-import-drop-target="pool" ondragover="return window.UnterrichtsassistentApp.allowClasstimeImportAssignmentDrop(event)" ondrop="return window.UnterrichtsassistentApp.dropClasstimeImportAssignmentToPool(event)">',
             '<div class="classtime-import__section-title">Nicht zugeordnet</div>',
@@ -2730,10 +2781,10 @@ window.Unterrichtsassistent.ui.views.bewertung = {
         if (subtasks.length === 1) {
           const subtask = subtasks[0];
           result.push({
-            key: "subtask:" + String(subtask && subtask.id || "").trim(),
-            type: "subtask",
+            key: "task:" + taskId,
+            type: "task",
             taskId: taskId,
-            subtaskId: String(subtask && subtask.id || "").trim(),
+            subtaskIds: [String(subtask && subtask.id || "").trim()].filter(Boolean),
             label: taskTitle ? taskLabel + ": " + taskTitle : taskLabel,
             max: getBeValue(subtask),
             isTaskStart: true
@@ -2782,6 +2833,17 @@ window.Unterrichtsassistent.ui.views.bewertung = {
         }, 0),
         isTaskStart: true
       };
+      const visibleAnalysisColumns = columns.filter(function (column) {
+        if (column && column.type === "task") {
+          return !bewertungAnalysisColumnVisibility || bewertungAnalysisColumnVisibility.tasks !== false;
+        }
+
+        if (column && column.type === "subtask") {
+          return !bewertungAnalysisColumnVisibility || bewertungAnalysisColumnVisibility.subtasks !== false;
+        }
+
+        return true;
+      });
       const sortKey = String(bewertungAnalysisSort && bewertungAnalysisSort.key || "student");
       const sortDirection = String(bewertungAnalysisSort && bewertungAnalysisSort.direction || "asc") === "desc" ? "desc" : "asc";
       const sortedStudents = assignedStudents.slice().sort(function (left, right) {
@@ -2917,6 +2979,9 @@ window.Unterrichtsassistent.ui.views.bewertung = {
       }
 
       function buildClassOverviewContent() {
+        const showTaskColumns = !bewertungAnalysisColumnVisibility || bewertungAnalysisColumnVisibility.tasks !== false;
+        const showSubtaskColumns = !bewertungAnalysisColumnVisibility || bewertungAnalysisColumnVisibility.subtasks !== false;
+
         if (!selectedSheet) {
           return '<p class="empty-message">Der verknuepfte Bewertungsbogen wurde nicht gefunden.</p>';
         }
@@ -2930,6 +2995,10 @@ window.Unterrichtsassistent.ui.views.bewertung = {
         }
 
         return [
+          '<div class="bewertung-analysis-table__controls">',
+          '<label class="bewertung-planung-modal__toggle"><input type="checkbox"', showTaskColumns ? ' checked' : '', ' onchange="return window.UnterrichtsassistentApp.updateBewertungAnalysisColumnVisibility(\'tasks\', this.checked)"><span>Aufgaben</span></label>',
+          '<label class="bewertung-planung-modal__toggle"><input type="checkbox"', showSubtaskColumns ? ' checked' : '', ' onchange="return window.UnterrichtsassistentApp.updateBewertungAnalysisColumnVisibility(\'subtasks\', this.checked)"><span>Teilaufgaben</span></label>',
+          '</div>',
           '<div class="bewertung-analysis-table__wrap">',
           '<table class="bewertung-analysis-table">',
           '<thead><tr>',
@@ -2938,7 +3007,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
           buildSortButton(totalColumn.label, totalColumn.key),
           '<span class="bewertung-analysis-table__max">/', escapeValue(formatCompactPointsLabel(totalColumn.max)), '</span>',
           '</th>',
-          columns.map(function (column) {
+          visibleAnalysisColumns.map(function (column) {
             return [
               '<th class="bewertung-analysis-table__score-head', column.isTaskStart ? ' is-task-start' : '', '">',
               buildSortButton(column.label, column.key),
@@ -2962,7 +3031,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
                   '</td>'
                 ].join("");
               }()),
-              columns.map(function (column) {
+              visibleAnalysisColumns.map(function (column) {
                 const achieved = getStudentColumnValue(student, column);
                 const maxValue = Math.max(0, Number(column && column.max) || 0);
 
@@ -3045,6 +3114,605 @@ window.Unterrichtsassistent.ui.views.bewertung = {
         ].join("");
       }
 
+      function getDiscussionGroupSettings() {
+        return window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getBewertungDiscussionGroupSettings === "function"
+          ? window.UnterrichtsassistentApp.getBewertungDiscussionGroupSettings()
+          : { amount: 4, unit: "gruppen", mode: "heterogen", includeWarnings: true, includeGender: true, optimizationIterations: 500, optimizationRestarts: 8, selectedColumns: [] };
+      }
+
+      function normalizeAnalysisGender(student) {
+        const gender = String(student && student.gender || "").trim().toLowerCase();
+
+        if (["m", "maennlich", "männlich", "male", "junge"].indexOf(gender) >= 0) {
+          return "m";
+        }
+
+        if (["w", "weiblich", "female", "maedchen", "mädchen"].indexOf(gender) >= 0) {
+          return "w";
+        }
+
+        return gender || "";
+      }
+
+      function getRecentWarningLookupForAnalysis() {
+        const lookup = {};
+        const reference = new Date();
+        const earliest = new Date(reference);
+
+        earliest.setDate(reference.getDate() - 14);
+        (Array.isArray(snapshot.warningRecords) ? snapshot.warningRecords : []).forEach(function (record) {
+          const studentId = String(record && record.studentId || "").trim();
+          const classId = String(record && record.classId || "").trim();
+          const dateValue = String(record && (record.lessonDate || record.recordedAt) || "").slice(0, 10);
+          const date = dateValue ? new Date(dateValue + "T12:00:00") : null;
+
+          if (!studentId || classId !== String(activeClass && activeClass.id || "").trim() || !date || Number.isNaN(date.getTime())) {
+            return;
+          }
+
+          if (date >= earliest && date <= reference) {
+            lookup[studentId] = true;
+          }
+        });
+
+        return lookup;
+      }
+
+      function shuffleAnalysisItems(items) {
+        const result = items.slice();
+        let index = result.length - 1;
+
+        while (index > 0) {
+          const swapIndex = Math.floor(Math.random() * (index + 1));
+          const tmp = result[index];
+          result[index] = result[swapIndex];
+          result[swapIndex] = tmp;
+          index -= 1;
+        }
+
+        return result;
+      }
+
+      function createSeededRandom(seedValue) {
+        let seed = Math.max(1, Math.round(Number(seedValue) || 1)) % 2147483647;
+
+        return function () {
+          seed = (seed * 16807) % 2147483647;
+          return (seed - 1) / 2147483646;
+        };
+      }
+
+      function shuffleDiscussionItems(items, random) {
+        const result = items.slice();
+        let index = result.length - 1;
+
+        while (index > 0) {
+          const swapIndex = Math.floor(random() * (index + 1));
+          const tmp = result[index];
+          result[index] = result[swapIndex];
+          result[swapIndex] = tmp;
+          index -= 1;
+        }
+
+        return result;
+      }
+
+      function buildDiscussionColumnOptions() {
+        return columns.map(function (column) {
+          return {
+            key: String(column && column.key || "").trim(),
+            label: String(column && column.label || "").trim() || "Aufgabe",
+            isDefault: Boolean(column && column.isTaskStart)
+          };
+        });
+      }
+
+      function getDiscussionColumns(selectedColumnKeys) {
+        const selectedLookup = selectedColumnKeys.reduce(function (lookup, key) {
+          lookup[String(key || "").trim()] = true;
+          return lookup;
+        }, {});
+
+        return selectedColumnKeys.length
+          ? columns.filter(function (column) {
+              return Boolean(selectedLookup[String(column && column.key || "").trim()]);
+            })
+          : columns.filter(function (column) {
+              return Boolean(column && column.isTaskStart);
+            });
+      }
+
+      function getDiscussionScoreProfile(student, effectiveColumns) {
+        const values = effectiveColumns.map(function (column) {
+          return Number(getStudentColumnValue(student, column)) || 0;
+        });
+        const maxValues = effectiveColumns.map(function (column) {
+          return Math.max(0, Number(column && column.max) || 0);
+        });
+
+        return {
+          values: values,
+          ratios: values.map(function (value, index) {
+            const maxValue = maxValues[index] || 0;
+            return maxValue > 0 ? Math.max(0, Number(value) || 0) / maxValue : 0;
+          }),
+          total: values.reduce(function (sum, value) {
+            return sum + value;
+          }, 0)
+        };
+      }
+
+      function getDiscussionProfileDistance(leftProfile, rightProfile) {
+        const leftValues = Array.isArray(leftProfile && leftProfile.scoreValues) ? leftProfile.scoreValues : [];
+        const rightValues = Array.isArray(rightProfile && rightProfile.scoreValues) ? rightProfile.scoreValues : [];
+        const length = Math.max(leftValues.length, rightValues.length);
+        let sum = 0;
+        let index;
+
+        if (!length) {
+          return 0;
+        }
+
+        for (index = 0; index < length; index += 1) {
+          sum += Math.abs((Number(leftValues[index]) || 0) - (Number(rightValues[index]) || 0));
+        }
+
+        return sum / length;
+      }
+
+      function getDiscussionComplementScore(leftProfile, rightProfile) {
+        const leftValues = Array.isArray(leftProfile && leftProfile.scoreRatios) ? leftProfile.scoreRatios : [];
+        const rightValues = Array.isArray(rightProfile && rightProfile.scoreRatios) ? rightProfile.scoreRatios : [];
+        const length = Math.max(leftValues.length, rightValues.length);
+        let positiveDiff = 0;
+        let negativeDiff = 0;
+        let differenceSum = 0;
+        let index;
+
+        if (length < 2) {
+          return getDiscussionProfileDistance(leftProfile, rightProfile);
+        }
+
+        for (index = 0; index < length; index += 1) {
+          const diff = (Number(leftValues[index]) || 0) - (Number(rightValues[index]) || 0);
+          const absoluteDiff = Math.abs(diff);
+
+          differenceSum += absoluteDiff;
+
+          if (diff > 0) {
+            positiveDiff += absoluteDiff;
+          } else if (diff < 0) {
+            negativeDiff += absoluteDiff;
+          }
+        }
+
+        if (!differenceSum) {
+          return 0;
+        }
+
+        return differenceSum * (Math.min(positiveDiff, negativeDiff) / differenceSum);
+      }
+
+      function getDiscussionGroupSpreadScore(members, profile) {
+        const groupMembers = (Array.isArray(members) ? members : []).concat(profile ? [profile] : []);
+        const valueCount = groupMembers.reduce(function (maxValueCount, member) {
+          const values = Array.isArray(member && member.scoreValues) ? member.scoreValues : [];
+          return Math.max(maxValueCount, values.length);
+        }, 0);
+        let spreadScore = 0;
+        let index;
+
+        if (groupMembers.length < 2 || !valueCount) {
+          return 0;
+        }
+
+        for (index = 0; index < valueCount; index += 1) {
+          const values = groupMembers.map(function (member) {
+            const scoreValues = Array.isArray(member && member.scoreValues) ? member.scoreValues : [];
+            return Number(scoreValues[index]) || 0;
+          });
+          const minValue = Math.min.apply(Math, values);
+          const maxValue = Math.max.apply(Math, values);
+          const range = maxValue - minValue;
+
+          spreadScore += range * range;
+        }
+
+        return spreadScore / valueCount;
+      }
+
+      function getBalancedGroupSizes(studentCount, groupCount) {
+        const sizes = [];
+        const baseSize = Math.floor(studentCount / groupCount);
+        const remainder = studentCount % groupCount;
+        let index;
+
+        for (index = 0; index < groupCount; index += 1) {
+          sizes.push(baseSize + (index < remainder ? 1 : 0));
+        }
+
+        return sizes;
+      }
+
+      function cloneDiscussionGroups(groups) {
+        return (Array.isArray(groups) ? groups : []).map(function (group) {
+          return {
+            maxSize: Number(group && group.maxSize) || 0,
+            members: Array.isArray(group && group.members) ? group.members.slice() : []
+          };
+        });
+      }
+
+      function scoreDiscussionGroup(group, settings, mode) {
+        const members = Array.isArray(group && group.members) ? group.members : [];
+        let score = 0;
+        let leftIndex;
+        let rightIndex;
+
+        if (members.length < 2) {
+          return 0;
+        }
+
+        if (mode === "heterogen") {
+          score += getDiscussionGroupSpreadScore(members, null) * 24;
+        } else if (mode === "homogen") {
+          score -= getDiscussionGroupSpreadScore(members, null) * 28;
+        }
+
+        for (leftIndex = 0; leftIndex < members.length; leftIndex += 1) {
+          for (rightIndex = leftIndex + 1; rightIndex < members.length; rightIndex += 1) {
+            const left = members[leftIndex];
+            const right = members[rightIndex];
+            const distance = getDiscussionProfileDistance(left, right);
+
+            if (mode === "heterogen") {
+              score += distance * 6;
+            } else if (mode === "homogen") {
+              score -= distance * 10;
+            } else {
+              score += getDiscussionComplementScore(left, right) * 36;
+              score += distance * 1.5;
+            }
+
+            if (settings && settings.includeWarnings && left.warned && right.warned) {
+              score -= 18;
+            }
+          }
+        }
+
+        if (settings && settings.includeGender) {
+          const genderCounts = members.reduce(function (counts, member) {
+            const gender = String(member && member.gender || "").trim();
+
+            if (gender === "m" || gender === "w") {
+              counts[gender] += 1;
+            }
+
+            return counts;
+          }, { m: 0, w: 0 });
+
+          score -= Math.abs(genderCounts.m - genderCounts.w) * 3;
+        }
+
+        return score;
+      }
+
+      function scoreDiscussionGroups(groups, settings, mode) {
+        return (Array.isArray(groups) ? groups : []).reduce(function (sum, group) {
+          return sum + scoreDiscussionGroup(group, settings, mode);
+        }, 0);
+      }
+
+      function createRandomDiscussionGroups(profiles, groupSizes, random) {
+        const shuffledProfiles = shuffleDiscussionItems(profiles, random);
+        let offset = 0;
+
+        return groupSizes.map(function (size) {
+          const group = {
+            maxSize: size,
+            members: shuffledProfiles.slice(offset, offset + size)
+          };
+
+          offset += size;
+          return group;
+        });
+      }
+
+      function optimizeDiscussionGroups(profiles, groupSizes, settings, mode, random) {
+        const iterations = Math.max(0, Math.min(5000, Math.round(Number(settings && settings.optimizationIterations) || 0)));
+        const restarts = Math.max(1, Math.min(50, Math.round(Number(settings && settings.optimizationRestarts) || 1)));
+        let bestGroups = [];
+        let bestScore = -Infinity;
+        let restartIndex;
+
+        for (restartIndex = 0; restartIndex < restarts; restartIndex += 1) {
+          let groups = createRandomDiscussionGroups(profiles, groupSizes, random);
+          let currentScore = scoreDiscussionGroups(groups, settings, mode);
+          let iterationIndex;
+
+          for (iterationIndex = 0; iterationIndex < iterations; iterationIndex += 1) {
+            const nonEmptyGroups = groups.filter(function (group) {
+              return group.members.length > 0;
+            });
+            const leftGroup = nonEmptyGroups[Math.floor(random() * nonEmptyGroups.length)] || null;
+            let rightGroup = nonEmptyGroups[Math.floor(random() * nonEmptyGroups.length)] || null;
+            let leftMemberIndex;
+            let rightMemberIndex;
+            let nextScore;
+            let tmp;
+
+            if (!leftGroup || !rightGroup || nonEmptyGroups.length < 2) {
+              break;
+            }
+
+            while (rightGroup === leftGroup && nonEmptyGroups.length > 1) {
+              rightGroup = nonEmptyGroups[Math.floor(random() * nonEmptyGroups.length)] || null;
+            }
+
+            if (!rightGroup || rightGroup === leftGroup) {
+              continue;
+            }
+
+            leftMemberIndex = Math.floor(random() * leftGroup.members.length);
+            rightMemberIndex = Math.floor(random() * rightGroup.members.length);
+            tmp = leftGroup.members[leftMemberIndex];
+            leftGroup.members[leftMemberIndex] = rightGroup.members[rightMemberIndex];
+            rightGroup.members[rightMemberIndex] = tmp;
+            nextScore = scoreDiscussionGroups(groups, settings, mode);
+
+            if (nextScore >= currentScore) {
+              currentScore = nextScore;
+            } else {
+              tmp = leftGroup.members[leftMemberIndex];
+              leftGroup.members[leftMemberIndex] = rightGroup.members[rightMemberIndex];
+              rightGroup.members[rightMemberIndex] = tmp;
+            }
+          }
+
+          if (currentScore > bestScore) {
+            bestScore = currentScore;
+            bestGroups = cloneDiscussionGroups(groups);
+          }
+        }
+
+        return bestGroups;
+      }
+
+      function generateDiscussionGroups(settings) {
+        const seed = Number(settings && settings.seed) || 0;
+        const random = createSeededRandom(seed || 1);
+        const amount = Math.max(1, Math.min(10, Math.round(Number(settings && settings.amount) || 1)));
+        const unit = String(settings && settings.unit || "gruppen").trim().toLowerCase() === "personen" ? "personen" : "gruppen";
+        const rawMode = String(settings && settings.mode || "heterogen").trim().toLowerCase();
+        const mode = ["homogen", "ergaenzend"].indexOf(rawMode) >= 0 ? rawMode : "heterogen";
+        const selectedColumnKeys = Array.isArray(settings && settings.selectedColumns) ? settings.selectedColumns.map(function (key) { return String(key || "").trim(); }).filter(Boolean) : [];
+        const effectiveColumns = getDiscussionColumns(selectedColumnKeys);
+        const warningLookup = settings && settings.includeWarnings ? getRecentWarningLookupForAnalysis() : {};
+        const profiles = shuffleDiscussionItems(assignedStudents, random).map(function (student) {
+          const studentId = String(student && student.id || "").trim();
+          const scoreProfile = getDiscussionScoreProfile(student, effectiveColumns);
+
+          return {
+            student: student,
+            id: studentId,
+            score: scoreProfile.total,
+            scoreValues: scoreProfile.values,
+            scoreRatios: scoreProfile.ratios,
+            warned: Boolean(warningLookup[studentId]),
+            gender: normalizeAnalysisGender(student)
+          };
+        });
+        const groupCount = profiles.length
+          ? Math.max(1, Math.min(profiles.length, unit === "personen" ? Math.ceil(profiles.length / amount) : amount))
+          : 0;
+        const groupSizes = getBalancedGroupSizes(profiles.length, groupCount);
+        const groups = optimizeDiscussionGroups(profiles, groupSizes, settings, mode, random);
+
+        return groups.map(function (group) {
+          return shuffleDiscussionItems(group.members, random);
+        });
+      }
+
+      function getDiscussionGroupsCacheKey(settings) {
+        return JSON.stringify({
+          classId: activeClass ? String(activeClass.id || "").trim() : "",
+          plannedEvaluationId: selectedPlannedEvaluationId,
+          seed: Number(settings && settings.seed) || 0,
+          amount: Math.max(1, Math.min(10, Math.round(Number(settings && settings.amount) || 1))),
+          unit: String(settings && settings.unit || "gruppen").trim().toLowerCase() === "personen" ? "personen" : "gruppen",
+          mode: ["homogen", "ergaenzend"].indexOf(String(settings && settings.mode || "heterogen").trim().toLowerCase()) >= 0
+            ? String(settings && settings.mode || "heterogen").trim().toLowerCase()
+            : "heterogen",
+          includeWarnings: Boolean(settings && settings.includeWarnings),
+          includeGender: Boolean(settings && settings.includeGender),
+          optimizationIterations: Math.max(0, Math.min(5000, Math.round(Number(settings && settings.optimizationIterations) || 0))),
+          optimizationRestarts: Math.max(1, Math.min(50, Math.round(Number(settings && settings.optimizationRestarts) || 1))),
+          selectedColumns: Array.isArray(settings && settings.selectedColumns) ? settings.selectedColumns.map(function (key) {
+            return String(key || "").trim();
+          }).filter(Boolean) : [],
+          assignedStudentIds: assignedStudents.map(function (student) {
+            return String(student && student.id || "").trim();
+          })
+        });
+      }
+
+      function getCachedDiscussionGroups(settings) {
+        const cacheKey = getDiscussionGroupsCacheKey(settings);
+        const cache = viewRuntime && viewRuntime._discussionGroupsCache && viewRuntime._discussionGroupsCache.key === cacheKey
+          ? viewRuntime._discussionGroupsCache
+          : null;
+        let groups;
+
+        if (cache && Array.isArray(cache.groups)) {
+          return cache.groups;
+        }
+
+        groups = generateDiscussionGroups(settings);
+
+        if (viewRuntime) {
+          viewRuntime._discussionGroupsCache = {
+            key: cacheKey,
+            groups: groups
+          };
+        }
+
+        return groups;
+      }
+
+      function getDiscussionGroupAverageScore(group) {
+        const members = Array.isArray(group) ? group : [];
+
+        if (!members.length) {
+          return 0;
+        }
+
+        return members.reduce(function (sum, profile) {
+          return sum + (Number(profile && profile.score) || 0);
+        }, 0) / members.length;
+      }
+
+      function applyDiscussionGroupDisplay(groups, settings) {
+        const displayMode = String(settings && settings.displayMode || "default").trim().toLowerCase();
+        const copiedGroups = (Array.isArray(groups) ? groups : []).map(function (group) {
+          return Array.isArray(group) ? group.slice() : [];
+        });
+
+        if (displayMode === "leistung") {
+          return copiedGroups.sort(function (left, right) {
+            const averageDiff = getDiscussionGroupAverageScore(right) - getDiscussionGroupAverageScore(left);
+
+            if (Math.abs(averageDiff) > 0.0001) {
+              return averageDiff;
+            }
+
+            return right.length - left.length;
+          }).map(function (group) {
+            return group.sort(function (left, right) {
+              return (Number(right && right.score) || 0) - (Number(left && left.score) || 0);
+            });
+          });
+        }
+
+        if (displayMode === "zufaellig") {
+          const random = createSeededRandom(Number(settings && settings.displaySeed) || 1);
+
+          return shuffleDiscussionItems(copiedGroups, random).map(function (group) {
+            return shuffleDiscussionItems(group, random);
+          });
+        }
+
+        return copiedGroups;
+      }
+
+      function getDiscussionStudentLabel(student) {
+        const firstName = String(student && student.firstName || "").trim() || "Ohne Namen";
+        const duplicateCount = assignedStudents.filter(function (item) {
+          return String(item && item.firstName || "").trim().toLocaleLowerCase("de-DE") === firstName.toLocaleLowerCase("de-DE");
+        }).length;
+        const lastName = String(student && student.lastName || "").trim();
+
+        return duplicateCount > 1 && lastName ? firstName + " " + lastName.charAt(0) + "." : firstName;
+      }
+
+      function buildDiscussionGroupsContent() {
+        const settings = getDiscussionGroupSettings();
+        const amount = Math.max(1, Math.min(10, Math.round(Number(settings.amount) || 1)));
+        const unit = String(settings.unit || "gruppen").trim().toLowerCase() === "personen" ? "personen" : "gruppen";
+        const rawMode = String(settings.mode || "heterogen").trim().toLowerCase();
+        const mode = ["homogen", "ergaenzend"].indexOf(rawMode) >= 0 ? rawMode : "heterogen";
+        const optimizationIterations = Math.max(0, Math.min(5000, Math.round(Number(settings.optimizationIterations) || 0)));
+        const optimizationRestarts = Math.max(1, Math.min(50, Math.round(Number(settings.optimizationRestarts) || 1)));
+        const selectedLookup = (Array.isArray(settings.selectedColumns) ? settings.selectedColumns : []).reduce(function (lookup, key) {
+          lookup[String(key || "").trim()] = true;
+          return lookup;
+        }, {});
+        const hasExplicitColumnSelection = Object.keys(selectedLookup).length > 0;
+        const columnOptions = buildDiscussionColumnOptions();
+        const seed = Number(settings.seed) || 0;
+        const displayMode = String(settings.displayMode || "default").trim().toLowerCase();
+        const generatedSettings = settings.generatedConfig && typeof settings.generatedConfig === "object"
+          ? Object.assign({}, settings.generatedConfig, {
+              selectedColumns: Array.isArray(settings.generatedConfig.selectedColumns) ? settings.generatedConfig.selectedColumns.slice() : [],
+              seed: seed
+            })
+          : settings;
+        const groups = seed ? applyDiscussionGroupDisplay(getCachedDiscussionGroups(generatedSettings), settings) : [];
+
+        if (!selectedSheet || String(selectedSheet.type || "").trim() !== "aufgabenbogen" || !columns.length) {
+          return '<p class="empty-message">Waehle eine geplante Bewertung mit Aufgabenbogen, um Besprechungsgruppen zu generieren.</p>';
+        }
+
+        if (!assignedStudents.length) {
+          return '<p class="empty-message">Dieser geplanten Bewertung sind keine Schueler zugeordnet.</p>';
+        }
+
+        return [
+          '<div class="bewertung-discussion-groups">',
+          '<div class="bewertung-discussion-groups__controls">',
+          '<label class="import-modal__field"><span>Anzahl</span><select onchange="return window.UnterrichtsassistentApp.updateBewertungDiscussionGroupSetting(\'amount\', this.value)">',
+          [1,2,3,4,5,6,7,8,9,10].map(function (value) {
+            return '<option value="' + escapeValue(String(value)) + '"' + (value === amount ? ' selected' : '') + '>' + escapeValue(String(value)) + '</option>';
+          }).join(""),
+          '</select></label>',
+          '<label class="import-modal__field"><span>Einheit</span><select onchange="return window.UnterrichtsassistentApp.updateBewertungDiscussionGroupSetting(\'unit\', this.value)">',
+          '<option value="personen"', unit === "personen" ? ' selected' : '', '>Personen</option>',
+          '<option value="gruppen"', unit === "gruppen" ? ' selected' : '', '>Gruppen</option>',
+          '</select></label>',
+          '<label class="import-modal__field"><span>Iterationen</span><select onchange="return window.UnterrichtsassistentApp.updateBewertungDiscussionGroupSetting(\'optimizationIterations\', this.value)">',
+          [0,100,250,500,1000,2500,5000].map(function (value) {
+            return '<option value="' + escapeValue(String(value)) + '"' + (value === optimizationIterations ? ' selected' : '') + '>' + escapeValue(String(value)) + '</option>';
+          }).join(""),
+          '</select></label>',
+          '<label class="import-modal__field"><span>Mehrfachstarts</span><select onchange="return window.UnterrichtsassistentApp.updateBewertungDiscussionGroupSetting(\'optimizationRestarts\', this.value)">',
+          [1,4,8,12,20,32,50].map(function (value) {
+            return '<option value="' + escapeValue(String(value)) + '"' + (value === optimizationRestarts ? ' selected' : '') + '>' + escapeValue(String(value)) + '</option>';
+          }).join(""),
+          '</select></label>',
+          '<div class="bewertung-discussion-groups__mode" role="group" aria-label="Gruppenmodus">',
+          '<button class="bewertung-discussion-groups__mode-option', mode === "heterogen" ? ' is-active' : '', '" type="button" aria-pressed="', mode === "heterogen" ? 'true' : 'false', '" onclick="return window.UnterrichtsassistentApp.updateBewertungDiscussionGroupSetting(\'mode\', \'heterogen\')">heterogen</button>',
+          '<button class="bewertung-discussion-groups__mode-option', mode === "homogen" ? ' is-active' : '', '" type="button" aria-pressed="', mode === "homogen" ? 'true' : 'false', '" onclick="return window.UnterrichtsassistentApp.updateBewertungDiscussionGroupSetting(\'mode\', \'homogen\')">homogen</button>',
+          '<button class="bewertung-discussion-groups__mode-option', mode === "ergaenzend" ? ' is-active' : '', '" type="button" aria-pressed="', mode === "ergaenzend" ? 'true' : 'false', '" onclick="return window.UnterrichtsassistentApp.updateBewertungDiscussionGroupSetting(\'mode\', \'ergaenzend\')">erg&auml;nzend</button>',
+          '</div>',
+          '<label class="bewertung-planung-modal__toggle"><input type="checkbox"', settings.includeWarnings ? ' checked' : '', ' onchange="return window.UnterrichtsassistentApp.updateBewertungDiscussionGroupSetting(\'includeWarnings\', this.checked)"><span>Verwarnungen</span></label>',
+          '<label class="bewertung-planung-modal__toggle"><input type="checkbox"', settings.includeGender ? ' checked' : '', ' onchange="return window.UnterrichtsassistentApp.updateBewertungDiscussionGroupSetting(\'includeGender\', this.checked)"><span>Geschlecht</span></label>',
+          '<button class="circle-action bewertung-discussion-groups__generate" type="button" onclick="return window.UnterrichtsassistentApp.generateBewertungDiscussionGroups()">einteilen</button>',
+          '</div>',
+          '<div class="bewertung-discussion-groups__columns">',
+          columnOptions.map(function (option) {
+            const key = String(option && option.key || "").trim();
+
+            return [
+              '<label class="bewertung-discussion-groups__column">',
+              '<input type="checkbox" data-discussion-column-key="', escapeValue(key), '"', (hasExplicitColumnSelection ? selectedLookup[key] : option.isDefault) ? ' checked' : '', ' onchange="return window.UnterrichtsassistentApp.updateBewertungDiscussionGroupColumnsFromInputs()">',
+              '<span>', escapeValue(String(option && option.label || "").trim()), '</span>',
+              '</label>'
+            ].join("");
+          }).join(""),
+          '</div>',
+          seed ? [
+          '<div class="bewertung-discussion-groups__grid" style="--discussion-group-columns:', escapeValue(String(Math.min(6, Math.max(1, groups.length)))), ';">',
+          groups.map(function (group, index) {
+            return [
+              '<article class="bewertung-discussion-groups__group">',
+              '<h4>Gruppe ', escapeValue(String(index + 1)), '</h4>',
+              '<table class="bewertung-discussion-groups__members"><tbody>',
+              group.map(function (profile) {
+                return '<tr><td>' + escapeValue(getDiscussionStudentLabel(profile.student)) + '</td></tr>';
+              }).join(""),
+              '</tbody></table>',
+              '</article>'
+            ].join("");
+          }).join(""),
+          '</div>',
+          '<div class="bewertung-discussion-groups__display-actions">',
+          '<button class="bewertung-discussion-groups__display-button', displayMode === "zufaellig" ? ' is-active' : '', '" type="button" onclick="return window.UnterrichtsassistentApp.setBewertungDiscussionGroupDisplayMode(\'zufaellig\')">zuf&auml;llig</button>',
+          '<button class="bewertung-discussion-groups__display-button', displayMode === "leistung" ? ' is-active' : '', '" type="button" onclick="return window.UnterrichtsassistentApp.setBewertungDiscussionGroupDisplayMode(\'leistung\')">Leistung</button>',
+          '</div>'
+          ].join("") : '<p class="empty-message">Klicke auf einteilen, um die Besprechungsgruppen zu generieren.</p>',
+          '</div>'
+        ].join("");
+      }
+
       function getCellTone(achieved, maxValue) {
         const percent = Math.max(0, Number(maxValue) || 0) > 0 ? (Math.max(0, Number(achieved) || 0) / Math.max(0, Number(maxValue) || 0)) * 100 : 0;
 
@@ -3105,6 +3773,10 @@ window.Unterrichtsassistent.ui.views.bewertung = {
           '<section class="bewertung-analysis-run__section', isAnalysisOverviewSectionExpanded ? '' : ' is-collapsed', '">',
           buildSectionHeader("Bewertungen Übersicht", "analysisoverview", isAnalysisOverviewSectionExpanded),
           isAnalysisOverviewSectionExpanded ? '<div class="bewertung-analysis-run__section-body">' + buildEvaluationOverviewContent() + '</div>' : '',
+          '</section>',
+          '<section class="bewertung-analysis-run__section', isDiscussionGroupsSectionExpanded ? '' : ' is-collapsed', '">',
+          buildSectionHeader("Besprechungsgruppen Generieren", "discussiongroups", isDiscussionGroupsSectionExpanded),
+          isDiscussionGroupsSectionExpanded ? '<div class="bewertung-analysis-run__section-body">' + buildDiscussionGroupsContent() + '</div>' : '',
           '</section>'
         ].join(""),
         '</article>',
