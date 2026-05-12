@@ -15765,11 +15765,17 @@ function normalizeCurriculumLessonCompetencySourceIdForSnapshot(rawSnapshot, sou
 }
 
 function getCurriculumPlanningSettingsClassFromSnapshot(rawSnapshot) {
-  const activeClassId = String(rawSnapshot && rawSnapshot.activeClassId || "").trim();
+  const serviceActiveClassId = schoolService && typeof schoolService.getActiveClass === "function"
+    ? String(schoolService.getActiveClass() && schoolService.getActiveClass().id || "").trim()
+    : "";
+  const snapshotActiveClassId = String(rawSnapshot && rawSnapshot.activeClassId || "").trim();
+  const activeClassId = serviceActiveClassId || snapshotActiveClassId;
 
   return Array.isArray(rawSnapshot && rawSnapshot.classes)
     ? rawSnapshot.classes.find(function (classItem) {
         return String(classItem && classItem.id || "").trim() === activeClassId;
+      }) || rawSnapshot.classes.find(function (classItem) {
+        return String(classItem && classItem.id || "").trim() === snapshotActiveClassId;
       }) || null
     : null;
 }
