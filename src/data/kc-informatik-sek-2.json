@@ -1,0 +1,2628 @@
+{
+  "root": "t0001",
+  "nodes": [
+    {
+      "id": "t0001",
+      "name": "Informatik",
+      "categories": [
+        "Einführungsphase",
+        "Qualifikationsphase",
+        "gemeinsam",
+        "gA",
+        "eA"
+      ],
+      "successors": [
+        "t0002",
+        "t0029",
+        "t0053"
+      ]
+    },
+    {
+      "id": "t0002",
+      "name": "Algorithmen und Datenstrukturen",
+      "categories": [
+        "Einführungsphase",
+        "Qualifikationsphase",
+        "gemeinsam",
+        "gA",
+        "eA"
+      ],
+      "successors": [
+        "t0003",
+        "t0006",
+        "t0012",
+        "t0015",
+        "t0018",
+        "t0025"
+      ]
+    },
+    {
+      "id": "t0003",
+      "name": "Algorithmische Grundlagen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam"
+      ],
+      "successors": [
+        "t0004",
+        "t0005"
+      ]
+    },
+    {
+      "id": "t0004",
+      "name": "Algorithmische Grundbausteine und Kontrollstrukturen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam"
+      ],
+      "successors": [
+        "o001",
+        "o002",
+        "o003",
+        "o004"
+      ]
+    },
+    {
+      "id": "t0005",
+      "name": "Entwurf, Implementierung und Darstellung elementarer Algorithmen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam"
+      ],
+      "successors": [
+        "o005",
+        "o006",
+        "o007"
+      ]
+    },
+    {
+      "id": "t0006",
+      "name": "Variablen, Operationen und Zeichenketten",
+      "categories": [
+        "Einführungsphase",
+        "Qualifikationsphase",
+        "gemeinsam",
+        "gA"
+      ],
+      "successors": [
+        "t0007",
+        "t0008",
+        "t0009",
+        "t0010",
+        "t0011"
+      ]
+    },
+    {
+      "id": "t0007",
+      "name": "Variablen und Wertzuweisungen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam"
+      ],
+      "successors": [
+        "o008",
+        "o009",
+        "o010"
+      ]
+    },
+    {
+      "id": "t0008",
+      "name": "Operationen und Prozeduren",
+      "categories": [
+        "Einführungsphase",
+        "Qualifikationsphase",
+        "gemeinsam",
+        "gA"
+      ],
+      "successors": [
+        "o011",
+        "o012",
+        "o016",
+        "o017"
+      ]
+    },
+    {
+      "id": "t0009",
+      "name": "Datentypen, Gültigkeitsbereiche und Referenzen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA"
+      ],
+      "successors": [
+        "o013",
+        "o014",
+        "o015"
+      ]
+    },
+    {
+      "id": "t0010",
+      "name": "Zeichenketten auslesen und aufbauen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam"
+      ],
+      "successors": [
+        "o033",
+        "o034",
+        "o035",
+        "o036"
+      ]
+    },
+    {
+      "id": "t0011",
+      "name": "Zeichenketten vergleichen und in Algorithmen einsetzen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam"
+      ],
+      "successors": [
+        "o037",
+        "o038",
+        "o039",
+        "o040",
+        "o041"
+      ]
+    },
+    {
+      "id": "t0012",
+      "name": "Analyse und Rekursion",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "eA"
+      ],
+      "successors": [
+        "t0013",
+        "t0014"
+      ]
+    },
+    {
+      "id": "t0013",
+      "name": "Algorithmen analysieren und beurteilen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "eA"
+      ],
+      "successors": [
+        "o018",
+        "o019",
+        "o020"
+      ]
+    },
+    {
+      "id": "t0014",
+      "name": "Rekursive Problemlösung",
+      "categories": [
+        "Qualifikationsphase",
+        "eA"
+      ],
+      "successors": [
+        "o021",
+        "o022",
+        "o023",
+        "o024"
+      ]
+    },
+    {
+      "id": "t0015",
+      "name": "Klassen, Objekte und Modellierung",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "eA"
+      ],
+      "successors": [
+        "t0016",
+        "t0017"
+      ]
+    },
+    {
+      "id": "t0016",
+      "name": "Klassen und Objekte verwenden",
+      "categories": [
+        "Qualifikationsphase",
+        "gA"
+      ],
+      "successors": [
+        "o025",
+        "o026",
+        "o027",
+        "o028",
+        "o029"
+      ]
+    },
+    {
+      "id": "t0017",
+      "name": "Klassenbeziehungen modellieren",
+      "categories": [
+        "Qualifikationsphase",
+        "eA"
+      ],
+      "successors": [
+        "o030",
+        "o031",
+        "o032"
+      ]
+    },
+    {
+      "id": "t0018",
+      "name": "Lineare Datenstrukturen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA"
+      ],
+      "successors": [
+        "t0019",
+        "t0022",
+        "t0023",
+        "t0024"
+      ]
+    },
+    {
+      "id": "t0019",
+      "name": "Statische Reihungen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA"
+      ],
+      "successors": [
+        "t0020",
+        "t0021"
+      ]
+    },
+    {
+      "id": "t0020",
+      "name": "Grundlagen und Zugriff auf statische Reihungen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA"
+      ],
+      "successors": [
+        "o042",
+        "o043",
+        "o044",
+        "o045",
+        "o046"
+      ]
+    },
+    {
+      "id": "t0021",
+      "name": "Algorithmen und Verfahren auf statischen Reihungen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA"
+      ],
+      "successors": [
+        "o047",
+        "o048",
+        "o049",
+        "o050",
+        "o051",
+        "o052"
+      ]
+    },
+    {
+      "id": "t0022",
+      "name": "Stapel",
+      "categories": [
+        "Qualifikationsphase",
+        "gA"
+      ],
+      "successors": [
+        "o053",
+        "o054",
+        "o055",
+        "o056"
+      ]
+    },
+    {
+      "id": "t0023",
+      "name": "Schlangen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA"
+      ],
+      "successors": [
+        "o057",
+        "o058",
+        "o059",
+        "o060"
+      ]
+    },
+    {
+      "id": "t0024",
+      "name": "Dynamische Reihungen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA"
+      ],
+      "successors": [
+        "o061",
+        "o062",
+        "o063",
+        "o064"
+      ]
+    },
+    {
+      "id": "t0025",
+      "name": "Baumstrukturen",
+      "categories": [
+        "Qualifikationsphase",
+        "eA"
+      ],
+      "successors": [
+        "t0026",
+        "t0027",
+        "t0028"
+      ]
+    },
+    {
+      "id": "t0026",
+      "name": "Grundlagen von Binärbäumen",
+      "categories": [
+        "Qualifikationsphase",
+        "eA"
+      ],
+      "successors": [
+        "o065",
+        "o066",
+        "o067"
+      ]
+    },
+    {
+      "id": "t0027",
+      "name": "Traversierungen auf Binärbäumen",
+      "categories": [
+        "Qualifikationsphase",
+        "eA"
+      ],
+      "successors": [
+        "o068",
+        "o069",
+        "o070",
+        "o071",
+        "o072",
+        "o073"
+      ]
+    },
+    {
+      "id": "t0028",
+      "name": "Binäre Suchbäume",
+      "categories": [
+        "Qualifikationsphase",
+        "eA"
+      ],
+      "successors": [
+        "o074",
+        "o075",
+        "o076",
+        "o077"
+      ]
+    },
+    {
+      "id": "t0029",
+      "name": "Informationen und Daten",
+      "categories": [
+        "Einführungsphase",
+        "Qualifikationsphase",
+        "gemeinsam",
+        "gA",
+        "eA"
+      ],
+      "successors": [
+        "t0030",
+        "t0034",
+        "t0037",
+        "t0040",
+        "t0044",
+        "t0048"
+      ]
+    },
+    {
+      "id": "t0030",
+      "name": "Kryptologie und Informationssicherheit",
+      "categories": [
+        "Einführungsphase",
+        "Qualifikationsphase",
+        "gemeinsam",
+        "gA",
+        "eA"
+      ],
+      "successors": [
+        "t0031",
+        "t0032",
+        "t0033"
+      ]
+    },
+    {
+      "id": "t0031",
+      "name": "Klassische Verschlüsselungsverfahren",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam"
+      ],
+      "successors": [
+        "o078",
+        "o079",
+        "o080",
+        "o081",
+        "o082",
+        "o083"
+      ]
+    },
+    {
+      "id": "t0032",
+      "name": "Moderne Verschlüsselung und Sicherheitsinfrastrukturen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA"
+      ],
+      "successors": [
+        "o084",
+        "o085",
+        "o086",
+        "o087",
+        "o088",
+        "o089",
+        "o090"
+      ]
+    },
+    {
+      "id": "t0033",
+      "name": "Symmetrische Verfahren entwerfen und implementieren",
+      "categories": [
+        "Qualifikationsphase",
+        "eA"
+      ],
+      "successors": [
+        "o091",
+        "o092",
+        "o093"
+      ]
+    },
+    {
+      "id": "t0034",
+      "name": "Datenschutz und Datenanalyse",
+      "categories": [
+        "Einführungsphase",
+        "Qualifikationsphase",
+        "gemeinsam",
+        "gA"
+      ],
+      "successors": [
+        "t0035",
+        "t0036"
+      ]
+    },
+    {
+      "id": "t0035",
+      "name": "Schutz persönlicher Daten",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam"
+      ],
+      "successors": [
+        "o094",
+        "o095"
+      ]
+    },
+    {
+      "id": "t0036",
+      "name": "Automatisierte Datenanalyse bewerten",
+      "categories": [
+        "Qualifikationsphase",
+        "gA"
+      ],
+      "successors": [
+        "o096",
+        "o097"
+      ]
+    },
+    {
+      "id": "t0037",
+      "name": "Codierung und digitale Repräsentation",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam"
+      ],
+      "successors": [
+        "t0038",
+        "t0039"
+      ]
+    },
+    {
+      "id": "t0038",
+      "name": "Zahlen- und Zeichencodierung",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam"
+      ],
+      "successors": [
+        "o098",
+        "o099"
+      ]
+    },
+    {
+      "id": "t0039",
+      "name": "Bildcodierung und Codierungswahl",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam"
+      ],
+      "successors": [
+        "o100",
+        "o101"
+      ]
+    },
+    {
+      "id": "t0040",
+      "name": "Informatiksysteme und Internet",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam"
+      ],
+      "successors": [
+        "t0041",
+        "t0042",
+        "t0043"
+      ]
+    },
+    {
+      "id": "t0041",
+      "name": "Komponenten von Informatiksystemen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam"
+      ],
+      "successors": [
+        "o102",
+        "o103"
+      ]
+    },
+    {
+      "id": "t0042",
+      "name": "Internetarchitektur und Kommunikation",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam"
+      ],
+      "successors": [
+        "o104",
+        "o105",
+        "o106",
+        "o107"
+      ]
+    },
+    {
+      "id": "t0043",
+      "name": "Sicherheit in Netzkommunikation",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam"
+      ],
+      "successors": [
+        "o108"
+      ]
+    },
+    {
+      "id": "t0044",
+      "name": "Kompression und Übertragung",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "eA"
+      ],
+      "successors": [
+        "t0045",
+        "t0046",
+        "t0047"
+      ]
+    },
+    {
+      "id": "t0045",
+      "name": "Datenkompression",
+      "categories": [
+        "Qualifikationsphase",
+        "gA"
+      ],
+      "successors": [
+        "o109",
+        "o110",
+        "o111"
+      ]
+    },
+    {
+      "id": "t0046",
+      "name": "Protokolle zur Datenübertragung",
+      "categories": [
+        "Qualifikationsphase",
+        "gA"
+      ],
+      "successors": [
+        "o112",
+        "o113"
+      ]
+    },
+    {
+      "id": "t0047",
+      "name": "Vertiefung zu Kompression und Fehlersicherung",
+      "categories": [
+        "Qualifikationsphase",
+        "eA"
+      ],
+      "successors": [
+        "o114",
+        "o115",
+        "o116",
+        "o117"
+      ]
+    },
+    {
+      "id": "t0048",
+      "name": "Datenbanken und Datenmodellierung",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "eA"
+      ],
+      "successors": [
+        "t0049",
+        "t0050",
+        "t0051",
+        "t0052"
+      ]
+    },
+    {
+      "id": "t0049",
+      "name": "Relationale Datenbanken: Grundbegriffe und Schemaqualität",
+      "categories": [
+        "Qualifikationsphase",
+        "gA"
+      ],
+      "successors": [
+        "o118",
+        "o119",
+        "o120",
+        "o121",
+        "o122",
+        "o123"
+      ]
+    },
+    {
+      "id": "t0050",
+      "name": "SQL-Abfragen formulieren",
+      "categories": [
+        "Qualifikationsphase",
+        "gA"
+      ],
+      "successors": [
+        "o124",
+        "o125",
+        "o126",
+        "o127",
+        "o128",
+        "o129",
+        "o130",
+        "o131"
+      ]
+    },
+    {
+      "id": "t0051",
+      "name": "ER-Diagramme lesen",
+      "categories": [
+        "Qualifikationsphase",
+        "eA"
+      ],
+      "successors": [
+        "o133",
+        "o134",
+        "o135",
+        "o136",
+        "o137"
+      ]
+    },
+    {
+      "id": "t0052",
+      "name": "Datenmodelle entwerfen, umsetzen und beurteilen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "eA"
+      ],
+      "successors": [
+        "o132",
+        "o138",
+        "o139",
+        "o140",
+        "o141"
+      ]
+    },
+    {
+      "id": "t0053",
+      "name": "Automaten und Sprachen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "eA"
+      ],
+      "successors": [
+        "t0054",
+        "t0057",
+        "t0060",
+        "t0062"
+      ]
+    },
+    {
+      "id": "t0054",
+      "name": "Automatengrundlagen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA"
+      ],
+      "successors": [
+        "t0055",
+        "t0056"
+      ]
+    },
+    {
+      "id": "t0055",
+      "name": "Deterministische endliche Automaten",
+      "categories": [
+        "Qualifikationsphase",
+        "gA"
+      ],
+      "successors": [
+        "o142",
+        "o143",
+        "o144"
+      ]
+    },
+    {
+      "id": "t0056",
+      "name": "Mealy-Automaten",
+      "categories": [
+        "Qualifikationsphase",
+        "gA"
+      ],
+      "successors": [
+        "o145",
+        "o146"
+      ]
+    },
+    {
+      "id": "t0057",
+      "name": "Automaten als Zustandsmodelle",
+      "categories": [
+        "Qualifikationsphase",
+        "gA"
+      ],
+      "successors": [
+        "t0058",
+        "t0059"
+      ]
+    },
+    {
+      "id": "t0058",
+      "name": "Zustandsgraphen entwerfen und implementieren",
+      "categories": [
+        "Qualifikationsphase",
+        "gA"
+      ],
+      "successors": [
+        "o147",
+        "o148"
+      ]
+    },
+    {
+      "id": "t0059",
+      "name": "Funktion und Grenzen von Automaten analysieren",
+      "categories": [
+        "Qualifikationsphase",
+        "gA"
+      ],
+      "successors": [
+        "o149",
+        "o150"
+      ]
+    },
+    {
+      "id": "t0060",
+      "name": "Erweiterte Automatenmodelle",
+      "categories": [
+        "Qualifikationsphase",
+        "eA"
+      ],
+      "successors": [
+        "t0061"
+      ]
+    },
+    {
+      "id": "t0061",
+      "name": "Kellerautomaten",
+      "categories": [
+        "Qualifikationsphase",
+        "eA"
+      ],
+      "successors": [
+        "o151"
+      ]
+    },
+    {
+      "id": "t0062",
+      "name": "Formale Sprachen und Grammatiken",
+      "categories": [
+        "Qualifikationsphase",
+        "eA"
+      ],
+      "successors": [
+        "t0063",
+        "t0064",
+        "t0065"
+      ]
+    },
+    {
+      "id": "t0063",
+      "name": "Grundlagen formaler Sprachen",
+      "categories": [
+        "Qualifikationsphase",
+        "eA"
+      ],
+      "successors": [
+        "o152",
+        "o153",
+        "o154"
+      ]
+    },
+    {
+      "id": "t0064",
+      "name": "Reguläre und kontextfreie Grammatiken",
+      "categories": [
+        "Qualifikationsphase",
+        "eA"
+      ],
+      "successors": [
+        "o155",
+        "o156"
+      ]
+    },
+    {
+      "id": "t0065",
+      "name": "Zusammenhang zwischen Automaten und Grammatiken",
+      "categories": [
+        "Qualifikationsphase",
+        "eA"
+      ],
+      "successors": [
+        "o157"
+      ]
+    },
+    {
+      "id": "o001",
+      "name": "Anweisung als Grundbaustein eines Algorithmus erkennen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Algorithmen und Datenstrukturen",
+        "Grundlagen der Algorithmik"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o002",
+      "name": "Sequenz als Kontrollstruktur erkennen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Algorithmen und Datenstrukturen",
+        "Grundlagen der Algorithmik"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o003",
+      "name": "Verzweigung als Kontrollstruktur erkennen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Algorithmen und Datenstrukturen",
+        "Grundlagen der Algorithmik"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o004",
+      "name": "Schleife als Kontrollstruktur erkennen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Algorithmen und Datenstrukturen",
+        "Grundlagen der Algorithmik"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o005",
+      "name": "Algorithmen mit elementaren Kontrollstrukturen entwerfen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Algorithmen und Datenstrukturen",
+        "Grundlagen der Algorithmik"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o006",
+      "name": "Algorithmen mit elementaren Kontrollstrukturen implementieren",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Algorithmen und Datenstrukturen",
+        "Grundlagen der Algorithmik"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o007",
+      "name": "Algorithmen in standardisierter Form darstellen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Algorithmen und Datenstrukturen",
+        "Grundlagen der Algorithmik"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o008",
+      "name": "Speicherung von Werten in Variablen erläutern",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Algorithmen und Datenstrukturen",
+        "Variablen und Operationen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o009",
+      "name": "Variablen und Wertzuweisungen in Algorithmen verwenden",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Algorithmen und Datenstrukturen",
+        "Variablen und Operationen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o010",
+      "name": "Variablenbelegungen in Tracetabellen darstellen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Algorithmen und Datenstrukturen",
+        "Variablen und Operationen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o011",
+      "name": "Operationen zur Strukturierung von Algorithmen nutzen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Algorithmen und Datenstrukturen",
+        "Variablen und Operationen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o012",
+      "name": "Eigene Operationen definieren",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Algorithmen und Datenstrukturen",
+        "Variablen und Operationen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o013",
+      "name": "Geeignete Variablentypen für Werte wählen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Variablen und Operationen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o014",
+      "name": "Lokale und globale Variablen unterscheiden",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Variablen und Operationen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o015",
+      "name": "Primitive Datentypen und Objektreferenzen unterscheiden",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Variablen und Operationen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o016",
+      "name": "Übergabeparameter in Operationen verwenden",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Variablen und Operationen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o017",
+      "name": "Rückgabewerte in Operationen verwenden",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Variablen und Operationen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o018",
+      "name": "Gegebene Algorithmen analysieren",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Analyse von Algorithmen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o019",
+      "name": "Algorithmen schriftlich verbalisieren",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Analyse von Algorithmen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o020",
+      "name": "Effizienz von Algorithmen anhand von Speicherbedarf und Operationszahl beurteilen",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Algorithmen und Datenstrukturen",
+        "Analyse von Algorithmen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o021",
+      "name": "Rekursionskonzept an Beispielen erläutern",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Algorithmen und Datenstrukturen",
+        "Rekursion"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o022",
+      "name": "Rekursive Algorithmen entwerfen",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Algorithmen und Datenstrukturen",
+        "Rekursion"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o023",
+      "name": "Rekursive Algorithmen implementieren",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Algorithmen und Datenstrukturen",
+        "Rekursion"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o024",
+      "name": "Divide-and-conquer-Strategie erläutern",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Algorithmen und Datenstrukturen",
+        "Rekursion"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o025",
+      "name": "Objekte über Konstruktoroperationen erzeugen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Klassen und Objekte"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o026",
+      "name": "Attribute und Operationen in Klassendiagrammen lesen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Klassen und Objekte"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o027",
+      "name": "Objektdiagramme lesen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Klassen und Objekte"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o028",
+      "name": "Gegebene Klassen und Objekte in Algorithmen verwenden",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Klassen und Objekte"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o029",
+      "name": "Eigene Klassen für Algorithmen entwerfen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Klassen und Objekte"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o030",
+      "name": "Assoziationen zwischen Klassen modellieren",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Algorithmen und Datenstrukturen",
+        "Klassen und Objekte"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o031",
+      "name": "Vererbungsbeziehungen zwischen Klassen modellieren",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Algorithmen und Datenstrukturen",
+        "Klassen und Objekte"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o032",
+      "name": "Klassendiagramme für Klassenbeziehungen erstellen",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Algorithmen und Datenstrukturen",
+        "Klassen und Objekte"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o033",
+      "name": "Länge einer Zeichenkette bestimmen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Algorithmen und Datenstrukturen",
+        "Zeichenketten"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o034",
+      "name": "Ein Zeichen an einer bestimmten Position auslesen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Algorithmen und Datenstrukturen",
+        "Zeichenketten"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o035",
+      "name": "Eine Teilzeichenkette in einem Bereich auslesen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Algorithmen und Datenstrukturen",
+        "Zeichenketten"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o036",
+      "name": "Zwei Zeichenketten verketten",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Algorithmen und Datenstrukturen",
+        "Zeichenketten"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o037",
+      "name": "Zwei Zeichenketten auf Gleichheit prüfen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Algorithmen und Datenstrukturen",
+        "Zeichenketten"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o038",
+      "name": "Eine Zeichenkette auf eine Teilzeichenkette prüfen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Algorithmen und Datenstrukturen",
+        "Zeichenketten"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o039",
+      "name": "Zwei Zeichenketten lexikographisch vergleichen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Algorithmen und Datenstrukturen",
+        "Zeichenketten"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o040",
+      "name": "ASCII-Wert zu einem Zeichen und umgekehrt bestimmen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Algorithmen und Datenstrukturen",
+        "Zeichenketten"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o041",
+      "name": "Elementare Zeichenkettenoperationen in Algorithmen einsetzen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Algorithmen und Datenstrukturen",
+        "Zeichenketten"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o042",
+      "name": "Prinzip statischer Reihungen erläutern",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Statische Reihungen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o043",
+      "name": "Elemente statischer Reihungen über Indizes ansprechen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Statische Reihungen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o044",
+      "name": "Zweidimensionale statische Reihungen mit Zeilen- und Spaltenindex adressieren",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Statische Reihungen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o045",
+      "name": "Größe ein- und zweidimensionaler Reihungen auslesen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Statische Reihungen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o046",
+      "name": "Statische Reihungen mit einer for-each-Schleife durchlaufen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Statische Reihungen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o047",
+      "name": "Suchen in Reihungen erläutern",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Statische Reihungen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o048",
+      "name": "Sortieren in Reihungen erläutern",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Statische Reihungen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o049",
+      "name": "Algorithmen mit eindimensionalen Reihungen entwerfen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Statische Reihungen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o050",
+      "name": "Algorithmen mit eindimensionalen Reihungen implementieren",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Statische Reihungen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o051",
+      "name": "Algorithmen mit zweidimensionalen Reihungen entwerfen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Statische Reihungen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o052",
+      "name": "Algorithmen mit zweidimensionalen Reihungen implementieren",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Statische Reihungen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o053",
+      "name": "Prinzip der Datenstruktur Stapel erläutern",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Stapel"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o054",
+      "name": "Stapeloperationen top, push und pop sicher verwenden",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Stapel"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o055",
+      "name": "Algorithmen mit Stapeln entwerfen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Stapel"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o056",
+      "name": "Algorithmen mit Stapeln implementieren",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Stapel"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o057",
+      "name": "Prinzip der Datenstruktur Schlange erläutern",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Schlangen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o058",
+      "name": "Schlangenoperationen head, enqueue und dequeue sicher verwenden",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Schlangen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o059",
+      "name": "Algorithmen mit Schlangen entwerfen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Schlangen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o060",
+      "name": "Algorithmen mit Schlangen implementieren",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Schlangen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o061",
+      "name": "Prinzip der dynamischen Reihung erläutern",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Dynamische Reihungen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o062",
+      "name": "Operationen einer dynamischen Reihung sicher verwenden",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Dynamische Reihungen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o063",
+      "name": "Algorithmen mit dynamischen Reihungen entwerfen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Dynamische Reihungen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o064",
+      "name": "Algorithmen mit dynamischen Reihungen implementieren",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Algorithmen und Datenstrukturen",
+        "Dynamische Reihungen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o065",
+      "name": "Prinzip des Binärbaums erläutern",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Algorithmen und Datenstrukturen",
+        "Binärbäume"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o066",
+      "name": "Leere Binärbäume und Blätter unterscheiden",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Algorithmen und Datenstrukturen",
+        "Binärbäume"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o067",
+      "name": "Auf Wurzelinhalt und Teilbäume eines Binärbaums zugreifen",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Algorithmen und Datenstrukturen",
+        "Binärbäume"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o068",
+      "name": "Präorder-Traversierung für Binärbäume entwerfen",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Algorithmen und Datenstrukturen",
+        "Binärbäume"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o069",
+      "name": "Präorder-Traversierung für Binärbäume implementieren",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Algorithmen und Datenstrukturen",
+        "Binärbäume"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o070",
+      "name": "Inorder-Traversierung für Binärbäume entwerfen",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Algorithmen und Datenstrukturen",
+        "Binärbäume"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o071",
+      "name": "Inorder-Traversierung für Binärbäume implementieren",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Algorithmen und Datenstrukturen",
+        "Binärbäume"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o072",
+      "name": "Postorder-Traversierung für Binärbäume entwerfen",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Algorithmen und Datenstrukturen",
+        "Binärbäume"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o073",
+      "name": "Postorder-Traversierung für Binärbäume implementieren",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Algorithmen und Datenstrukturen",
+        "Binärbäume"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o074",
+      "name": "Suche in binären Suchbäumen entwerfen",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Algorithmen und Datenstrukturen",
+        "Binärbäume"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o075",
+      "name": "Suche in binären Suchbäumen implementieren",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Algorithmen und Datenstrukturen",
+        "Binärbäume"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o076",
+      "name": "Einfügen in binäre Suchbäume entwerfen",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Algorithmen und Datenstrukturen",
+        "Binärbäume"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o077",
+      "name": "Einfügen in binäre Suchbäume implementieren",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Algorithmen und Datenstrukturen",
+        "Binärbäume"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o078",
+      "name": "Transposition als Verschlüsselungsprinzip beschreiben",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Informationen und Daten",
+        "Kryptologie"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o079",
+      "name": "Substitution als Verschlüsselungsprinzip beschreiben",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Informationen und Daten",
+        "Kryptologie"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o080",
+      "name": "Monoalphabetische Verschlüsselungsverfahren implementieren",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Informationen und Daten",
+        "Kryptologie"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o081",
+      "name": "Caesar-Verfahren anwenden",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Informationen und Daten",
+        "Kryptologie"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o082",
+      "name": "Prinzip der Häufigkeitsanalyse erläutern",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Informationen und Daten",
+        "Kryptologie"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o083",
+      "name": "Sicherheit einfacher Verschlüsselungsverfahren beurteilen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Informationen und Daten",
+        "Kryptologie"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o084",
+      "name": "Polyalphabetische Substitution beschreiben",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Kryptologie"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o085",
+      "name": "Vigenère-Verfahren beschreiben",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Kryptologie"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o086",
+      "name": "Sicherheit eines gegebenen symmetrischen Verschlüsselungsverfahrens beurteilen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Kryptologie"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o087",
+      "name": "Symmetrische und asymmetrische Verschlüsselung unterscheiden",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Kryptologie"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o088",
+      "name": "Anwendungsbereiche symmetrischer und asymmetrischer Verschlüsselung beschreiben",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Kryptologie"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o089",
+      "name": "Prinzip digitaler Signaturen erläutern",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Kryptologie"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o090",
+      "name": "Prinzip digitaler Zertifikate erläutern",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Kryptologie"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o091",
+      "name": "Ein symmetrisches Verschlüsselungsverfahren entwerfen",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Informationen und Daten",
+        "Kryptologie"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o092",
+      "name": "Ein symmetrisches Verschlüsselungsverfahren implementieren",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Informationen und Daten",
+        "Kryptologie"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o093",
+      "name": "Funktionsweise moderner symmetrischer Blockchiffren erläutern",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Informationen und Daten",
+        "Kryptologie"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o094",
+      "name": "Informationelle Selbstbestimmung erläutern",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Informationen und Daten",
+        "Datenschutz"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o095",
+      "name": "Datenschutzrichtlinien für persönliche Daten erläutern",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Informationen und Daten",
+        "Datenschutz"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o096",
+      "name": "Chancen automatisierter Datenanalyse diskutieren",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Datenschutz"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o097",
+      "name": "Risiken automatisierter Datenanalyse diskutieren",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Datenschutz"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o098",
+      "name": "Dualzahlen als Datencodierung beschreiben",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Informationen und Daten",
+        "Codierung"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o099",
+      "name": "ASCII-Codierung beschreiben",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Informationen und Daten",
+        "Codierung"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o100",
+      "name": "RGB-Modell zur Farbcodierung beschreiben",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Informationen und Daten",
+        "Codierung"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o101",
+      "name": "Eine geeignete Codierung für eine Problemstellung wählen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Informationen und Daten",
+        "Codierung"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o102",
+      "name": "Zentrale Komponenten eines Informatiksystems beschreiben",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Informationen und Daten",
+        "Informatiksysteme und Netzwerke"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o103",
+      "name": "Zusammenspiel zentraler Komponenten eines Informatiksystems erläutern",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Informationen und Daten",
+        "Informatiksysteme und Netzwerke"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o104",
+      "name": "Dezentralen Aufbau des Internets beschreiben",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Informationen und Daten",
+        "Informatiksysteme und Netzwerke"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o105",
+      "name": "Dezentralen Aufbau des Internets begründen",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Informationen und Daten",
+        "Informatiksysteme und Netzwerke"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o106",
+      "name": "Client, Server, Router und DNS als Internetkomponenten erläutern",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Informationen und Daten",
+        "Informatiksysteme und Netzwerke"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o107",
+      "name": "Kommunikationswege im Internet beschreiben",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Informationen und Daten",
+        "Informatiksysteme und Netzwerke"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o108",
+      "name": "Sicherheitsaspekte der Kommunikation im Internet beschreiben",
+      "categories": [
+        "Einführungsphase",
+        "gemeinsam",
+        "Informationen und Daten",
+        "Informatiksysteme und Netzwerke"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o109",
+      "name": "Möglichkeiten der Datenkompression beschreiben",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Kompression und Übertragung"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o110",
+      "name": "Lauflängencodierung anwenden",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Kompression und Übertragung"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o111",
+      "name": "Huffman-Codierung beschreiben",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Kompression und Übertragung"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o112",
+      "name": "Ein Protokoll zur Datenübertragung über einen Kommunikationskanal entwerfen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Kompression und Übertragung"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o113",
+      "name": "Ein Protokoll zur Datenübertragung über einen Kommunikationskanal implementieren",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Kompression und Übertragung"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o114",
+      "name": "Ein Kompressionsverfahren für einen gegebenen Sachverhalt entwerfen",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Informationen und Daten",
+        "Kompression und Übertragung"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o115",
+      "name": "Vor- und Nachteile verlustfreier und verlustbehafteter Kompression erläutern",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Informationen und Daten",
+        "Kompression und Übertragung"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o116",
+      "name": "Fehlererkennung mit dem Paritätsbit erläutern",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Informationen und Daten",
+        "Kompression und Übertragung"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o117",
+      "name": "Fehlerkorrektur mit dem (7,4)-Hamming-Code erläutern",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Informationen und Daten",
+        "Kompression und Übertragung"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o118",
+      "name": "Aufbau relationaler Datenbanken mit Datensatz, Attribut, Primärschlüssel, Fremdschlüssel und Tabelle erläutern",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Datenbanken"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o119",
+      "name": "Einfügeanomalien nennen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Datenbanken"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o120",
+      "name": "Änderungsanomalien nennen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Datenbanken"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o121",
+      "name": "Löschanomalien nennen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Datenbanken"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o122",
+      "name": "Redundanzen in einem Datenbankschema erkennen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Datenbanken"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o123",
+      "name": "Ein Datenbankschema auf Anomalien untersuchen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Datenbanken"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o124",
+      "name": "SELECT-FROM-Abfragen formulieren",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Datenbanken"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o125",
+      "name": "WHERE-Bedingungen in SQL-Abfragen formulieren",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Datenbanken"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o126",
+      "name": "Verbundabfragen über mehrere Tabellen formulieren",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Datenbanken"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o127",
+      "name": "Aggregatfunktionen in SQL-Abfragen verwenden",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Datenbanken"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o128",
+      "name": "GROUP-BY-Klauseln in SQL-Abfragen verwenden",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Datenbanken"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o129",
+      "name": "HAVING-Klauseln in SQL-Abfragen verwenden",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Datenbanken"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o130",
+      "name": "ORDER-BY-Klauseln in SQL-Abfragen verwenden",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Datenbanken"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o131",
+      "name": "LIMIT-Klauseln in SQL-Abfragen verwenden",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Datenbanken"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o132",
+      "name": "Relationale Schemata in Kurzschreibweise lesen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Informationen und Daten",
+        "Datenbanken"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o133",
+      "name": "Ein gegebenes ER-Diagramm interpretieren",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Informationen und Daten",
+        "Datenbanken"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o134",
+      "name": "Entitätstypen in einem ER-Diagramm bestimmen",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Informationen und Daten",
+        "Datenbanken"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o135",
+      "name": "Beziehungstypen in einem ER-Diagramm bestimmen",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Informationen und Daten",
+        "Datenbanken"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o136",
+      "name": "Kardinalitäten in einem ER-Diagramm bestimmen",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Informationen und Daten",
+        "Datenbanken"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o137",
+      "name": "Schlüsselattribute in einem ER-Diagramm kennzeichnen",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Informationen und Daten",
+        "Datenbanken"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o138",
+      "name": "Datenbanken mit dem ER-Modell modellieren",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Informationen und Daten",
+        "Datenbanken"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o139",
+      "name": "Ein ER-Modell in ein relationales Schema umsetzen",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Informationen und Daten",
+        "Datenbanken"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o140",
+      "name": "Eine gegebene Datenbankmodellierung beurteilen",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Informationen und Daten",
+        "Datenbanken"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o141",
+      "name": "Eine gegebene Datenbankmodellierung verändern",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Informationen und Daten",
+        "Datenbanken"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o142",
+      "name": "Eingabealphabet eines Automaten angeben",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Automaten und Sprachen",
+        "Automatenmodelle"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o143",
+      "name": "Aufbau eines deterministischen endlichen Automaten beschreiben",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Automaten und Sprachen",
+        "Automatenmodelle"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o144",
+      "name": "Funktionsweise eines deterministischen endlichen Automaten beschreiben",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Automaten und Sprachen",
+        "Automatenmodelle"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o145",
+      "name": "Aufbau eines Mealy-Automaten beschreiben",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Automaten und Sprachen",
+        "Automatenmodelle"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o146",
+      "name": "Funktionsweise eines Mealy-Automaten beschreiben",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Automaten und Sprachen",
+        "Automatenmodelle"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o147",
+      "name": "Automatenmodelle als Zustandsgraphen entwerfen",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Automaten und Sprachen",
+        "Automatenmodelle"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o148",
+      "name": "Automatenmodelle als Zustandsgraphen implementieren",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Automaten und Sprachen",
+        "Automatenmodelle"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o149",
+      "name": "Funktion eines vorgegebenen Automaten analysieren",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Automaten und Sprachen",
+        "Automatenmodelle"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o150",
+      "name": "Grenzen endlicher Automaten bei der Problemlösung erläutern",
+      "categories": [
+        "Qualifikationsphase",
+        "gA",
+        "Automaten und Sprachen",
+        "Automatenmodelle"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o151",
+      "name": "Aufbau eines Kellerautomaten als Erweiterung endlicher Automaten beschreiben",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Automaten und Sprachen",
+        "Automatenmodelle"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o152",
+      "name": "Eigenschaften formaler Sprachen im Vergleich zu natürlichen Sprachen nennen",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Automaten und Sprachen",
+        "Formale Sprachen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o153",
+      "name": "Eine Grammatik mit Nichtterminalen, Terminalen, Startsymbol und Produktionsregeln notieren",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Automaten und Sprachen",
+        "Formale Sprachen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o154",
+      "name": "Die von einer Grammatik erzeugte Sprache beschreiben",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Automaten und Sprachen",
+        "Formale Sprachen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o155",
+      "name": "Reguläre Grammatiken entwerfen",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Automaten und Sprachen",
+        "Formale Sprachen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o156",
+      "name": "Kontextfreie Grammatiken entwerfen",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Automaten und Sprachen",
+        "Formale Sprachen"
+      ],
+      "successors": []
+    },
+    {
+      "id": "o157",
+      "name": "Zusammenhang zwischen regulären Grammatiken und endlichen Automaten erläutern",
+      "categories": [
+        "Qualifikationsphase",
+        "eA",
+        "Automaten und Sprachen",
+        "Formale Sprachen"
+      ],
+      "successors": []
+    }
+  ]
+}

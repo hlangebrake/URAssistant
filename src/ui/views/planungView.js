@@ -66,6 +66,9 @@ window.Unterrichtsassistent.ui.views.planung = {
     const planningRangeDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActivePlanningRangeDraft === "function"
       ? window.UnterrichtsassistentApp.getActivePlanningRangeDraft()
       : null;
+    const curriculumTopicTreeState = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getCurriculumTopicTreeState === "function"
+      ? window.UnterrichtsassistentApp.getCurriculumTopicTreeState()
+      : { status: "failed", error: "Die Stoffplanungsdaten sind nicht verfuegbar.", data: null, expandedPath: [] };
     const snapshot = service && service.snapshot ? service.snapshot : {};
     const referenceDate = service && typeof service.getReferenceDate === "function"
       ? service.getReferenceDate()
@@ -2878,6 +2881,169 @@ window.Unterrichtsassistent.ui.views.planung = {
       ]).join("");
     }
 
+    function buildCurriculumTopicTreeContent() {
+      const treeState = curriculumTopicTreeState || {};
+      const treeData = treeState.data && typeof treeState.data === "object" ? treeState.data : null;
+      const expandedPath = Array.isArray(treeState.expandedPath)
+        ? treeState.expandedPath.map(function (entry) {
+            return String(entry || "").trim();
+          }).filter(Boolean)
+        : [];
+      const gradeFilter = String(treeState.gradeFilter || "").trim();
+      const gradeFilterOptions = [
+        { value: "", label: "Alle Jahrgaenge" },
+        { value: "5/6", label: "5/6" },
+        { value: "7/8", label: "7/8" },
+        { value: "9/10", label: "9/10" },
+        { value: "Einfuehrungsphase", label: "Einfuehrungsphase" },
+        { value: "Qualifikationsphase eA", label: "Qualifikationsphase eA" },
+        { value: "Qualifikationsphase gA", label: "Qualifikationsphase gA" }
+      ];
+      const activePlanId = String(treeState.activePlanId || "").trim();
+      const topicTreePlans = Array.isArray(treeState.plans) ? treeState.plans : [];
+
+      if (String(treeState.status || "").trim() === "loading" || String(treeState.status || "").trim() === "idle") {
+        return '<div class="panel-grid panel-grid--planung-stoff"><article class="panel panel--full panel--planung-stoff"><p class="empty-message">Stoffplanungsdaten werden geladen.</p></article></div>';
+      }
+
+      if (!treeData || !Array.isArray(treeData.nodes)) {
+        return '<div class="panel-grid panel-grid--planung-stoff"><article class="panel panel--full panel--planung-stoff"><p class="empty-message">' + escapeValue(String(treeState.error || "").trim() || "Die Stoffplanungsdaten konnten nicht geladen werden.") + '</p></article></div>';
+      }
+
+      const nodeById = treeData.nodes.reduce(function (lookup, nodeItem) {
+        const nodeId = String(nodeItem && nodeItem.id || "").trim();
+
+        if (nodeId) {
+          lookup[nodeId] = nodeItem;
+        }
+
+        return lookup;
+      }, {});
+      const rootId = String(treeData.root || "").trim();
+
+      function normalizeTopicCategory(categoryValue) {
+        return String(categoryValue || "")
+          .trim()
+          .replace(/Ã¼/g, "ue")
+          .replace(/ü/g, "ue")
+          .replace(/Ü/g, "Ue");
+      }
+
+      function nodeMatchesGradeFilter(nodeItem) {
+        const normalizedFilter = normalizeTopicCategory(gradeFilter);
+        const categories = Array.isArray(nodeItem && nodeItem.categories) ? nodeItem.categories : [];
+
+        if (!normalizedFilter || String(nodeItem && nodeItem.id || "").trim() === rootId) {
+          return true;
+        }
+
+        if (normalizedFilter === "Qualifikationsphase eA") {
+          return categories.some(function (category) {
+            return normalizeTopicCategory(category) === "Qualifikationsphase";
+          }) && categories.some(function (category) {
+            return normalizeTopicCategory(category) === "eA";
+          });
+        }
+
+        if (normalizedFilter === "Qualifikationsphase gA") {
+          return categories.some(function (category) {
+            return normalizeTopicCategory(category) === "Qualifikationsphase";
+          }) && categories.some(function (category) {
+            return normalizeTopicCategory(category) === "gA";
+          });
+        }
+
+        return categories.some(function (category) {
+          return normalizeTopicCategory(category) === normalizedFilter;
+        });
+      }
+
+      function getFilteredSuccessors(nodeItem) {
+        return (Array.isArray(nodeItem && nodeItem.successors) ? nodeItem.successors : []).filter(function (successorId) {
+          const successor = nodeById[String(successorId || "").trim()] || null;
+
+          return successor && nodeHasVisibleBranch(successor);
+        });
+      }
+
+      function nodeHasVisibleBranch(nodeItem) {
+        return Boolean(nodeItem && (nodeMatchesGradeFilter(nodeItem) || getFilteredSuccessors(nodeItem).length));
+      }
+
+      function buildNodeButton(nodeItem, depth) {
+        const nodeId = String(nodeItem && nodeItem.id || "").trim();
+        const successors = getFilteredSuccessors(nodeItem);
+        const isExpanded = expandedPath[depth] === nodeId;
+        const categories = Array.isArray(nodeItem && nodeItem.categories) ? nodeItem.categories : [];
+
+        return [
+          '<button class="planning-topic-tree__node', isExpanded ? ' is-expanded' : '', successors.length ? ' has-children' : '', '" type="button" style="--topic-tree-depth:', escapeValue(String(depth)), ';" onclick="return window.UnterrichtsassistentApp.toggleCurriculumTopicTreeNode(\'', escapeValue(nodeId), '\', ', escapeValue(String(depth)), ')">',
+          '<span class="planning-topic-tree__node-arrow" aria-hidden="true">', successors.length ? (isExpanded ? '&#9662;' : '&#9656;') : '', '</span>',
+          '<span class="planning-topic-tree__node-main">',
+          '<span class="planning-topic-tree__node-title">', escapeValue(String(nodeItem && nodeItem.name || "").trim() || "Ohne Titel"), '</span>',
+          categories.length ? '<span class="planning-topic-tree__node-categories">' + categories.map(function (category) {
+            return '<span>' + escapeValue(category) + '</span>';
+          }).join("") + '</span>' : '',
+          '</span>',
+          successors.length ? '<span class="planning-topic-tree__node-count">' + escapeValue(String(successors.length)) + '</span>' : '',
+          '</button>'
+        ].join("");
+      }
+
+      function buildNodeBranch(nodeId, depth) {
+        const nodeItem = nodeById[String(nodeId || "").trim()] || null;
+        const successors = getFilteredSuccessors(nodeItem);
+        const isExpanded = nodeItem && expandedPath[depth] === String(nodeItem.id || "").trim();
+
+        if (!nodeItem || !nodeHasVisibleBranch(nodeItem)) {
+          return "";
+        }
+
+        return [
+          '<div class="planning-topic-tree__branch">',
+          buildNodeButton(nodeItem, depth),
+          isExpanded && successors.length
+            ? '<div class="planning-topic-tree__children">' + successors.map(function (successorId) {
+                return buildNodeBranch(successorId, depth + 1);
+              }).join("") + '</div>'
+            : '',
+          '</div>'
+        ].join("");
+      }
+
+      return [
+        '<div class="panel-grid panel-grid--planung-stoff">',
+        '<article class="panel panel--full panel--planung-stoff">',
+        '<div class="planning-topic-tree">',
+        '<div class="planning-topic-tree__header">',
+        '<div>',
+        '<h2 class="planning-topic-tree__title">Stoffplanung</h2>',
+        '<p class="planning-topic-tree__hint">Klicke einen Knoten an, um seine Folgeknoten einzublenden. Pro Ebene bleibt jeweils nur ein Zweig geoeffnet.</p>',
+        '</div>',
+        '<div class="planning-topic-tree__filters">',
+        '<label class="import-modal__field import-modal__field--compact-select planning-topic-tree__filter"><span>Stoffplan</span><select onchange="return window.UnterrichtsassistentApp.updateCurriculumTopicTreePlan(this.value)">',
+        topicTreePlans.map(function (plan) {
+          const planId = String(plan && plan.id || "").trim();
+
+          return '<option value="' + escapeValue(planId) + '"' + (planId === activePlanId ? ' selected' : '') + '>' + escapeValue(String(plan && plan.label || "").trim() || "Stoffplan") + '</option>';
+        }).join(""),
+        '</select></label>',
+        '<label class="import-modal__field import-modal__field--compact-select planning-topic-tree__filter"><span>Jahrgang filtern</span><select onchange="return window.UnterrichtsassistentApp.updateCurriculumTopicTreeGradeFilter(this.value)">',
+        gradeFilterOptions.map(function (option) {
+          const optionValue = String(option.value || "").trim();
+
+          return '<option value="' + escapeValue(optionValue) + '"' + (optionValue === gradeFilter ? ' selected' : '') + '>' + escapeValue(option.label) + '</option>';
+        }).join(""),
+        '</select></label>',
+        '</div>',
+        '</div>',
+        rootId && buildNodeBranch(rootId, 0) ? buildNodeBranch(rootId, 0) : '<p class="empty-message">Keine Knoten fuer den gewaehlten Jahrgang gefunden.</p>',
+        '</div>',
+        '</article>',
+        '</div>'
+      ].join("");
+    }
+
     if (planningViewMode === "jahresplanung" && (!startDate || !endDate || startDate > endDate)) {
       return [
         '<div class="panel-grid panel-grid--planung">',
@@ -2905,7 +3071,7 @@ window.Unterrichtsassistent.ui.views.planung = {
     }
 
     if (planningViewMode === "stoffplanung") {
-      return buildInstructionPlanningContent();
+      return buildCurriculumTopicTreeContent();
     }
 
     if (activePlanningDate && activePlanningDate > endDate) {

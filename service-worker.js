@@ -1,4 +1,4 @@
-const CACHE_NAME = "unterrichtsassistent-allinone-v4";
+const CACHE_NAME = "unterrichtsassistent-allinone-v6";
 const APP_SHELL_URL = "./index.html";
 const PRECACHE_URLS = [
   APP_SHELL_URL,
@@ -7,7 +7,9 @@ const PRECACHE_URLS = [
   "./icon.png",
   "./apple-touch-icon.png",
   "./apple-touch-icon-167x167.png",
-  "./apple-touch-icon-152x152.png"
+  "./apple-touch-icon-152x152.png",
+  "./src/data/kc-mathematik-sek-1-sek-2.json",
+  "./src/data/kc-informatik-sek-2.json"
 ];
 
 function isNetworkFirstRequest(request) {

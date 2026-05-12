@@ -787,6 +787,128 @@ button {
   min-width: 0;
 }
 
+.panel-grid--planung-stoff {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.panel--planung-stoff {
+  min-width: 0;
+}
+
+.planning-topic-tree {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.planning-topic-tree__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.planning-topic-tree__title {
+  margin: 0;
+  color: var(--sidebar);
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.planning-topic-tree__hint {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.planning-topic-tree__filter {
+  min-width: min(100%, 260px);
+}
+
+.planning-topic-tree__filters {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.planning-topic-tree__branch,
+.planning-topic-tree__children {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.planning-topic-tree__children {
+  margin-left: clamp(0.35rem, calc((var(--topic-tree-depth, 0) + 1) * 0.2rem), 1rem);
+  padding-left: 0.75rem;
+  border-left: 2px solid rgba(23, 49, 62, 0.08);
+}
+
+.planning-topic-tree__node {
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  min-height: 48px;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid rgba(23, 49, 62, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.planning-topic-tree__node:hover,
+.planning-topic-tree__node:focus-visible,
+.planning-topic-tree__node.is-expanded {
+  outline: none;
+  border-color: rgba(57, 117, 171, 0.26);
+  background: rgba(247, 251, 253, 0.98);
+}
+
+.planning-topic-tree__node-arrow {
+  color: rgba(23, 49, 62, 0.58);
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.planning-topic-tree__node-main {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.planning-topic-tree__node-title {
+  color: rgba(23, 49, 62, 0.9);
+  font-size: 0.9rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.planning-topic-tree__node-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.22rem;
+}
+
+.planning-topic-tree__node-categories span,
+.planning-topic-tree__node-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 0.08rem 0.38rem;
+  border-radius: 999px;
+  background: rgba(23, 49, 62, 0.07);
+  color: rgba(23, 49, 62, 0.58);
+  font-size: 0.68rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .planning-curriculum--embedded {
   min-width: 0;
   max-width: 100%;
