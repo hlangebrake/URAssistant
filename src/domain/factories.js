@@ -57,6 +57,8 @@ function createDomainSnapshot(rawData) {
     activeEvaluationSheetId: rawData.activeEvaluationSheetId || null,
     activeEvidenceToolId: rawData.activeEvidenceToolId || null,
     curriculumLessonCompetencyToolId: rawData.curriculumLessonCompetencyToolId || "",
+    curriculumInstructionTopicTreePlanId: rawData.curriculumInstructionTopicTreePlanId || "",
+    curriculumInstructionTopicTreeGradeFilter: rawData.curriculumInstructionTopicTreeGradeFilter || "",
     activeSeatPlanRoom: rawData.activeSeatPlanRoom || "",
     activeDateTime: rawData.activeDateTime || "",
     activeDateTimeMode: rawData.activeDateTimeMode || "live",
@@ -310,6 +312,8 @@ function serializeDomainSnapshot(snapshot) {
     activeEvaluationSheetId: snapshot.activeEvaluationSheetId || null,
     activeEvidenceToolId: snapshot.activeEvidenceToolId || null,
     curriculumLessonCompetencyToolId: snapshot.curriculumLessonCompetencyToolId || "",
+    curriculumInstructionTopicTreePlanId: snapshot.curriculumInstructionTopicTreePlanId || "",
+    curriculumInstructionTopicTreeGradeFilter: snapshot.curriculumInstructionTopicTreeGradeFilter || "",
     activeSeatPlanRoom: snapshot.activeSeatPlanRoom || "",
     activeDateTime: snapshot.activeDateTime || "",
     activeDateTimeMode: snapshot.activeDateTimeMode || "live",
@@ -333,7 +337,7 @@ function serializeDomainSnapshot(snapshot) {
         }
       });
     }),
-    classes: cloneItems(snapshot.classes, ["id", "name", "room", "subject", "studentIds", "displayColor"]),
+    classes: cloneItems(snapshot.classes, ["id", "name", "room", "subject", "studentIds", "displayColor", "curriculumLessonCompetencyToolId", "curriculumInstructionTopicTreePlanId", "curriculumInstructionTopicTreeGradeFilter"]),
     lessons: cloneItems(snapshot.lessons, ["id", "classId", "subject", "room", "weekday", "startTime", "endTime", "topic"]),
     assessments: cloneItems(snapshot.assessments, ["id", "studentId", "classId", "type", "score", "maxScore", "date", "lessonId", "lessonDate", "room", "recordedAt", "category", "situationType", "demandLevel", "afb1", "afb2", "afb3", "workBehavior", "socialBehavior", "knowledgeGap", "note"]),
     evaluationSheets: cloneEvaluationSheets(snapshot.evaluationSheets || []),
@@ -345,7 +349,7 @@ function serializeDomainSnapshot(snapshot) {
     homeworkRecords: cloneItems(snapshot.homeworkRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "quality", "ignored"]),
     warningRecords: cloneItems(snapshot.warningRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "category", "note"]),
     knowledgeGapRecords: cloneItems(snapshot.knowledgeGapRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "content", "status", "note"]),
-    mathObservationRecords: cloneItems(snapshot.mathObservationRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "primaryCompetency", "competencyIds", "competencyQualities", "processQuality", "marker", "markers", "markerDirection", "markerQuality", "situationType", "demandLevel", "category", "lessonPlanId", "lessonPhaseId", "lessonStepId", "note"]).map(function (item) {
+    mathObservationRecords: cloneItems(snapshot.mathObservationRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "mathObservationQualityScale", "primaryCompetency", "competencyIds", "competencyQualities", "processQuality", "marker", "markers", "markerDirection", "markerQuality", "situationType", "demandLevel", "category", "lessonPlanId", "lessonPhaseId", "lessonStepId", "note"]).map(function (item) {
       return Object.assign({}, item, {
         competencyIds: Array.isArray(item.competencyIds) ? item.competencyIds.slice() : [],
         competencyQualities: Array.isArray(item.competencyQualities)
@@ -405,11 +409,20 @@ function serializeDomainSnapshot(snapshot) {
     planningEvents: cloneItems(snapshot.planningEvents || [], ["id", "title", "startDate", "endDate", "startTime", "endTime", "category", "description", "priority", "showInTimetable", "causesInstructionOutage", "isRecurring", "recurrenceInterval", "recurrenceUnit", "recurrenceUntilDate", "recurrenceMonthlyWeekday", "isExternallyControlled", "controlledByView", "controlledById"]),
     planningCategories: cloneItems(snapshot.planningCategories || [], ["id", "name", "color", "filterLabels"]),
     planningInstructionLessonStatuses: cloneItems(snapshot.planningInstructionLessonStatuses || [], ["id", "classId", "lessonDate", "isCancelled", "cancelReason"]),
-    curriculumSeries: cloneItems(snapshot.curriculumSeries || [], ["id", "classId", "topic", "hourDemand", "color", "startMode", "startDate", "nextSeriesId"]),
-    curriculumSequences: cloneItems(snapshot.curriculumSequences || [], ["id", "seriesId", "topic", "hourDemand", "nextSequenceId"]),
-    curriculumLessonPlans: cloneItems(snapshot.curriculumLessonPlans || [], ["id", "sequenceId", "topic", "summary", "hourType", "functionType", "situationType", "demandLevel", "preparationMode", "preparationText", "preparationTodoId", "homeworkText", "homeworkDueMode", "homeworkDueAmount", "homeworkDueUnit", "competencyFocusAspectId", "competencyAspectIds", "nextLessonId"]).map(function (item) {
+    curriculumSeries: cloneItems(snapshot.curriculumSeries || [], ["id", "classId", "topic", "hourDemand", "color", "startMode", "startDate", "curriculumTopicNodeIds", "nextSeriesId"]).map(function (item) {
       return Object.assign({}, item, {
-        competencyAspectIds: Array.isArray(item.competencyAspectIds) ? item.competencyAspectIds.slice() : []
+        curriculumTopicNodeIds: Array.isArray(item.curriculumTopicNodeIds) ? item.curriculumTopicNodeIds.slice() : []
+      });
+    }),
+    curriculumSequences: cloneItems(snapshot.curriculumSequences || [], ["id", "seriesId", "topic", "hourDemand", "curriculumTopicNodeIds", "nextSequenceId"]).map(function (item) {
+      return Object.assign({}, item, {
+        curriculumTopicNodeIds: Array.isArray(item.curriculumTopicNodeIds) ? item.curriculumTopicNodeIds.slice() : []
+      });
+    }),
+    curriculumLessonPlans: cloneItems(snapshot.curriculumLessonPlans || [], ["id", "sequenceId", "topic", "summary", "hourType", "functionType", "situationType", "demandLevel", "preparationMode", "preparationText", "preparationTodoId", "homeworkText", "homeworkDueMode", "homeworkDueAmount", "homeworkDueUnit", "competencyFocusAspectId", "competencyAspectIds", "curriculumTopicNodeIds", "nextLessonId"]).map(function (item) {
+      return Object.assign({}, item, {
+        competencyAspectIds: Array.isArray(item.competencyAspectIds) ? item.competencyAspectIds.slice() : [],
+        curriculumTopicNodeIds: Array.isArray(item.curriculumTopicNodeIds) ? item.curriculumTopicNodeIds.slice() : []
       });
     }),
     curriculumLessonPhases: cloneItems(snapshot.curriculumLessonPhases || [], ["id", "lessonPlanId", "title", "durationMinutes", "isReserve", "situationType", "demandLevel", "nextPhaseId"]),

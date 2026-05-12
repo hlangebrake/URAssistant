@@ -66,9 +66,18 @@ window.Unterrichtsassistent.ui.views.planung = {
     const planningRangeDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActivePlanningRangeDraft === "function"
       ? window.UnterrichtsassistentApp.getActivePlanningRangeDraft()
       : null;
-    const curriculumTopicTreeState = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getCurriculumTopicTreeState === "function"
+    const curriculumTopicTreeState = planningViewMode === "stoffplanung" && window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getCurriculumTopicTreeState === "function"
       ? window.UnterrichtsassistentApp.getCurriculumTopicTreeState()
       : { status: "failed", error: "Die Stoffplanungsdaten sind nicht verfuegbar.", data: null, expandedPath: [] };
+    const curriculumInstructionTopicTreeState = planningViewMode === "unterrichtsplanung" && window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getCurriculumInstructionTopicTreeState === "function"
+      ? window.UnterrichtsassistentApp.getCurriculumInstructionTopicTreeState()
+      : { status: "failed", error: "Die Stoffplanungsdaten sind nicht verfuegbar.", data: null, expandedPath: [] };
+    const curriculumInstructionTopicTreeSettings = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getCurriculumInstructionTopicTreeSettings === "function"
+      ? window.UnterrichtsassistentApp.getCurriculumInstructionTopicTreeSettings()
+      : { activePlanId: "", gradeFilter: "", plans: [] };
+    const curriculumTopicSelectionModal = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveCurriculumTopicSelectionModal === "function"
+      ? window.UnterrichtsassistentApp.getActiveCurriculumTopicSelectionModal()
+      : null;
     const snapshot = service && service.snapshot ? service.snapshot : {};
     const referenceDate = service && typeof service.getReferenceDate === "function"
       ? service.getReferenceDate()
@@ -1513,6 +1522,17 @@ window.Unterrichtsassistent.ui.views.planung = {
       const missingPlanningCapacityUnits = Object.keys(seriesAssignments || {}).reduce(function (sum, seriesId) {
         return sum + Math.max(0, Number(seriesAssignments[seriesId] && seriesAssignments[seriesId].unassignedDemand || 0));
       }, 0);
+      const instructionTopicPlanId = String(curriculumInstructionTopicTreeSettings.activePlanId || "").trim();
+      const instructionTopicGradeFilter = String(curriculumInstructionTopicTreeSettings.gradeFilter || "").trim();
+      const topicGradeFilterOptions = [
+        { value: "", label: "Alle Jahrgaenge" },
+        { value: "5/6", label: "5/6" },
+        { value: "7/8", label: "7/8" },
+        { value: "9/10", label: "9/10" },
+        { value: "Einfuehrungsphase", label: "Einfuehrungsphase" },
+        { value: "Qualifikationsphase eA", label: "Qualifikationsphase eA" },
+        { value: "Qualifikationsphase gA", label: "Qualifikationsphase gA" }
+      ];
 
       if (!activeClass) {
         return [
@@ -1537,8 +1557,23 @@ window.Unterrichtsassistent.ui.views.planung = {
             return '<option value="' + escapeValue(optionId) + '"' + (optionId === curriculumLessonCompetencyToolId ? ' selected' : '') + '>' + escapeValue(label) + '</option>';
           }).join("") || '<option value="">Keine Kompetenzquelle</option>',
           '</select></label>',
+          '<label class="import-modal__field import-modal__field--compact-select"><span>Stoffplan</span><select onchange="return window.UnterrichtsassistentApp.updateCurriculumInstructionTopicTreePlan(this.value)">',
+          (Array.isArray(curriculumInstructionTopicTreeSettings.plans) ? curriculumInstructionTopicTreeSettings.plans : []).map(function (plan) {
+            const planId = String(plan && plan.id || "").trim();
+
+            return '<option value="' + escapeValue(planId) + '"' + (planId === instructionTopicPlanId ? ' selected' : '') + '>' + escapeValue(String(plan && plan.label || "").trim() || "Stoffplan") + '</option>';
+          }).join(""),
+          '</select></label>',
+          '<label class="import-modal__field import-modal__field--compact-select"><span>Jahrgang filtern</span><select onchange="return window.UnterrichtsassistentApp.updateCurriculumInstructionTopicTreeGradeFilter(this.value)">',
+          topicGradeFilterOptions.map(function (option) {
+            const optionValue = String(option.value || "").trim();
+
+            return '<option value="' + escapeValue(optionValue) + '"' + (optionValue === instructionTopicGradeFilter ? ' selected' : '') + '>' + escapeValue(option.label) + '</option>';
+          }).join(""),
+          '</select></label>',
           '</section>'
         ].join("") : '',
+        isPlanningAdminMode ? '' : [
         '<section class="planning-instruction__section planning-instruction__section--planned">',
         '<div class="planning-instruction__section-header">',
         '<h2 class="planning-instruction__title">Geplante Unterrichtsstunden</h2>',
@@ -1598,6 +1633,7 @@ window.Unterrichtsassistent.ui.views.planung = {
         '</section>',
         buildPlanningInstructionLessonModal(instructionAssignmentData),
         buildCurriculumStepCompetencyModal(),
+        ].join(""),
         '</article>',
         '</div>'
       ].join("");
@@ -2194,6 +2230,260 @@ window.Unterrichtsassistent.ui.views.planung = {
       return Math.max(168, sequenceWidths + 58);
     }
 
+    function buildCurriculumTopicSelectionModal() {
+      const treeState = curriculumInstructionTopicTreeState || {};
+      const treeData = treeState.data && typeof treeState.data === "object" ? treeState.data : null;
+      const selectionDraft = curriculumTopicSelectionModal || null;
+      const targetType = String(selectionDraft && selectionDraft.targetType || "").trim();
+      const expandedPath = Array.isArray(selectionDraft && selectionDraft.expandedPath)
+        ? selectionDraft.expandedPath.map(function (entry) {
+            return String(entry || "").trim();
+          }).filter(Boolean)
+        : [];
+      const selectedLookup = (Array.isArray(selectionDraft && selectionDraft.selectedNodeIds) ? selectionDraft.selectedNodeIds : []).reduce(function (lookup, nodeId) {
+        const normalizedNodeId = String(nodeId || "").trim();
+
+        if (normalizedNodeId) {
+          lookup[normalizedNodeId] = true;
+        }
+
+        return lookup;
+      }, {});
+      const restriction = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getCurriculumTopicSelectionRestriction === "function"
+        ? window.UnterrichtsassistentApp.getCurriculumTopicSelectionRestriction()
+        : { isRestricted: false, allowedNodeIds: {} };
+      const allowedNodeIds = restriction && restriction.allowedNodeIds ? restriction.allowedNodeIds : {};
+      const isRestricted = Boolean(restriction && restriction.isRestricted);
+      const gradeFilter = String(treeState.gradeFilter || "").trim();
+      const title = targetType === "series"
+        ? "Stoffinhalt der Unterrichtsreihe"
+        : (targetType === "sequence" ? "Stoffinhalt der Unterrichtssequenz" : "Stoffinhalt der Unterrichtsstunde");
+
+      if (!selectionDraft) {
+        return "";
+      }
+
+      function buildSimpleTopicSelectionModalMessage(message) {
+        return [
+          '<div class="import-modal is-open" id="curriculumTopicSelectionModal">',
+          '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeCurriculumTopicSelectionModal()"></div>',
+          '<div class="import-modal__dialog import-modal__dialog--planning import-modal__dialog--curriculum import-modal__dialog--curriculum-topic" role="dialog" aria-modal="true" aria-labelledby="curriculumTopicSelectionTitle">',
+          '<div class="import-modal__header"><div><h3 id="curriculumTopicSelectionTitle">', escapeValue(title), '</h3></div>',
+          '<div class="import-modal__icon-actions"><button class="import-modal__icon-button import-modal__icon-button--cancel" type="button" aria-label="Auswahl abbrechen" onclick="return window.UnterrichtsassistentApp.closeCurriculumTopicSelectionModal()">&#10005;</button></div></div>',
+          '<p class="empty-message">', escapeValue(message), '</p>',
+          '</div></div>'
+        ].join("");
+      }
+
+      if (String(treeState.status || "").trim() === "loading" || String(treeState.status || "").trim() === "idle") {
+        return buildSimpleTopicSelectionModalMessage("Stoffplanungsdaten werden geladen.");
+      }
+
+      if (!treeData || !Array.isArray(treeData.nodes)) {
+        return buildSimpleTopicSelectionModalMessage(String(treeState.error || "").trim() || "Die Stoffplanungsdaten konnten nicht geladen werden.");
+      }
+
+      const nodeById = treeData.nodes.reduce(function (lookup, nodeItem) {
+        const nodeId = String(nodeItem && nodeItem.id || "").trim();
+
+        if (nodeId) {
+          lookup[nodeId] = nodeItem;
+        }
+
+        return lookup;
+      }, {});
+      const parentById = treeData.nodes.reduce(function (lookup, nodeItem) {
+        const parentId = String(nodeItem && nodeItem.id || "").trim();
+
+        (Array.isArray(nodeItem && nodeItem.successors) ? nodeItem.successors : []).forEach(function (successorId) {
+          const normalizedSuccessorId = String(successorId || "").trim();
+
+          if (parentId && normalizedSuccessorId) {
+            lookup[normalizedSuccessorId] = parentId;
+          }
+        });
+
+        return lookup;
+      }, {});
+      const rootId = String(treeData.root || "").trim();
+
+      function normalizeTopicCategory(categoryValue) {
+        return String(categoryValue || "")
+          .trim()
+          .replace(/ÃƒÂ¼/g, "ue")
+          .replace(/Ã¼/g, "ue")
+          .replace(/Ãœ/g, "Ue")
+          .replace(/ü/g, "ue")
+          .replace(/Ü/g, "Ue");
+      }
+
+      function nodeMatchesGradeFilter(nodeItem) {
+        const normalizedFilter = normalizeTopicCategory(gradeFilter);
+        const categories = Array.isArray(nodeItem && nodeItem.categories) ? nodeItem.categories : [];
+
+        if (!normalizedFilter || String(nodeItem && nodeItem.id || "").trim() === rootId) {
+          return true;
+        }
+
+        if (normalizedFilter === "Qualifikationsphase eA") {
+          return categories.some(function (category) {
+            return normalizeTopicCategory(category) === "Qualifikationsphase";
+          }) && categories.some(function (category) {
+            return normalizeTopicCategory(category) === "eA";
+          });
+        }
+
+        if (normalizedFilter === "Qualifikationsphase gA") {
+          return categories.some(function (category) {
+            return normalizeTopicCategory(category) === "Qualifikationsphase";
+          }) && categories.some(function (category) {
+            return normalizeTopicCategory(category) === "gA";
+          });
+        }
+
+        return categories.some(function (category) {
+          return normalizeTopicCategory(category) === normalizedFilter;
+        });
+      }
+
+      function getFilteredSuccessors(nodeItem) {
+        return (Array.isArray(nodeItem && nodeItem.successors) ? nodeItem.successors : []).filter(function (successorId) {
+          const normalizedSuccessorId = String(successorId || "").trim();
+          const successor = nodeById[normalizedSuccessorId] || null;
+
+          return successor && (!isRestricted || Boolean(allowedNodeIds[normalizedSuccessorId])) && nodeHasVisibleBranch(successor);
+        });
+      }
+
+      function nodeHasVisibleBranch(nodeItem) {
+        const normalizedNodeId = String(nodeItem && nodeItem.id || "").trim();
+
+        return Boolean(nodeItem
+          && (!isRestricted || Boolean(allowedNodeIds[normalizedNodeId]))
+          && (nodeMatchesGradeFilter(nodeItem) || getFilteredSuccessors(nodeItem).length));
+      }
+
+      function buildNodeBranch(nodeId, depth) {
+        const nodeItem = nodeById[String(nodeId || "").trim()] || null;
+        const normalizedNodeId = String(nodeItem && nodeItem.id || "").trim();
+        const successors = getFilteredSuccessors(nodeItem);
+        const isExpanded = nodeItem && expandedPath[depth] === normalizedNodeId;
+        const categories = Array.isArray(nodeItem && nodeItem.categories) ? nodeItem.categories : [];
+        const isSelectable = !isRestricted || Boolean(allowedNodeIds[normalizedNodeId]);
+
+        if (!nodeItem || !nodeHasVisibleBranch(nodeItem)) {
+          return "";
+        }
+
+        return [
+          '<div class="planning-topic-tree__branch">',
+          '<div class="planning-topic-tree__select-row', isExpanded ? ' is-expanded' : '', isSelectable ? '' : ' is-disabled', '" style="--topic-tree-depth:', escapeValue(String(depth)), ';">',
+          '<label class="planning-topic-tree__check" onclick="event.stopPropagation()">',
+          '<input type="checkbox"', selectedLookup[normalizedNodeId] ? ' checked' : '', isSelectable ? '' : ' disabled', ' onchange="return window.UnterrichtsassistentApp.toggleCurriculumTopicSelectionNodeChecked(\'', escapeValue(normalizedNodeId), '\', this.checked)">',
+          '</label>',
+          '<button class="planning-topic-tree__node', isExpanded ? ' is-expanded' : '', successors.length ? ' has-children' : '', '" type="button" onclick="return window.UnterrichtsassistentApp.toggleCurriculumTopicSelectionNode(\'', escapeValue(normalizedNodeId), '\', ', escapeValue(String(depth)), ')">',
+          '<span class="planning-topic-tree__node-arrow" aria-hidden="true">', successors.length ? (isExpanded ? '&#9662;' : '&#9656;') : '', '</span>',
+          '<span class="planning-topic-tree__node-main">',
+          '<span class="planning-topic-tree__node-title">', escapeValue(String(nodeItem && nodeItem.name || "").trim() || "Ohne Titel"), '</span>',
+          categories.length ? '<span class="planning-topic-tree__node-categories">' + categories.map(function (category) {
+            return '<span>' + escapeValue(category) + '</span>';
+          }).join("") + '</span>' : '',
+          '</span>',
+          successors.length ? '<span class="planning-topic-tree__node-count">' + escapeValue(String(successors.length)) + '</span>' : '',
+          '</button>',
+          '</div>',
+          isExpanded && successors.length
+            ? '<div class="planning-topic-tree__children">' + successors.map(function (successorId) {
+                return buildNodeBranch(successorId, depth + 1);
+              }).join("") + '</div>'
+            : '',
+          '</div>'
+        ].join("");
+      }
+
+      const visibleRootIds = isRestricted
+        ? Object.keys(allowedNodeIds).filter(function (nodeId) {
+            const parentId = parentById[String(nodeId || "").trim()] || "";
+
+            return !parentId || !allowedNodeIds[parentId];
+          })
+        : [rootId];
+      const treeMarkup = visibleRootIds.map(function (nodeId) {
+        return buildNodeBranch(nodeId, 0);
+      }).filter(Boolean).join("");
+      const finalTreeMarkup = treeMarkup
+        ? treeMarkup
+        : '<p class="empty-message">Keine Knoten fuer den gewaehlten Jahrgang gefunden.</p>';
+
+      return [
+        '<div class="import-modal is-open" id="curriculumTopicSelectionModal">',
+        '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeCurriculumTopicSelectionModal()"></div>',
+        '<div class="import-modal__dialog import-modal__dialog--planning import-modal__dialog--curriculum import-modal__dialog--curriculum-topic" role="dialog" aria-modal="true" aria-labelledby="curriculumTopicSelectionTitle">',
+        '<div class="import-modal__header">',
+        '<div><h3 id="curriculumTopicSelectionTitle">', escapeValue(title), '</h3>',
+        isRestricted ? '<p class="planning-topic-tree__modal-hint">Auswaehlbar sind die zugehoerigen Knoten der uebergeordneten Ebene und deren Kindknoten.</p>' : '',
+        '</div>',
+        '<div class="import-modal__icon-actions">',
+        '<button class="import-modal__icon-button import-modal__icon-button--confirm" type="button" aria-label="Stoffinhalt uebernehmen" onclick="return window.UnterrichtsassistentApp.confirmCurriculumTopicSelectionModal()">&#10003;</button>',
+        '<button class="import-modal__icon-button import-modal__icon-button--cancel" type="button" aria-label="Auswahl abbrechen" onclick="return window.UnterrichtsassistentApp.closeCurriculumTopicSelectionModal()">&#10005;</button>',
+        '</div>',
+        '</div>',
+        '<div class="planning-topic-tree planning-topic-tree--selection">',
+        finalTreeMarkup,
+        '</div>',
+        '</div>',
+        '</div>'
+      ].join("");
+    }
+
+    function buildCurriculumTopicPickerSummary(nodeIds) {
+      const selectedNodeIds = Array.isArray(nodeIds)
+        ? nodeIds.map(function (nodeId) {
+            return String(nodeId || "").trim();
+          }).filter(Boolean)
+        : [];
+      const treeData = curriculumInstructionTopicTreeState && curriculumInstructionTopicTreeState.data && typeof curriculumInstructionTopicTreeState.data === "object"
+        ? curriculumInstructionTopicTreeState.data
+        : null;
+      const nodeById = treeData && Array.isArray(treeData.nodes)
+        ? treeData.nodes.reduce(function (lookup, nodeItem) {
+            const nodeId = String(nodeItem && nodeItem.id || "").trim();
+
+            if (nodeId) {
+              lookup[nodeId] = nodeItem;
+            }
+
+            return lookup;
+          }, {})
+        : {};
+
+      if (!selectedNodeIds.length) {
+        return '<div class="curriculum-topic-picker__selected is-empty">Keine Stoffinhalte ausgewaehlt</div>';
+      }
+
+      return [
+        '<div class="curriculum-topic-picker__selected">',
+        selectedNodeIds.map(function (nodeId) {
+          const nodeItem = nodeById[nodeId] || null;
+          const label = String(nodeItem && nodeItem.name || "").trim() || nodeId;
+
+          return '<span class="curriculum-topic-picker__chip">' + escapeValue(label) + '</span>';
+        }).join(""),
+        '</div>'
+      ].join("");
+    }
+
+    function buildCurriculumTopicPickerButton(targetType, nodeIds) {
+      const normalizedTargetType = String(targetType || "").trim();
+
+      return [
+        '<div class="curriculum-topic-picker">',
+        '<button class="secondary-text-action curriculum-topic-picker__button" type="button" onclick="return window.UnterrichtsassistentApp.openCurriculumTopicSelectionModal(\'', escapeValue(normalizedTargetType), '\')">Stoffinhalt</button>',
+        buildCurriculumTopicPickerSummary(nodeIds),
+        '</div>'
+      ].join("");
+    }
+
     function buildCurriculumSeriesModal() {
       if (!curriculumSeriesDraft) {
         return "";
@@ -2216,6 +2506,7 @@ window.Unterrichtsassistent.ui.views.planung = {
         '<label class="import-modal__field"><span>Beginn</span><select id="curriculumSeriesStartModeInput" onchange="return window.UnterrichtsassistentApp.handleCurriculumSeriesStartModeChange(this.value)"><option value="automatic"', String(curriculumSeriesDraft.startMode || "automatic") === "manual" ? '' : ' selected', '>Automatik</option><option value="manual"', String(curriculumSeriesDraft.startMode || "automatic") === "manual" ? ' selected' : '', '>Manuell</option></select></label>',
         '<label class="import-modal__field curriculum-series-form__start-date-field" id="curriculumSeriesStartDateField"', String(curriculumSeriesDraft.startMode || "automatic") === "manual" ? '' : ' hidden', '><span>Beginndatum</span><input id="curriculumSeriesStartDateInput" class="curriculum-series-form__start-date-input" type="date" value="', escapeValue(String(curriculumSeriesDraft.startDate || "")), '"', String(curriculumSeriesDraft.startMode || "automatic") === "manual" ? '' : ' disabled', '></label>',
         '<label class="import-modal__field curriculum-series-form__color-field"><span>Farbe</span><span class="curriculum-series-form__color-input-wrap"><span id="curriculumSeriesColorPreview" class="curriculum-series-form__color-preview" style="background:', escapeValue(curriculumSeriesDraft.color || "#d9d4cb"), ';"></span><input id="curriculumSeriesColorInput" class="curriculum-series-form__color-input" type="color" value="', escapeValue(curriculumSeriesDraft.color || "#d9d4cb"), '" oninput="window.UnterrichtsassistentApp.handleCurriculumSeriesColorPickerInput(this.value)" onchange="window.UnterrichtsassistentApp.handleCurriculumSeriesColorPickerInput(this.value)"></span></label>',
+        buildCurriculumTopicPickerButton("series", curriculumSeriesDraft.curriculumTopicNodeIds),
         '<div class="import-modal__actions">',
         curriculumSeriesDraft.id
           ? '<button class="circle-action circle-action--danger" type="button" onclick="return window.UnterrichtsassistentApp.deleteCurriculumSeries(\'' + escapeValue(String(curriculumSeriesDraft.id || "")) + '\')">Loeschen</button>'
@@ -2246,6 +2537,7 @@ window.Unterrichtsassistent.ui.views.planung = {
         '<form class="import-modal__form curriculum-series-form" id="curriculumSequenceForm" autocomplete="off" method="post" action="about:blank" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitCurriculumSequenceModal(event)">',
         '<label class="import-modal__field"><span>Thema</span><input id="curriculumSequenceTopicInput" type="text" value="', escapeValue(curriculumSequenceDraft.topic || ""), '" placeholder="Thema der Unterrichtssequenz"></label>',
         '<label class="import-modal__field"><span>Stundenbedarf</span><input id="curriculumSequenceHourDemandInput" type="number" min="0" step="1" value="', escapeValue(String(curriculumSequenceDraft.hourDemand || 0)), '" placeholder="0"></label>',
+        buildCurriculumTopicPickerButton("sequence", curriculumSequenceDraft.curriculumTopicNodeIds),
         '<div class="import-modal__actions">',
         curriculumSequenceDraft.id
           ? '<button class="circle-action circle-action--danger" type="button" onclick="return window.UnterrichtsassistentApp.deleteCurriculumSequence(\'' + escapeValue(String(curriculumSequenceDraft.id || "")) + '\')">Loeschen</button>'
@@ -2274,7 +2566,7 @@ window.Unterrichtsassistent.ui.views.planung = {
       }, {});
       const selectedLessonAspectCount = selectedLessonAspectIds.length;
       const focusAspectId = String(curriculumLessonDraft.competencyFocusAspectId || "").trim();
-      const lessonCompetencySelection = aspects.length
+      const lessonCompetencyFocusSelection = aspects.length
         ? [
             '<label class="import-modal__field"><span>Schwerpunkt</span><select id="curriculumLessonCompetencyFocusInput">',
             '<option value=""', !focusAspectId ? ' selected' : '', '>Kein Schwerpunkt</option>',
@@ -2287,7 +2579,11 @@ window.Unterrichtsassistent.ui.views.planung = {
 
               return '<option value="' + escapeValue(aspectId) + '"' + (normalizeCurriculumCompetencyAspectId(focusAspectId) === aspectId ? ' selected' : '') + '>' + escapeValue(String(aspect && (aspect.label || aspect.titel) || "").trim() || "Aspekt") + '</option>';
             }).join(""),
-            '</select></label>',
+            '</select></label>'
+          ].join("")
+        : '<label class="import-modal__field"><span>Schwerpunkt</span><select id="curriculumLessonCompetencyFocusInput" disabled><option value="">Keine Aspekte verfuegbar</option></select></label>';
+      const lessonCompetencyMultiSelection = aspects.length
+        ? [
             '<details class="planning-lesson-flow__competency-dropdown">',
             '<summary>Mehrfachauswahl Kompetenz <span>', selectedLessonAspectCount ? escapeValue(String(selectedLessonAspectCount)) + ' gewaehlt' : 'Keine Auswahl', '</span></summary>',
             '<div class="planning-lesson-flow__competency-dropdown-list">',
@@ -2308,10 +2604,7 @@ window.Unterrichtsassistent.ui.views.planung = {
             '</div>',
             '</details>'
           ].join("")
-        : [
-            '<label class="import-modal__field"><span>Schwerpunkt</span><select id="curriculumLessonCompetencyFocusInput" disabled><option value="">Keine Aspekte verfuegbar</option></select></label>',
-            '<p class="empty-message">Im ausgewaehlten Werkzeug sind noch keine Aspekte angelegt.</p>'
-          ].join("");
+        : '<p class="empty-message curriculum-lesson-form__compact-message">Im ausgewaehlten Werkzeug sind noch keine Aspekte angelegt.</p>';
 
       return [
         '<div class="import-modal is-open" id="curriculumLessonModal">',
@@ -2325,15 +2618,21 @@ window.Unterrichtsassistent.ui.views.planung = {
         '</div>',
         '</div>',
         '<form class="import-modal__form curriculum-series-form curriculum-lesson-form" id="curriculumLessonForm" autocomplete="off" method="post" action="about:blank" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitCurriculumLessonModal(event)">',
-        '<div class="curriculum-lesson-form__main">',
-        '<label class="import-modal__field"><span>Thema</span><input id="curriculumLessonTopicInput" type="text" value="', escapeValue(curriculumLessonDraft.topic || ""), '" placeholder="Thema der Unterrichtsstunde"></label>',
+        '<label class="import-modal__field curriculum-lesson-form__title-field"><span>Thema</span><input id="curriculumLessonTopicInput" type="text" value="', escapeValue(curriculumLessonDraft.topic || ""), '" placeholder="Thema der Unterrichtsstunde"></label>',
+        '<section class="curriculum-lesson-form__main" aria-label="Einstellungen">',
+        '<div class="curriculum-lesson-form__settings-grid">',
         '<label class="import-modal__field"><span>Stundentyp</span><select id="curriculumLessonHourTypeInput"><option value="single"', String(curriculumLessonDraft.hourType || "single") === "single" ? ' selected' : '', '>Einzelstunde</option><option value="double"', String(curriculumLessonDraft.hourType || "single") === "double" ? ' selected' : '', '>Doppelstunde</option></select></label>',
         '<label class="import-modal__field"><span>Funktion</span><select id="curriculumLessonFunctionTypeInput"><option value=""', !String(curriculumLessonDraft.functionType || "").trim() ? ' selected' : '', '></option><option value="erarbeiten"', String(curriculumLessonDraft.functionType || "").trim() === 'erarbeiten' ? ' selected' : '', '>Erarbeiten</option><option value="vertiefen"', String(curriculumLessonDraft.functionType || "").trim() === 'vertiefen' ? ' selected' : '', '>Vertiefen</option><option value="ueben"', String(curriculumLessonDraft.functionType || "").trim() === 'ueben' ? ' selected' : '', '>Ueben</option><option value="wiederholen"', String(curriculumLessonDraft.functionType || "").trim() === 'wiederholen' ? ' selected' : '', '>Wiederholen</option><option value="ueberpruefen"', String(curriculumLessonDraft.functionType || "").trim() === 'ueberpruefen' ? ' selected' : '', '>Ueberpruefen</option></select></label>',
         '<label class="import-modal__field"><span>ueberwiegend Situation</span><select id="curriculumLessonSituationTypeInput"><option value=""', !String(curriculumLessonDraft.situationType || "").trim() ? ' selected' : '', '></option><option value="lernen"', String(curriculumLessonDraft.situationType || "").trim() === 'lernen' ? ' selected' : '', '>Lernen</option><option value="leisten"', String(curriculumLessonDraft.situationType || "").trim() === 'leisten' ? ' selected' : '', '>Leisten</option></select></label>',
         '<label class="import-modal__field"><span>ueberwiegend Anforderungsbereich</span><select id="curriculumLessonDemandLevelInput"><option value=""', !String(curriculumLessonDraft.demandLevel || "").trim() ? ' selected' : '', '></option><option value="afb1"', String(curriculumLessonDraft.demandLevel || "").trim() === 'afb1' ? ' selected' : '', '>AFB1</option><option value="afb1/2"', String(curriculumLessonDraft.demandLevel || "").trim() === 'afb1/2' ? ' selected' : '', '>AFB1/2</option><option value="afb2"', String(curriculumLessonDraft.demandLevel || "").trim() === 'afb2' ? ' selected' : '', '>AFB2</option><option value="afb2/3"', String(curriculumLessonDraft.demandLevel || "").trim() === 'afb2/3' ? ' selected' : '', '>AFB2/3</option><option value="afb3"', String(curriculumLessonDraft.demandLevel || "").trim() === 'afb3' ? ' selected' : '', '>AFB3</option></select></label>',
-        lessonCompetencySelection,
+        '</div>',
+        '<div class="curriculum-lesson-form__resource-grid">',
+        lessonCompetencyFocusSelection,
+        lessonCompetencyMultiSelection,
+        buildCurriculumTopicPickerButton("lesson", curriculumLessonDraft.curriculumTopicNodeIds),
         '</div>',
         '<label class="import-modal__field curriculum-lesson-form__summary"><span>Kurze Zusammenfassung</span><textarea id="curriculumLessonSummaryInput" rows="10" placeholder="Kurze Zusammenfassung der Stunde">', escapeValue(String(curriculumLessonDraft.summary || "").trim()), '</textarea></label>',
+        '</section>',
         '<div class="import-modal__actions">',
         curriculumLessonDraft.id
           ? '<button class="circle-action circle-action--danger" type="button" onclick="return window.UnterrichtsassistentApp.deleteCurriculumLesson(\'' + escapeValue(String(curriculumLessonDraft.id || "")) + '\')">Loeschen</button>'
@@ -2877,6 +3176,7 @@ window.Unterrichtsassistent.ui.views.planung = {
         buildCurriculumSeriesModal(),
         buildCurriculumSequenceModal(),
         buildCurriculumLessonModal(),
+        buildCurriculumTopicSelectionModal(),
         shouldWrapInPanel ? '</div>' : ''
       ]).join("");
     }

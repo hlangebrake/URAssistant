@@ -909,6 +909,88 @@ button {
   white-space: nowrap;
 }
 
+.planning-topic-tree--selection {
+  max-height: min(68vh, 720px);
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
+.planning-topic-tree__select-row {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  align-items: stretch;
+  gap: 0.35rem;
+}
+
+.planning-topic-tree__select-row.is-disabled {
+  opacity: 0.52;
+}
+
+.planning-topic-tree__check {
+  display: grid;
+  place-items: center;
+  min-height: 48px;
+  border: 1px solid rgba(23, 49, 62, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.planning-topic-tree__check input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent);
+}
+
+.planning-topic-tree__select-row .planning-topic-tree__node {
+  min-width: 0;
+}
+
+.planning-topic-tree__modal-hint {
+  margin: 0.25rem 0 0;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.curriculum-topic-picker {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.curriculum-topic-picker__button {
+  justify-self: start;
+  min-height: 36px;
+  padding-inline: 0.85rem;
+}
+
+.curriculum-topic-picker__selected {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.curriculum-topic-picker__selected.is-empty {
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.curriculum-topic-picker__chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-height: 22px;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(23, 49, 62, 0.07);
+  color: rgba(23, 49, 62, 0.76);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
 .planning-curriculum--embedded {
   min-width: 0;
   max-width: 100%;
@@ -1662,8 +1744,13 @@ button {
 }
 
 .import-modal__dialog--curriculum-lesson {
-  width: min(1500px, calc(100% - 1rem));
-  max-width: 1500px;
+  width: min(1400px, calc(100vw - 1.25rem));
+  max-width: none;
+}
+
+.import-modal__dialog--curriculum-topic {
+  width: min(1180px, calc(100% - 1rem));
+  max-width: 1180px;
 }
 
 .curriculum-series-form {
@@ -1672,29 +1759,71 @@ button {
 }
 
 .curriculum-lesson-form {
-  grid-template-columns: minmax(0, 2fr) minmax(320px, 0.75fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
+  gap: 1rem;
+  min-width: 0;
 }
 
 .curriculum-lesson-form__main {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
-  gap: 0.85rem 1rem;
+  gap: 0.95rem;
+  min-width: 0;
+  width: 100%;
 }
 
-.curriculum-lesson-form__main > .import-modal__field:first-child,
-.curriculum-lesson-form__main > .planning-lesson-flow__competency-dropdown,
-.curriculum-lesson-form__main > .empty-message {
+.curriculum-lesson-form__main > .import-modal__field {
+  min-width: 0;
+}
+
+.curriculum-lesson-form__title-field {
+  min-width: 0;
+}
+
+.curriculum-lesson-form__settings-grid {
   grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem 0.85rem;
+  min-width: 0;
+}
+
+.curriculum-lesson-form__settings-grid .import-modal__field {
+  min-width: 0;
+}
+
+.curriculum-lesson-form__resource-grid {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem 0.85rem;
+  align-items: start;
+  min-width: 0;
+}
+
+.curriculum-lesson-form__resource-grid > .import-modal__field,
+.curriculum-lesson-form__resource-grid > .planning-lesson-flow__competency-dropdown,
+.curriculum-lesson-form__resource-grid > .empty-message,
+.curriculum-lesson-form__resource-grid > .curriculum-topic-picker {
+  min-width: 0;
+}
+
+.curriculum-lesson-form__compact-message {
+  margin: 0;
+  align-self: stretch;
 }
 
 .curriculum-lesson-form__summary {
-  min-height: 100%;
+  grid-column: 1 / -1;
+  min-width: 0;
 }
 
 .curriculum-lesson-form__summary textarea {
-  min-height: 100%;
+  min-height: 104px;
+  height: 120px;
+  max-width: 100%;
   resize: vertical;
 }
 
@@ -1750,15 +1879,21 @@ button {
   .curriculum-lesson-form__main {
     grid-template-columns: 1fr;
   }
-}
 
-@media (min-width: 1120px) {
-  .curriculum-lesson-form__main {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  .curriculum-lesson-form__summary,
+  .curriculum-lesson-form__settings-grid,
+  .curriculum-lesson-form__resource-grid {
+    grid-column: 1;
+    grid-row: auto;
   }
 
-  .curriculum-lesson-form__main > .planning-lesson-flow__competency-dropdown {
-    grid-column: span 2;
+  .curriculum-lesson-form__settings-grid,
+  .curriculum-lesson-form__resource-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .curriculum-lesson-form__summary textarea {
+    min-height: 120px;
   }
 }
 
@@ -11996,15 +12131,107 @@ body.is-desk-dragging {
 
 .bewertung-task-sheet__subtask-row {
   display: grid;
-  grid-template-columns: minmax(160px, 1.1fr) minmax(190px, 1.4fr) 100px 84px minmax(190px, 1.3fr) auto;
-  gap: 0.55rem;
+  grid-template-columns: minmax(360px, 1.55fr) minmax(170px, 0.72fr) minmax(190px, 0.9fr) auto;
+  gap: 0.7rem;
   align-items: start;
   position: relative;
   overflow: visible;
 }
 
+.bewertung-task-sheet__subtask-basics {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.2fr) minmax(190px, 1.4fr);
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.bewertung-task-sheet__subtask-basics .bewertung-task-sheet__field:nth-child(3) {
+  grid-column: 1;
+}
+
+.bewertung-task-sheet__subtask-basics .bewertung-task-sheet__field:nth-child(4) {
+  grid-column: 2;
+}
+
 .bewertung-task-sheet__field--competency select {
   min-height: 86px;
+  padding: 0.45rem 0.55rem;
+  font-size: 0.76rem;
+  line-height: 1.2;
+}
+
+.bewertung-task-sheet__field--topics {
+  align-content: start;
+}
+
+.bewertung-task-sheet__topic-button {
+  width: fit-content;
+  min-height: 36px;
+  padding-inline: 0.75rem;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.bewertung-task-sheet__topic-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.22rem;
+  min-width: 0;
+}
+
+.bewertung-task-sheet__topic-summary.is-empty {
+  color: var(--text-soft);
+  font-size: 0.76rem;
+  line-height: 1.3;
+}
+
+.bewertung-task-sheet__topic-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-height: 21px;
+  padding: 0.1rem 0.42rem;
+  border-radius: 999px;
+  background: rgba(23, 49, 62, 0.08);
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bewertung-task-sheet__topic-chip--more {
+  background: rgba(25, 118, 140, 0.13);
+  color: #174f60;
+}
+
+.bewertung-task-sheet__topic-modal {
+  width: min(920px, calc(100vw - 1.5rem));
+}
+
+.bewertung-task-sheet__topic-modal-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.45rem;
+  max-height: min(62vh, 560px);
+  overflow: auto;
+  padding: 0.15rem;
+}
+
+.bewertung-task-sheet__topic-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0.5rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(23, 49, 62, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.82);
+  font-size: 0.86rem;
+  font-weight: 750;
+  line-height: 1.25;
 }
 
 .bewertung-task-sheet__field {
@@ -13494,6 +13721,11 @@ body.is-competency-grid-dragging {
     border-radius: 20px;
   }
 
+  .import-modal__dialog--planning.import-modal__dialog--curriculum-lesson {
+    width: calc(100vw - 1rem);
+    max-width: none;
+  }
+
   .import-modal__header {
     align-items: flex-start;
   }
@@ -13596,6 +13828,11 @@ body.is-competency-grid-dragging {
 @media (max-width: 1024px) {
   .import-modal__dialog--planning {
     width: min(96vw, 1100px);
+    max-width: none;
+  }
+
+  .import-modal__dialog--planning.import-modal__dialog--curriculum-lesson {
+    width: calc(100vw - 1rem);
     max-width: none;
   }
 

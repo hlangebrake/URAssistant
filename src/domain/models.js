@@ -34,13 +34,16 @@ class Student {
 }
 
 class SchoolClass {
-  constructor({ id, name, room, subject, studentIds = [], displayColor = "" }) {
+  constructor({ id, name, room, subject, studentIds = [], displayColor = "", curriculumLessonCompetencyToolId = "", curriculumInstructionTopicTreePlanId = "", curriculumInstructionTopicTreeGradeFilter = "" }) {
     this.id = id;
     this.name = name;
     this.room = room;
     this.subject = subject;
     this.studentIds = studentIds;
     this.displayColor = displayColor;
+    this.curriculumLessonCompetencyToolId = String(curriculumLessonCompetencyToolId || "").trim();
+    this.curriculumInstructionTopicTreePlanId = String(curriculumInstructionTopicTreePlanId || "").trim();
+    this.curriculumInstructionTopicTreeGradeFilter = String(curriculumInstructionTopicTreeGradeFilter || "").trim();
   }
 }
 
@@ -166,7 +169,8 @@ class EvaluationSheet {
                   ? subtaskSource.competencyAspectIds.map(function (aspectId) {
                       return String(aspectId || "").trim();
                     }).filter(Boolean)
-                  : []
+                  : [],
+                curriculumTopicNodeIds: normalizeCurriculumTopicNodeIds(subtaskSource.curriculumTopicNodeIds)
               };
             })
           };
@@ -560,6 +564,7 @@ class MathObservationRecord {
     markers = [],
     markerDirection = "",
     markerQuality = "",
+    mathObservationQualityScale = "",
     situationType = "",
     demandLevel = "",
     category = "",
@@ -591,20 +596,47 @@ class MathObservationRecord {
     let effectivePrimary = allowedCompetencies.indexOf(normalizedPrimary) >= 0
       ? normalizedPrimary
       : "";
-    const numericProcessQuality = Number(processQuality);
     const normalizedMarker = String(marker || "").trim().toLowerCase();
-    const numericMarkerQuality = Number(markerQuality);
+    const normalizedQualityScale = String(mathObservationQualityScale || "").trim() === "0-4" ? "0-4" : "";
     const normalizedSituationType = String(situationType || "").trim().toLowerCase();
     const normalizedDemandLevel = String(demandLevel || "").trim().toLowerCase();
     const normalizedCategory = String(category || "").trim().toLowerCase();
+
+    function normalizeQualityValue(qualityValue, allowEmpty) {
+      const normalizedLabel = String(qualityValue === undefined || qualityValue === null ? "" : qualityValue).trim();
+      const numericValue = Number(qualityValue);
+
+      if (allowEmpty && normalizedLabel === "") {
+        return "";
+      }
+      if (normalizedLabel === "--") {
+        return 0;
+      }
+      if (normalizedLabel === "-") {
+        return 1;
+      }
+      if (normalizedLabel === "+") {
+        return 3;
+      }
+      if (normalizedLabel === "++") {
+        return 4;
+      }
+      if (!Number.isFinite(numericValue)) {
+        return allowEmpty ? "" : 2;
+      }
+
+      return normalizedQualityScale === "0-4"
+        ? Math.max(0, Math.min(4, Math.round(numericValue)))
+        : Math.max(0, Math.min(4, Math.round(numericValue + 2)));
+    }
+
     const normalizedCompetencyQualities = (Array.isArray(competencyQualities) ? competencyQualities : []).map(function (entry) {
       const source = entry && typeof entry === "object" ? entry : {};
       const competencyId = String(source.competencyId || source.competency || "").trim().toLowerCase();
-      const numericQuality = Number(source.quality);
 
       return {
         competencyId: allowedCompetencies.indexOf(competencyId) >= 0 ? competencyId : "",
-        quality: Number.isFinite(numericQuality) ? Math.max(-2, Math.min(2, Math.round(numericQuality))) : ""
+        quality: normalizeQualityValue(source.quality, true)
       };
     }).filter(function (entry) {
       return Boolean(entry.competencyId && entry.quality !== "");
@@ -613,7 +645,6 @@ class MathObservationRecord {
       const source = entry && typeof entry === "object" ? entry : {};
       const entryMarker = String(source.marker || "").trim().toLowerCase();
       const normalizedEntryMarker = !entryMarker ? "" : (allowedMarkers.indexOf(entryMarker) >= 0 ? entryMarker : "beitrag");
-      const numericEntryMarkerQuality = Number(source.markerQuality);
 
       return {
         marker: normalizedEntryMarker,
@@ -622,7 +653,7 @@ class MathObservationRecord {
           : "",
         markerQuality: String(source.markerQuality || "").trim() === ""
           ? ""
-          : (Number.isFinite(numericEntryMarkerQuality) ? Math.max(-2, Math.min(2, Math.round(numericEntryMarkerQuality))) : "")
+          : normalizeQualityValue(source.markerQuality, true)
       };
     }).filter(function (entry) {
       return Boolean(entry.marker);
@@ -635,6 +666,7 @@ class MathObservationRecord {
     this.lessonDate = lessonDate;
     this.room = room;
     this.recordedAt = recordedAt;
+    this.mathObservationQualityScale = "0-4";
     if (!effectivePrimary && normalizedCompetencyQualities.length) {
       effectivePrimary = normalizedCompetencyQualities[0].competencyId;
     }
@@ -651,12 +683,10 @@ class MathObservationRecord {
     })));
     this.competencyQualities = normalizedCompetencyQualities.length
       ? normalizedCompetencyQualities
-      : (effectivePrimary ? [{ competencyId: effectivePrimary, quality: Number.isFinite(numericProcessQuality) ? Math.max(-2, Math.min(2, Math.round(numericProcessQuality))) : 0 }] : []);
+      : (effectivePrimary ? [{ competencyId: effectivePrimary, quality: normalizeQualityValue(processQuality, false) }] : []);
     this.processQuality = this.competencyQualities.length
       ? this.competencyQualities[0].quality
-      : (Number.isFinite(numericProcessQuality)
-      ? Math.max(-2, Math.min(2, Math.round(numericProcessQuality)))
-      : 0);
+      : normalizeQualityValue(processQuality, false);
     this.marker = !normalizedMarker
       ? (normalizedMarkers.length ? normalizedMarkers[0].marker : "")
       : (allowedMarkers.indexOf(normalizedMarker) >= 0 ? normalizedMarker : "beitrag");
@@ -669,7 +699,7 @@ class MathObservationRecord {
           : "",
         markerQuality: String(markerQuality || "").trim() === ""
           ? ""
-          : (Number.isFinite(numericMarkerQuality) ? Math.max(-2, Math.min(2, Math.round(numericMarkerQuality))) : "")
+          : normalizeQualityValue(markerQuality, true)
       }] : []);
     this.markerDirection = this.markers.length
       ? this.markers[0].markerDirection
@@ -680,7 +710,7 @@ class MathObservationRecord {
       ? this.markers[0].markerQuality
       : (String(markerQuality || "").trim() === ""
         ? ""
-        : (Number.isFinite(numericMarkerQuality) ? Math.max(-2, Math.min(2, Math.round(numericMarkerQuality))) : ""));
+        : normalizeQualityValue(markerQuality, true));
     this.situationType = ["lernen", "leisten"].indexOf(normalizedSituationType) >= 0 ? normalizedSituationType : "";
     this.demandLevel = ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(normalizedDemandLevel) >= 0 ? normalizedDemandLevel : "";
     this.category = ["ueberpruefung", "praesentation", "beitrag", "abgabe", "nachtrag"].indexOf(normalizedCategory) >= 0 ? normalizedCategory : "";
@@ -967,8 +997,16 @@ class PlanningInstructionLessonStatus {
   }
 }
 
+function normalizeCurriculumTopicNodeIds(topicNodeIds) {
+  return Array.isArray(topicNodeIds)
+    ? topicNodeIds.map(function (nodeId) {
+        return String(nodeId || "").trim();
+      }).filter(Boolean)
+    : [];
+}
+
 class CurriculumSeries {
-  constructor({ id, classId = "", topic = "", hourDemand = 0, color = "", startMode = "automatic", startDate = "", nextSeriesId = "" }) {
+  constructor({ id, classId = "", topic = "", hourDemand = 0, color = "", startMode = "automatic", startDate = "", curriculumTopicNodeIds = [], nextSeriesId = "" }) {
     this.id = id;
     this.classId = classId;
     this.topic = topic;
@@ -976,16 +1014,18 @@ class CurriculumSeries {
     this.color = color;
     this.startMode = startMode === "manual" ? "manual" : "automatic";
     this.startDate = this.startMode === "manual" ? String(startDate || "").trim() : "";
+    this.curriculumTopicNodeIds = normalizeCurriculumTopicNodeIds(curriculumTopicNodeIds);
     this.nextSeriesId = nextSeriesId;
   }
 }
 
 class CurriculumSequence {
-  constructor({ id, seriesId = "", topic = "", hourDemand = 0, nextSequenceId = "" }) {
+  constructor({ id, seriesId = "", topic = "", hourDemand = 0, curriculumTopicNodeIds = [], nextSequenceId = "" }) {
     this.id = id;
     this.seriesId = seriesId;
     this.topic = topic;
     this.hourDemand = Math.max(0, Number(hourDemand) || 0);
+    this.curriculumTopicNodeIds = normalizeCurriculumTopicNodeIds(curriculumTopicNodeIds);
     this.nextSequenceId = nextSequenceId;
   }
 }
@@ -1009,6 +1049,7 @@ class CurriculumLessonPlan {
     homeworkDueUnit = "tage",
     competencyFocusAspectId = "",
     competencyAspectIds = [],
+    curriculumTopicNodeIds = [],
     nextLessonId = ""
   }) {
     const normalizedFunctionType = String(functionType || "").trim().toLowerCase();
@@ -1057,6 +1098,7 @@ class CurriculumLessonPlan {
           return String(aspectId || "").trim();
         }).filter(Boolean)
       : [];
+    this.curriculumTopicNodeIds = normalizeCurriculumTopicNodeIds(curriculumTopicNodeIds);
     this.nextLessonId = nextLessonId;
   }
 }

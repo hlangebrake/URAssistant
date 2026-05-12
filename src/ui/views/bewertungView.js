@@ -73,6 +73,12 @@ window.Unterrichtsassistent.ui.views.bewertung = {
     const activePerformedEvaluationStudentId = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActivePerformedEvaluationStudentId === "function"
       ? String(window.UnterrichtsassistentApp.getActivePerformedEvaluationStudentId() || "").trim()
       : "";
+    const activeEvaluationSubtaskTopicModal = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveEvaluationSubtaskTopicModal === "function"
+      ? window.UnterrichtsassistentApp.getActiveEvaluationSubtaskTopicModal()
+      : null;
+    const curriculumInstructionTopicTreeState = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getCurriculumInstructionTopicTreeState === "function"
+      ? window.UnterrichtsassistentApp.getCurriculumInstructionTopicTreeState()
+      : { status: "idle", data: null };
     const activePerformedEvaluationStudentFilter = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActivePerformedEvaluationStudentFilter === "function"
       ? String(window.UnterrichtsassistentApp.getActivePerformedEvaluationStudentFilter() || "alle").trim().toLowerCase()
       : "alle";
@@ -1286,6 +1292,122 @@ window.Unterrichtsassistent.ui.views.bewertung = {
         }).join("") : '<option value="">Keine Quelle gewaehlt</option>',
         '</select>',
         '</label>'
+      ].join("");
+    }
+
+    function getCurriculumTopicNodeLookup() {
+      const nodes = curriculumInstructionTopicTreeState && curriculumInstructionTopicTreeState.data && Array.isArray(curriculumInstructionTopicTreeState.data.nodes)
+        ? curriculumInstructionTopicTreeState.data.nodes
+        : [];
+
+      return nodes.reduce(function (lookup, nodeItem) {
+        const nodeId = String(nodeItem && nodeItem.id || "").trim();
+
+        if (nodeId) {
+          lookup[nodeId] = nodeItem;
+        }
+
+        return lookup;
+      }, {});
+    }
+
+    function getCurriculumTopicNodeLabel(nodeId) {
+      const normalizedNodeId = String(nodeId || "").trim();
+      const nodeLookup = getCurriculumTopicNodeLookup();
+      const nodeItem = nodeLookup[normalizedNodeId] || null;
+
+      return String(nodeItem && (nodeItem.name || nodeItem.title || nodeItem.label) || "").trim() || normalizedNodeId;
+    }
+
+    function getAllowedEvaluationCurriculumTopicNodeIds() {
+      return window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveEvaluationSheetAllowedCurriculumTopicNodeIds === "function"
+        ? window.UnterrichtsassistentApp.getActiveEvaluationSheetAllowedCurriculumTopicNodeIds().map(function (nodeId) {
+            return String(nodeId || "").trim();
+          }).filter(Boolean)
+        : [];
+    }
+
+    function buildSubtaskCurriculumTopicSummary(subtask, allowedLookup) {
+      const selectedNodeIds = (Array.isArray(subtask && subtask.curriculumTopicNodeIds) ? subtask.curriculumTopicNodeIds : []).map(function (nodeId) {
+        return String(nodeId || "").trim();
+      }).filter(function (nodeId) {
+        return Boolean(nodeId && allowedLookup[nodeId]);
+      });
+
+      if (!selectedNodeIds.length) {
+        return '<div class="bewertung-task-sheet__topic-summary is-empty">Keine Auswahl</div>';
+      }
+
+      return [
+        '<div class="bewertung-task-sheet__topic-summary">',
+        selectedNodeIds.slice(0, 4).map(function (nodeId) {
+          return '<span class="bewertung-task-sheet__topic-chip" title="' + escapeValue(getCurriculumTopicNodeLabel(nodeId)) + '">' + escapeValue(getCurriculumTopicNodeLabel(nodeId)) + '</span>';
+        }).join(""),
+        selectedNodeIds.length > 4 ? '<span class="bewertung-task-sheet__topic-chip bewertung-task-sheet__topic-chip--more">+' + escapeValue(String(selectedNodeIds.length - 4)) + '</span>' : '',
+        '</div>'
+      ].join("");
+    }
+
+    function buildSubtaskCurriculumTopicPicker(taskId, subtaskId, subtask, activeSheet) {
+      const allowedNodeIds = getAllowedEvaluationCurriculumTopicNodeIds(activeSheet);
+      const allowedLookup = allowedNodeIds.reduce(function (lookup, nodeId) {
+        lookup[nodeId] = true;
+        return lookup;
+      }, {});
+      const selectedCount = (Array.isArray(subtask && subtask.curriculumTopicNodeIds) ? subtask.curriculumTopicNodeIds : []).filter(function (nodeId) {
+        return Boolean(allowedLookup[String(nodeId || "").trim()]);
+      }).length;
+
+      return [
+        '<div class="bewertung-task-sheet__field bewertung-task-sheet__field--topics">',
+        '<span class="bewertung-task-sheet__field-label">Stoff</span>',
+        '<button class="secondary-text-action bewertung-task-sheet__topic-button" type="button"', allowedNodeIds.length ? '' : ' disabled', ' onclick="return window.UnterrichtsassistentApp.openEvaluationSubtaskTopicModal(\'', escapeValue(taskId), '\', \'', escapeValue(subtaskId), '\')">Stoffinhalte', selectedCount ? ' (' + escapeValue(String(selectedCount)) + ')' : '', '</button>',
+        buildSubtaskCurriculumTopicSummary(subtask, allowedLookup),
+        '</div>'
+      ].join("");
+    }
+
+    function buildEvaluationSubtaskTopicModal(activeSheet) {
+      const modal = activeEvaluationSubtaskTopicModal;
+      const allowedNodeIds = getAllowedEvaluationCurriculumTopicNodeIds(activeSheet);
+      const selectedLookup = (Array.isArray(modal && modal.selectedNodeIds) ? modal.selectedNodeIds : []).reduce(function (lookup, nodeId) {
+        lookup[String(nodeId || "").trim()] = true;
+        return lookup;
+      }, {});
+
+      if (!modal) {
+        return "";
+      }
+
+      return [
+        '<div class="import-modal" id="evaluationSubtaskTopicModal">',
+        '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeEvaluationSubtaskTopicModal()"></div>',
+        '<div class="import-modal__dialog import-modal__dialog--curriculum-topic bewertung-task-sheet__topic-modal" role="dialog" aria-modal="true" aria-labelledby="evaluationSubtaskTopicModalTitle">',
+        '<div class="import-modal__header">',
+        '<div>',
+        '<h3 id="evaluationSubtaskTopicModalTitle">Stoffinhalte</h3>',
+        '<div class="import-modal__meta">Aus den zugeordneten Reihen, Sequenzen und Stunden</div>',
+        '</div>',
+        '<button class="import-modal__close" type="button" aria-label="Pop-up schliessen" onclick="return window.UnterrichtsassistentApp.closeEvaluationSubtaskTopicModal()">x</button>',
+        '</div>',
+        '<div class="bewertung-task-sheet__topic-modal-body">',
+        allowedNodeIds.length ? allowedNodeIds.map(function (nodeId) {
+          const nodeLabel = getCurriculumTopicNodeLabel(nodeId);
+
+          return [
+            '<label class="bewertung-task-sheet__topic-option">',
+            '<input type="checkbox" value="', escapeValue(nodeId), '"', selectedLookup[nodeId] ? ' checked' : '', ' onchange="return window.UnterrichtsassistentApp.toggleEvaluationSubtaskTopicModalNode(\'', escapeValue(nodeId), '\', this.checked)">',
+            '<span>', escapeValue(nodeLabel), '</span>',
+            '</label>'
+          ].join("");
+        }).join("") : '<p class="empty-message">Ordne dem Bewertungsbogen zuerst Unterrichtsreihen, Sequenzen oder Stunden mit Stoffinhalten zu.</p>',
+        '</div>',
+        '<div class="import-modal__actions">',
+        '<button class="circle-action circle-action--danger" type="button" onclick="return window.UnterrichtsassistentApp.closeEvaluationSubtaskTopicModal()">Abbrechen</button>',
+        '<button class="circle-action" type="button" onclick="return window.UnterrichtsassistentApp.confirmEvaluationSubtaskTopicModal()">Uebernehmen</button>',
+        '</div>',
+        '</div>',
+        '</div>'
       ].join("");
     }
 
@@ -3912,6 +4034,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
 
               return [
                 '<div class="bewertung-task-sheet__subtask-row">',
+                '<div class="bewertung-task-sheet__subtask-basics">',
                 '<label class="bewertung-task-sheet__field">',
                 '<span class="bewertung-task-sheet__field-label">Titel</span>',
                 '<input type="text" value="', escapeValue(String(subtask && subtask.title || "").trim()), '" placeholder="Titel der Teilaufgabe" onchange="return window.UnterrichtsassistentApp.updateEvaluationSubtaskField(\'', escapeValue(taskId), '\', \'', escapeValue(subtaskId), '\', \'title\', this.value)">',
@@ -3935,7 +4058,9 @@ window.Unterrichtsassistent.ui.views.bewertung = {
                 '<span class="bewertung-task-sheet__field-label">BE</span>',
                 '<input type="number" min="0" step="1" value="', escapeValue(String(Number(subtask && subtask.be) || 0)), '" onchange="return window.UnterrichtsassistentApp.updateEvaluationSubtaskField(\'', escapeValue(taskId), '\', \'', escapeValue(subtaskId), '\', \'be\', this.value)">',
                 '</label>',
+                '</div>',
                 buildSubtaskCompetencySelect(taskId, subtaskId, subtask, activeSheet),
+                buildSubtaskCurriculumTopicPicker(taskId, subtaskId, subtask, activeSheet),
                 '<button class="bewertung-task-sheet__delete" type="button" onclick="return window.UnterrichtsassistentApp.deleteEvaluationSubtask(\'', escapeValue(taskId), '\', \'', escapeValue(subtaskId), '\')">Loeschen</button>',
                 '</div>'
               ].join("");
@@ -4064,6 +4189,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
             '</div>'
           ].join("");
         }()) : "",
+        activeSheet ? buildEvaluationSubtaskTopicModal(activeSheet) : "",
         '</div>'
       ].join("");
     }

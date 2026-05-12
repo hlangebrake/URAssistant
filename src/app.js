@@ -120,6 +120,7 @@ let planningAvailableLessonsExpanded = true;
 let planningAdminMode = false;
 let unterrichtLiveManageMode = false;
 let activeEvaluationSheetDraft = null;
+let activeEvaluationSubtaskTopicModal = null;
 let activeCompetencyGridPointerDrag = null;
 let activePlannedEvaluationDraft = null;
 let activeClasstimeImportDraft = null;
@@ -146,6 +147,7 @@ let activeCurriculumLessonDraft = null;
 let activeCurriculumLessonFlowLessonId = "";
 let activeCurriculumLessonFlowViewPhaseIds = [];
 let activeCurriculumLessonStepCompetencyModal = null;
+let activeCurriculumTopicSelectionModal = null;
 let expandedCurriculumSeriesIds = [];
 let expandedCurriculumSequenceIds = [];
 let collapsedUnterrichtLiveLessonIds = [];
@@ -314,11 +316,11 @@ const MATH_OBSERVATION_PROCESS_BANDS = [
   MATH_OBSERVATION_COMPETENCIES[5]
 ];
 const MATH_OBSERVATION_QUALITY_LABELS = [
-  { value: 2, label: "++ reflektiert, verallgemeinernd oder bewertend" },
-  { value: 1, label: "+ selbststaendig, nachvollziehbar und verknuepfend" },
-  { value: 0, label: "0 sachgerecht im vertrauten Rahmen" },
-  { value: -1, label: "- ansatzweise tragfaehig, aber unvollstaendig" },
-  { value: -2, label: "-- fachlich nicht tragfaehig" }
+  { value: 4, label: "4 reflektiert, verallgemeinernd oder bewertend" },
+  { value: 3, label: "3 selbststaendig, nachvollziehbar und verknuepfend" },
+  { value: 2, label: "2 sachgerecht im vertrauten Rahmen" },
+  { value: 1, label: "1 ansatzweise tragfaehig, aber unvollstaendig" },
+  { value: 0, label: "0 fachlich nicht tragfaehig" }
 ];
 const OBSERVATION_SITUATION_OPTIONS = [
   { value: "lernen", label: "Lernen" },
@@ -7018,11 +7020,55 @@ function normalizeMathObservationCompetencyIds(primaryCompetency, competencyIds)
 }
 
 function normalizeMathObservationQualityValue(qualityValue) {
+  const normalizedLabel = String(qualityValue === undefined || qualityValue === null ? "" : qualityValue).trim();
   const numericValue = Number(qualityValue);
 
+  if (normalizedLabel === "--") {
+    return 0;
+  }
+  if (normalizedLabel === "-") {
+    return 1;
+  }
+  if (normalizedLabel === "+") {
+    return 3;
+  }
+  if (normalizedLabel === "++") {
+    return 4;
+  }
+
   return Number.isFinite(numericValue)
-    ? Math.max(-2, Math.min(2, Math.round(numericValue)))
-    : 0;
+    ? Math.max(0, Math.min(4, Math.round(numericValue)))
+    : 2;
+}
+
+function getLegacyMathObservationQualityKey(qualityValue) {
+  return String(normalizeMathObservationQualityValue(qualityValue) - 2);
+}
+
+function formatMathObservationQualityShort(value) {
+  return String(normalizeMathObservationQualityValue(value));
+}
+
+function normalizeMathObservationQualifierQualities(qualities) {
+  const sourceQualities = Array.isArray(qualities) ? qualities : [];
+  const usesLegacyValues = sourceQualities.some(function (quality) {
+    return Number(quality && quality.value) < 0;
+  });
+
+  return sourceQualities.map(function (quality) {
+    const source = quality && typeof quality === "object" ? quality : {};
+    const numericValue = Number(source.value);
+    const normalizedValue = Number.isFinite(numericValue)
+      ? Math.max(0, Math.min(4, Math.round(usesLegacyValues ? numericValue + 2 : numericValue)))
+      : normalizeMathObservationQualityValue(source.value);
+    const rawLabel = String(source.label || "").trim();
+    const strippedLabel = rawLabel.replace(/^(\+\+|\+|0|--|-|[0-4])\s*/, "");
+
+    return {
+      value: normalizedValue,
+      label: String(normalizedValue) + (strippedLabel ? " " + strippedLabel : "")
+    };
+  });
 }
 
 function normalizeMathObservationMarkerValue(markerValue) {
@@ -8122,7 +8168,7 @@ function ensureUnterrichtMathObservationMarkerOverlay() {
   unterrichtMathObservationMarkerOverlay.setAttribute("aria-hidden", "true");
   unterrichtMathObservationMarkerOverlay.innerHTML = [
     '<div class="unterricht-assessment-quick-overlay__quality">',
-    [2, 1, 0, -1, -2].map(function (qualityValue) {
+    [4, 3, 2, 1, 0].map(function (qualityValue) {
       return '<div class="unterricht-assessment-quick-overlay__band" data-observation-marker-quality-value="' + escapeHtml(String(qualityValue)) + '"><span class="unterricht-assessment-quick-overlay__label"></span></div>';
     }).join(""),
     '</div>',
@@ -8173,7 +8219,7 @@ function ensureUnterrichtMathObservationCompactModal() {
         '</div>',
         '<div class="assessment-grade-buttons math-observation-compact-quality-buttons">',
         MATH_OBSERVATION_QUALITY_LABELS.map(function (quality) {
-          return '<button class="assessment-grade-button" type="button" data-compact-competency="' + escapeHtml(competency.key) + '" data-compact-quality="' + escapeHtml(String(quality.value)) + '" aria-pressed="false" onclick="return window.UnterrichtsassistentApp.selectUnterrichtMathObservationCompactQuality(\'' + escapeHtml(competency.key) + '\', \'' + escapeHtml(String(quality.value)) + '\')">' + escapeHtml(formatAssessmentQuickQuality(quality.value)) + '</button>';
+          return '<button class="assessment-grade-button" type="button" data-compact-competency="' + escapeHtml(competency.key) + '" data-compact-quality="' + escapeHtml(String(quality.value)) + '" aria-pressed="false" onclick="return window.UnterrichtsassistentApp.selectUnterrichtMathObservationCompactQuality(\'' + escapeHtml(competency.key) + '\', \'' + escapeHtml(String(quality.value)) + '\')">' + escapeHtml(formatMathObservationQualityShort(quality.value)) + '</button>';
         }).join(""),
         '</div>',
         '<input type="hidden" data-compact-competency-quality="' + escapeHtml(competency.key) + '" value="">',
@@ -8354,17 +8400,22 @@ function getUnterrichtMathObservationProcessOverlayCenter(anchorX, anchorY) {
 
 function getMathObservationMarkerQualifier(markerValue) {
   const marker = normalizeMathObservationMarkerValue(markerValue);
-
-  return MATH_OBSERVATION_MARKER_QUALIFIERS[marker] || {
+  const qualifier = MATH_OBSERVATION_MARKER_QUALIFIERS[marker] || {
     left: "links / reaktiv",
     right: "rechts / eigenstaendig",
     qualities: [
-      { value: 2, label: "++ sehr stark" },
-      { value: 1, label: "+ stark" },
-      { value: 0, label: "0 sachgerecht" },
-      { value: -1, label: "- schwach" },
-      { value: -2, label: "-- nicht tragfaehig" }
+      { value: 4, label: "4 sehr stark" },
+      { value: 3, label: "3 stark" },
+      { value: 2, label: "2 sachgerecht" },
+      { value: 1, label: "1 schwach" },
+      { value: 0, label: "0 nicht tragfaehig" }
     ]
+  };
+
+  return {
+    left: qualifier.left,
+    right: qualifier.right,
+    qualities: normalizeMathObservationQualifierQualities(qualifier.qualities)
   };
 }
 
@@ -8429,7 +8480,7 @@ function syncUnterrichtMathObservationProcessInfo(selection) {
   const info = ensureUnterrichtMathObservationProcessInfo();
   const competencyKey = normalizeMathObservationCompetencyValue(selection && selection.primaryCompetency);
   const qualityValue = normalizeMathObservationQualityValue(selection && selection.processQuality);
-  const qualityKey = String(qualityValue);
+  const qualityKey = getLegacyMathObservationQualityKey(qualityValue);
   const qualityLabel = formatMathObservationQualityLabel(qualityValue);
   const competencyLabel = getMathObservationCompetencyLabel(competencyKey);
   const competencyText = competencyKey
@@ -8454,7 +8505,7 @@ function syncUnterrichtMathObservationProcessInfo(selection) {
   setUnterrichtMathObservationProcessInfoCard(
     info,
     "example",
-    competencyLabel ? "Beispiel " + competencyLabel + " " + formatAssessmentQuickQuality(qualityValue) : "Beispiel",
+    competencyLabel ? "Beispiel " + competencyLabel + " " + formatMathObservationQualityShort(qualityValue) : "Beispiel",
     exampleText
   );
   info.classList.add("is-visible");
@@ -8469,7 +8520,7 @@ function syncUnterrichtMathObservationMarkerInfo(selection, markerValue) {
   const directionKey = selection && selection.markerDirection ? selection.markerDirection : "tap";
   const directionInfo = markerInfo[directionKey] || markerInfo.tap || {};
   const qualityValue = normalizeMathObservationQualityValue(selection && selection.markerQuality);
-  const qualityKey = String(qualityValue);
+  const qualityKey = getLegacyMathObservationQualityKey(qualityValue);
   const qualityInfo = markerInfo.qualities && markerInfo.qualities[qualityKey] ? markerInfo.qualities[qualityKey] : {};
   const directionTitle = directionKey === "left"
     ? markerLabel + " links"
@@ -8484,7 +8535,7 @@ function syncUnterrichtMathObservationMarkerInfo(selection, markerValue) {
   setUnterrichtMathObservationProcessInfoCard(
     info,
     "quality",
-    markerLabel + " " + formatAssessmentQuickQuality(qualityValue),
+    markerLabel + " " + formatMathObservationQualityShort(qualityValue),
     qualityInfo.meaning || ""
   );
   setUnterrichtMathObservationProcessInfoCard(
@@ -8568,7 +8619,7 @@ function getUnterrichtMathObservationProcessSelection(clientX, clientY, anchorX,
   const clampedDy = Math.max(-qualityMax, Math.min(qualityMax, dy));
   const zoneWidth = (competencyMax - competencyCenterHalf) / 3;
   let competency = null;
-  let processQuality = 0;
+  let processQuality = 2;
 
   if (Math.abs(dy) > qualityMax + qualityTolerance || Math.abs(dx) > competencyMax + competencyTolerance) {
     return null;
@@ -8581,13 +8632,13 @@ function getUnterrichtMathObservationProcessSelection(clientX, clientY, anchorX,
   }
 
   if (clampedDy < -qualityOuterHalf) {
-    processQuality = 2;
+    processQuality = 4;
   } else if (clampedDy < -qualityZoneHalf) {
-    processQuality = 1;
+    processQuality = 3;
   } else if (clampedDy > qualityOuterHalf) {
-    processQuality = -2;
+    processQuality = 0;
   } else if (clampedDy > qualityZoneHalf) {
-    processQuality = -1;
+    processQuality = 1;
   }
 
   return {
@@ -8610,7 +8661,7 @@ function getUnterrichtMathObservationMarkerSelection(clientX, clientY, anchorX, 
   const directionTolerance = 120;
   const clampedDy = Math.max(-qualityMax, Math.min(qualityMax, dy));
   let markerDirection = "";
-  let markerQuality = 0;
+  let markerQuality = 2;
 
   if (Math.abs(dy) > qualityMax + qualityTolerance || Math.abs(dx) > directionMax + directionTolerance) {
     return null;
@@ -8623,19 +8674,19 @@ function getUnterrichtMathObservationMarkerSelection(clientX, clientY, anchorX, 
   }
 
   if (clampedDy < -qualityOuterHalf) {
-    markerQuality = 2;
+    markerQuality = 4;
   } else if (clampedDy < -qualityZoneHalf) {
-    markerQuality = 1;
+    markerQuality = 3;
   } else if (clampedDy > qualityOuterHalf) {
-    markerQuality = -2;
+    markerQuality = 0;
   } else if (clampedDy > qualityZoneHalf) {
-    markerQuality = -1;
+    markerQuality = 1;
   }
 
   return {
     markerDirection: markerDirection,
     markerQuality: markerQuality,
-    label: (markerDirection === "left" ? "reaktiv " : (markerDirection === "right" ? "eigen " : "")) + formatAssessmentQuickQuality(markerQuality)
+    label: (markerDirection === "left" ? "reaktiv " : (markerDirection === "right" ? "eigen " : "")) + formatMathObservationQualityShort(markerQuality)
   };
 }
 
@@ -8645,7 +8696,7 @@ function formatMathObservationQualityLabel(value) {
     return entry.value === normalizedValue;
   }) || null;
 
-  return quality ? quality.label : formatAssessmentQuickQuality(normalizedValue);
+  return quality ? quality.label : formatMathObservationQualityShort(normalizedValue);
 }
 
 function getMathObservationTouchPoint(event, useChangedTouches) {
@@ -9017,6 +9068,7 @@ function appendUnterrichtMathObservationRecord(rawSnapshot, draft, values) {
     lessonDate: draft.lessonDate,
     room: draft.lessonRoom,
     recordedAt: recordedAt,
+    mathObservationQualityScale: "0-4",
     primaryCompetency: primaryCompetency,
     competencyIds: competencyIds,
     competencyQualities: competencyQualities,
@@ -13616,6 +13668,109 @@ function createEvidenceDimensionRecord() {
   };
 }
 
+function getEvaluationSheetAllowedCurriculumTopicNodeIds(rawSnapshot, evaluationSheet) {
+  const snapshot = rawSnapshot || {};
+  const assignmentState = normalizeEvaluationSheetCurriculumAssignments(snapshot, evaluationSheet || {});
+  const collections = getCurriculumCollections(snapshot);
+  const seen = {};
+  const orderedNodeIds = [];
+
+  function addNodeIds(nodeIds) {
+    normalizeCurriculumTopicNodeIds(nodeIds).forEach(function (nodeId) {
+      if (!seen[nodeId]) {
+        seen[nodeId] = true;
+        orderedNodeIds.push(nodeId);
+      }
+    });
+  }
+
+  (collections.series || []).forEach(function (seriesItem) {
+    if (assignmentState.seriesIdsLookup[String(seriesItem && seriesItem.id || "").trim()]) {
+      addNodeIds(seriesItem && seriesItem.curriculumTopicNodeIds);
+    }
+  });
+
+  (collections.sequences || []).forEach(function (sequenceItem) {
+    if (assignmentState.sequenceIdsLookup[String(sequenceItem && sequenceItem.id || "").trim()]) {
+      addNodeIds(sequenceItem && sequenceItem.curriculumTopicNodeIds);
+    }
+  });
+
+  (collections.lessons || []).forEach(function (lessonItem) {
+    if (assignmentState.lessonIdsLookup[String(lessonItem && lessonItem.id || "").trim()]) {
+      addNodeIds(lessonItem && lessonItem.curriculumTopicNodeIds);
+    }
+  });
+
+  return orderedNodeIds;
+}
+
+function getEvaluationSheetAllowedCurriculumTopicNodeLookup(rawSnapshot, evaluationSheet) {
+  return getEvaluationSheetAllowedCurriculumTopicNodeIds(rawSnapshot, evaluationSheet).reduce(function (lookup, nodeId) {
+    lookup[nodeId] = true;
+    return lookup;
+  }, {});
+}
+
+function getEvaluationCurriculumTopicNodeIdsForTopicValues(rawSnapshot, evaluationSheet, topicValues) {
+  const snapshot = rawSnapshot || {};
+  const sheet = evaluationSheet || {};
+  const assignmentState = normalizeEvaluationSheetCurriculumAssignments(snapshot, sheet);
+  const selectedTopicLookup = String(topicValues || "").split(",").map(function (entry) {
+    return String(entry || "").trim().toLowerCase();
+  }).filter(Boolean).reduce(function (lookup, topicValue) {
+    lookup[topicValue] = true;
+    return lookup;
+  }, {});
+  const seenNodeIds = {};
+  const nodeIds = [];
+
+  function addNodeIdsFromItem(item) {
+    normalizeCurriculumTopicNodeIds(item && item.curriculumTopicNodeIds).forEach(function (nodeId) {
+      if (!seenNodeIds[nodeId]) {
+        seenNodeIds[nodeId] = true;
+        nodeIds.push(nodeId);
+      }
+    });
+  }
+
+  function itemMatchesSelectedTopic(item) {
+    return String(item && item.topic || "").split(",").map(function (entry) {
+      return String(entry || "").trim().toLowerCase();
+    }).filter(Boolean).some(function (topicValue) {
+      return Boolean(selectedTopicLookup[topicValue]);
+    });
+  }
+
+  getOrderedCurriculumSeriesForClass(snapshot, String(sheet.classId || "").trim()).forEach(function (seriesItem) {
+    const seriesId = String(seriesItem && seriesItem.id || "").trim();
+    const orderedSequences = getOrderedCurriculumSequencesForSeries(snapshot, seriesId);
+
+    if (assignmentState.seriesIdsLookup[seriesId] && itemMatchesSelectedTopic(seriesItem)) {
+      addNodeIdsFromItem(seriesItem);
+    }
+
+    orderedSequences.forEach(function (sequenceItem) {
+      const sequenceId = String(sequenceItem && sequenceItem.id || "").trim();
+      const orderedLessons = getOrderedCurriculumLessonsForSequence(snapshot, sequenceId);
+
+      if (assignmentState.sequenceIdsLookup[sequenceId] && itemMatchesSelectedTopic(sequenceItem)) {
+        addNodeIdsFromItem(sequenceItem);
+      }
+
+      orderedLessons.forEach(function (lessonItem) {
+        const lessonId = String(lessonItem && lessonItem.id || "").trim();
+
+        if (assignmentState.lessonIdsLookup[lessonId] && itemMatchesSelectedTopic(lessonItem)) {
+          addNodeIdsFromItem(lessonItem);
+        }
+      });
+    });
+  });
+
+  return nodeIds;
+}
+
 function createEvidenceAspectRecord() {
   return {
     id: createEvidenceAspectId(),
@@ -15378,7 +15533,8 @@ function normalizeEvaluationTaskSheet(rawTaskSheet) {
               ? String(subtaskSource.afb || "").trim().toLowerCase()
               : "afb1",
             be: Math.max(0, Number.isFinite(Number(subtaskSource.be)) ? Math.round(Number(subtaskSource.be)) : 0),
-            competencyAspectIds: normalizeEvaluationCompetencyAspectIds(subtaskSource.competencyAspectIds)
+            competencyAspectIds: normalizeEvaluationCompetencyAspectIds(subtaskSource.competencyAspectIds),
+            curriculumTopicNodeIds: normalizeCurriculumTopicNodeIds(subtaskSource.curriculumTopicNodeIds)
           };
         })
       };
@@ -15496,9 +15652,28 @@ function normalizeCurriculumLessonCompetencySourceIdForSnapshot(rawSnapshot, sou
   return "";
 }
 
+function getCurriculumPlanningSettingsClassFromSnapshot(rawSnapshot) {
+  const activeClassId = String(rawSnapshot && rawSnapshot.activeClassId || "").trim();
+
+  return Array.isArray(rawSnapshot && rawSnapshot.classes)
+    ? rawSnapshot.classes.find(function (classItem) {
+        return String(classItem && classItem.id || "").trim() === activeClassId;
+      }) || null
+    : null;
+}
+
+function getCurriculumLessonCompetencyToolIdForSnapshot(rawSnapshot) {
+  const classItem = getCurriculumPlanningSettingsClassFromSnapshot(rawSnapshot);
+  const classToolId = String(classItem && classItem.curriculumLessonCompetencyToolId || "").trim();
+  const snapshotToolId = String(rawSnapshot && rawSnapshot.curriculumLessonCompetencyToolId || "").trim();
+  const classHasToolSetting = Boolean(classItem && Object.prototype.hasOwnProperty.call(classItem, "curriculumLessonCompetencyToolId"));
+
+  return normalizeCurriculumLessonCompetencySourceIdForSnapshot(rawSnapshot, classHasToolSetting ? classToolId : (classToolId || snapshotToolId));
+}
+
 function normalizeCurriculumLessonCompetencyAspectIdForSnapshot(rawSnapshot, aspectId) {
   const normalizedAspectId = String(aspectId || "").trim();
-  const sourceId = normalizeCurriculumLessonCompetencySourceIdForSnapshot(rawSnapshot, rawSnapshot && rawSnapshot.curriculumLessonCompetencyToolId);
+  const sourceId = getCurriculumLessonCompetencyToolIdForSnapshot(rawSnapshot);
 
   if (!normalizedAspectId || normalizedAspectId.indexOf("math:") === 0 || normalizedAspectId.indexOf("evidence:") === 0) {
     return normalizedAspectId;
@@ -15519,6 +15694,18 @@ function sanitizeEvaluationTaskSheetCompetencyLinks(taskSheet, sourceToolId, raw
     (Array.isArray(task && task.subtasks) ? task.subtasks : []).forEach(function (subtask) {
       subtask.competencyAspectIds = normalizeEvaluationCompetencyAspectIds(subtask && subtask.competencyAspectIds).filter(function (aspectId) {
         return Boolean(validLookup[aspectId]);
+      });
+    });
+  });
+}
+
+function sanitizeEvaluationTaskSheetCurriculumTopicLinks(taskSheet, rawSnapshot, evaluationSheet) {
+  const validLookup = getEvaluationSheetAllowedCurriculumTopicNodeLookup(rawSnapshot, evaluationSheet);
+
+  (Array.isArray(taskSheet && taskSheet.tasks) ? taskSheet.tasks : []).forEach(function (task) {
+    (Array.isArray(task && task.subtasks) ? task.subtasks : []).forEach(function (subtask) {
+      subtask.curriculumTopicNodeIds = normalizeCurriculumTopicNodeIds(subtask && subtask.curriculumTopicNodeIds).filter(function (nodeId) {
+        return Boolean(validLookup[nodeId]);
       });
     });
   });
@@ -15618,7 +15805,8 @@ function createEvaluationSubtaskRecord() {
     topics: "",
     afb: "afb1",
     be: 0,
-    competencyAspectIds: []
+    competencyAspectIds: [],
+    curriculumTopicNodeIds: []
   };
 }
 
@@ -20194,6 +20382,7 @@ window.UnterrichtsassistentApp.openCurriculumSeriesModal = function (seriesId) {
         color: getCurriculumSeriesColor(existingSeries, String(existingSeries.id || "").trim()),
         startMode: String(existingSeries.startMode || "").trim() === "manual" ? "manual" : "automatic",
         startDate: String(existingSeries.startDate || "").trim(),
+        curriculumTopicNodeIds: normalizeCurriculumTopicNodeIds(existingSeries.curriculumTopicNodeIds),
         nextSeriesId: String(existingSeries.nextSeriesId || "").trim()
       }
     : {
@@ -20204,6 +20393,7 @@ window.UnterrichtsassistentApp.openCurriculumSeriesModal = function (seriesId) {
         color: createRandomCurriculumSeriesColor(),
         startMode: "automatic",
         startDate: "",
+        curriculumTopicNodeIds: [],
         nextSeriesId: ""
       };
 
@@ -20426,6 +20616,7 @@ window.UnterrichtsassistentApp.stopEventPropagation = function (event) {
 };
 window.UnterrichtsassistentApp.closeCurriculumSeriesModal = function () {
   activeCurriculumSeriesDraft = null;
+  activeCurriculumTopicSelectionModal = null;
 
   if (activeViewId === "planung") {
     setActiveView("planung");
@@ -20467,13 +20658,15 @@ window.UnterrichtsassistentApp.openCurriculumSequenceModal = function (seriesId,
         id: String(existingSequence.id || "").trim(),
         seriesId: normalizedSeriesId,
         topic: String(existingSequence.topic || "").trim(),
-        hourDemand: Math.max(0, Number(existingSequence.hourDemand) || 0)
+        hourDemand: Math.max(0, Number(existingSequence.hourDemand) || 0),
+        curriculumTopicNodeIds: normalizeCurriculumTopicNodeIds(existingSequence.curriculumTopicNodeIds)
       }
     : {
         id: "",
         seriesId: normalizedSeriesId,
         topic: "",
-        hourDemand: 0
+        hourDemand: 0,
+        curriculumTopicNodeIds: []
       };
 
   setActiveView("planung");
@@ -20482,6 +20675,7 @@ window.UnterrichtsassistentApp.openCurriculumSequenceModal = function (seriesId,
 window.UnterrichtsassistentApp.closeCurriculumSequenceModal = function () {
   activeCurriculumSequenceDraft = null;
   activeCurriculumLessonDraft = null;
+  activeCurriculumTopicSelectionModal = null;
 
   if (activeViewId === "planung") {
     setActiveView("planung");
@@ -20694,7 +20888,8 @@ window.UnterrichtsassistentApp.openCurriculumLessonModal = function (seriesId, s
           ? existingLesson.competencyAspectIds.map(function (aspectId) {
               return String(aspectId || "").trim();
             }).filter(Boolean)
-          : []
+          : [],
+        curriculumTopicNodeIds: normalizeCurriculumTopicNodeIds(existingLesson.curriculumTopicNodeIds)
       }
     : {
         id: "",
@@ -20714,7 +20909,8 @@ window.UnterrichtsassistentApp.openCurriculumLessonModal = function (seriesId, s
         homeworkDueAmount: 1,
         homeworkDueUnit: "tage",
         competencyFocusAspectId: "",
-        competencyAspectIds: []
+        competencyAspectIds: [],
+        curriculumTopicNodeIds: []
       };
 
   setActiveView("planung");
@@ -20722,6 +20918,7 @@ window.UnterrichtsassistentApp.openCurriculumLessonModal = function (seriesId, s
 };
 window.UnterrichtsassistentApp.closeCurriculumLessonModal = function () {
   activeCurriculumLessonDraft = null;
+  activeCurriculumTopicSelectionModal = null;
 
   if (activeViewId === "planung") {
     setActiveView("planung");
@@ -21510,12 +21707,13 @@ window.UnterrichtsassistentApp.deleteCurriculumLessonStep = function (stepId) {
 window.UnterrichtsassistentApp.updateCurriculumLessonCompetencyTool = function (toolId) {
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
   const normalizedToolId = normalizeCurriculumLessonCompetencySourceIdForSnapshot(currentRawSnapshot, toolId);
+  const activeClass = currentRawSnapshot ? getCurriculumPlanningSettingsClassFromSnapshot(currentRawSnapshot) : null;
 
-  if (!isCurriculumPlanningMode() || !currentRawSnapshot) {
+  if (!isCurriculumPlanningMode() || !currentRawSnapshot || !activeClass) {
     return false;
   }
 
-  currentRawSnapshot.curriculumLessonCompetencyToolId = normalizedToolId;
+  activeClass.curriculumLessonCompetencyToolId = normalizedToolId;
   saveAndRefreshSnapshot(currentRawSnapshot, "planung");
   return false;
 };
@@ -22533,6 +22731,7 @@ window.UnterrichtsassistentApp.submitCurriculumLessonModal = function (event) {
     homeworkDueUnit: normalizeCurriculumLessonHomeworkDueUnit(activeCurriculumLessonDraft && activeCurriculumLessonDraft.homeworkDueUnit),
     competencyFocusAspectId,
     competencyAspectIds,
+    curriculumTopicNodeIds: normalizeCurriculumTopicNodeIds(activeCurriculumLessonDraft && activeCurriculumLessonDraft.curriculumTopicNodeIds),
     nextLessonId: ""
   };
   let nextOrderedLessons;
@@ -22669,6 +22868,7 @@ window.UnterrichtsassistentApp.submitCurriculumSequenceModal = function (event) 
     seriesId: normalizedSeriesId,
     topic: topicValue,
     hourDemand: hourDemandValue,
+    curriculumTopicNodeIds: normalizeCurriculumTopicNodeIds(activeCurriculumSequenceDraft && activeCurriculumSequenceDraft.curriculumTopicNodeIds),
     nextSequenceId: ""
   };
   let nextOrderedSequences;
@@ -22839,6 +23039,7 @@ window.UnterrichtsassistentApp.submitCurriculumSeriesModal = function (event) {
     color: colorValue,
     startMode: startModeValue,
     startDate: startDateValue,
+    curriculumTopicNodeIds: normalizeCurriculumTopicNodeIds(activeCurriculumSeriesDraft && activeCurriculumSeriesDraft.curriculumTopicNodeIds),
     nextSeriesId: ""
   };
   let nextOrderedSeries;
@@ -23786,6 +23987,7 @@ window.UnterrichtsassistentApp.submitUnterrichtMathObservationCompactModal = fun
     }) || null;
 
     if (record) {
+      record.mathObservationQualityScale = "0-4";
       record.primaryCompetency = competencySelections.length ? competencySelections[0].competency : "";
       record.competencyIds = normalizeMathObservationCompetencyIds(record.primaryCompetency, competencySelections.map(function (selection) {
         return selection.competency;
@@ -23888,7 +24090,7 @@ window.UnterrichtsassistentApp.openUnterrichtMathObservationModal = function () 
     competencyIdsInput.value = "k1";
   }
   if (processQualityInput) {
-    processQualityInput.value = "0";
+    processQualityInput.value = "2";
   }
   if (markerInput) {
     markerInput.value = "beitrag";
@@ -25377,6 +25579,68 @@ window.UnterrichtsassistentApp.updateSeatPlanSocialOptimizationSetting = functio
 window.UnterrichtsassistentApp.getPlanningViewMode = function () {
   return planningViewMode;
 };
+function normalizeCurriculumTopicNodeIds(nodeIds) {
+  const sourceItems = Array.isArray(nodeIds)
+    ? nodeIds
+    : String(nodeIds || "").split("|");
+  const seen = {};
+
+  return sourceItems.map(function (nodeId) {
+    return String(nodeId || "").trim();
+  }).filter(function (nodeId) {
+    if (!nodeId || seen[nodeId]) {
+      return false;
+    }
+
+    seen[nodeId] = true;
+    return true;
+  });
+}
+
+function normalizeCurriculumTopicTreePlanId(planId) {
+  const normalizedPlanId = String(planId || "").trim();
+  const matchingPlan = CURRICULUM_TOPIC_TREE_PLANS.find(function (plan) {
+    return String(plan && plan.id || "").trim() === normalizedPlanId;
+  }) || CURRICULUM_TOPIC_TREE_PLANS[0];
+
+  return String(matchingPlan && matchingPlan.id || "").trim();
+}
+
+function normalizeCurriculumTopicTreeGradeFilter(filterValue) {
+  const normalizedFilter = String(filterValue || "").trim();
+  const allowedFilters = ["", "5/6", "7/8", "9/10", "Einfuehrungsphase", "Qualifikationsphase eA", "Qualifikationsphase gA"];
+
+  return allowedFilters.indexOf(normalizedFilter) >= 0 ? normalizedFilter : "";
+}
+
+function getCurriculumInstructionTopicTreeSettingsForSnapshot(snapshot) {
+  const source = snapshot && typeof snapshot === "object" ? snapshot : {};
+  const classItem = getCurriculumPlanningSettingsClassFromSnapshot(source);
+  const classHasPlanSetting = Boolean(classItem && Object.prototype.hasOwnProperty.call(classItem, "curriculumInstructionTopicTreePlanId"));
+  const classHasGradeFilterSetting = Boolean(classItem && Object.prototype.hasOwnProperty.call(classItem, "curriculumInstructionTopicTreeGradeFilter"));
+  const planId = normalizeCurriculumTopicTreePlanId(
+    classHasPlanSetting
+      ? String(classItem && classItem.curriculumInstructionTopicTreePlanId || "").trim()
+      : (String(classItem && classItem.curriculumInstructionTopicTreePlanId || "").trim() || source.curriculumInstructionTopicTreePlanId)
+  );
+  const gradeFilter = normalizeCurriculumTopicTreeGradeFilter(
+    classHasGradeFilterSetting
+      ? String(classItem && classItem.curriculumInstructionTopicTreeGradeFilter || "").trim()
+      : (String(classItem && classItem.curriculumInstructionTopicTreeGradeFilter || "").trim() || source.curriculumInstructionTopicTreeGradeFilter)
+  );
+
+  return {
+    activePlanId: planId,
+    gradeFilter,
+    plans: CURRICULUM_TOPIC_TREE_PLANS.map(function (plan) {
+      return {
+        id: String(plan && plan.id || "").trim(),
+        label: String(plan && plan.label || "").trim()
+      };
+    })
+  };
+}
+
 function ensureCurriculumTopicTreeLoaded() {
   const activePlan = CURRICULUM_TOPIC_TREE_PLANS.find(function (plan) {
     return String(plan && plan.id || "").trim() === activeCurriculumTopicTreePlanId;
@@ -25402,8 +25666,11 @@ function ensureCurriculumTopicTreeLoaded() {
       curriculumTopicTreeLoadState = curriculumTopicTreeData ? "loaded" : "failed";
       curriculumTopicTreeLoadError = curriculumTopicTreeData ? "" : "Die Stoffplanungsdaten sind leer oder ungueltig.";
 
-      if (activeViewId === "planung" && planningViewMode === "stoffplanung") {
+      if (activeViewId === "planung" && (planningViewMode === "stoffplanung" || activeCurriculumTopicSelectionModal)) {
         setActiveView("planung");
+      }
+      if (activeViewId === "bewertung" && bewertungViewMode === "erstellen") {
+        setActiveView("bewertung");
       }
     })
     .catch(function (error) {
@@ -25411,8 +25678,11 @@ function ensureCurriculumTopicTreeLoaded() {
       curriculumTopicTreeLoadState = "failed";
       curriculumTopicTreeLoadError = "Die Stoffplanungsdaten konnten nicht geladen werden.";
 
-      if (activeViewId === "planung" && planningViewMode === "stoffplanung") {
+      if (activeViewId === "planung" && (planningViewMode === "stoffplanung" || activeCurriculumTopicSelectionModal)) {
         setActiveView("planung");
+      }
+      if (activeViewId === "bewertung" && bewertungViewMode === "erstellen") {
+        setActiveView("bewertung");
       }
     });
 }
@@ -25453,12 +25723,7 @@ window.UnterrichtsassistentApp.updateCurriculumTopicTreePlan = function (planId)
   return false;
 };
 window.UnterrichtsassistentApp.updateCurriculumTopicTreeGradeFilter = function (filterValue) {
-  const normalizedFilter = String(filterValue || "").trim();
-  const allowedFilters = ["", "5/6", "7/8", "9/10", "Einfuehrungsphase", "Qualifikationsphase eA", "Qualifikationsphase gA"];
-
-  curriculumTopicTreeGradeFilter = allowedFilters.indexOf(normalizedFilter) >= 0
-    ? normalizedFilter
-    : "";
+  curriculumTopicTreeGradeFilter = normalizeCurriculumTopicTreeGradeFilter(filterValue);
   curriculumTopicTreeExpandedPath = [];
 
   if (activeViewId === "planung") {
@@ -25488,6 +25753,240 @@ window.UnterrichtsassistentApp.toggleCurriculumTopicTreeNode = function (nodeId,
 
   return false;
 };
+window.UnterrichtsassistentApp.getCurriculumInstructionTopicTreeState = function () {
+  const settings = getCurriculumInstructionTopicTreeSettingsForSnapshot(schoolService ? schoolService.snapshot : null);
+
+  if (settings.activePlanId && settings.activePlanId !== activeCurriculumTopicTreePlanId) {
+    activeCurriculumTopicTreePlanId = settings.activePlanId;
+    curriculumTopicTreeData = null;
+    curriculumTopicTreeLoadState = "idle";
+    curriculumTopicTreeLoadError = "";
+  }
+
+  ensureCurriculumTopicTreeLoaded();
+
+  return {
+    status: curriculumTopicTreeLoadState,
+    error: curriculumTopicTreeLoadError,
+    data: curriculumTopicTreeData,
+    expandedPath: activeCurriculumTopicSelectionModal && Array.isArray(activeCurriculumTopicSelectionModal.expandedPath)
+      ? activeCurriculumTopicSelectionModal.expandedPath.slice()
+      : [],
+    gradeFilter: settings.gradeFilter,
+    activePlanId: settings.activePlanId,
+    plans: settings.plans
+  };
+};
+window.UnterrichtsassistentApp.getCurriculumInstructionTopicTreeSettings = function () {
+  return getCurriculumInstructionTopicTreeSettingsForSnapshot(schoolService ? schoolService.snapshot : null);
+};
+window.UnterrichtsassistentApp.updateCurriculumInstructionTopicTreePlan = function (planId) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const nextPlanId = normalizeCurriculumTopicTreePlanId(planId);
+  const activeClass = currentRawSnapshot ? getCurriculumPlanningSettingsClassFromSnapshot(currentRawSnapshot) : null;
+
+  if (!isCurriculumPlanningMode() || !currentRawSnapshot || !activeClass) {
+    return false;
+  }
+
+  activeClass.curriculumInstructionTopicTreePlanId = nextPlanId;
+  if (nextPlanId !== activeCurriculumTopicTreePlanId) {
+    activeCurriculumTopicTreePlanId = nextPlanId;
+    curriculumTopicTreeData = null;
+    curriculumTopicTreeLoadState = "idle";
+    curriculumTopicTreeLoadError = "";
+    curriculumTopicTreeExpandedPath = [];
+  }
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return false;
+};
+window.UnterrichtsassistentApp.updateCurriculumInstructionTopicTreeGradeFilter = function (filterValue) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeClass = currentRawSnapshot ? getCurriculumPlanningSettingsClassFromSnapshot(currentRawSnapshot) : null;
+
+  if (!isCurriculumPlanningMode() || !currentRawSnapshot || !activeClass) {
+    return false;
+  }
+
+  activeClass.curriculumInstructionTopicTreeGradeFilter = normalizeCurriculumTopicTreeGradeFilter(filterValue);
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return false;
+};
+function getCurriculumTopicDescendantIds(nodeById, nodeIds) {
+  const result = {};
+
+  function visit(nodeId) {
+    const normalizedNodeId = String(nodeId || "").trim();
+    const nodeItem = nodeById[normalizedNodeId] || null;
+
+    if (!normalizedNodeId || result[normalizedNodeId]) {
+      return;
+    }
+
+    result[normalizedNodeId] = true;
+    (Array.isArray(nodeItem && nodeItem.successors) ? nodeItem.successors : []).forEach(visit);
+  }
+
+  normalizeCurriculumTopicNodeIds(nodeIds).forEach(visit);
+  return result;
+}
+window.UnterrichtsassistentApp.openCurriculumTopicSelectionModal = function (targetType) {
+  const normalizedTargetType = ["series", "sequence", "lesson"].indexOf(String(targetType || "").trim()) >= 0
+    ? String(targetType || "").trim()
+    : "";
+  const sourceDraft = normalizedTargetType === "series"
+    ? activeCurriculumSeriesDraft
+    : (normalizedTargetType === "sequence" ? activeCurriculumSequenceDraft : activeCurriculumLessonDraft);
+
+  if (!isCurriculumPlanningMode() || !sourceDraft || !normalizedTargetType) {
+    return false;
+  }
+
+  activeCurriculumTopicSelectionModal = {
+    targetType: normalizedTargetType,
+    selectedNodeIds: normalizeCurriculumTopicNodeIds(sourceDraft.curriculumTopicNodeIds),
+    expandedPath: []
+  };
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.closeCurriculumTopicSelectionModal = function () {
+  activeCurriculumTopicSelectionModal = null;
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.confirmCurriculumTopicSelectionModal = function () {
+  const restriction = window.UnterrichtsassistentApp.getCurriculumTopicSelectionRestriction();
+  let selectedNodeIds = normalizeCurriculumTopicNodeIds(activeCurriculumTopicSelectionModal && activeCurriculumTopicSelectionModal.selectedNodeIds);
+  const targetType = String(activeCurriculumTopicSelectionModal && activeCurriculumTopicSelectionModal.targetType || "").trim();
+
+  if (restriction && restriction.isRestricted) {
+    selectedNodeIds = selectedNodeIds.filter(function (nodeId) {
+      return Boolean(restriction.allowedNodeIds && restriction.allowedNodeIds[nodeId]);
+    });
+  }
+
+  if (targetType === "series" && activeCurriculumSeriesDraft) {
+    activeCurriculumSeriesDraft.curriculumTopicNodeIds = selectedNodeIds;
+  } else if (targetType === "sequence" && activeCurriculumSequenceDraft) {
+    activeCurriculumSequenceDraft.curriculumTopicNodeIds = selectedNodeIds;
+  } else if (targetType === "lesson" && activeCurriculumLessonDraft) {
+    activeCurriculumLessonDraft.curriculumTopicNodeIds = selectedNodeIds;
+  }
+
+  activeCurriculumTopicSelectionModal = null;
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.toggleCurriculumTopicSelectionNode = function (nodeId, depth) {
+  const normalizedNodeId = String(nodeId || "").trim();
+  const normalizedDepth = Math.max(0, Number(depth) || 0);
+
+  if (!activeCurriculumTopicSelectionModal || !normalizedNodeId) {
+    return false;
+  }
+
+  if (activeCurriculumTopicSelectionModal.expandedPath[normalizedDepth] === normalizedNodeId) {
+    activeCurriculumTopicSelectionModal.expandedPath = activeCurriculumTopicSelectionModal.expandedPath.slice(0, normalizedDepth);
+  } else {
+    activeCurriculumTopicSelectionModal.expandedPath = activeCurriculumTopicSelectionModal.expandedPath.slice(0, normalizedDepth);
+    activeCurriculumTopicSelectionModal.expandedPath[normalizedDepth] = normalizedNodeId;
+  }
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.toggleCurriculumTopicSelectionNodeChecked = function (nodeId, isChecked) {
+  const normalizedNodeId = String(nodeId || "").trim();
+  let selectedNodeIds = normalizeCurriculumTopicNodeIds(activeCurriculumTopicSelectionModal && activeCurriculumTopicSelectionModal.selectedNodeIds);
+
+  if (!activeCurriculumTopicSelectionModal || !normalizedNodeId) {
+    return false;
+  }
+
+  selectedNodeIds = selectedNodeIds.filter(function (entry) {
+    return entry !== normalizedNodeId;
+  });
+
+  if (isChecked) {
+    selectedNodeIds.push(normalizedNodeId);
+  }
+
+  activeCurriculumTopicSelectionModal.selectedNodeIds = selectedNodeIds;
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.getActiveCurriculumTopicSelectionModal = function () {
+  return activeCurriculumTopicSelectionModal
+    ? {
+        targetType: String(activeCurriculumTopicSelectionModal.targetType || "").trim(),
+        selectedNodeIds: normalizeCurriculumTopicNodeIds(activeCurriculumTopicSelectionModal.selectedNodeIds),
+        expandedPath: Array.isArray(activeCurriculumTopicSelectionModal.expandedPath) ? activeCurriculumTopicSelectionModal.expandedPath.slice() : []
+      }
+    : null;
+};
+window.UnterrichtsassistentApp.getCurriculumTopicSelectionRestriction = function () {
+  const treeData = curriculumTopicTreeData && typeof curriculumTopicTreeData === "object" ? curriculumTopicTreeData : null;
+  const nodeById = treeData && Array.isArray(treeData.nodes)
+    ? treeData.nodes.reduce(function (lookup, nodeItem) {
+        const nodeId = String(nodeItem && nodeItem.id || "").trim();
+        if (nodeId) {
+          lookup[nodeId] = nodeItem;
+        }
+        return lookup;
+      }, {})
+    : {};
+  const targetType = String(activeCurriculumTopicSelectionModal && activeCurriculumTopicSelectionModal.targetType || "").trim();
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
+  let parentNodeIds = [];
+
+  if (targetType === "series") {
+    return { isRestricted: false, allowedNodeIds: {} };
+  }
+
+  if (targetType === "sequence" && activeCurriculumSequenceDraft) {
+    const seriesId = String(activeCurriculumSequenceDraft.seriesId || "").trim();
+    const parentSeries = collections
+      ? collections.series.find(function (entry) {
+          return String(entry && entry.id || "").trim() === seriesId;
+        }) || null
+      : null;
+    parentNodeIds = normalizeCurriculumTopicNodeIds(parentSeries && parentSeries.curriculumTopicNodeIds);
+  } else if (targetType === "lesson" && activeCurriculumLessonDraft) {
+    const sequenceId = String(activeCurriculumLessonDraft.sequenceId || "").trim();
+    const parentSequence = collections
+      ? collections.sequences.find(function (entry) {
+          return String(entry && entry.id || "").trim() === sequenceId;
+        }) || null
+      : null;
+    parentNodeIds = normalizeCurriculumTopicNodeIds(parentSequence && parentSequence.curriculumTopicNodeIds);
+  }
+
+  return {
+    isRestricted: true,
+    allowedNodeIds: getCurriculumTopicDescendantIds(nodeById, parentNodeIds)
+  };
+};
 window.UnterrichtsassistentApp.getBewertungViewMode = function () {
   return bewertungViewMode;
 };
@@ -25501,6 +26000,24 @@ window.UnterrichtsassistentApp.getActiveEvidenceLevelDesignDraft = function () {
 };
 window.UnterrichtsassistentApp.getActiveEvaluationSheetDraft = function () {
   return activeEvaluationSheetDraft;
+};
+window.UnterrichtsassistentApp.getActiveEvaluationSubtaskTopicModal = function () {
+  return activeEvaluationSubtaskTopicModal
+    ? {
+        taskId: String(activeEvaluationSubtaskTopicModal.taskId || "").trim(),
+        subtaskId: String(activeEvaluationSubtaskTopicModal.subtaskId || "").trim(),
+        selectedNodeIds: normalizeCurriculumTopicNodeIds(activeEvaluationSubtaskTopicModal.selectedNodeIds)
+      }
+    : null;
+};
+window.UnterrichtsassistentApp.getActiveEvaluationSheetAllowedCurriculumTopicNodeIds = function () {
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeSheet = currentRawSnapshot && activeClass
+    ? getActiveEvaluationSheetForSnapshot(currentRawSnapshot, activeClass)
+    : null;
+
+  return activeSheet ? getEvaluationSheetAllowedCurriculumTopicNodeIds(currentRawSnapshot, activeSheet) : [];
 };
 window.UnterrichtsassistentApp.getEvaluationCompetencySourceOptions = function () {
   return getEvaluationCompetencySourceOptionsForSnapshot(schoolService ? schoolService.snapshot : null);
@@ -25738,16 +26255,13 @@ window.UnterrichtsassistentApp.getActiveCurriculumLessonStepCompetencyModal = fu
 };
 window.UnterrichtsassistentApp.getCurriculumLessonCompetencyToolId = function () {
   const snapshot = schoolService ? schoolService.snapshot : null;
-  const toolId = String(snapshot && snapshot.curriculumLessonCompetencyToolId || "").trim();
-  const normalizedToolId = normalizeCurriculumLessonCompetencySourceIdForSnapshot(snapshot, toolId);
-  const activeEvidenceToolId = String(snapshot && snapshot.activeEvidenceToolId || "").trim();
-  const fallbackEvidenceToolId = activeEvidenceToolId || String(snapshot && snapshot.evidenceTools && snapshot.evidenceTools[0] && snapshot.evidenceTools[0].id || "").trim();
+  const normalizedToolId = getCurriculumLessonCompetencyToolIdForSnapshot(snapshot);
 
   if (normalizedToolId) {
     return normalizedToolId;
   }
 
-  return fallbackEvidenceToolId ? "evidence:" + fallbackEvidenceToolId : "mathObservation";
+  return "mathObservation";
 };
 window.UnterrichtsassistentApp.getExpandedCurriculumSeriesIds = function () {
   return expandedCurriculumSeriesIds.slice();
@@ -25846,6 +26360,7 @@ window.UnterrichtsassistentApp.setBewertungViewMode = function (nextMode) {
     : "bewerten";
   if (bewertungViewMode !== "erstellen") {
     activeEvaluationSheetDraft = null;
+    activeEvaluationSubtaskTopicModal = null;
   }
   if (bewertungViewMode !== "bewerten") {
     activePlannedEvaluationDraft = null;
@@ -29053,6 +29568,11 @@ window.UnterrichtsassistentApp.updateEvaluationSubtaskField = function (taskId, 
     subtask.topics = String(nextValue || "").split(",").map(function (entry) {
       return String(entry || "").trim();
     }).filter(Boolean).join(", ");
+    const allowedTopicNodeLookup = getEvaluationSheetAllowedCurriculumTopicNodeLookup(currentRawSnapshot, activeSheet);
+
+    subtask.curriculumTopicNodeIds = getEvaluationCurriculumTopicNodeIdsForTopicValues(currentRawSnapshot, activeSheet, subtask.topics).filter(function (nodeId) {
+      return Boolean(allowedTopicNodeLookup[nodeId]);
+    });
   } else if (normalizedFieldName === "afb") {
     subtask.afb = ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(normalizedAfb) >= 0
       ? normalizedAfb
@@ -29068,10 +29588,98 @@ window.UnterrichtsassistentApp.updateEvaluationSubtaskField = function (taskId, 
     subtask.competencyAspectIds = normalizeEvaluationCompetencyAspectIds(nextValue).filter(function (aspectId) {
       return Boolean(validLookup[aspectId]);
     });
+  } else if (normalizedFieldName === "curriculumTopicNodeIds") {
+    const validLookup = getEvaluationSheetAllowedCurriculumTopicNodeLookup(currentRawSnapshot, activeSheet);
+
+    subtask.curriculumTopicNodeIds = normalizeCurriculumTopicNodeIds(nextValue).filter(function (nodeId) {
+      return Boolean(validLookup[nodeId]);
+    });
   } else {
     return false;
   }
 
+  currentRawSnapshot.activeEvaluationSheetId = activeSheet.id;
+  saveAndRefreshSnapshot(currentRawSnapshot, "bewertung");
+  return false;
+};
+window.UnterrichtsassistentApp.openEvaluationSubtaskTopicModal = function (taskId, subtaskId) {
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeSheet = currentRawSnapshot && activeClass
+    ? getActiveEvaluationSheetForSnapshot(currentRawSnapshot, activeClass)
+    : null;
+  const taskSheet = activeSheet ? getMutableEvaluationTaskSheet(activeSheet) : null;
+  const task = taskSheet ? getEvaluationTaskById(taskSheet, taskId) : null;
+  const subtask = task ? getEvaluationSubtaskById(task, subtaskId) : null;
+
+  if (!subtask) {
+    return false;
+  }
+
+  activeEvaluationSubtaskTopicModal = {
+    taskId: String(taskId || "").trim(),
+    subtaskId: String(subtaskId || "").trim(),
+    selectedNodeIds: normalizeCurriculumTopicNodeIds(subtask.curriculumTopicNodeIds)
+  };
+
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.closeEvaluationSubtaskTopicModal = function () {
+  activeEvaluationSubtaskTopicModal = null;
+
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.toggleEvaluationSubtaskTopicModalNode = function (nodeId, isChecked) {
+  const normalizedNodeId = String(nodeId || "").trim();
+  let selectedNodeIds = normalizeCurriculumTopicNodeIds(activeEvaluationSubtaskTopicModal && activeEvaluationSubtaskTopicModal.selectedNodeIds);
+
+  if (!activeEvaluationSubtaskTopicModal || !normalizedNodeId) {
+    return false;
+  }
+
+  selectedNodeIds = selectedNodeIds.filter(function (entry) {
+    return entry !== normalizedNodeId;
+  });
+
+  if (isChecked) {
+    selectedNodeIds.push(normalizedNodeId);
+  }
+
+  activeEvaluationSubtaskTopicModal.selectedNodeIds = normalizeCurriculumTopicNodeIds(selectedNodeIds);
+
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.confirmEvaluationSubtaskTopicModal = function () {
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeSheet = currentRawSnapshot && activeClass
+    ? getActiveEvaluationSheetForSnapshot(currentRawSnapshot, activeClass)
+    : null;
+  const taskSheet = activeSheet ? getMutableEvaluationTaskSheet(activeSheet) : null;
+  const task = taskSheet && activeEvaluationSubtaskTopicModal ? getEvaluationTaskById(taskSheet, activeEvaluationSubtaskTopicModal.taskId) : null;
+  const subtask = task && activeEvaluationSubtaskTopicModal ? getEvaluationSubtaskById(task, activeEvaluationSubtaskTopicModal.subtaskId) : null;
+  const validLookup = activeSheet ? getEvaluationSheetAllowedCurriculumTopicNodeLookup(currentRawSnapshot, activeSheet) : {};
+
+  if (!repository || !schoolService || !currentRawSnapshot || !activeSheet || !subtask || !activeEvaluationSubtaskTopicModal) {
+    return false;
+  }
+
+  subtask.curriculumTopicNodeIds = normalizeCurriculumTopicNodeIds(activeEvaluationSubtaskTopicModal.selectedNodeIds).filter(function (nodeId) {
+    return Boolean(validLookup[nodeId]);
+  });
+  activeEvaluationSubtaskTopicModal = null;
   currentRawSnapshot.activeEvaluationSheetId = activeSheet.id;
   saveAndRefreshSnapshot(currentRawSnapshot, "bewertung");
   return false;
@@ -29549,6 +30157,7 @@ window.UnterrichtsassistentApp.toggleEvaluationSheetCurriculumAssignment = funct
   activeSheet.curriculumSequenceIds = Object.keys(emptySequenceIdsLookup);
   activeSheet.curriculumSeriesIds = Object.keys(emptySeriesIdsLookup);
   normalizeEvaluationSheetCurriculumAssignments(currentRawSnapshot, activeSheet);
+  sanitizeEvaluationTaskSheetCurriculumTopicLinks(getMutableEvaluationTaskSheet(activeSheet), currentRawSnapshot, activeSheet);
   currentRawSnapshot.activeEvaluationSheetId = activeSheet.id;
   saveAndRefreshSnapshot(currentRawSnapshot, "bewertung");
   return false;
