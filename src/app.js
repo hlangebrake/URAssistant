@@ -4998,12 +4998,19 @@ function buildCurriculumLessonPlanAssignmentsForClass(snapshot, classId) {
       const statusClassId = String(statusItem && statusItem.classId || "").trim();
       const lessonDate = String(statusItem && statusItem.lessonDate || "").slice(0, 10);
 
-      if (statusClassId && lessonDate) {
+      if (!Boolean(statusItem && statusItem.isAdditionalLesson) && statusClassId && lessonDate) {
         lookup[[statusClassId, lessonDate].join("::")] = statusItem;
       }
 
       return lookup;
     }, {});
+  const additionalLessonStatuses = (Array.isArray(snapshot && snapshot.planningInstructionLessonStatuses)
+    ? snapshot.planningInstructionLessonStatuses
+    : []).filter(function (statusItem) {
+      return Boolean(statusItem && statusItem.isAdditionalLesson)
+        && String(statusItem && statusItem.classId || "").trim() === normalizedClassId
+        && String(statusItem && statusItem.lessonDate || "").slice(0, 10);
+    });
   const lessonSlots = [];
   const lessonPlanAssignments = {};
   let previousSeriesLastAssignedSlotIndex = -1;
@@ -5046,6 +5053,29 @@ function buildCurriculumLessonPlanAssignmentsForClass(snapshot, classId) {
 
     cursor.setDate(cursor.getDate() + 1);
   }
+
+  additionalLessonStatuses.forEach(function (statusItem) {
+    const lessonDate = String(statusItem && statusItem.lessonDate || "").slice(0, 10);
+    const lessonCount = String(statusItem && statusItem.additionalLessonType || "").trim() === "double" ? 2 : 1;
+    let unitIndex;
+
+    if (!lessonDate || lessonDate < formatCurriculumPlanningDateValue(startDate) || lessonDate > formatCurriculumPlanningDateValue(endDate)) {
+      return;
+    }
+
+    for (unitIndex = 0; unitIndex < lessonCount; unitIndex += 1) {
+      lessonSlots.push({
+        lessonDate: lessonDate,
+        assignedSeriesId: "",
+        assignedSequenceId: "",
+        assignedLessonId: ""
+      });
+    }
+  });
+
+  lessonSlots.sort(function (left, right) {
+    return String(left && left.lessonDate || "").localeCompare(String(right && right.lessonDate || ""));
+  });
 
   orderedSeries.forEach(function (seriesItem) {
     const seriesId = String(seriesItem && seriesItem.id || "").trim();
@@ -19243,7 +19273,8 @@ window.UnterrichtsassistentApp.openPlanningInstructionLessonModal = function (le
     : null;
   const existingStatus = collections
     ? collections.lessonStatuses.find(function (entry) {
-        return String(entry && entry.classId || "").trim() === normalizedClassId
+        return !Boolean(entry && entry.isAdditionalLesson)
+          && String(entry && entry.classId || "").trim() === normalizedClassId
           && String(entry && entry.lessonDate || "").slice(0, 10) === normalizedLessonDate;
       }) || null
     : null;
@@ -19289,6 +19320,56 @@ window.UnterrichtsassistentApp.openPlanningInstructionLessonModal = function (le
               endDate: String(outageEvent.endDate || outageEvent.startDate || "").slice(0, 10)
             }
           : null
+      };
+
+  setActiveView(activeViewId);
+  return false;
+};
+window.UnterrichtsassistentApp.openPlanningInstructionAdditionalLessonModal = function (additionalLessonId) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const collections = currentRawSnapshot ? getPlanningCollections(currentRawSnapshot) : null;
+  const normalizedAdditionalLessonId = String(additionalLessonId || "").trim();
+  const normalizedClassId = String(activeClass && activeClass.id || "").trim();
+  const existingStatus = collections && normalizedAdditionalLessonId
+    ? collections.lessonStatuses.find(function (entry) {
+        return Boolean(entry && entry.isAdditionalLesson)
+          && String(entry && entry.id || "").trim() === normalizedAdditionalLessonId
+          && String(entry && entry.classId || "").trim() === normalizedClassId;
+      }) || null
+    : null;
+  const fallbackDate = normalizeDateValue(getReferenceDateValue()) || String(currentRawSnapshot && currentRawSnapshot.schoolYearStart || "").slice(0, 10);
+
+  if ((activeViewId !== "planung" && activeViewId !== "stundenplan") || !normalizedClassId) {
+    return false;
+  }
+
+  activePlanningInstructionLessonDraft = existingStatus
+    ? {
+        id: String(existingStatus.id || "").trim(),
+        classId: normalizedClassId,
+        lessonDate: String(existingStatus.lessonDate || "").slice(0, 10),
+        isAdditionalLesson: true,
+        isNewAdditionalLesson: false,
+        additionalLessonType: String(existingStatus.additionalLessonType || "").trim() === "double" ? "double" : "single",
+        additionalLessonNote: String(existingStatus.additionalLessonNote || "").trim(),
+        isCancelled: false,
+        cancelReason: "",
+        isControlledByOutageEvent: false,
+        outageEventDetail: null
+      }
+    : {
+        id: createPlanningInstructionLessonStatusId(),
+        classId: normalizedClassId,
+        lessonDate: fallbackDate,
+        isAdditionalLesson: true,
+        isNewAdditionalLesson: true,
+        additionalLessonType: "single",
+        additionalLessonNote: "",
+        isCancelled: false,
+        cancelReason: "",
+        isControlledByOutageEvent: false,
+        outageEventDetail: null
       };
 
   setActiveView(activeViewId);
@@ -20356,6 +20437,9 @@ window.UnterrichtsassistentApp.submitPlanningInstructionLessonModal = function (
   const collections = currentRawSnapshot ? getPlanningCollections(currentRawSnapshot) : null;
   const cancelledInput = document.getElementById("planningInstructionLessonCancelledInput");
   const reasonInput = document.getElementById("planningInstructionLessonReasonInput");
+  const additionalDateInput = document.getElementById("planningInstructionLessonAdditionalDateInput");
+  const additionalTypeInput = document.getElementById("planningInstructionLessonAdditionalTypeInput");
+  const additionalNoteInput = document.getElementById("planningInstructionLessonAdditionalNoteInput");
   const classIdValue = String(activePlanningInstructionLessonDraft && activePlanningInstructionLessonDraft.classId || "").trim();
   const lessonDateValue = String(activePlanningInstructionLessonDraft && activePlanningInstructionLessonDraft.lessonDate || "").slice(0, 10);
   const isCancelled = Boolean(cancelledInput && cancelledInput.checked);
@@ -20370,12 +20454,50 @@ window.UnterrichtsassistentApp.submitPlanningInstructionLessonModal = function (
     return window.UnterrichtsassistentApp.closePlanningInstructionLessonModal();
   }
 
+  if (activePlanningInstructionLessonDraft && activePlanningInstructionLessonDraft.isAdditionalLesson) {
+    const additionalId = String(activePlanningInstructionLessonDraft.id || "").trim() || createPlanningInstructionLessonStatusId();
+    const additionalDate = String(additionalDateInput && additionalDateInput.value || lessonDateValue).slice(0, 10);
+    const additionalType = String(additionalTypeInput && additionalTypeInput.value || "").trim() === "double" ? "double" : "single";
+    const additionalNote = String(additionalNoteInput && additionalNoteInput.value || "").trim();
+
+    if (!additionalDate) {
+      return false;
+    }
+
+    existingIndex = collections.lessonStatuses.findIndex(function (entry) {
+      return Boolean(entry && entry.isAdditionalLesson)
+        && String(entry && entry.id || "").trim() === additionalId;
+    });
+
+    const nextStatus = {
+      id: additionalId,
+      classId: classIdValue,
+      lessonDate: additionalDate,
+      isCancelled: false,
+      cancelReason: "",
+      isAdditionalLesson: true,
+      additionalLessonType: additionalType,
+      additionalLessonNote: additionalNote
+    };
+
+    if (existingIndex >= 0) {
+      collections.lessonStatuses[existingIndex] = nextStatus;
+    } else {
+      collections.lessonStatuses.push(nextStatus);
+    }
+
+    currentRawSnapshot.planningInstructionLessonStatuses = collections.lessonStatuses;
+    saveAndRefreshSnapshot(currentRawSnapshot, activeViewId === "stundenplan" ? "stundenplan" : "planung");
+    return window.UnterrichtsassistentApp.closePlanningInstructionLessonModal();
+  }
+
   if (activePlanningInstructionLessonDraft && activePlanningInstructionLessonDraft.isControlledByOutageEvent) {
     return window.UnterrichtsassistentApp.closePlanningInstructionLessonModal();
   }
 
   existingIndex = collections.lessonStatuses.findIndex(function (entry) {
-    return String(entry && entry.classId || "").trim() === classIdValue
+    return !Boolean(entry && entry.isAdditionalLesson)
+      && String(entry && entry.classId || "").trim() === classIdValue
       && String(entry && entry.lessonDate || "").slice(0, 10) === lessonDateValue;
   });
 
@@ -20402,6 +20524,22 @@ window.UnterrichtsassistentApp.submitPlanningInstructionLessonModal = function (
   }
 
   currentRawSnapshot.planningInstructionLessonStatuses = collections.lessonStatuses;
+  saveAndRefreshSnapshot(currentRawSnapshot, activeViewId === "stundenplan" ? "stundenplan" : "planung");
+  return window.UnterrichtsassistentApp.closePlanningInstructionLessonModal();
+};
+window.UnterrichtsassistentApp.deletePlanningInstructionAdditionalLesson = function () {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const collections = currentRawSnapshot ? getPlanningCollections(currentRawSnapshot) : null;
+  const additionalId = String(activePlanningInstructionLessonDraft && activePlanningInstructionLessonDraft.id || "").trim();
+
+  if (!currentRawSnapshot || !collections || !additionalId) {
+    return window.UnterrichtsassistentApp.closePlanningInstructionLessonModal();
+  }
+
+  currentRawSnapshot.planningInstructionLessonStatuses = collections.lessonStatuses.filter(function (entry) {
+    return !(Boolean(entry && entry.isAdditionalLesson) && String(entry && entry.id || "").trim() === additionalId);
+  });
+
   saveAndRefreshSnapshot(currentRawSnapshot, activeViewId === "stundenplan" ? "stundenplan" : "planung");
   return window.UnterrichtsassistentApp.closePlanningInstructionLessonModal();
 };

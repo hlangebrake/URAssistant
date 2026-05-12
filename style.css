@@ -2524,6 +2524,12 @@ button {
   align-items: center;
 }
 
+.planning-instruction__section-header--available {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
 .planning-year__settings {
   display: flex;
   align-items: flex-end;
@@ -2600,6 +2606,27 @@ button {
   color: inherit;
   font: inherit;
   cursor: pointer;
+}
+
+.planning-instruction__add-lesson-button {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(79, 143, 131, 0.32);
+  border-radius: 999px;
+  background: rgba(79, 143, 131, 0.14);
+  color: #245e54;
+  font-size: 1.15rem;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.planning-instruction__add-lesson-button:hover,
+.planning-instruction__add-lesson-button:focus-visible {
+  background: rgba(79, 143, 131, 0.24);
+  border-color: rgba(79, 143, 131, 0.48);
 }
 
 .planning-instruction__section-toggle-main {
@@ -2693,6 +2720,18 @@ button {
 
 .planning-instruction__lesson--cancelled::before {
   background: rgba(17, 17, 17, 0.92);
+}
+
+.planning-instruction__lesson--additional {
+  border-color: rgba(79, 143, 131, 0.72);
+  border-radius: 3px;
+  background: var(--planning-instruction-lesson-background, rgba(79, 143, 131, 0.13));
+  box-shadow: inset 0 0 0 2px rgba(79, 143, 131, 0.22);
+}
+
+.planning-instruction__lesson--additional::before {
+  border-radius: 0;
+  background: #4f8f83;
 }
 
 .planning-instruction__lesson--problem {

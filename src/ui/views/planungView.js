@@ -717,12 +717,17 @@ window.Unterrichtsassistent.ui.views.planung = {
         const classId = String(statusItem && statusItem.classId || "").trim();
         const lessonDate = String(statusItem && statusItem.lessonDate || "").slice(0, 10);
 
-        if (classId && lessonDate) {
+        if (!Boolean(statusItem && statusItem.isAdditionalLesson) && classId && lessonDate) {
           lookup[[classId, lessonDate].join("::")] = statusItem;
         }
 
         return lookup;
       }, {});
+      const additionalLessonStatuses = (Array.isArray(snapshot.planningInstructionLessonStatuses) ? snapshot.planningInstructionLessonStatuses : []).filter(function (statusItem) {
+        return Boolean(statusItem && statusItem.isAdditionalLesson)
+          && String(statusItem && statusItem.classId || "").trim() === String(activeClass && activeClass.id || "").trim()
+          && String(statusItem && statusItem.lessonDate || "").slice(0, 10);
+      });
 
       if (!activeClass || !cursor || !lastDate || !service || typeof service.getLessonUnitsForClass !== "function") {
         return [];
@@ -812,6 +817,32 @@ window.Unterrichtsassistent.ui.views.planung = {
 
         cursor.setDate(cursor.getDate() + 1);
       }
+
+      additionalLessonStatuses.forEach(function (statusItem) {
+        const isoDate = String(statusItem && statusItem.lessonDate || "").slice(0, 10);
+        const lessonType = String(statusItem && statusItem.additionalLessonType || "").trim() === "double" ? "double" : "single";
+        const lessonCount = lessonType === "double" ? 2 : 1;
+        const isPast = isLessonOccurrencePast(isoDate, "");
+        const statusId = String(statusItem && statusItem.id || "").trim();
+
+        if (!statusId || !isoDate || isoDate < toIsoDate(startDate) || isoDate > toIsoDate(endDate)) {
+          return;
+        }
+
+        occurrencesByDate["zusatzstunde::" + statusId] = {
+          id: "zusatzstunde::" + statusId,
+          additionalLessonId: statusId,
+          isAdditionalLesson: true,
+          additionalLessonNote: String(statusItem && statusItem.additionalLessonNote || "").trim(),
+          additionalLessonType: lessonType,
+          lessonDate: isoDate,
+          lessonCount: lessonCount,
+          cancelledLessonCount: 0,
+          remainingLessonCount: isPast ? 0 : lessonCount,
+          isCancelled: false,
+          cancelReason: ""
+        };
+      });
 
       return Object.keys(occurrencesByDate).map(function (dateKey) {
         const entry = occurrencesByDate[dateKey];
@@ -1374,7 +1405,10 @@ window.Unterrichtsassistent.ui.views.planung = {
       const occurrenceLookup = instructionAssignmentData && instructionAssignmentData.occurrenceLookup
         ? instructionAssignmentData.occurrenceLookup
         : {};
-      const occurrenceId = draft && draft.lessonDate
+      const isAdditionalLessonDraft = Boolean(draft && draft.isAdditionalLesson);
+      const occurrenceId = isAdditionalLessonDraft && draft && draft.id
+        ? "zusatzstunde::" + String(draft.id || "").trim()
+        : draft && draft.lessonDate
         ? "unterrichtstag::" + String(draft.lessonDate || "").slice(0, 10)
         : "";
       const occurrenceEntry = occurrenceId ? occurrenceLookup[occurrenceId] || null : null;
@@ -1439,13 +1473,23 @@ window.Unterrichtsassistent.ui.views.planung = {
         '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closePlanningInstructionLessonModal()"></div>',
         '<div class="import-modal__dialog import-modal__dialog--planning import-modal__dialog--instruction-lesson" role="dialog" aria-modal="true" aria-labelledby="planningInstructionLessonTitle">',
         '<div class="import-modal__header">',
-        '<div><h3 id="planningInstructionLessonTitle">Verfuegbare Unterrichtsstunde</h3><p class="planning-instruction-modal__date">' + escapeValue(formatShortDateLabel(String(draft.lessonDate || "").slice(0, 10))) + '</p></div>',
+        '<div><h3 id="planningInstructionLessonTitle">', isAdditionalLessonDraft ? 'Zusatzstunde' : 'Verfuegbare Unterrichtsstunde', '</h3><p class="planning-instruction-modal__date">' + escapeValue(formatShortDateLabel(String(draft.lessonDate || "").slice(0, 10))) + '</p></div>',
         '<div class="import-modal__icon-actions">',
         '<button class="import-modal__icon-button import-modal__icon-button--confirm" type="submit" form="planningInstructionLessonForm" aria-label="Aenderungen speichern">&#10003;</button>',
         '<button class="import-modal__icon-button import-modal__icon-button--cancel" type="button" aria-label="Bearbeitung abbrechen" onclick="return window.UnterrichtsassistentApp.closePlanningInstructionLessonModal()">&#10005;</button>',
         '</div>',
         '</div>',
         '<form class="import-modal__form planning-instruction-modal" id="planningInstructionLessonForm" autocomplete="off" method="post" action="about:blank" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitPlanningInstructionLessonModal(event)">',
+        isAdditionalLessonDraft ? [
+          '<section class="planning-instruction-modal__section planning-instruction-modal__section--settings">',
+          '<label class="import-modal__field"><span>Datum</span><input id="planningInstructionLessonAdditionalDateInput" type="date" value="', escapeValue(String(draft.lessonDate || "").slice(0, 10)), '"></label>',
+          '<label class="import-modal__field"><span>Stundentyp</span><select id="planningInstructionLessonAdditionalTypeInput"><option value="single"', String(draft.additionalLessonType || "").trim() === "double" ? '' : ' selected', '>Einzelstunde</option><option value="double"', String(draft.additionalLessonType || "").trim() === "double" ? ' selected' : '', '>Doppelstunde</option></select></label>',
+          '<label class="import-modal__field planning-instruction-modal__reason"><span>Grund / Notiz</span><textarea id="planningInstructionLessonAdditionalNoteInput" rows="3" placeholder="Kurzer Grund fuer die Zusatzstunde">', escapeValue(String(draft.additionalLessonNote || "").trim()), '</textarea></label>',
+          !draft.isNewAdditionalLesson
+            ? '<button class="header-utility-button header-utility-button--danger" type="button" onclick="return window.UnterrichtsassistentApp.deletePlanningInstructionAdditionalLesson()">Zusatzstunde loeschen</button>'
+            : '',
+          '</section>'
+        ].join("") : '',
         '<section class="planning-instruction-modal__section">',
         '<h4 class="planning-instruction-modal__title">Zugeordnete Reihe</h4>',
         buildSummaryList(
@@ -1481,6 +1525,7 @@ window.Unterrichtsassistent.ui.views.planung = {
           }
         ),
         '</section>',
+        isAdditionalLessonDraft ? '' : [
         '<section class="planning-instruction-modal__section planning-instruction-modal__section--settings">',
         isOutageControlledByEvent
           ? [
@@ -1496,6 +1541,7 @@ window.Unterrichtsassistent.ui.views.planung = {
         '<label class="planning-instruction-modal__checkbox"><input id="planningInstructionLessonCancelledInput" type="checkbox"' + (draft && draft.isCancelled ? ' checked' : '') + (isOutageControlledByEvent ? ' disabled' : '') + ' onchange="return window.UnterrichtsassistentApp.handlePlanningInstructionLessonCancelledChange(this.checked)"><span>Faellt aus</span></label>',
         '<label class="import-modal__field planning-instruction-modal__reason" id="planningInstructionLessonReasonField"' + (draft && draft.isCancelled ? '' : ' hidden') + '><span>Grund</span><textarea id="planningInstructionLessonReasonInput" rows="4" placeholder="Grund fuer den Ausfall"' + (draft && draft.isCancelled && !isOutageControlledByEvent ? '' : ' disabled') + '>' + escapeValue(String(draft && draft.cancelReason || "").trim()) + '</textarea></label>',
         '</section>',
+        ].join(""),
         '</form>',
         '</div>',
         '</div>'
@@ -1585,10 +1631,13 @@ window.Unterrichtsassistent.ui.views.planung = {
         buildCurriculumLessonFlowContent(instructionAssignmentData),
         '</section>',
         '<section class="planning-instruction__section planning-instruction__section--available">',
+        '<div class="planning-instruction__section-header planning-instruction__section-header--available">',
         '<button class="planning-instruction__section-toggle" type="button" aria-expanded="', isPlanningAvailableLessonsExpanded ? 'true' : 'false', '" onclick="return window.UnterrichtsassistentApp.togglePlanningAvailableLessons()">',
         '<span class="planning-instruction__section-toggle-main"><span class="planning-instruction__section-toggle-arrow" aria-hidden="true">', isPlanningAvailableLessonsExpanded ? '&#9650;' : '&#9660;', '</span><span class="planning-instruction__title">Verfuegbare Unterrichtsstunden</span></span>',
         '<span class="planning-instruction__count planning-instruction__count--combined"><strong>', escapeValue(String(remainingLessonCount)), '</strong>&nbsp;von&nbsp;<strong>', escapeValue(String(totalLessonCount)), '</strong>&nbsp;Stunden&nbsp;verfuegbar</span>',
         '</button>',
+        '<button class="planning-instruction__add-lesson-button" type="button" aria-label="Zusatzstunde hinzufuegen" title="Zusatzstunde hinzufuegen" onclick="return window.UnterrichtsassistentApp.openPlanningInstructionAdditionalLessonModal()">+</button>',
+        '</div>',
         isPlanningAvailableLessonsExpanded
           ? (
               lessonOccurrences.length
@@ -1620,7 +1669,7 @@ window.Unterrichtsassistent.ui.views.planung = {
                         }).join("")
                       : "";
                     return [
-                      '<article class="planning-instruction__lesson', isPastOccurrence ? ' planning-instruction__lesson--past' : '', isCancelledOccurrence ? ' planning-instruction__lesson--cancelled' : '', occurrenceEntry && occurrenceEntry.hasProblem ? ' planning-instruction__lesson--problem' : '', '" style="--planning-instruction-color:', escapeValue(classColor), ';', lessonBackground ? '--planning-instruction-lesson-background:' + escapeValue(lessonBackground) + ';' : '', '" onclick="return window.UnterrichtsassistentApp.openPlanningInstructionLessonModal(\'', escapeValue(String(occurrence && occurrence.lessonDate || "").slice(0, 10)), '\')">',
+                      '<article class="planning-instruction__lesson', isPastOccurrence ? ' planning-instruction__lesson--past' : '', isCancelledOccurrence ? ' planning-instruction__lesson--cancelled' : '', occurrence && occurrence.isAdditionalLesson ? ' planning-instruction__lesson--additional' : '', occurrenceEntry && occurrenceEntry.hasProblem ? ' planning-instruction__lesson--problem' : '', '" style="--planning-instruction-color:', escapeValue(occurrence && occurrence.isAdditionalLesson ? '#4f8f83' : classColor), ';', lessonBackground ? '--planning-instruction-lesson-background:' + escapeValue(lessonBackground) + ';' : '', '" onclick="return ', occurrence && occurrence.isAdditionalLesson ? 'window.UnterrichtsassistentApp.openPlanningInstructionAdditionalLessonModal(\'' + escapeValue(String(occurrence && occurrence.additionalLessonId || "")) + '\')' : 'window.UnterrichtsassistentApp.openPlanningInstructionLessonModal(\'' + escapeValue(String(occurrence && occurrence.lessonDate || "").slice(0, 10)) + '\')', '">',
                       lessonLinkMarkup,
                       '<div class="planning-instruction__lesson-date">', escapeValue(formatShortDateLabel(occurrence.lessonDate)), '</div>',
                       '<div class="planning-instruction__lesson-count">', escapeValue(String(Math.max(1, Number(occurrence.lessonCount || 1)))), '</div>',
