@@ -6571,17 +6571,17 @@ button {
 
 .unterricht-math-observation-process-overlay__competencies {
   left: var(--math-observation-origin-x);
-  top: var(--math-observation-origin-y);
+  top: calc(var(--math-observation-origin-y) + 72px);
   width: 100%;
   grid-template-columns: repeat(7, 1fr);
 }
 
 .unterricht-math-observation-process-overlay .unterricht-assessment-quick-overlay__quality {
   left: var(--math-observation-origin-x);
-  top: var(--math-observation-origin-y);
+  top: calc(var(--math-observation-origin-y) - 204px);
   width: 220px;
-  height: 100%;
-  transform: translate(-50%, -50%);
+  height: 240px;
+  transform: translateX(-50%);
 }
 
 .unterricht-math-observation-process-overlay .unterricht-assessment-quick-overlay__label,

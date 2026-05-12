@@ -8376,6 +8376,47 @@ function clampOverlayCenter(anchorX, anchorY, overlayWidth, overlayHeight) {
   };
 }
 
+function getViewportBounds(marginValue) {
+  const margin = Number.isFinite(Number(marginValue)) ? Number(marginValue) : 12;
+  const visualViewport = window.visualViewport || null;
+  const viewportLeft = visualViewport ? Number(visualViewport.offsetLeft) || 0 : 0;
+  const viewportTop = visualViewport ? Number(visualViewport.offsetTop) || 0 : 0;
+  const viewportWidth = visualViewport
+    ? (Number(visualViewport.width) || window.innerWidth || document.documentElement.clientWidth || 1024)
+    : (window.innerWidth || document.documentElement.clientWidth || 1024);
+  const viewportHeight = visualViewport
+    ? (Number(visualViewport.height) || window.innerHeight || document.documentElement.clientHeight || 768)
+    : (window.innerHeight || document.documentElement.clientHeight || 768);
+
+  return {
+    left: viewportLeft + margin,
+    top: viewportTop + margin,
+    right: viewportLeft + viewportWidth - margin,
+    bottom: viewportTop + viewportHeight - margin
+  };
+}
+
+function clampOverlayTranslatedBox(anchorX, anchorY, boxLeftOffset, boxTopOffset, boxWidth, boxHeight, marginValue) {
+  const bounds = getViewportBounds(marginValue);
+  const width = Number(boxWidth) || 0;
+  const height = Number(boxHeight) || 0;
+  const leftOffset = Number(boxLeftOffset) || 0;
+  const topOffset = Number(boxTopOffset) || 0;
+  const minX = bounds.left - leftOffset;
+  const maxX = bounds.right - leftOffset - width;
+  const minY = bounds.top - topOffset;
+  const maxY = bounds.bottom - topOffset - height;
+
+  return {
+    x: maxX >= minX
+      ? Math.max(minX, Math.min(maxX, Number(anchorX) || 0))
+      : (bounds.left + bounds.right) / 2,
+    y: maxY >= minY
+      ? Math.max(minY, Math.min(maxY, Number(anchorY) || 0))
+      : (bounds.top + bounds.bottom) / 2
+  };
+}
+
 function getOverlayOrigin(anchorX, anchorY, centerX, centerY, overlayWidth, overlayHeight) {
   const width = Number(overlayWidth) || 0;
   const height = Number(overlayHeight) || 0;
@@ -8394,8 +8435,52 @@ function getUnterrichtMathObservationProcessOverlayCenter(anchorX, anchorY) {
   const overlay = ensureUnterrichtMathObservationProcessOverlay();
   const width = overlay.offsetWidth || 620;
   const height = overlay.offsetHeight || 300;
+  const bounds = getViewportBounds(12);
+  const qualityWidth = 220;
+  const qualityHeight = 240;
+  const qualityTopOffset = -204;
+  const competencyTopOffset = 72;
+  const competencyHeight = 60;
+  let center = clampOverlayCenter(anchorX, anchorY, width, height);
 
-  return clampOverlayCenter(anchorX, anchorY, width, height);
+  const getVisualBox = (nextCenter) => {
+    const rootLeft = nextCenter.x - (width / 2);
+    const rootTop = nextCenter.y - (height / 2);
+    const origin = getOverlayOrigin(anchorX, anchorY, nextCenter.x, nextCenter.y, width, height);
+    const qualityLeft = rootLeft + origin.x - (qualityWidth / 2);
+    const qualityTop = rootTop + origin.y + qualityTopOffset;
+    const competencyLeft = rootLeft + origin.x - (width / 2);
+    const competencyTop = rootTop + origin.y + competencyTopOffset - (competencyHeight / 2);
+
+    return {
+      left: Math.min(rootLeft, qualityLeft, competencyLeft),
+      top: Math.min(rootTop, qualityTop, competencyTop),
+      right: Math.max(rootLeft + width, qualityLeft + qualityWidth, competencyLeft + width),
+      bottom: Math.max(rootTop + height, qualityTop + qualityHeight, competencyTop + competencyHeight)
+    };
+  };
+
+  for (let i = 0; i < 3; i += 1) {
+    const box = getVisualBox(center);
+
+    if (box.left < bounds.left) {
+      center = { ...center, x: center.x + (bounds.left - box.left) };
+    }
+    if (box.top < bounds.top) {
+      center = { ...center, y: center.y + (bounds.top - box.top) };
+    }
+
+    const shiftedBox = getVisualBox(center);
+
+    if (shiftedBox.right > bounds.right) {
+      center = { ...center, x: center.x - (shiftedBox.right - bounds.right) };
+    }
+    if (shiftedBox.bottom > bounds.bottom) {
+      center = { ...center, y: center.y - (shiftedBox.bottom - bounds.bottom) };
+    }
+  }
+
+  return center;
 }
 
 function getMathObservationMarkerQualifier(markerValue) {
@@ -8603,25 +8688,32 @@ function flashUnterrichtMathObservationMarkerOverlay() {
 }
 
 function getUnterrichtMathObservationProcessSelection(clientX, clientY, anchorX, anchorY) {
-  const dx = clientX - anchorX;
-  const dy = clientY - anchorY;
   const overlay = ensureUnterrichtMathObservationProcessOverlay();
   const overlayWidth = overlay.offsetWidth || 620;
   const overlayHeight = overlay.offsetHeight || 300;
-  const qualityMax = Math.max(40, overlayHeight / 2);
-  const qualityZoneHalf = qualityMax * 0.2;
-  const qualityOuterHalf = qualityMax * 0.6;
+  const center = getUnterrichtMathObservationProcessOverlayCenter(anchorX, anchorY);
+  const origin = getOverlayOrigin(anchorX, anchorY, center.x, center.y, overlayWidth, overlayHeight);
+  const rootLeft = center.x - (overlayWidth / 2);
+  const rootTop = center.y - (overlayHeight / 2);
+  const dx = clientX - (rootLeft + origin.x);
+  const dy = clientY - (rootTop + origin.y);
+  const qualityBottomOffset = Math.max(30, Math.min(42, overlayHeight * 0.12));
+  const qualityHeight = Math.max(180, Math.min(260, overlayHeight * 0.8));
   const qualityTolerance = 120;
   const competencyCenterHalf = Math.max(28, Math.min(42, overlayWidth * 0.07));
   const competencyMax = Math.max(120, (overlayWidth / 2) - 30);
   const competencyTolerance = 120;
   const clampedDx = Math.max(-competencyMax, Math.min(competencyMax, dx));
-  const clampedDy = Math.max(-qualityMax, Math.min(qualityMax, dy));
+  const minQualityDy = qualityBottomOffset - qualityHeight;
+  const maxQualityDy = qualityBottomOffset;
+  const clampedQualityDy = Math.max(minQualityDy, Math.min(maxQualityDy, dy));
+  const qualityDistanceFromBottom = Math.max(0, qualityBottomOffset - clampedQualityDy);
+  const qualityStep = qualityHeight / 5;
   const zoneWidth = (competencyMax - competencyCenterHalf) / 3;
   let competency = null;
-  let processQuality = 2;
+  let processQuality = Math.max(0, Math.min(4, Math.floor(qualityDistanceFromBottom / qualityStep)));
 
-  if (Math.abs(dy) > qualityMax + qualityTolerance || Math.abs(dx) > competencyMax + competencyTolerance) {
+  if (dy < minQualityDy - qualityTolerance || dy > 110 + qualityTolerance || Math.abs(dx) > competencyMax + competencyTolerance) {
     return null;
   }
 
@@ -8629,16 +8721,6 @@ function getUnterrichtMathObservationProcessSelection(clientX, clientY, anchorX,
     competency = MATH_OBSERVATION_COMPETENCIES[Math.max(0, Math.min(2, Math.floor((clampedDx + competencyMax) / zoneWidth)))];
   } else if (clampedDx > competencyCenterHalf) {
     competency = MATH_OBSERVATION_COMPETENCIES[3 + Math.max(0, Math.min(2, Math.floor((clampedDx - competencyCenterHalf) / zoneWidth)))];
-  }
-
-  if (clampedDy < -qualityOuterHalf) {
-    processQuality = 4;
-  } else if (clampedDy < -qualityZoneHalf) {
-    processQuality = 3;
-  } else if (clampedDy > qualityOuterHalf) {
-    processQuality = 0;
-  } else if (clampedDy > qualityZoneHalf) {
-    processQuality = 1;
   }
 
   return {
