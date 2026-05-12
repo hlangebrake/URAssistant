@@ -38,6 +38,12 @@ window.Unterrichtsassistent.ui.views.planung = {
           return String(entry || "").trim();
         }).filter(Boolean)
       : [];
+    const activeCurriculumLessonStepCompetencyModal = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveCurriculumLessonStepCompetencyModal === "function"
+      ? window.UnterrichtsassistentApp.getActiveCurriculumLessonStepCompetencyModal()
+      : null;
+    const curriculumLessonCompetencyToolId = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getCurriculumLessonCompetencyToolId === "function"
+      ? String(window.UnterrichtsassistentApp.getCurriculumLessonCompetencyToolId() || "").trim()
+      : "";
     const expandedCurriculumSeriesIds = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getExpandedCurriculumSeriesIds === "function"
       ? window.UnterrichtsassistentApp.getExpandedCurriculumSeriesIds().map(function (entry) {
           return String(entry || "").trim();
@@ -1518,6 +1524,18 @@ window.Unterrichtsassistent.ui.views.planung = {
       return [
         '<div class="panel-grid panel-grid--planung-instruction">',
         '<article class="panel panel--full panel--planung-instruction">',
+        isPlanningAdminMode ? [
+          '<section class="planning-instruction__section planning-instruction__section--settings">',
+          '<label class="import-modal__field import-modal__field--compact-select"><span>Kompetenz Werkzeug</span><select onchange="return window.UnterrichtsassistentApp.updateCurriculumLessonCompetencyTool(this.value)">',
+          (window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getEvaluationCompetencySourceOptions === "function" ? window.UnterrichtsassistentApp.getEvaluationCompetencySourceOptions() : []).map(function (option) {
+            const optionId = String(option && option.id || "").trim();
+            const label = String(option && option.label || "").trim() || "Kompetenzquelle";
+
+            return '<option value="' + escapeValue(optionId) + '"' + (optionId === curriculumLessonCompetencyToolId ? ' selected' : '') + '>' + escapeValue(label) + '</option>';
+          }).join("") || '<option value="">Keine Kompetenzquelle</option>',
+          '</select></label>',
+          '</section>'
+        ].join("") : '',
         '<section class="planning-instruction__section planning-instruction__section--planned">',
         '<div class="planning-instruction__section-header">',
         '<h2 class="planning-instruction__title">Geplante Unterrichtsstunden</h2>',
@@ -1576,6 +1594,7 @@ window.Unterrichtsassistent.ui.views.planung = {
           : '',
         '</section>',
         buildPlanningInstructionLessonModal(instructionAssignmentData),
+        buildCurriculumStepCompetencyModal(),
         '</article>',
         '</div>'
       ].join("");
@@ -1884,6 +1903,119 @@ window.Unterrichtsassistent.ui.views.planung = {
       return "Plenum";
     }
 
+    function getCurriculumCompetencyTool() {
+      const options = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getEvaluationCompetencySourceOptions === "function"
+        ? window.UnterrichtsassistentApp.getEvaluationCompetencySourceOptions()
+        : [];
+
+      return options.find(function (option) {
+        return String(option && option.id || "").trim() === curriculumLessonCompetencyToolId;
+      }) || options.find(function (option) {
+        return Boolean(String(option && option.id || "").trim());
+      }) || null;
+    }
+
+    function getCurriculumCompetencyAspects() {
+      const sourceId = String(getCurriculumCompetencyTool() && getCurriculumCompetencyTool().id || "").trim();
+
+      return sourceId && window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getEvaluationCompetencyAspectOptions === "function"
+        ? window.UnterrichtsassistentApp.getEvaluationCompetencyAspectOptions(sourceId)
+        : [];
+    }
+
+    function normalizeCurriculumCompetencyAspectId(aspectId) {
+      const normalizedAspectId = String(aspectId || "").trim();
+
+      if (!normalizedAspectId || normalizedAspectId.indexOf("math:") === 0 || normalizedAspectId.indexOf("evidence:") === 0) {
+        return normalizedAspectId;
+      }
+
+      return curriculumLessonCompetencyToolId.indexOf("evidence:") === 0
+        ? curriculumLessonCompetencyToolId + ":aspect:" + normalizedAspectId
+        : normalizedAspectId;
+    }
+
+    function buildCurriculumStepCompetencyChips(stepItem) {
+      const selectedAspectIds = Array.isArray(stepItem && stepItem.competencyAspectIds)
+        ? stepItem.competencyAspectIds.map(function (entry) {
+            return normalizeCurriculumCompetencyAspectId(entry);
+          }).filter(Boolean)
+        : [];
+      const aspectLookup = getCurriculumCompetencyAspects().reduce(function (lookup, aspect) {
+        const aspectId = String(aspect && aspect.id || "").trim();
+
+        if (aspectId) {
+          lookup[aspectId] = aspect;
+        }
+
+        return lookup;
+      }, {});
+      const selectedAspects = selectedAspectIds.map(function (aspectId) {
+        return aspectLookup[aspectId] || null;
+      }).filter(Boolean);
+
+      if (!selectedAspects.length) {
+        return "";
+      }
+
+      return [
+        '<span class="planning-lesson-flow__competency-chips">',
+        selectedAspects.slice(0, 3).map(function (aspect) {
+          return '<span class="planning-lesson-flow__competency-chip">' + escapeValue(String(aspect && (aspect.label || aspect.titel) || "").trim() || "Aspekt") + '</span>';
+        }).join(""),
+        selectedAspects.length > 3 ? '<span class="planning-lesson-flow__competency-chip">+' + escapeValue(String(selectedAspects.length - 3)) + '</span>' : '',
+        '</span>'
+      ].join("");
+    }
+
+    function buildCurriculumStepCompetencyModal() {
+      const modalStepId = String(activeCurriculumLessonStepCompetencyModal && activeCurriculumLessonStepCompetencyModal.stepId || "").trim();
+      const stepItem = modalStepId && Array.isArray(snapshot.curriculumLessonSteps)
+        ? snapshot.curriculumLessonSteps.find(function (entry) {
+            return String(entry && entry.id || "").trim() === modalStepId;
+          }) || null
+        : null;
+      const aspects = getCurriculumCompetencyAspects();
+      const selectedLookup = (Array.isArray(stepItem && stepItem.competencyAspectIds) ? stepItem.competencyAspectIds : []).reduce(function (lookup, aspectId) {
+        lookup[normalizeCurriculumCompetencyAspectId(aspectId)] = true;
+        return lookup;
+      }, {});
+
+      if (!modalStepId || !stepItem) {
+        return "";
+      }
+
+      return [
+        '<div class="import-modal is-open" id="curriculumStepCompetencyModal">',
+        '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeCurriculumLessonStepCompetencyModal()"></div>',
+        '<div class="import-modal__dialog import-modal__dialog--planning" role="dialog" aria-modal="true" aria-labelledby="curriculumStepCompetencyTitle">',
+        '<div class="import-modal__header">',
+        '<div><h3 id="curriculumStepCompetencyTitle">Kompetenzen</h3><p class="import-modal__hint">', escapeValue(String(stepItem && stepItem.title || "").trim() || "Ohne Titel"), '</p></div>',
+        '<div class="import-modal__icon-actions">',
+        '<button class="import-modal__icon-button import-modal__icon-button--confirm" type="button" aria-label="Schliessen" onclick="return window.UnterrichtsassistentApp.closeCurriculumLessonStepCompetencyModal()">&#10003;</button>',
+        '</div>',
+        '</div>',
+        '<div class="planning-lesson-flow__competency-modal-list">',
+        aspects.length ? aspects.map(function (aspect) {
+          const aspectId = String(aspect && aspect.id || "").trim();
+
+          if (!aspectId) {
+            return "";
+          }
+
+          return [
+            '<label class="planning-lesson-flow__competency-option">',
+            '<input type="checkbox"', selectedLookup[aspectId] ? ' checked' : '', ' onchange="return window.UnterrichtsassistentApp.toggleCurriculumLessonStepCompetencyAspect(\'', escapeValue(modalStepId), '\', \'', escapeValue(aspectId), '\', this.checked)">',
+            '<span>', escapeValue(String(aspect && (aspect.label || aspect.titel) || "").trim() || "Aspekt"), '</span>',
+            '</label>'
+          ].join("");
+        }).join("") : '<p class="empty-message">Im ausgewaehlten Werkzeug sind noch keine Aspekte angelegt.</p>',
+        '</div>',
+        '</div>',
+        '</div>'
+      ].join("");
+    }
+
     function getCurriculumSituationTypeLabel(situationTypeValue) {
       const normalizedValue = String(situationTypeValue || "").trim().toLowerCase();
 
@@ -2127,6 +2259,57 @@ window.Unterrichtsassistent.ui.views.planung = {
         return "";
       }
 
+      const aspects = getCurriculumCompetencyAspects();
+      const selectedLessonAspectIds = Array.isArray(curriculumLessonDraft.competencyAspectIds)
+        ? curriculumLessonDraft.competencyAspectIds.map(function (aspectId) {
+            return normalizeCurriculumCompetencyAspectId(aspectId);
+          }).filter(Boolean)
+        : [];
+      const selectedLessonAspectLookup = selectedLessonAspectIds.reduce(function (lookup, aspectId) {
+        lookup[aspectId] = true;
+        return lookup;
+      }, {});
+      const selectedLessonAspectCount = selectedLessonAspectIds.length;
+      const focusAspectId = String(curriculumLessonDraft.competencyFocusAspectId || "").trim();
+      const lessonCompetencySelection = aspects.length
+        ? [
+            '<label class="import-modal__field"><span>Schwerpunkt</span><select id="curriculumLessonCompetencyFocusInput">',
+            '<option value=""', !focusAspectId ? ' selected' : '', '>Kein Schwerpunkt</option>',
+            aspects.map(function (aspect) {
+              const aspectId = String(aspect && aspect.id || "").trim();
+
+              if (!aspectId) {
+                return "";
+              }
+
+              return '<option value="' + escapeValue(aspectId) + '"' + (normalizeCurriculumCompetencyAspectId(focusAspectId) === aspectId ? ' selected' : '') + '>' + escapeValue(String(aspect && (aspect.label || aspect.titel) || "").trim() || "Aspekt") + '</option>';
+            }).join(""),
+            '</select></label>',
+            '<details class="planning-lesson-flow__competency-dropdown">',
+            '<summary>Mehrfachauswahl Kompetenz <span>', selectedLessonAspectCount ? escapeValue(String(selectedLessonAspectCount)) + ' gewaehlt' : 'Keine Auswahl', '</span></summary>',
+            '<div class="planning-lesson-flow__competency-dropdown-list">',
+            aspects.map(function (aspect) {
+              const aspectId = String(aspect && aspect.id || "").trim();
+
+              if (!aspectId) {
+                return "";
+              }
+
+              return [
+                '<label class="planning-lesson-flow__competency-option">',
+                '<input type="checkbox" data-curriculum-lesson-aspect-id="', escapeValue(aspectId), '"', selectedLessonAspectLookup[aspectId] ? ' checked' : '', '>',
+                '<span>', escapeValue(String(aspect && (aspect.label || aspect.titel) || "").trim() || "Aspekt"), '</span>',
+                '</label>'
+              ].join("");
+            }).join(""),
+            '</div>',
+            '</details>'
+          ].join("")
+        : [
+            '<label class="import-modal__field"><span>Schwerpunkt</span><select id="curriculumLessonCompetencyFocusInput" disabled><option value="">Keine Aspekte verfuegbar</option></select></label>',
+            '<p class="empty-message">Im ausgewaehlten Werkzeug sind noch keine Aspekte angelegt.</p>'
+          ].join("");
+
       return [
         '<div class="import-modal is-open" id="curriculumLessonModal">',
         '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeCurriculumLessonModal()"></div>',
@@ -2145,6 +2328,7 @@ window.Unterrichtsassistent.ui.views.planung = {
         '<label class="import-modal__field"><span>Funktion</span><select id="curriculumLessonFunctionTypeInput"><option value=""', !String(curriculumLessonDraft.functionType || "").trim() ? ' selected' : '', '></option><option value="erarbeiten"', String(curriculumLessonDraft.functionType || "").trim() === 'erarbeiten' ? ' selected' : '', '>Erarbeiten</option><option value="vertiefen"', String(curriculumLessonDraft.functionType || "").trim() === 'vertiefen' ? ' selected' : '', '>Vertiefen</option><option value="ueben"', String(curriculumLessonDraft.functionType || "").trim() === 'ueben' ? ' selected' : '', '>Ueben</option><option value="wiederholen"', String(curriculumLessonDraft.functionType || "").trim() === 'wiederholen' ? ' selected' : '', '>Wiederholen</option><option value="ueberpruefen"', String(curriculumLessonDraft.functionType || "").trim() === 'ueberpruefen' ? ' selected' : '', '>Ueberpruefen</option></select></label>',
         '<label class="import-modal__field"><span>ueberwiegend Situation</span><select id="curriculumLessonSituationTypeInput"><option value=""', !String(curriculumLessonDraft.situationType || "").trim() ? ' selected' : '', '></option><option value="lernen"', String(curriculumLessonDraft.situationType || "").trim() === 'lernen' ? ' selected' : '', '>Lernen</option><option value="leisten"', String(curriculumLessonDraft.situationType || "").trim() === 'leisten' ? ' selected' : '', '>Leisten</option></select></label>',
         '<label class="import-modal__field"><span>ueberwiegend Anforderungsbereich</span><select id="curriculumLessonDemandLevelInput"><option value=""', !String(curriculumLessonDraft.demandLevel || "").trim() ? ' selected' : '', '></option><option value="afb1"', String(curriculumLessonDraft.demandLevel || "").trim() === 'afb1' ? ' selected' : '', '>AFB1</option><option value="afb1/2"', String(curriculumLessonDraft.demandLevel || "").trim() === 'afb1/2' ? ' selected' : '', '>AFB1/2</option><option value="afb2"', String(curriculumLessonDraft.demandLevel || "").trim() === 'afb2' ? ' selected' : '', '>AFB2</option><option value="afb2/3"', String(curriculumLessonDraft.demandLevel || "").trim() === 'afb2/3' ? ' selected' : '', '>AFB2/3</option><option value="afb3"', String(curriculumLessonDraft.demandLevel || "").trim() === 'afb3' ? ' selected' : '', '>AFB3</option></select></label>',
+        lessonCompetencySelection,
         '</div>',
         '<label class="import-modal__field curriculum-lesson-form__summary"><span>Kurze Zusammenfassung</span><textarea id="curriculumLessonSummaryInput" rows="10" placeholder="Kurze Zusammenfassung der Stunde">', escapeValue(String(curriculumLessonDraft.summary || "").trim()), '</textarea></label>',
         '<div class="import-modal__actions">',
@@ -2325,7 +2509,7 @@ window.Unterrichtsassistent.ui.views.planung = {
                     return [
                       '<tr class="planning-lesson-flow__step-row planning-lesson-flow__step-row--compact" data-step-drop-target="', escapeValue(stepId), '" data-phase-id="', escapeValue(phaseId), '">',
                       '<td class="planning-lesson-flow__step-main-cell">',
-                      '<div class="planning-lesson-flow__step-view-head"><button class="planning-lesson-flow__drag-handle planning-lesson-flow__drag-handle--step" type="button" aria-label="Schritt verschieben" onclick="return window.UnterrichtsassistentApp.stopEventPropagation(event)" onpointerdown="return window.UnterrichtsassistentApp.startCurriculumLessonFlowStepDrag(event, \'', escapeValue(phaseId), '\', \'', escapeValue(stepId), '\')">&#8645;</button><div class="planning-lesson-flow__step-view-title">', escapeValue(String(stepItem && stepItem.title || "").trim() || "Ohne Titel"), stepStatusBadge, '</div></div>',
+                      '<div class="planning-lesson-flow__step-view-head"><button class="planning-lesson-flow__drag-handle planning-lesson-flow__drag-handle--step" type="button" aria-label="Schritt verschieben" onclick="return window.UnterrichtsassistentApp.stopEventPropagation(event)" onpointerdown="return window.UnterrichtsassistentApp.startCurriculumLessonFlowStepDrag(event, \'', escapeValue(phaseId), '\', \'', escapeValue(stepId), '\')">&#8645;</button><div class="planning-lesson-flow__step-view-title">', escapeValue(String(stepItem && stepItem.title || "").trim() || "Ohne Titel"), stepStatusBadge, buildCurriculumStepCompetencyChips(stepItem), '</div><button class="planning-lesson-flow__competency-button" type="button" onclick="return window.UnterrichtsassistentApp.openCurriculumLessonStepCompetencyModal(\'', escapeValue(stepId), '\')">Kompetenz</button></div>',
                       String(stepItem && stepItem.content || "").trim()
                         ? '<div class="planning-lesson-flow__step-view-content">' + escapeValue(String(stepItem && stepItem.content || "").trim()) + '</div>'
                         : '',
@@ -2355,8 +2539,10 @@ window.Unterrichtsassistent.ui.views.planung = {
                       '<div class="planning-lesson-flow__step-main-top">',
                       '<button class="planning-lesson-flow__drag-handle planning-lesson-flow__drag-handle--step" type="button" aria-label="Schritt verschieben" onclick="return window.UnterrichtsassistentApp.stopEventPropagation(event)" onpointerdown="return window.UnterrichtsassistentApp.startCurriculumLessonFlowStepDrag(event, \'', escapeValue(phaseId), '\', \'', escapeValue(stepId), '\')">&#8645;</button>',
                       '<input class="planning-lesson-flow__step-title" type="text" value="', escapeValue(String(stepItem && stepItem.title || "").trim()), '" placeholder="Titel des Schritts" onchange="return window.UnterrichtsassistentApp.updateCurriculumLessonStepField(\'', escapeValue(stepId), '\', \'title\', this.value)">',
+                      '<button class="planning-lesson-flow__competency-button" type="button" onclick="return window.UnterrichtsassistentApp.openCurriculumLessonStepCompetencyModal(\'', escapeValue(stepId), '\')">Kompetenz</button>',
                       '<button class="planning-lesson-flow__delete-button planning-lesson-flow__delete-button--step" type="button" onclick="return window.UnterrichtsassistentApp.deleteCurriculumLessonStep(\'', escapeValue(stepId), '\')">Loeschen</button>',
                       '</div>',
+                      buildCurriculumStepCompetencyChips(stepItem),
                       '<textarea class="planning-lesson-flow__textarea planning-lesson-flow__textarea--content" rows="3" placeholder="Inhalt" onchange="return window.UnterrichtsassistentApp.updateCurriculumLessonStepField(\'', escapeValue(stepId), '\', \'content\', this.value)">', escapeValue(String(stepItem && stepItem.content || "").trim()), '</textarea>',
                       '</td>',
                       '<td class="planning-lesson-flow__step-duration-cell">',

@@ -1007,6 +1007,8 @@ class CurriculumLessonPlan {
     homeworkDueMode = "",
     homeworkDueAmount = 1,
     homeworkDueUnit = "tage",
+    competencyFocusAspectId = "",
+    competencyAspectIds = [],
     nextLessonId = ""
   }) {
     const normalizedFunctionType = String(functionType || "").trim().toLowerCase();
@@ -1049,6 +1051,12 @@ class CurriculumLessonPlan {
     this.homeworkDueUnit = ["tage", "wochen", "monate"].indexOf(normalizedHomeworkDueUnit) >= 0
       ? normalizedHomeworkDueUnit
       : "tage";
+    this.competencyFocusAspectId = String(competencyFocusAspectId || "").trim();
+    this.competencyAspectIds = Array.isArray(competencyAspectIds)
+      ? competencyAspectIds.map(function (aspectId) {
+          return String(aspectId || "").trim();
+        }).filter(Boolean)
+      : [];
     this.nextLessonId = nextLessonId;
   }
 }
@@ -1080,7 +1088,7 @@ class CurriculumLessonPhase {
 }
 
 class CurriculumLessonStep {
-  constructor({ id, phaseId = "", title = "", content = "", durationMinutes = "", socialForm = "plenum", material = "", nextStepId = "" }) {
+  constructor({ id, phaseId = "", title = "", content = "", durationMinutes = "", socialForm = "plenum", material = "", competencyAspectIds = [], nextStepId = "" }) {
     const normalizedSocialForm = String(socialForm || "").trim().toLowerCase();
     const numericDuration = Number(durationMinutes);
 
@@ -1095,6 +1103,11 @@ class CurriculumLessonStep {
       ? normalizedSocialForm
       : "plenum";
     this.material = String(material || "").trim();
+    this.competencyAspectIds = Array.isArray(competencyAspectIds)
+      ? competencyAspectIds.map(function (aspectId) {
+          return String(aspectId || "").trim();
+        }).filter(Boolean)
+      : [];
     this.nextStepId = nextStepId;
   }
 }

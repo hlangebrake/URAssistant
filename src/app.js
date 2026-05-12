@@ -145,6 +145,7 @@ let activeCurriculumSequenceDraft = null;
 let activeCurriculumLessonDraft = null;
 let activeCurriculumLessonFlowLessonId = "";
 let activeCurriculumLessonFlowViewPhaseIds = [];
+let activeCurriculumLessonStepCompetencyModal = null;
 let expandedCurriculumSeriesIds = [];
 let expandedCurriculumSequenceIds = [];
 let collapsedUnterrichtLiveLessonIds = [];
@@ -15456,6 +15457,38 @@ function getEvaluationCompetencyAspectOptionsForSnapshot(rawSnapshot, sourceTool
   return [];
 }
 
+function normalizeCurriculumLessonCompetencySourceIdForSnapshot(rawSnapshot, sourceToolId) {
+  const normalizedSourceId = String(sourceToolId || "").trim();
+  const options = getEvaluationCompetencySourceOptionsForSnapshot(rawSnapshot);
+
+  if (options.some(function (option) {
+    return String(option && option.id || "").trim() === normalizedSourceId;
+  })) {
+    return normalizedSourceId;
+  }
+
+  if (normalizedSourceId && getEvidenceToolsCollection(rawSnapshot).some(function (tool) {
+    return String(tool && tool.id || "").trim() === normalizedSourceId;
+  })) {
+    return "evidence:" + normalizedSourceId;
+  }
+
+  return "";
+}
+
+function normalizeCurriculumLessonCompetencyAspectIdForSnapshot(rawSnapshot, aspectId) {
+  const normalizedAspectId = String(aspectId || "").trim();
+  const sourceId = normalizeCurriculumLessonCompetencySourceIdForSnapshot(rawSnapshot, rawSnapshot && rawSnapshot.curriculumLessonCompetencyToolId);
+
+  if (!normalizedAspectId || normalizedAspectId.indexOf("math:") === 0 || normalizedAspectId.indexOf("evidence:") === 0) {
+    return normalizedAspectId;
+  }
+
+  return sourceId.indexOf("evidence:") === 0
+    ? sourceId + ":aspect:" + normalizedAspectId
+    : normalizedAspectId;
+}
+
 function sanitizeEvaluationTaskSheetCompetencyLinks(taskSheet, sourceToolId, rawSnapshot) {
   const validLookup = getEvaluationCompetencyAspectOptionsForSnapshot(rawSnapshot, sourceToolId).reduce(function (lookup, option) {
     lookup[String(option && option.id || "").trim()] = true;
@@ -20635,7 +20668,13 @@ window.UnterrichtsassistentApp.openCurriculumLessonModal = function (seriesId, s
         homeworkText: String(existingLesson.homeworkText || "").trim(),
         homeworkDueMode: normalizeCurriculumLessonHomeworkDueMode(existingLesson.homeworkDueMode),
         homeworkDueAmount: Math.max(1, Number(existingLesson.homeworkDueAmount) || 1),
-        homeworkDueUnit: normalizeCurriculumLessonHomeworkDueUnit(existingLesson.homeworkDueUnit)
+        homeworkDueUnit: normalizeCurriculumLessonHomeworkDueUnit(existingLesson.homeworkDueUnit),
+        competencyFocusAspectId: String(existingLesson.competencyFocusAspectId || "").trim(),
+        competencyAspectIds: Array.isArray(existingLesson.competencyAspectIds)
+          ? existingLesson.competencyAspectIds.map(function (aspectId) {
+              return String(aspectId || "").trim();
+            }).filter(Boolean)
+          : []
       }
     : {
         id: "",
@@ -20653,7 +20692,9 @@ window.UnterrichtsassistentApp.openCurriculumLessonModal = function (seriesId, s
         homeworkText: "",
         homeworkDueMode: "",
         homeworkDueAmount: 1,
-        homeworkDueUnit: "tage"
+        homeworkDueUnit: "tage",
+        competencyFocusAspectId: "",
+        competencyAspectIds: []
       };
 
   setActiveView("planung");
@@ -21315,6 +21356,7 @@ window.UnterrichtsassistentApp.addCurriculumLessonStep = function (phaseId) {
     durationMinutes: "",
     socialForm: "plenum",
     material: "",
+    competencyAspectIds: [],
     nextStepId: ""
   };
 
@@ -21378,6 +21420,12 @@ window.UnterrichtsassistentApp.updateCurriculumLessonStepField = function (stepI
       : "plenum";
   } else if (normalizedFieldName === "material") {
     stepItem.material = String(nextValue || "").trim();
+  } else if (normalizedFieldName === "competencyAspectIds") {
+    stepItem.competencyAspectIds = Array.isArray(nextValue)
+      ? nextValue.map(function (aspectId) {
+          return String(aspectId || "").trim();
+        }).filter(Boolean)
+      : [];
   } else {
     return false;
   }
@@ -21435,6 +21483,83 @@ window.UnterrichtsassistentApp.deleteCurriculumLessonStep = function (stepId) {
     return String(entry && entry.stepId || "").trim() !== normalizedStepId;
   });
   currentRawSnapshot.curriculumLessonStepStatuses = collections.lessonStepStatuses;
+  activeCurriculumLessonFlowLessonId = String(phaseItem.lessonPlanId || "").trim();
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return false;
+};
+window.UnterrichtsassistentApp.updateCurriculumLessonCompetencyTool = function (toolId) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const normalizedToolId = normalizeCurriculumLessonCompetencySourceIdForSnapshot(currentRawSnapshot, toolId);
+
+  if (!isCurriculumPlanningMode() || !currentRawSnapshot) {
+    return false;
+  }
+
+  currentRawSnapshot.curriculumLessonCompetencyToolId = normalizedToolId;
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return false;
+};
+window.UnterrichtsassistentApp.openCurriculumLessonStepCompetencyModal = function (stepId) {
+  const normalizedStepId = String(stepId || "").trim();
+
+  if (!normalizedStepId) {
+    return false;
+  }
+
+  activeCurriculumLessonStepCompetencyModal = {
+    stepId: normalizedStepId
+  };
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.closeCurriculumLessonStepCompetencyModal = function () {
+  activeCurriculumLessonStepCompetencyModal = null;
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.toggleCurriculumLessonStepCompetencyAspect = function (stepId, aspectId, isSelected) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
+  const normalizedStepId = String(stepId || "").trim();
+  const normalizedAspectId = String(aspectId || "").trim();
+  const stepItem = collections
+    ? collections.lessonSteps.find(function (entry) {
+        return String(entry && entry.id || "").trim() === normalizedStepId;
+      }) || null
+    : null;
+  const phaseItem = stepItem && collections
+    ? collections.lessonPhases.find(function (entry) {
+        return String(entry && entry.id || "").trim() === String(stepItem.phaseId || "").trim();
+      }) || null
+    : null;
+  let selectedAspectIds = Array.isArray(stepItem && stepItem.competencyAspectIds)
+    ? stepItem.competencyAspectIds.map(function (entry) {
+        return normalizeCurriculumLessonCompetencyAspectIdForSnapshot(currentRawSnapshot, entry);
+      }).filter(Boolean)
+    : [];
+
+  if (!isCurriculumPlanningMode() || !currentRawSnapshot || !collections || !stepItem || !phaseItem || !normalizedAspectId) {
+    return false;
+  }
+
+  selectedAspectIds = selectedAspectIds.filter(function (entry) {
+    return entry !== normalizedAspectId;
+  });
+
+  if (isSelected) {
+    selectedAspectIds.push(normalizedAspectId);
+  }
+
+  stepItem.competencyAspectIds = selectedAspectIds;
+  currentRawSnapshot.curriculumLessonSteps = collections.lessonSteps;
   activeCurriculumLessonFlowLessonId = String(phaseItem.lessonPlanId || "").trim();
   saveAndRefreshSnapshot(currentRawSnapshot, "planung");
   return false;
@@ -22340,6 +22465,8 @@ window.UnterrichtsassistentApp.submitCurriculumLessonModal = function (event) {
   const functionTypeInput = document.getElementById("curriculumLessonFunctionTypeInput");
   const situationTypeInput = document.getElementById("curriculumLessonSituationTypeInput");
   const demandLevelInput = document.getElementById("curriculumLessonDemandLevelInput");
+  const competencyFocusInput = document.getElementById("curriculumLessonCompetencyFocusInput");
+  const competencyAspectInputs = Array.from(document.querySelectorAll("input[data-curriculum-lesson-aspect-id]:checked"));
   const normalizedSequenceId = String(activeCurriculumLessonDraft && activeCurriculumLessonDraft.sequenceId || "").trim();
   const normalizedDraftId = String(activeCurriculumLessonDraft && activeCurriculumLessonDraft.id || "").trim();
   const topicValue = String(topicInput && topicInput.value || "").trim();
@@ -22361,6 +22488,10 @@ window.UnterrichtsassistentApp.submitCurriculumLessonModal = function (event) {
   const demandLevelValue = ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(demandLevelRawValue) >= 0
     ? demandLevelRawValue
     : "";
+  const competencyFocusAspectId = String(competencyFocusInput && competencyFocusInput.value || "").trim();
+  const competencyAspectIds = competencyAspectInputs.map(function (input) {
+    return String(input && input.getAttribute("data-curriculum-lesson-aspect-id") || "").trim();
+  }).filter(Boolean);
   const orderedLessons = currentRawSnapshot
     ? getOrderedCurriculumLessonsForSequence(currentRawSnapshot, normalizedSequenceId).slice()
     : [];
@@ -22380,6 +22511,8 @@ window.UnterrichtsassistentApp.submitCurriculumLessonModal = function (event) {
     homeworkDueMode: normalizeCurriculumLessonHomeworkDueMode(activeCurriculumLessonDraft && activeCurriculumLessonDraft.homeworkDueMode),
     homeworkDueAmount: Math.max(1, Number(activeCurriculumLessonDraft && activeCurriculumLessonDraft.homeworkDueAmount) || 1),
     homeworkDueUnit: normalizeCurriculumLessonHomeworkDueUnit(activeCurriculumLessonDraft && activeCurriculumLessonDraft.homeworkDueUnit),
+    competencyFocusAspectId,
+    competencyAspectIds,
     nextLessonId: ""
   };
   let nextOrderedLessons;
@@ -25464,6 +25597,26 @@ window.UnterrichtsassistentApp.getActiveCurriculumLessonFlowLessonId = function 
 };
 window.UnterrichtsassistentApp.getActiveCurriculumLessonFlowViewPhaseIds = function () {
   return activeCurriculumLessonFlowViewPhaseIds.slice();
+};
+window.UnterrichtsassistentApp.getActiveCurriculumLessonStepCompetencyModal = function () {
+  return activeCurriculumLessonStepCompetencyModal
+    ? {
+        stepId: String(activeCurriculumLessonStepCompetencyModal.stepId || "").trim()
+      }
+    : null;
+};
+window.UnterrichtsassistentApp.getCurriculumLessonCompetencyToolId = function () {
+  const snapshot = schoolService ? schoolService.snapshot : null;
+  const toolId = String(snapshot && snapshot.curriculumLessonCompetencyToolId || "").trim();
+  const normalizedToolId = normalizeCurriculumLessonCompetencySourceIdForSnapshot(snapshot, toolId);
+  const activeEvidenceToolId = String(snapshot && snapshot.activeEvidenceToolId || "").trim();
+  const fallbackEvidenceToolId = activeEvidenceToolId || String(snapshot && snapshot.evidenceTools && snapshot.evidenceTools[0] && snapshot.evidenceTools[0].id || "").trim();
+
+  if (normalizedToolId) {
+    return normalizedToolId;
+  }
+
+  return fallbackEvidenceToolId ? "evidence:" + fallbackEvidenceToolId : "mathObservation";
 };
 window.UnterrichtsassistentApp.getExpandedCurriculumSeriesIds = function () {
   return expandedCurriculumSeriesIds.slice();

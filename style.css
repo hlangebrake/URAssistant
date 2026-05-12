@@ -1540,8 +1540,8 @@ button {
 }
 
 .import-modal__dialog--curriculum-lesson {
-  width: min(940px, calc(100% - 2rem));
-  max-width: 940px;
+  width: min(1500px, calc(100% - 1rem));
+  max-width: 1500px;
 }
 
 .curriculum-series-form {
@@ -1550,13 +1550,21 @@ button {
 }
 
 .curriculum-lesson-form {
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.9fr);
+  grid-template-columns: minmax(0, 2fr) minmax(320px, 0.75fr);
   align-items: start;
 }
 
 .curriculum-lesson-form__main {
   display: grid;
-  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 0.85rem 1rem;
+}
+
+.curriculum-lesson-form__main > .import-modal__field:first-child,
+.curriculum-lesson-form__main > .planning-lesson-flow__competency-dropdown,
+.curriculum-lesson-form__main > .empty-message {
+  grid-column: 1 / -1;
 }
 
 .curriculum-lesson-form__summary {
@@ -1615,6 +1623,20 @@ button {
 @media (max-width: 840px) {
   .curriculum-lesson-form {
     grid-template-columns: 1fr;
+  }
+
+  .curriculum-lesson-form__main {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 1120px) {
+  .curriculum-lesson-form__main {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .curriculum-lesson-form__main > .planning-lesson-flow__competency-dropdown {
+    grid-column: span 2;
   }
 }
 
@@ -1963,6 +1985,7 @@ button {
 .planning-lesson-flow__delete-button,
 .planning-lesson-flow__mode-button,
 .planning-lesson-flow__add-button,
+.planning-lesson-flow__competency-button,
 .planning-lesson-flow__summary-edit {
   display: inline-flex;
   align-items: center;
@@ -1989,6 +2012,99 @@ button {
 
 .planning-lesson-flow__delete-button--step {
   padding-inline: 0.65rem;
+}
+
+.planning-lesson-flow__competency-button {
+  min-height: 30px;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.planning-lesson-flow__competency-chips {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.planning-lesson-flow__competency-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 9rem;
+  min-height: 20px;
+  padding: 0.08rem 0.38rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(57, 117, 171, 0.1);
+  color: rgba(23, 49, 62, 0.72);
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planning-lesson-flow__competency-modal-list {
+  display: grid;
+  gap: 0.4rem;
+  max-height: min(62vh, 34rem);
+  overflow: auto;
+  padding: 0.2rem;
+}
+
+.planning-lesson-flow__competency-option {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid rgba(23, 49, 62, 0.1);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.9);
+  color: rgba(31, 36, 48, 0.78);
+  font-size: 0.84rem;
+  font-weight: 750;
+}
+
+.planning-lesson-flow__competency-option input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.planning-lesson-flow__competency-dropdown {
+  min-width: 0;
+  border: 1px solid rgba(23, 49, 62, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.planning-lesson-flow__competency-dropdown summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  min-height: 40px;
+  padding: 0.55rem 0.7rem;
+  color: rgba(23, 49, 62, 0.84);
+  font-size: 0.84rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.planning-lesson-flow__competency-dropdown summary span {
+  color: rgba(23, 49, 62, 0.56);
+  font-size: 0.74rem;
+  white-space: nowrap;
+}
+
+.planning-lesson-flow__competency-dropdown-list {
+  display: grid;
+  gap: 0.35rem;
+  max-height: 16rem;
+  overflow: auto;
+  padding: 0 0.55rem 0.55rem;
 }
 
 .planning-lesson-flow__add-button {
@@ -5289,11 +5405,39 @@ button {
   min-width: 0;
 }
 
+.unterricht-live-flow__step-heading {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
 .unterricht-live-flow__step-title {
   color: rgba(23, 49, 62, 0.9);
   font-size: 0.8rem;
   font-weight: 800;
   line-height: 1.2;
+}
+
+.unterricht-live-flow__step-competencies {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.22rem;
+  max-width: 100%;
+}
+
+.unterricht-live-flow__step-competencies span {
+  max-width: 7rem;
+  padding: 0.08rem 0.34rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(57, 117, 171, 0.09);
+  color: rgba(23, 49, 62, 0.58);
+  font-size: 0.66rem;
+  font-weight: 800;
+  line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .unterricht-live-flow__step-title-row {

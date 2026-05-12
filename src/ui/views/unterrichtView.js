@@ -593,6 +593,100 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       return fullLabel ? fullLabel.charAt(0) : "";
     }
 
+    function getLiveCurriculumCompetencyTool() {
+      const options = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getEvaluationCompetencySourceOptions === "function"
+        ? window.UnterrichtsassistentApp.getEvaluationCompetencySourceOptions()
+        : [];
+      const rawToolId = String(snapshot.curriculumLessonCompetencyToolId || "").trim();
+      const activeEvidenceToolId = String(snapshot.activeEvidenceToolId || "").trim();
+      const toolId = rawToolId.indexOf("evidence:") === 0 || rawToolId === "mathObservation"
+        ? rawToolId
+        : (rawToolId
+          ? "evidence:" + rawToolId
+          : (activeEvidenceToolId ? "evidence:" + activeEvidenceToolId : ""));
+
+      return options.find(function (option) {
+        return String(option && option.id || "").trim() === toolId;
+      }) || options.find(function (option) {
+        return Boolean(String(option && option.id || "").trim());
+      }) || null;
+    }
+
+    function getLiveCompetencyAspectOptionsForSource(sourceId) {
+      const normalizedSourceId = String(sourceId || "").trim();
+
+      return normalizedSourceId && window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getEvaluationCompetencyAspectOptions === "function"
+        ? window.UnterrichtsassistentApp.getEvaluationCompetencyAspectOptions(normalizedSourceId)
+        : [];
+    }
+
+    function normalizeLiveCurriculumCompetencyAspectId(aspectId) {
+      const normalizedAspectId = String(aspectId || "").trim();
+      const tool = getLiveCurriculumCompetencyTool();
+      const sourceId = String(tool && tool.id || "").trim();
+
+      if (!normalizedAspectId || normalizedAspectId.indexOf("math:") === 0 || normalizedAspectId.indexOf("evidence:") === 0) {
+        return normalizedAspectId;
+      }
+
+      return sourceId.indexOf("evidence:") === 0
+        ? sourceId + ":aspect:" + normalizedAspectId
+        : normalizedAspectId;
+    }
+
+    function buildLiveStepCompetencyChips(stepItem) {
+      const tool = getLiveCurriculumCompetencyTool();
+      const sourceId = String(tool && tool.id || "").trim();
+      const sourceOptions = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getEvaluationCompetencySourceOptions === "function"
+        ? window.UnterrichtsassistentApp.getEvaluationCompetencySourceOptions()
+        : [];
+      const orderedSourceIds = [sourceId].concat(sourceOptions.map(function (option) {
+        return String(option && option.id || "").trim();
+      })).filter(Boolean);
+      const seenSources = {};
+      const aspectLookup = {};
+
+      orderedSourceIds.forEach(function (orderedSourceId) {
+        if (seenSources[orderedSourceId]) {
+          return;
+        }
+
+        seenSources[orderedSourceId] = true;
+        getLiveCompetencyAspectOptionsForSource(orderedSourceId).forEach(function (aspect) {
+          const aspectId = String(aspect && aspect.id || "").trim();
+          const legacyEvidenceAspectId = aspectId.indexOf(":aspect:") >= 0
+            ? aspectId.slice(aspectId.lastIndexOf(":aspect:") + ":aspect:".length)
+            : "";
+
+          if (aspectId && !aspectLookup[aspectId]) {
+            aspectLookup[aspectId] = aspect;
+          }
+
+          if (legacyEvidenceAspectId && !aspectLookup[legacyEvidenceAspectId]) {
+            aspectLookup[legacyEvidenceAspectId] = aspect;
+          }
+        });
+      });
+      const selectedAspects = (Array.isArray(stepItem && stepItem.competencyAspectIds) ? stepItem.competencyAspectIds : []).map(function (aspectId) {
+        const normalizedAspectId = normalizeLiveCurriculumCompetencyAspectId(aspectId);
+
+        return aspectLookup[normalizedAspectId] || aspectLookup[String(aspectId || "").trim()] || null;
+      }).filter(Boolean);
+
+      if (!selectedAspects.length) {
+        return "";
+      }
+
+      return [
+        '<span class="unterricht-live-flow__step-competencies">',
+        selectedAspects.slice(0, 2).map(function (aspect) {
+          return '<span>' + escapeValue(String(aspect && (aspect.label || aspect.titel) || "").trim() || "Aspekt") + '</span>';
+        }).join(""),
+        selectedAspects.length > 2 ? '<span>+' + escapeValue(String(selectedAspects.length - 2)) + '</span>' : '',
+        '</span>'
+      ].join("");
+    }
+
     function getCurriculumHomeworkDueModeLabel(dueModeValue) {
       const normalizedValue = String(dueModeValue || "").trim().toLowerCase();
 
@@ -2058,10 +2152,12 @@ window.Unterrichtsassistent.ui.views.unterricht = {
                   const stepCheckbox = '<input type="checkbox" aria-label="Schritt erledigt" ' + (isStepCompleted ? 'checked ' : '') + 'onchange="return window.UnterrichtsassistentApp.toggleCurriculumLessonStepCompleted(\'' + escapeValue(String(activeClass && activeClass.id || "").trim()) + '\', \'' + escapeValue(lessonFlowData.lessonDate) + '\', \'' + escapeValue(String(segmentItem.lessonPlan && segmentItem.lessonPlan.id || "").trim()) + '\', \'' + escapeValue(phaseItemId) + '\', \'' + escapeValue(stepId) + '\', this.checked, ' + String(stepElapsedMinutes) + ', ' + String(elapsedMinutes) + ')">';
                   const stepSkipButton = '<button class="unterricht-live-flow__skip-button unterricht-live-flow__skip-button--step' + (isStepSkipped ? ' is-active' : '') + '" type="button" aria-pressed="' + (isStepSkipped ? 'true' : 'false') + '" aria-label="Schritt ueberspringen" title="Ueberspringen" onclick="return window.UnterrichtsassistentApp.toggleCurriculumLessonStepSkipped(\'' + escapeValue(String(activeClass && activeClass.id || "").trim()) + '\', \'' + escapeValue(lessonFlowData.lessonDate) + '\', \'' + escapeValue(String(segmentItem.lessonPlan && segmentItem.lessonPlan.id || "").trim()) + '\', \'' + escapeValue(phaseItemId) + '\', \'' + escapeValue(stepId) + '\', ' + (isStepSkipped ? 'false' : 'true') + ')">ü</button>';
 
+                  const stepCompetencies = buildLiveStepCompetencyChips(stepItem);
+
                   return [
                     '<div class="unterricht-live-flow__step' + (isStepCompleted ? ' is-completed' : '') + (isStepSkipped ? ' is-skipped' : '') + '">',
                     '<div class="unterricht-live-flow__step-main">',
-                    '<div class="unterricht-live-flow__step-title-row"><span class="unterricht-live-flow__step-controls"><label class="unterricht-live-flow__step-title-label">' + stepCheckbox + (stepTitle ? '<div class="unterricht-live-flow__step-title">' + escapeValue(stepTitle) + '</div>' : '<div class="unterricht-live-flow__step-title">Ohne Titel</div>') + '</label>' + stepSkipButton + '</span>' + stepTimingLabel + '</div>',
+                    '<div class="unterricht-live-flow__step-title-row"><span class="unterricht-live-flow__step-controls"><label class="unterricht-live-flow__step-title-label">' + stepCheckbox + '<div class="unterricht-live-flow__step-heading"><div class="unterricht-live-flow__step-title">' + escapeValue(stepTitle || "Ohne Titel") + '</div>' + stepCompetencies + '</div></label>' + stepSkipButton + '</span>' + stepTimingLabel + '</div>',
                     (!isStepCompleted && !isStepSkipped && stepContent) ? '<div class="unterricht-live-flow__step-content">' + escapeValue(stepContent) + '</div>' : "",
                     '</div>',
                     '<div class="unterricht-live-flow__step-side">',
