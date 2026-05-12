@@ -7107,6 +7107,12 @@ function buildObservationContextSelectHtml(inputId, options, selectedValue, norm
 
 function getUnterrichtLiveObservationContextForRecord() {
   const contextElement = document.getElementById("unterrichtLiveObservationContext");
+  let lessonPlanId = "";
+  let lessonPhaseId = "";
+  let lessonStepId = "";
+  let situationType = "";
+  let demandLevel = "";
+  let override = null;
   function getCurriculumReferenceAttribute(name) {
     const value = String(contextElement && contextElement.getAttribute(name) || "").trim();
 
@@ -7123,12 +7129,26 @@ function getUnterrichtLiveObservationContextForRecord() {
     };
   }
 
+  lessonPlanId = getCurriculumReferenceAttribute("data-lesson-plan-id");
+  lessonPhaseId = getCurriculumReferenceAttribute("data-lesson-phase-id");
+  lessonStepId = getCurriculumReferenceAttribute("data-lesson-step-id");
+  situationType = normalizeMathObservationSituationTypeValue(contextElement.getAttribute("data-situation-type"));
+  demandLevel = normalizeMathObservationDemandLevelValue(contextElement.getAttribute("data-demand-level"));
+  override = activeUnterrichtLivePhaseControlOverride && activeUnterrichtLivePhaseControlOverride.phaseKey
+    ? activeUnterrichtLivePhaseControlOverride
+    : null;
+
+  if (override && String(override.phaseKey || "").split("::").slice(2, 4).join("::") === [lessonPlanId, lessonPhaseId].join("::")) {
+    situationType = normalizeMathObservationSituationTypeValue(override.situationType) || situationType;
+    demandLevel = normalizeMathObservationDemandLevelValue(override.demandLevel) || demandLevel;
+  }
+
   return {
-    situationType: normalizeMathObservationSituationTypeValue(contextElement.getAttribute("data-situation-type")),
-    demandLevel: normalizeMathObservationDemandLevelValue(contextElement.getAttribute("data-demand-level")),
-    lessonPlanId: getCurriculumReferenceAttribute("data-lesson-plan-id"),
-    lessonPhaseId: getCurriculumReferenceAttribute("data-lesson-phase-id"),
-    lessonStepId: getCurriculumReferenceAttribute("data-lesson-step-id")
+    situationType: situationType,
+    demandLevel: demandLevel,
+    lessonPlanId: lessonPlanId,
+    lessonPhaseId: lessonPhaseId,
+    lessonStepId: lessonStepId
   };
 }
 
