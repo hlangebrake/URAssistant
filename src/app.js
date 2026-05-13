@@ -57,6 +57,9 @@ let rawState = null;
 let unlockedMasterKeyBytes = null;
 let pendingAuthReturnState = null;
 let activeViewId = "unterricht";
+let activeSidebarSubviewDrag = null;
+let sidebarSubviewOverlay = null;
+let suppressSidebarNavClickUntil = 0;
 let unterrichtViewMode = "live";
 let unterrichtToolMode = "attendance";
 let unterrichtSeatPlanRotation = 0;
@@ -280,6 +283,61 @@ let activeUnterrichtLiveAfbSliderDrag = null;
 let suppressKnowledgeGapSuggestionClickUntil = 0;
 let lastTouchClientY = 0;
 const AUTOSAVE_DELAY_MS = 30000;
+const SIDEBAR_SUBVIEW_DRAG_THRESHOLD = 10;
+const SIDEBAR_SUBVIEW_CONFIG = {
+  unterricht: {
+    label: "Unterricht",
+    modes: [
+      { value: "live", label: "Live" },
+      { value: "nachpflege", label: "Nachpflege" },
+      { value: "analyse", label: "Analyse" }
+    ]
+  },
+  klasse: {
+    label: "Lerngruppe",
+    modes: [
+      { value: "analyse", label: "Analyse" },
+      { value: "schueler", label: "Schueler" },
+      { value: "verwalten", label: "Verwalten" }
+    ]
+  },
+  stundenplan: {
+    label: "Stundenplan",
+    modes: [
+      { value: "ansicht", label: "Ansicht" },
+      { value: "verwalten", label: "Verwalten" }
+    ]
+  },
+  sitzplan: {
+    label: "Sitzplan",
+    modes: [
+      { value: "ansicht", label: "Ansicht" },
+      { value: "sitzordnung", label: "Sitzordnung" },
+      { value: "tischordnung", label: "Tischordnung" }
+    ]
+  },
+  planung: {
+    label: "Planung",
+    modes: [
+      { value: "jahresplanung", label: "Jahresplanung" },
+      { value: "unterrichtsplanung", label: "Unterrichtsplanung" },
+      { value: "stoffplanung", label: "Stoffplanung" }
+    ]
+  },
+  bewertung: {
+    label: "Bewertung",
+    modes: [
+      { value: "bewerten", label: "Bewerten" },
+      { value: "analysieren", label: "Analysieren" },
+      { value: "evidenz", label: "Evidenz" },
+      { value: "erstellen", label: "Erstellen" }
+    ]
+  },
+  todos: {
+    label: "TODOs",
+    modes: []
+  }
+};
 const HOMEWORK_LONG_PRESS_DELAY_MS = 380;
 const HOMEWORK_RADIAL_OPTIONS = [
   { quality: "fehlt", label: "fehlt", side: "left", row: "top" },
@@ -1674,6 +1732,328 @@ function tryReleasePointerCapture(target, pointerId) {
   } catch (error) {
     void error;
   }
+}
+
+function isSidebarCollapsed() {
+  return Boolean(appShell && appShell.classList.contains("is-collapsed"));
+}
+
+function getSidebarSubviewConfig(viewId) {
+  const normalizedViewId = String(viewId || "").trim();
+  const config = SIDEBAR_SUBVIEW_CONFIG[normalizedViewId] || null;
+
+  return config && Array.isArray(config.modes) && config.modes.length ? config : null;
+}
+
+function getActiveSidebarSubviewMode(viewId) {
+  if (viewId === "unterricht") {
+    return unterrichtViewMode;
+  }
+
+  if (viewId === "klasse") {
+    return classViewMode;
+  }
+
+  if (viewId === "stundenplan") {
+    return timetableViewMode;
+  }
+
+  if (viewId === "sitzplan") {
+    return seatPlanViewMode;
+  }
+
+  if (viewId === "planung") {
+    return planningViewMode;
+  }
+
+  if (viewId === "bewertung") {
+    return bewertungViewMode === "entwerfen" ? "erstellen" : bewertungViewMode;
+  }
+
+  return "";
+}
+
+function ensureSidebarSubviewOverlay() {
+  if (sidebarSubviewOverlay) {
+    return sidebarSubviewOverlay;
+  }
+
+  sidebarSubviewOverlay = document.createElement("div");
+  sidebarSubviewOverlay.className = "sidebar-subview-drag";
+  sidebarSubviewOverlay.hidden = true;
+  document.body.appendChild(sidebarSubviewOverlay);
+  return sidebarSubviewOverlay;
+}
+
+function positionSidebarSubviewOverlay(sourceLink) {
+  const overlay = ensureSidebarSubviewOverlay();
+  const linkRect = sourceLink ? sourceLink.getBoundingClientRect() : null;
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  const overlayWidth = Math.max(overlay.offsetWidth || 0, 190);
+  const overlayHeight = overlay.offsetHeight || 0;
+  let top = 0;
+  let left = 0;
+
+  if (!linkRect) {
+    return;
+  }
+
+  left = Math.round(linkRect.right + 12);
+  top = Math.round(linkRect.top + (linkRect.height / 2) - (overlayHeight / 2));
+
+  if (left + overlayWidth > viewportWidth - 12) {
+    left = Math.max(12, Math.round(linkRect.left - overlayWidth - 12));
+  }
+
+  top = Math.max(12, Math.min(top, Math.max(12, viewportHeight - overlayHeight - 12)));
+  overlay.style.left = left + "px";
+  overlay.style.top = top + "px";
+}
+
+function renderSidebarSubviewOverlay(dragState) {
+  const config = dragState ? getSidebarSubviewConfig(dragState.viewId) : null;
+  const overlay = ensureSidebarSubviewOverlay();
+  const activeMode = dragState ? getActiveSidebarSubviewMode(dragState.viewId) : "";
+
+  if (!config) {
+    overlay.hidden = true;
+    overlay.innerHTML = "";
+    return;
+  }
+
+  overlay.innerHTML = '<div class="sidebar-subview-drag__title">' + escapeHtml(config.label) + '</div>'
+    + '<div class="sidebar-subview-drag__items">'
+    + config.modes.map(function (mode) {
+      const isActive = activeMode === mode.value;
+      return '<button class="sidebar-subview-drag__item' + (isActive ? ' is-active' : '') + '" type="button" data-subview-mode="' + escapeHtml(mode.value) + '">' + escapeHtml(mode.label) + "</button>";
+    }).join("")
+    + "</div>";
+  overlay.hidden = false;
+  positionSidebarSubviewOverlay(dragState.sourceLink);
+}
+
+function closeSidebarSubviewOverlay() {
+  if (sidebarSubviewOverlay) {
+    sidebarSubviewOverlay.hidden = true;
+    sidebarSubviewOverlay.innerHTML = "";
+    sidebarSubviewOverlay.classList.remove("is-targeting");
+  }
+}
+
+function setSidebarSubviewOverlayTarget(mode) {
+  if (!sidebarSubviewOverlay) {
+    return;
+  }
+
+  sidebarSubviewOverlay.classList.toggle("is-targeting", Boolean(mode));
+  Array.prototype.forEach.call(sidebarSubviewOverlay.querySelectorAll(".sidebar-subview-drag__item"), function (item) {
+    item.classList.toggle("is-drop-target", String(item.dataset.subviewMode || "") === String(mode || ""));
+  });
+}
+
+function getSidebarSubviewModeAtPoint(clientX, clientY) {
+  const element = document.elementFromPoint(clientX, clientY);
+  const item = element && typeof element.closest === "function"
+    ? element.closest(".sidebar-subview-drag__item")
+    : null;
+
+  return item && sidebarSubviewOverlay && sidebarSubviewOverlay.contains(item)
+    ? String(item.dataset.subviewMode || "")
+    : "";
+}
+
+function isPointerPastSidebarSubviewOverlay(clientX, clientY) {
+  const overlayRect = sidebarSubviewOverlay && !sidebarSubviewOverlay.hidden
+    ? sidebarSubviewOverlay.getBoundingClientRect()
+    : null;
+
+  if (!overlayRect) {
+    return false;
+  }
+
+  return clientX > overlayRect.right + 12
+    || clientY < overlayRect.top - 18
+    || clientY > overlayRect.bottom + 18;
+}
+
+function isPointerOutsideSidebarSubviewOverlay(clientX, clientY) {
+  const overlayRect = sidebarSubviewOverlay && !sidebarSubviewOverlay.hidden
+    ? sidebarSubviewOverlay.getBoundingClientRect()
+    : null;
+
+  if (!overlayRect) {
+    return false;
+  }
+
+  return clientX < overlayRect.left - 18
+    || clientX > overlayRect.right + 18
+    || clientY < overlayRect.top - 18
+    || clientY > overlayRect.bottom + 18;
+}
+
+function applySidebarSubviewSelection(viewId, mode) {
+  const normalizedViewId = String(viewId || "").trim();
+  const normalizedMode = String(mode || "").trim();
+
+  setActiveView(normalizedViewId);
+
+  if (normalizedViewId === "unterricht") {
+    return window.UnterrichtsassistentApp.setUnterrichtViewMode(normalizedMode);
+  }
+
+  if (normalizedViewId === "klasse") {
+    return window.UnterrichtsassistentApp.setClassViewMode(normalizedMode);
+  }
+
+  if (normalizedViewId === "stundenplan") {
+    return window.UnterrichtsassistentApp.setTimetableViewMode(normalizedMode);
+  }
+
+  if (normalizedViewId === "sitzplan") {
+    return window.UnterrichtsassistentApp.setSeatPlanViewMode(normalizedMode);
+  }
+
+  if (normalizedViewId === "planung") {
+    return window.UnterrichtsassistentApp.setPlanningViewMode(normalizedMode);
+  }
+
+  if (normalizedViewId === "bewertung") {
+    return window.UnterrichtsassistentApp.setBewertungViewMode(normalizedMode);
+  }
+
+  return false;
+}
+
+function clearSidebarSubviewDrag() {
+  if (!activeSidebarSubviewDrag) {
+    closeSidebarSubviewOverlay();
+    return;
+  }
+
+  window.removeEventListener("pointermove", handleSidebarSubviewDragMove);
+  window.removeEventListener("pointerup", handleSidebarSubviewDragEnd);
+  window.removeEventListener("pointercancel", handleSidebarSubviewDragCancel);
+  tryReleasePointerCapture(activeSidebarSubviewDrag.sourceLink, activeSidebarSubviewDrag.pointerId);
+  activeSidebarSubviewDrag = null;
+  closeSidebarSubviewOverlay();
+}
+
+function handleSidebarSubviewDragMove(event) {
+  const dragState = activeSidebarSubviewDrag;
+  const deltaX = dragState ? (Number(event.clientX) || 0) - dragState.startX : 0;
+  const deltaY = dragState ? (Number(event.clientY) || 0) - dragState.startY : 0;
+  let targetMode = "";
+
+  if (!dragState || event.pointerId !== dragState.pointerId || !isSidebarCollapsed()) {
+    return;
+  }
+
+  if (!dragState.isDragging) {
+    if (Math.sqrt((deltaX * deltaX) + (deltaY * deltaY)) < SIDEBAR_SUBVIEW_DRAG_THRESHOLD) {
+      return;
+    }
+
+    dragState.isDragging = true;
+    suppressSidebarNavClickUntil = Date.now() + 450;
+    renderSidebarSubviewOverlay(dragState);
+  }
+
+  targetMode = getSidebarSubviewModeAtPoint(Number(event.clientX) || 0, Number(event.clientY) || 0);
+  if (targetMode) {
+    dragState.hasEnteredOverlay = true;
+  }
+
+  if (dragState.isCancelled
+    || isPointerPastSidebarSubviewOverlay(Number(event.clientX) || 0, Number(event.clientY) || 0)
+    || (dragState.hasEnteredOverlay && isPointerOutsideSidebarSubviewOverlay(Number(event.clientX) || 0, Number(event.clientY) || 0))) {
+    dragState.isCancelled = true;
+    dragState.selectedMode = "";
+    closeSidebarSubviewOverlay();
+    event.preventDefault();
+    return;
+  }
+
+  dragState.selectedMode = targetMode;
+  setSidebarSubviewOverlayTarget(targetMode);
+  event.preventDefault();
+}
+
+function handleSidebarSubviewDragEnd(event) {
+  const dragState = activeSidebarSubviewDrag;
+  const wasDragging = dragState ? dragState.isDragging === true : false;
+  const selectedMode = dragState && !dragState.isCancelled
+    ? (dragState.selectedMode || getSidebarSubviewModeAtPoint(Number(event.clientX) || 0, Number(event.clientY) || 0))
+    : "";
+  const viewId = dragState ? dragState.viewId : "";
+
+  if (!dragState || event.pointerId !== dragState.pointerId) {
+    return;
+  }
+
+  clearSidebarSubviewDrag();
+
+  if (wasDragging) {
+    suppressSidebarNavClickUntil = Date.now() + 450;
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (selectedMode) {
+      applySidebarSubviewSelection(viewId, selectedMode);
+    }
+  }
+}
+
+function handleSidebarSubviewDragCancel(event) {
+  if (!activeSidebarSubviewDrag || event.pointerId !== activeSidebarSubviewDrag.pointerId) {
+    return;
+  }
+
+  clearSidebarSubviewDrag();
+}
+
+function handleSidebarNavPointerDown(event) {
+  const link = event.currentTarget;
+  const viewId = link ? String(link.dataset.viewTarget || "").trim() : "";
+
+  if ((event.pointerType === "mouse" && event.button !== 0)
+    || !isSidebarCollapsed()
+    || !getSidebarSubviewConfig(viewId)) {
+    return;
+  }
+
+  clearSidebarSubviewDrag();
+  activeSidebarSubviewDrag = {
+    sourceLink: link,
+    pointerId: event.pointerId,
+    viewId: viewId,
+    startX: Number(event.clientX) || 0,
+    startY: Number(event.clientY) || 0,
+    selectedMode: "",
+    isDragging: false,
+    isCancelled: false,
+    hasEnteredOverlay: false
+  };
+  trySetPointerCapture(link, event.pointerId);
+  window.addEventListener("pointermove", handleSidebarSubviewDragMove);
+  window.addEventListener("pointerup", handleSidebarSubviewDragEnd);
+  window.addEventListener("pointercancel", handleSidebarSubviewDragCancel);
+}
+
+function handleSidebarNavClickCapture(event) {
+  if (Date.now() > suppressSidebarNavClickUntil) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}
+
+function initializeSidebarSubviewDrag() {
+  eachNode(navLinks, function (link) {
+    link.addEventListener("pointerdown", handleSidebarNavPointerDown);
+    link.addEventListener("click", handleSidebarNavClickCapture, true);
+  });
 }
 
 function clearKnowledgeGapSuggestionBlurTimer() {
@@ -6681,6 +7061,7 @@ function toggleMenu() {
   }
 
   closeCollapsedClassPicker();
+  clearSidebarSubviewDrag();
   appShell.classList.toggle("is-collapsed");
   menuToggle.setAttribute("aria-expanded", String(!appShell.classList.contains("is-collapsed")));
   return false;
@@ -6692,6 +7073,7 @@ function collapseMenu() {
   }
 
   closeCollapsedClassPicker();
+  clearSidebarSubviewDrag();
   appShell.classList.add("is-collapsed");
   menuToggle.setAttribute("aria-expanded", "false");
   return false;
@@ -32928,6 +33310,10 @@ window.addEventListener("resize", function () {
   if (sidebar && sidebar.classList.contains("is-class-picker-open")) {
     positionCollapsedClassPicker();
   }
+
+  if (activeSidebarSubviewDrag && sidebarSubviewOverlay && !sidebarSubviewOverlay.hidden) {
+    positionSidebarSubviewOverlay(activeSidebarSubviewDrag.sourceLink);
+  }
 });
 
 window.addEventListener("scroll", function () {
@@ -32959,6 +33345,7 @@ if (passwordAuthApi) {
   bindIdleLockTracking();
 }
 
+initializeSidebarSubviewDrag();
 renderPersistenceIndicator();
 
 startApp().catch((error) => {
