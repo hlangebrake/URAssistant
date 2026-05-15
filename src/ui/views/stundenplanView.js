@@ -18,12 +18,12 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
     const snapshot = service && service.snapshot ? service.snapshot : {};
     const schoolYearStart = String(snapshot.schoolYearStart || "").slice(0, 10);
     const schoolYearEnd = String(snapshot.schoolYearEnd || "").slice(0, 10);
-    const planningEvents = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningEventsForDisplay === "function"
-      ? window.UnterrichtsassistentApp.getPlanningEventsForDisplay(snapshot, {
+    const planningEvents = window.Unterrichtsassistent.ui.viewHelpers.callApp("getPlanningEventsForDisplay", [snapshot, {
           rangeStart: schoolYearStart,
           rangeEnd: schoolYearEnd
-        })
-      : (Array.isArray(snapshot.planningEvents) ? snapshot.planningEvents : []);
+        }], function () {
+          return Array.isArray(snapshot.planningEvents) ? snapshot.planningEvents : [];
+        });
     const planningInstructionLessonDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActivePlanningInstructionLessonDraft === "function"
       ? window.UnterrichtsassistentApp.getActivePlanningInstructionLessonDraft()
       : null;
@@ -72,18 +72,11 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
     }, {});
     const instructionAssignmentCache = {};
 
-    function escapeValue(value) {
-      return String(value || "")
-        .replace(/&/g, "&amp;")
-        .replace(/\\/g, "&#92;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;")
-        .replace(/`/g, "&#96;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/\r/g, "&#13;")
-        .replace(/\n/g, "&#10;");
-    }
+    const escapeValue = window.Unterrichtsassistent.ui.viewHelpers.escapeValue;
+    const callApp = window.Unterrichtsassistent.ui.viewHelpers.callApp;
+    const parseLocalDate = window.Unterrichtsassistent.ui.viewHelpers.parseLocalDate;
+    const toIsoDate = window.Unterrichtsassistent.ui.viewHelpers.toIsoDate;
+    const formatShortDateLabel = window.Unterrichtsassistent.ui.viewHelpers.formatShortDateLabel;
 
     function timeToMinutes(timeValue) {
       const parts = String(timeValue || "").split(":");
@@ -95,41 +88,6 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
       }
 
       return (hours * 60) + minutes;
-    }
-
-    function parseLocalDate(dateValue) {
-      const parts = String(dateValue || "").split("-");
-      const year = Number(parts[0]);
-      const month = Number(parts[1]);
-      const day = Number(parts[2]);
-
-      if (parts.length !== 3 || Number.isNaN(year) || Number.isNaN(month) || Number.isNaN(day)) {
-        return null;
-      }
-
-      return new Date(year, month - 1, day);
-    }
-
-    function toIsoDate(dateValue) {
-      if (!(dateValue instanceof Date) || Number.isNaN(dateValue.getTime())) {
-        return "";
-      }
-
-      return [
-        String(dateValue.getFullYear()).padStart(4, "0"),
-        String(dateValue.getMonth() + 1).padStart(2, "0"),
-        String(dateValue.getDate()).padStart(2, "0")
-      ].join("-");
-    }
-
-    function formatShortDateLabel(dateValue) {
-      const normalizedDate = String(dateValue || "").slice(0, 10);
-
-      if (!normalizedDate) {
-        return "";
-      }
-
-      return normalizedDate.slice(8, 10) + "." + normalizedDate.slice(5, 7) + ".";
     }
 
     function getInstructionOccurrenceId(lessonDateValue) {
@@ -162,11 +120,7 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
     }
 
     function getPlanningCategoryColorValue(categoryName) {
-      if (window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningCategoryColor === "function") {
-        return window.UnterrichtsassistentApp.getPlanningCategoryColor(categoryName);
-      }
-
-      return "#d9d4cb";
+      return callApp("getPlanningCategoryColor", [categoryName], "#d9d4cb");
     }
 
     function isInstructionOutageCategoryValue(value) {
@@ -176,9 +130,7 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
     }
 
     function getInstructionOutageInfoForLesson(classId, lessonDateValue, lessonStartTime, lessonEndTime) {
-      return window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningInstructionOutageInfo === "function"
-        ? window.UnterrichtsassistentApp.getPlanningInstructionOutageInfo(classId, lessonDateValue, lessonStartTime, lessonEndTime, snapshot)
-        : { isCancelled: false, isAllDay: false, events: [], title: "", reason: "" };
+      return callApp("getPlanningInstructionOutageInfo", [classId, lessonDateValue, lessonStartTime, lessonEndTime, snapshot], { isCancelled: false, isAllDay: false, events: [], title: "", reason: "" });
     }
 
     function getInstructionOutageEventForDate(isoDate, classId) {

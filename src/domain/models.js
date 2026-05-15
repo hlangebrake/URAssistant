@@ -1003,11 +1003,16 @@ class PlanningInstructionLessonStatus {
 }
 
 function normalizeCurriculumTopicNodeIds(topicNodeIds) {
-  return Array.isArray(topicNodeIds)
-    ? topicNodeIds.map(function (nodeId) {
-        return String(nodeId || "").trim();
-      }).filter(Boolean)
-    : [];
+  const topicTreeFeature = window.Unterrichtsassistent
+    && window.Unterrichtsassistent.features
+    && window.Unterrichtsassistent.features.curriculum
+    && window.Unterrichtsassistent.features.curriculum.topicTree;
+
+  if (topicTreeFeature && typeof topicTreeFeature.normalizeTopicNodeIds === "function") {
+    return topicTreeFeature.normalizeTopicNodeIds(topicNodeIds);
+  }
+
+  return [];
 }
 
 class CurriculumSeries {

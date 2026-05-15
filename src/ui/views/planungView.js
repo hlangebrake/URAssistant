@@ -86,12 +86,12 @@ window.Unterrichtsassistent.ui.views.planung = {
     const schoolHalfYearStart = String(snapshot.schoolHalfYearStart || "").slice(0, 10);
     const schoolYearEnd = String(snapshot.schoolYearEnd || "").slice(0, 10);
     const hidePastPlanningMonths = snapshot.hidePastPlanningMonths !== false;
-    const planningEvents = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningEventsForDisplay === "function"
-      ? window.UnterrichtsassistentApp.getPlanningEventsForDisplay(snapshot, {
+    const planningEvents = window.Unterrichtsassistent.ui.viewHelpers.callApp("getPlanningEventsForDisplay", [snapshot, {
           rangeStart: schoolYearStart,
           rangeEnd: schoolYearEnd
-        })
-      : (Array.isArray(snapshot.planningEvents) ? snapshot.planningEvents : []);
+        }], function () {
+          return Array.isArray(snapshot.planningEvents) ? snapshot.planningEvents : [];
+        });
     const selectedSidebarFilters = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningSidebarCategoryFilters === "function"
       ? window.UnterrichtsassistentApp.getPlanningSidebarCategoryFilters()
       : [];
@@ -122,59 +122,18 @@ window.Unterrichtsassistent.ui.views.planung = {
     const isPlanningEventRecurring = Boolean(planningEventDraft && planningEventDraft.isRecurring);
     const showMonthlyWeekdayOption = planningEventRecurrenceUnit === "months";
 
-    function escapeValue(value) {
-      return String(value || "")
-        .replace(/&/g, "&amp;")
-        .replace(/\\/g, "&#92;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;")
-        .replace(/`/g, "&#96;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/\r/g, "&#13;")
-        .replace(/\n/g, "&#10;");
-    }
-
-    function parseLocalDate(dateValue) {
-      const normalized = String(dateValue || "").slice(0, 10);
-      const parts = normalized.split("-");
-      const year = Number(parts[0]);
-      const month = Number(parts[1]);
-      const day = Number(parts[2]);
-
-      if (parts.length !== 3 || Number.isNaN(year) || Number.isNaN(month) || Number.isNaN(day)) {
-        return null;
-      }
-
-      return new Date(year, month - 1, day);
-    }
+    const escapeValue = window.Unterrichtsassistent.ui.viewHelpers.escapeValue;
+    const callApp = window.Unterrichtsassistent.ui.viewHelpers.callApp;
+    const parseLocalDate = window.Unterrichtsassistent.ui.viewHelpers.parseLocalDate;
+    const toIsoDate = window.Unterrichtsassistent.ui.viewHelpers.toIsoDate;
+    const formatDateLabel = window.Unterrichtsassistent.ui.viewHelpers.formatDateLabel;
+    const formatShortDateLabel = window.Unterrichtsassistent.ui.viewHelpers.formatShortDateLabel;
 
     function formatMonthLabel(date) {
       return date.toLocaleDateString("de-DE", {
         month: "long",
         year: "numeric"
       });
-    }
-
-    function formatDateLabel(dateValue) {
-      const parsed = parseLocalDate(dateValue);
-      return parsed
-        ? parsed.toLocaleDateString("de-DE", {
-            day: "2-digit",
-            month: "2-digit",
-            year: "numeric"
-          })
-        : "";
-    }
-
-    function formatShortDateLabel(dateValue) {
-      const parsed = parseLocalDate(dateValue);
-      return parsed
-        ? parsed.toLocaleDateString("de-DE", {
-            day: "2-digit",
-            month: "2-digit"
-          })
-        : "";
     }
 
     function formatTimeRange(eventItem) {
@@ -194,14 +153,6 @@ window.Unterrichtsassistent.ui.views.planung = {
       }
 
       return "";
-    }
-
-    function toIsoDate(date) {
-      return [
-        date.getFullYear(),
-        String(date.getMonth() + 1).padStart(2, "0"),
-        String(date.getDate()).padStart(2, "0")
-      ].join("-");
     }
 
     function getEventSortKey(eventItem) {
@@ -257,9 +208,7 @@ window.Unterrichtsassistent.ui.views.planung = {
     }
 
     function getCategoryColor(categoryName) {
-      return window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningCategoryColor === "function"
-        ? window.UnterrichtsassistentApp.getPlanningCategoryColor(categoryName)
-        : "#d9d4cb";
+      return callApp("getPlanningCategoryColor", [categoryName], "#d9d4cb");
     }
 
     function getEventCategoryName(eventItem) {
@@ -514,9 +463,7 @@ window.Unterrichtsassistent.ui.views.planung = {
     }
 
     function isInstructionOutageDate(isoDate) {
-      const outageInfo = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningInstructionOutageInfo === "function"
-        ? window.UnterrichtsassistentApp.getPlanningInstructionOutageInfo(activeClass && activeClass.id, isoDate, "", "", snapshot)
-        : null;
+      const outageInfo = callApp("getPlanningInstructionOutageInfo", [activeClass && activeClass.id, isoDate, "", "", snapshot], null);
 
       return Boolean(outageInfo && outageInfo.isCancelled);
     }
@@ -704,9 +651,7 @@ window.Unterrichtsassistent.ui.views.planung = {
     }
 
     function getInstructionOutageInfoForLesson(lessonDateValue, lessonStartTime, lessonEndTime) {
-      return window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningInstructionOutageInfo === "function"
-        ? window.UnterrichtsassistentApp.getPlanningInstructionOutageInfo(activeClass && activeClass.id, lessonDateValue, lessonStartTime, lessonEndTime, snapshot)
-        : { isCancelled: false, isAllDay: false, title: "", reason: "" };
+      return callApp("getPlanningInstructionOutageInfo", [activeClass && activeClass.id, lessonDateValue, lessonStartTime, lessonEndTime, snapshot], { isCancelled: false, isAllDay: false, title: "", reason: "" });
     }
 
     function buildInstructionLessonOccurrences() {
@@ -1596,7 +1541,7 @@ window.Unterrichtsassistent.ui.views.planung = {
         isPlanningAdminMode ? [
           '<section class="planning-instruction__section planning-instruction__section--settings">',
           '<label class="import-modal__field import-modal__field--compact-select"><span>Kompetenz Werkzeug</span><select onchange="return window.UnterrichtsassistentApp.updateCurriculumLessonCompetencyTool(this.value)">',
-          (window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getEvaluationCompetencySourceOptions === "function" ? window.UnterrichtsassistentApp.getEvaluationCompetencySourceOptions() : []).map(function (option) {
+          callApp("getEvaluationCompetencySourceOptions", [], []).map(function (option) {
             const optionId = String(option && option.id || "").trim();
             const label = String(option && option.label || "").trim() || "Kompetenzquelle";
 
@@ -1992,9 +1937,7 @@ window.Unterrichtsassistent.ui.views.planung = {
     }
 
     function getCurriculumCompetencyTool() {
-      const options = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getEvaluationCompetencySourceOptions === "function"
-        ? window.UnterrichtsassistentApp.getEvaluationCompetencySourceOptions()
-        : [];
+      const options = callApp("getEvaluationCompetencySourceOptions", [], []);
 
       return options.find(function (option) {
         return String(option && option.id || "").trim() === curriculumLessonCompetencyToolId;
@@ -2006,9 +1949,7 @@ window.Unterrichtsassistent.ui.views.planung = {
     function getCurriculumCompetencyAspects() {
       const sourceId = String(getCurriculumCompetencyTool() && getCurriculumCompetencyTool().id || "").trim();
 
-      return sourceId && window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getEvaluationCompetencyAspectOptions === "function"
-        ? window.UnterrichtsassistentApp.getEvaluationCompetencyAspectOptions(sourceId)
-        : [];
+      return sourceId ? callApp("getEvaluationCompetencyAspectOptions", [sourceId], []) : [];
     }
 
     function normalizeCurriculumCompetencyAspectId(aspectId) {

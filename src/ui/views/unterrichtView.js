@@ -27,6 +27,12 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       ? String(service.snapshot.activeDateTimeMode || "live")
       : "live";
     const snapshot = service && service.snapshot ? service.snapshot : {};
+    const checklistFeature = window.Unterrichtsassistent
+      && window.Unterrichtsassistent.features
+      && window.Unterrichtsassistent.features.todos
+      && window.Unterrichtsassistent.features.todos.checklist
+      ? window.Unterrichtsassistent.features.todos.checklist
+      : null;
     const expandedTodoIds = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getExpandedTodoIds === "function"
       ? window.UnterrichtsassistentApp.getExpandedTodoIds().map(function (entry) {
           return String(entry || "").trim();
@@ -65,12 +71,12 @@ window.Unterrichtsassistent.ui.views.unterricht = {
     }, {});
     const schoolYearStart = String(snapshot.schoolYearStart || "").slice(0, 10);
     const schoolYearEnd = String(snapshot.schoolYearEnd || "").slice(0, 10);
-    const planningEvents = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningEventsForDisplay === "function"
-      ? window.UnterrichtsassistentApp.getPlanningEventsForDisplay(snapshot, {
+    const planningEvents = window.Unterrichtsassistent.ui.viewHelpers.callApp("getPlanningEventsForDisplay", [snapshot, {
           rangeStart: schoolYearStart,
           rangeEnd: schoolYearEnd
-        })
-      : (Array.isArray(snapshot.planningEvents) ? snapshot.planningEvents : []);
+        }], function () {
+          return Array.isArray(snapshot.planningEvents) ? snapshot.planningEvents : [];
+        });
     const lessonStatusLookup = (Array.isArray(snapshot.planningInstructionLessonStatuses) ? snapshot.planningInstructionLessonStatuses : []).reduce(function (lookup, statusItem) {
       const classId = String(statusItem && statusItem.classId || "").trim();
       const lessonDate = String(statusItem && statusItem.lessonDate || "").slice(0, 10);
@@ -187,54 +193,11 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       ? currentSeatOrder.seats
       : [];
 
-    function escapeValue(value) {
-      return String(value || "")
-        .replace(/&/g, "&amp;")
-        .replace(/\\/g, "&#92;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;")
-        .replace(/`/g, "&#96;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/\r/g, "&#13;")
-        .replace(/\n/g, "&#10;");
-    }
-
-    function parseLocalDate(dateValue) {
-      const normalized = String(dateValue || "").slice(0, 10);
-      const parts = normalized.split("-");
-      const year = Number(parts[0]);
-      const month = Number(parts[1]);
-      const day = Number(parts[2]);
-
-      if (parts.length !== 3 || Number.isNaN(year) || Number.isNaN(month) || Number.isNaN(day)) {
-        return null;
-      }
-
-      return new Date(year, month - 1, day);
-    }
-
-    function toIsoDate(dateValue) {
-      if (!(dateValue instanceof Date) || Number.isNaN(dateValue.getTime())) {
-        return "";
-      }
-
-      return [
-        String(dateValue.getFullYear()).padStart(4, "0"),
-        String(dateValue.getMonth() + 1).padStart(2, "0"),
-        String(dateValue.getDate()).padStart(2, "0")
-      ].join("-");
-    }
-
-    function formatShortDateLabel(dateValue) {
-      const normalizedDate = String(dateValue || "").slice(0, 10);
-
-      if (!normalizedDate) {
-        return "";
-      }
-
-      return normalizedDate.slice(8, 10) + "." + normalizedDate.slice(5, 7) + ".";
-    }
+    const escapeValue = window.Unterrichtsassistent.ui.viewHelpers.escapeValue;
+    const callApp = window.Unterrichtsassistent.ui.viewHelpers.callApp;
+    const parseLocalDate = window.Unterrichtsassistent.ui.viewHelpers.parseLocalDate;
+    const toIsoDate = window.Unterrichtsassistent.ui.viewHelpers.toIsoDate;
+    const formatShortDateLabel = window.Unterrichtsassistent.ui.viewHelpers.formatShortDateLabel;
 
     function addDaysToIsoDate(dateValue, amount) {
       const date = parseLocalDate(dateValue);
@@ -276,9 +239,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
     }
 
     function getInstructionOutageInfoForLesson(classId, lessonDateValue, lessonStartTime, lessonEndTime) {
-      return window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningInstructionOutageInfo === "function"
-        ? window.UnterrichtsassistentApp.getPlanningInstructionOutageInfo(classId, lessonDateValue, lessonStartTime, lessonEndTime, snapshot)
-        : { isCancelled: false };
+      return callApp("getPlanningInstructionOutageInfo", [classId, lessonDateValue, lessonStartTime, lessonEndTime, snapshot], { isCancelled: false });
     }
 
     function getOrderedCurriculumSeriesForClass(classId) {
@@ -594,9 +555,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
     }
 
     function getLiveCurriculumCompetencyTool() {
-      const options = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getEvaluationCompetencySourceOptions === "function"
-        ? window.UnterrichtsassistentApp.getEvaluationCompetencySourceOptions()
-        : [];
+      const options = callApp("getEvaluationCompetencySourceOptions", [], []);
       const rawToolId = String(snapshot.curriculumLessonCompetencyToolId || "").trim();
       const activeEvidenceToolId = String(snapshot.activeEvidenceToolId || "").trim();
       const toolId = rawToolId.indexOf("evidence:") === 0 || rawToolId === "mathObservation"
@@ -615,9 +574,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
     function getLiveCompetencyAspectOptionsForSource(sourceId) {
       const normalizedSourceId = String(sourceId || "").trim();
 
-      return normalizedSourceId && window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getEvaluationCompetencyAspectOptions === "function"
-        ? window.UnterrichtsassistentApp.getEvaluationCompetencyAspectOptions(normalizedSourceId)
-        : [];
+      return normalizedSourceId ? callApp("getEvaluationCompetencyAspectOptions", [normalizedSourceId], []) : [];
     }
 
     function normalizeLiveCurriculumCompetencyAspectId(aspectId) {
@@ -637,9 +594,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
     function buildLiveStepCompetencyChips(stepItem) {
       const tool = getLiveCurriculumCompetencyTool();
       const sourceId = String(tool && tool.id || "").trim();
-      const sourceOptions = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getEvaluationCompetencySourceOptions === "function"
-        ? window.UnterrichtsassistentApp.getEvaluationCompetencySourceOptions()
-        : [];
+      const sourceOptions = callApp("getEvaluationCompetencySourceOptions", [], []);
       const orderedSourceIds = [sourceId].concat(sourceOptions.map(function (option) {
         return String(option && option.id || "").trim();
       })).filter(Boolean);
@@ -2368,156 +2323,35 @@ window.Unterrichtsassistent.ui.views.unterricht = {
     }
 
     function getChecklistChildItems(items, parentId) {
-      return (items || []).filter(function (entry) {
-        return String(entry && entry.parentId || "").trim() === String(parentId || "").trim();
-      });
-    }
-
-    function getChecklistNodeById(items, nodeId) {
-      const normalizedNodeId = String(nodeId || "").trim();
-
-      if (!normalizedNodeId) {
-        return null;
-      }
-
-      return (items || []).reduce(function (foundEntry, entry) {
-        if (foundEntry) {
-          return foundEntry;
-        }
-
-        if (String(entry && entry.id || "").trim() === normalizedNodeId) {
-          return {
-            kind: "item",
-            entry: entry,
-            ownerItem: entry
-          };
-        }
-
-        if (Array.isArray(entry && entry.followUpSteps)) {
-          const foundStep = entry.followUpSteps.find(function (step) {
-            return String(step && step.id || "").trim() === normalizedNodeId;
-          }) || null;
-
-          if (foundStep) {
-            return {
-              kind: "step",
-              entry: foundStep,
-              ownerItem: entry
-            };
-          }
-        }
-
-        return null;
-      }, null);
+      return checklistFeature.getChildItems(items, parentId);
     }
 
     function getChecklistFollowUpSteps(items, itemId) {
-      const selectedNode = getChecklistNodeById(items, itemId);
-
-      if (!selectedNode || selectedNode.kind !== "item" || !Array.isArray(selectedNode.entry && selectedNode.entry.followUpSteps)) {
-        return [];
-      }
-
-      return selectedNode.entry.followUpSteps;
+      return checklistFeature.getFollowUpSteps(items, itemId);
     }
 
     function getDerivedChecklistItemDone(items, itemId) {
-      const selectedNode = getChecklistNodeById(items, itemId);
-      const childItems = getChecklistChildItems(items, itemId);
-
-      if (!selectedNode) {
-        return false;
-      }
-
-      if (childItems.length > 0) {
-        return childItems.every(function (childItem) {
-          return getAggregatedChecklistItemDone(items, childItem && childItem.id);
-        });
-      }
-
-      return Boolean(selectedNode.entry && selectedNode.entry.done);
-    }
-
-    function getAggregatedChecklistItemDone(items, itemId) {
-      const selectedNode = getChecklistNodeById(items, itemId);
-      const followUpSteps = selectedNode && selectedNode.kind === "item"
-        ? getChecklistFollowUpSteps(items, itemId)
-        : [];
-
-      if (!selectedNode) {
-        return false;
-      }
-
-      return getDerivedChecklistItemDone(items, itemId) && followUpSteps.every(function (step) {
-        return getAggregatedChecklistItemDone(items, step && step.id);
-      });
+      return checklistFeature.isNodeDisplayDone(items, itemId);
     }
 
     function getChecklistNodeSelfDone(items, itemId) {
-      const selectedNode = getChecklistNodeById(items, itemId);
-
-      return Boolean(selectedNode && selectedNode.entry && selectedNode.entry.done);
+      return checklistFeature.isNodeSelfDone(items, itemId);
     }
 
     function isChecklistItemManuallyToggleable(items, itemId) {
-      const selectedNode = getChecklistNodeById(items, itemId);
-      const childItems = getChecklistChildItems(items, itemId);
-
-      return Boolean(selectedNode) && childItems.length === 0;
-    }
-
-    function isChecklistNodeReadyForFollowUp(items, nodeId) {
-      return isChecklistItemManuallyToggleable(items, nodeId)
-        ? getChecklistNodeSelfDone(items, nodeId)
-        : getDerivedChecklistItemDone(items, nodeId);
+      return checklistFeature.isItemManuallyToggleable(items, itemId);
     }
 
     function isChecklistNodeUnlocked(items, nodeId) {
-      const selectedNode = getChecklistNodeById(items, nodeId);
-      const previousNodeId = selectedNode && selectedNode.kind === "step"
-        ? String(selectedNode.entry.previousStepId || selectedNode.ownerItem && selectedNode.ownerItem.id || "").trim()
-        : "";
-      const parentNodeId = selectedNode && selectedNode.kind === "item"
-        ? String(selectedNode.entry && selectedNode.entry.parentId || "").trim()
-        : "";
-
-      if (!selectedNode) {
-        return false;
-      }
-
-      if (selectedNode.kind === "step") {
-        return previousNodeId ? isChecklistNodeReadyForFollowUp(items, previousNodeId) : true;
-      }
-
-      if (parentNodeId) {
-        return isChecklistNodeUnlocked(items, parentNodeId);
-      }
-
-      return true;
+      return checklistFeature.isNodeUnlocked(items, nodeId);
     }
 
     function getDerivedChecklistTodoDone(items) {
-      const topLevelItems = getChecklistChildItems(items, "");
-
-      return topLevelItems.length > 0 && topLevelItems.every(function (item) {
-        return getAggregatedChecklistItemDone(items, item && item.id);
-      });
+      return checklistFeature.isChecklistDone(items);
     }
 
     function hasCompletedFollowUpSuccessor(items, itemId) {
-      const selectedNode = getChecklistNodeById(items, itemId);
-      const followUpSteps = selectedNode && selectedNode.kind === "item"
-        ? getChecklistFollowUpSteps(items, itemId)
-        : [];
-
-      if (!selectedNode || !followUpSteps.length) {
-        return false;
-      }
-
-      return followUpSteps.some(function (step) {
-        return getAggregatedChecklistItemDone(items, step && step.id)
-          || hasCompletedFollowUpSuccessor(items, step && step.id);
-      });
+      return checklistFeature.hasCompletedFollowUpSuccessor(items, itemId);
     }
 
     function getAssignedStudentEntries(todoEntry) {
@@ -2806,8 +2640,8 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       const isChecklistTodo = String(todoItem && todoItem.type || "").trim().toLowerCase() === "checkliste";
       const isDone = isTodoEffectivelyDone(todoItem);
       const isExpanded = expandedTodoIds.indexOf(normalizedTodoId) >= 0;
-      const categoryColor = categoryLabel && window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningCategoryColor === "function"
-        ? String(window.UnterrichtsassistentApp.getPlanningCategoryColor(categoryLabel) || "").trim()
+      const categoryColor = categoryLabel
+        ? String(callApp("getPlanningCategoryColor", [categoryLabel], "") || "").trim()
         : "";
       const checklistSectionMarkup = hasAssignedStudents && isChecklistTodo ? "" : buildChecklistSection(todoItem);
       const rowStyle = categoryColor
@@ -2976,9 +2810,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         if (!Object.prototype.hasOwnProperty.call(groups, normalizedCategory)) {
           groups[normalizedCategory] = {
             name: categoryName,
-            color: window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningCategoryColor === "function"
-              ? String(window.UnterrichtsassistentApp.getPlanningCategoryColor(categoryName) || "").trim()
-              : "",
+            color: String(callApp("getPlanningCategoryColor", [categoryName], "") || "").trim(),
             items: []
           };
           categoryOrder.push(normalizedCategory);

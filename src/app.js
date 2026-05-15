@@ -33,6 +33,25 @@ const securityLayer = namespace.security || {};
 const servicesLayer = namespace.services || {};
 const uiLayer = namespace.ui || {};
 const domainLayer = namespace.domain || {};
+const sharedLayer = namespace.shared || {};
+const htmlUtils = sharedLayer.html || {};
+const dateTimeUtils = sharedLayer.dateTime || {};
+const featuresLayer = namespace.features || {};
+const curriculumFeatureLayer = featuresLayer.curriculum || {};
+const curriculumTopicTreeFeature = curriculumFeatureLayer.topicTree || {};
+const curriculumPlanningFeature = curriculumFeatureLayer.planning || {};
+const planningFeatureLayer = featuresLayer.planning || {};
+const planningRecurrenceFeature = planningFeatureLayer.recurrence || {};
+const planningCategoriesFeature = planningFeatureLayer.categories || {};
+const planningInstructionFeature = planningFeatureLayer.instruction || {};
+const schoolFeatureLayer = featuresLayer.school || {};
+const schoolDisplayFeature = schoolFeatureLayer.display || {};
+const todosFeatureLayer = featuresLayer.todos || {};
+const todoChecklistFeature = todosFeatureLayer.checklist || {};
+const evaluationFeatureLayer = featuresLayer.evaluation || {};
+const evaluationCompetenciesFeature = evaluationFeatureLayer.competencies || {};
+const seatPlanFeatureLayer = featuresLayer.seatPlan || {};
+const seatPlanGeometryFeature = seatPlanFeatureLayer.geometry || {};
 
 const RepositoryClass = dataLayer.AppRepository;
 const SchoolServiceClass = servicesLayer.SchoolService;
@@ -823,18 +842,9 @@ let forcePersistAfterCurrentSave = false;
 let idleLockTimerId = 0;
 let isLockingForAuth = false;
 let pendingEncryptedImportPayload = null;
-const CURRICULUM_TOPIC_TREE_PLANS = [
-  {
-    id: "kc-mathematik-sek-1-sek-2",
-    label: "KC Mathematik Sek 1/Sek 2",
-    url: "src/data/kc-mathematik-sek-1-sek-2.json"
-  },
-  {
-    id: "kc-informatik-sek-2",
-    label: "KC Informatik Sek 2",
-    url: "src/data/kc-informatik-sek-2.json"
-  }
-];
+const CURRICULUM_TOPIC_TREE_PLANS = Array.isArray(curriculumTopicTreeFeature.plans)
+  ? curriculumTopicTreeFeature.plans
+  : [];
 
 function isCurriculumPlanningMode() {
   return planningViewMode === "unterrichtsplanung" || planningViewMode === "stoffplanung";
@@ -1166,24 +1176,30 @@ function createTimetableRow(type) {
 }
 
 function getTodayDateValue() {
+  if (typeof dateTimeUtils.getTodayDateValue === "function") {
+    return dateTimeUtils.getTodayDateValue();
+  }
+
   const today = new Date();
-  const year = today.getFullYear();
-  const month = String(today.getMonth() + 1).padStart(2, "0");
-  const day = String(today.getDate()).padStart(2, "0");
-  return year + "-" + month + "-" + day;
+  return today.getFullYear() + "-" + String(today.getMonth() + 1).padStart(2, "0") + "-" + String(today.getDate()).padStart(2, "0");
 }
 
 function getYesterdayDateValue() {
+  if (typeof dateTimeUtils.getYesterdayDateValue === "function") {
+    return dateTimeUtils.getYesterdayDateValue();
+  }
+
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
 
-  const year = yesterday.getFullYear();
-  const month = String(yesterday.getMonth() + 1).padStart(2, "0");
-  const day = String(yesterday.getDate()).padStart(2, "0");
-  return year + "-" + month + "-" + day;
+  return yesterday.getFullYear() + "-" + String(yesterday.getMonth() + 1).padStart(2, "0") + "-" + String(yesterday.getDate()).padStart(2, "0");
 }
 
 function getNowDateParts() {
+  if (typeof dateTimeUtils.getNowDateParts === "function") {
+    return dateTimeUtils.getNowDateParts();
+  }
+
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, "0");
@@ -2188,18 +2204,29 @@ function getPlanningCategorySuggestionList(listId) {
   return listId ? document.getElementById(listId) : null;
 }
 
-function normalizePlanningCategoryFilterLabels(value) {
-  const rawEntries = Array.isArray(value)
-    ? value
-    : String(value || "").split(",");
+function getPlanningCategoryFeatureOptions() {
+  return {
+    getClassColor: getClassDisplayColor,
+    createPastelColor: createPastelColorFn
+  };
+}
 
-  return rawEntries.map(function (entry) {
-    return String(entry || "").trim();
-  }).filter(Boolean).filter(function (entry, index, array) {
-    return array.findIndex(function (candidate) {
-      return String(candidate || "").trim().toLowerCase() === entry.toLowerCase();
-    }) === index;
-  });
+function getSchoolDisplayFeatureOptions() {
+  return {
+    createPastelColor: createPastelColorFn
+  };
+}
+
+function getTodoChecklistFeatureOptions() {
+  return {
+    getTimestamp: getActiveDateTimeTimestamp
+  };
+}
+
+function normalizePlanningCategoryFilterLabels(value) {
+  return typeof planningCategoriesFeature.normalizeFilterLabels === "function"
+    ? planningCategoriesFeature.normalizeFilterLabels(value)
+    : [];
 }
 
 function getAllPlanningNamedFilters(snapshot) {
@@ -2300,256 +2327,31 @@ function getPlanningCollections(snapshot) {
   };
 }
 
-function parsePlanningEventDate(dateValue) {
-  const normalizedDate = String(dateValue || "").slice(0, 10);
-  const parts = normalizedDate.split("-");
-  const year = Number(parts[0]);
-  const month = Number(parts[1]);
-  const day = Number(parts[2]);
-  const parsedDate = parts.length === 3
-    ? new Date(year, month - 1, day)
-    : null;
-
-  if (!parsedDate || Number.isNaN(parsedDate.getTime())) {
-    return null;
-  }
-
-  if (parsedDate.getFullYear() !== year || parsedDate.getMonth() !== month - 1 || parsedDate.getDate() !== day) {
-    return null;
-  }
-
-  return parsedDate;
-}
-
-function toPlanningEventIsoDate(dateValue) {
-  if (!(dateValue instanceof Date) || Number.isNaN(dateValue.getTime())) {
-    return "";
-  }
-
-  return [
-    String(dateValue.getFullYear()).padStart(4, "0"),
-    String(dateValue.getMonth() + 1).padStart(2, "0"),
-    String(dateValue.getDate()).padStart(2, "0")
-  ].join("-");
-}
-
-function getPlanningEventDayDifference(startDateValue, endDateValue) {
-  const startDate = parsePlanningEventDate(startDateValue);
-  const endDate = parsePlanningEventDate(endDateValue);
-
-  if (!startDate || !endDate) {
-    return 0;
-  }
-
-  return Math.max(0, Math.round((Date.UTC(endDate.getFullYear(), endDate.getMonth(), endDate.getDate()) - Date.UTC(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())) / 86400000));
-}
-
-function addPlanningEventDays(dateValue, dayCount) {
-  const parsedDate = parsePlanningEventDate(dateValue);
-  const nextDate = parsedDate
-    ? new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate())
-    : null;
-
-  if (!nextDate) {
-    return "";
-  }
-
-  nextDate.setDate(nextDate.getDate() + (Number(dayCount) || 0));
-  return toPlanningEventIsoDate(nextDate);
-}
-
-function addPlanningEventMonths(dateValue, monthCount) {
-  const parsedDate = parsePlanningEventDate(dateValue);
-  const normalizedMonthCount = Math.round(Number(monthCount) || 0);
-  let targetYear;
-  let targetMonthIndex;
-  let lastDayOfTargetMonth;
-
-  if (!parsedDate) {
-    return "";
-  }
-
-  targetYear = parsedDate.getFullYear();
-  targetMonthIndex = parsedDate.getMonth() + normalizedMonthCount;
-  targetYear += Math.floor(targetMonthIndex / 12);
-  targetMonthIndex = ((targetMonthIndex % 12) + 12) % 12;
-  lastDayOfTargetMonth = new Date(targetYear, targetMonthIndex + 1, 0).getDate();
-
-  return toPlanningEventIsoDate(new Date(
-    targetYear,
-    targetMonthIndex,
-    Math.min(parsedDate.getDate(), lastDayOfTargetMonth)
-  ));
-}
-
-function getPlanningEventMonthlyWeekdayOccurrenceDate(dateValue, monthCount) {
-  const parsedDate = parsePlanningEventDate(dateValue);
-  const normalizedMonthCount = Math.round(Number(monthCount) || 0);
-  let targetYear;
-  let targetMonthIndex;
-  let firstOfMonth;
-  let lastOfMonth;
-  let weekday;
-  let ordinal;
-  let isLast;
-  let firstMatchDay;
-  let candidateDay;
-
-  if (!parsedDate) {
-    return "";
-  }
-
-  targetYear = parsedDate.getFullYear();
-  targetMonthIndex = parsedDate.getMonth() + normalizedMonthCount;
-  targetYear += Math.floor(targetMonthIndex / 12);
-  targetMonthIndex = ((targetMonthIndex % 12) + 12) % 12;
-  firstOfMonth = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), 1);
-  lastOfMonth = new Date(parsedDate.getFullYear(), parsedDate.getMonth() + 1, 0);
-  weekday = parsedDate.getDay();
-  ordinal = Math.floor((parsedDate.getDate() - 1) / 7) + 1;
-  isLast = parsedDate.getDate() + 7 > lastOfMonth.getDate();
-  firstOfMonth = new Date(targetYear, targetMonthIndex, 1);
-  lastOfMonth = new Date(targetYear, targetMonthIndex + 1, 0);
-  firstMatchDay = 1 + ((weekday - firstOfMonth.getDay() + 7) % 7);
-  candidateDay = firstMatchDay + ((ordinal - 1) * 7);
-
-  if (isLast || candidateDay > lastOfMonth.getDate()) {
-    candidateDay = lastOfMonth.getDate();
-    while (candidateDay > 1 && new Date(targetYear, targetMonthIndex, candidateDay).getDay() !== weekday) {
-      candidateDay -= 1;
-    }
-  }
-
-  return toPlanningEventIsoDate(new Date(targetYear, targetMonthIndex, candidateDay));
-}
-
 function normalizePlanningEventRecurrenceInterval(value) {
-  return Math.max(1, Math.round(Number(value) || 1));
+  return typeof planningRecurrenceFeature.normalizeInterval === "function"
+    ? planningRecurrenceFeature.normalizeInterval(value)
+    : Math.max(1, Math.round(Number(value) || 1));
 }
 
 function normalizePlanningEventRecurrenceUnit(value) {
-  const normalizedValue = String(value || "").trim().toLowerCase();
-
-  return ["days", "weeks", "months"].indexOf(normalizedValue) >= 0
-    ? normalizedValue
+  return typeof planningRecurrenceFeature.normalizeUnit === "function"
+    ? planningRecurrenceFeature.normalizeUnit(value)
     : "weeks";
 }
 
 function normalizePlanningEventRecurrenceUntilDate(value) {
-  return String(value || "").slice(0, 10);
-}
-
-function buildPlanningEventDisplayOccurrence(eventItem, occurrenceIndex) {
-  const baseStartDate = String(eventItem && eventItem.startDate || "").slice(0, 10);
-  const baseEndDate = String(eventItem && eventItem.endDate || baseStartDate).slice(0, 10) || baseStartDate;
-  const isRecurring = Boolean(eventItem && eventItem.isRecurring);
-  const recurrenceInterval = normalizePlanningEventRecurrenceInterval(eventItem && eventItem.recurrenceInterval);
-  const recurrenceUnit = normalizePlanningEventRecurrenceUnit(eventItem && eventItem.recurrenceUnit);
-  const monthOffset = recurrenceInterval * occurrenceIndex;
-  const startDateValue = occurrenceIndex === 0
-    ? baseStartDate
-    : (function () {
-        if (recurrenceUnit === "days") {
-          return addPlanningEventDays(baseStartDate, recurrenceInterval * occurrenceIndex);
-        }
-
-        if (recurrenceUnit === "weeks") {
-          return addPlanningEventDays(baseStartDate, recurrenceInterval * occurrenceIndex * 7);
-        }
-
-        if (eventItem && eventItem.recurrenceMonthlyWeekday) {
-          return getPlanningEventMonthlyWeekdayOccurrenceDate(baseStartDate, monthOffset);
-        }
-
-        return addPlanningEventMonths(baseStartDate, monthOffset);
-      }());
-  const endDateValue = addPlanningEventDays(startDateValue, getPlanningEventDayDifference(baseStartDate, baseEndDate));
-
-  if (!startDateValue) {
-    return null;
-  }
-
-  return Object.assign({}, eventItem, {
-    id: String(eventItem && eventItem.id || "").trim(),
-    sourceEventId: String(eventItem && eventItem.id || "").trim(),
-    occurrenceId: [String(eventItem && eventItem.id || "").trim(), startDateValue, endDateValue].join("::"),
-    occurrenceIndex: occurrenceIndex,
-    isRecurringSeries: isRecurring,
-    isRecurringOccurrence: isRecurring && occurrenceIndex > 0,
-    originalStartDate: baseStartDate,
-    originalEndDate: baseEndDate,
-    startDate: startDateValue,
-    endDate: endDateValue
-  });
-}
-
-function doesPlanningEventOccurrenceOverlapRange(eventItem, rangeStartDate, rangeEndDate) {
-  const startDateValue = String(eventItem && eventItem.startDate || "").slice(0, 10);
-  const endDateValue = String(eventItem && eventItem.endDate || startDateValue).slice(0, 10);
-
-  if (!startDateValue) {
-    return false;
-  }
-
-  if (rangeStartDate && endDateValue < rangeStartDate) {
-    return false;
-  }
-
-  if (rangeEndDate && startDateValue > rangeEndDate) {
-    return false;
-  }
-
-  return true;
+  return typeof planningRecurrenceFeature.normalizeUntilDate === "function"
+    ? planningRecurrenceFeature.normalizeUntilDate(value)
+    : String(value || "").slice(0, 10);
 }
 
 function getPlanningEventsForDisplay(snapshot, options) {
   const sourceSnapshot = snapshot || {};
   const sourceEvents = getPlanningCollections(sourceSnapshot).events;
-  const rangeOptions = options && typeof options === "object"
-    ? options
-    : {};
-  const rangeStartDate = String(rangeOptions.rangeStart || "").slice(0, 10);
-  const rangeEndDate = String(rangeOptions.rangeEnd || "").slice(0, 10);
-  const renderedEvents = [];
 
-  sourceEvents.forEach(function (eventItem) {
-    const normalizedStartDate = String(eventItem && eventItem.startDate || "").slice(0, 10);
-    const normalizedUntilDate = normalizePlanningEventRecurrenceUntilDate(eventItem && eventItem.recurrenceUntilDate);
-    const isRecurring = Boolean(eventItem && eventItem.isRecurring) && Boolean(normalizedStartDate) && Boolean(normalizedUntilDate);
-    let occurrenceIndex = 0;
-    let occurrence = buildPlanningEventDisplayOccurrence(eventItem, occurrenceIndex);
-
-    if (!occurrence) {
-      return;
-    }
-
-    while (occurrence) {
-      if (occurrenceIndex === 0 || (isRecurring && String(occurrence.startDate || "").slice(0, 10) <= normalizedUntilDate)) {
-        if (doesPlanningEventOccurrenceOverlapRange(occurrence, rangeStartDate, rangeEndDate)) {
-          renderedEvents.push(occurrence);
-        }
-      } else {
-        break;
-      }
-
-      if (!isRecurring) {
-        break;
-      }
-
-      occurrenceIndex += 1;
-      occurrence = buildPlanningEventDisplayOccurrence(eventItem, occurrenceIndex);
-
-      if (!occurrence || occurrenceIndex > 5000) {
-        break;
-      }
-
-      if (rangeEndDate && String(occurrence.startDate || "").slice(0, 10) > rangeEndDate && String(occurrence.startDate || "").slice(0, 10) > normalizedUntilDate) {
-        break;
-      }
-    }
-  });
-
-  return renderedEvents;
+  return typeof planningRecurrenceFeature.getEventsForDisplay === "function"
+    ? planningRecurrenceFeature.getEventsForDisplay(sourceEvents, options)
+    : sourceEvents.slice();
 }
 
 function timeValueToMinutes(value, fallbackValue) {
@@ -2567,85 +2369,38 @@ function timeValueToMinutes(value, fallbackValue) {
 }
 
 function getPlanningEventTargetClassIds(snapshot, eventItem) {
-  const classes = snapshot && Array.isArray(snapshot.classes) ? snapshot.classes : [];
-  const normalizedCategory = String(eventItem && eventItem.category || "").trim().toLowerCase();
-
-  return classes.filter(function (schoolClass) {
-    return [String(schoolClass && schoolClass.name || "").trim(), String(schoolClass && schoolClass.subject || "").trim()]
-      .filter(Boolean)
-      .join(" ")
-      .trim()
-      .toLowerCase() === normalizedCategory;
-  }).map(function (schoolClass) {
-    return String(schoolClass && schoolClass.id || "").trim();
-  }).filter(Boolean);
+  return typeof planningInstructionFeature.getPlanningEventTargetClassIds === "function"
+    ? planningInstructionFeature.getPlanningEventTargetClassIds(snapshot, eventItem)
+    : [];
 }
 
 function doesPlanningEventCauseInstructionOutage(eventItem) {
-  const normalizedCategory = String(eventItem && eventItem.category || "").trim().toLowerCase();
-
-  return normalizedCategory === "unterrichtsfrei" || Boolean(eventItem && eventItem.causesInstructionOutage);
+  return typeof planningInstructionFeature.doesPlanningEventCauseInstructionOutage === "function"
+    ? planningInstructionFeature.doesPlanningEventCauseInstructionOutage(eventItem)
+    : false;
 }
 
 function doesPlanningEventAffectClass(snapshot, eventItem, classId) {
-  const normalizedClassId = String(classId || "").trim();
-  const normalizedCategory = String(eventItem && eventItem.category || "").trim().toLowerCase();
-  const targetClassIds = getPlanningEventTargetClassIds(snapshot, eventItem);
-
-  if (!normalizedClassId) {
-    return true;
-  }
-
-  if (normalizedCategory === "unterrichtsfrei") {
-    return true;
-  }
-
-  if (targetClassIds.length > 0) {
-    return targetClassIds.indexOf(normalizedClassId) >= 0;
-  }
-
-  return Boolean(eventItem && eventItem.causesInstructionOutage);
+  return typeof planningInstructionFeature.doesPlanningEventAffectClass === "function"
+    ? planningInstructionFeature.doesPlanningEventAffectClass(snapshot, eventItem, classId)
+    : false;
 }
 
 function doesPlanningEventAffectLessonTime(eventItem, lessonStartTime, lessonEndTime) {
-  const eventStartMinutes = timeValueToMinutes(eventItem && eventItem.startTime, 0);
-  const eventEndMinutes = timeValueToMinutes(eventItem && eventItem.endTime, 1440);
-  const hasTimedBounds = Boolean(String(eventItem && eventItem.startTime || "").trim() || String(eventItem && eventItem.endTime || "").trim());
-  const lessonStartMinutes = timeValueToMinutes(lessonStartTime, 0);
-  const lessonEndMinutes = timeValueToMinutes(lessonEndTime, lessonStartMinutes + 1);
-
-  if (!hasTimedBounds) {
-    return true;
-  }
-
-  return lessonStartMinutes < eventEndMinutes && lessonEndMinutes > eventStartMinutes;
+  return typeof planningInstructionFeature.doesPlanningEventAffectLessonTime === "function"
+    ? planningInstructionFeature.doesPlanningEventAffectLessonTime(eventItem, lessonStartTime, lessonEndTime, {
+        timeValueToMinutes: timeValueToMinutes
+      })
+    : false;
 }
 
 function getPlanningInstructionOutageInfo(snapshot, classId, lessonDate, lessonStartTime, lessonEndTime) {
-  const normalizedLessonDate = String(lessonDate || "").slice(0, 10);
-  const displayEvents = normalizedLessonDate
-    ? getPlanningEventsForDisplay(snapshot, {
-        rangeStart: normalizedLessonDate,
-        rangeEnd: normalizedLessonDate
+  return typeof planningInstructionFeature.getPlanningInstructionOutageInfo === "function"
+    ? planningInstructionFeature.getPlanningInstructionOutageInfo(snapshot, classId, lessonDate, lessonStartTime, lessonEndTime, {
+        getEventsForDisplay: getPlanningEventsForDisplay,
+        timeValueToMinutes: timeValueToMinutes
       })
-    : [];
-  const matchingEvents = displayEvents.filter(function (eventItem) {
-    return doesPlanningEventCauseInstructionOutage(eventItem)
-      && doesPlanningEventAffectClass(snapshot, eventItem, classId)
-      && doesPlanningEventAffectLessonTime(eventItem, lessonStartTime, lessonEndTime);
-  });
-  const allDayEvents = matchingEvents.filter(function (eventItem) {
-    return !String(eventItem && eventItem.startTime || "").trim() && !String(eventItem && eventItem.endTime || "").trim();
-  });
-  const firstEvent = matchingEvents[0] || null;
-
-  return {
-    isCancelled: matchingEvents.length > 0,
-    isAllDay: allDayEvents.length > 0,
-    events: matchingEvents,
-    title: String(firstEvent && firstEvent.title || "").trim(),
-    reason: String(firstEvent && firstEvent.description || "").trim()
-  };
+    : { isCancelled: false, isAllDay: false, events: [], title: "", reason: "" };
 }
 
 function getPlanningInstructionOutageEventDetail(snapshot, classId, lessonDate) {
@@ -2764,67 +2519,15 @@ function normalizeCurriculumLessonHomeworkDueUnit(value) {
 }
 
 function getOrderedCurriculumSeriesForClass(snapshot, classId) {
-  const collections = getCurriculumCollections(snapshot);
-  const items = collections.series.filter(function (entry) {
-    return String(entry && entry.classId || "").trim() === String(classId || "").trim();
-  });
-  const incomingCounts = {};
-  const itemById = {};
-  const ordered = [];
-  let current = null;
-
-  items.forEach(function (entry) {
-    const entryId = String(entry && entry.id || "").trim();
-
-    if (!entryId) {
-      return;
-    }
-
-    itemById[entryId] = entry;
-    incomingCounts[entryId] = incomingCounts[entryId] || 0;
-  });
-
-  items.forEach(function (entry) {
-    const nextId = String(entry && entry.nextSeriesId || "").trim();
-
-    if (nextId && Object.prototype.hasOwnProperty.call(incomingCounts, nextId)) {
-      incomingCounts[nextId] += 1;
-    }
-  });
-
-  current = items.find(function (entry) {
-    return !incomingCounts[String(entry && entry.id || "").trim()];
-  }) || items[0] || null;
-
-  while (current) {
-    const currentId = String(current && current.id || "").trim();
-    const nextId = String(current && current.nextSeriesId || "").trim();
-
-    if (!currentId || ordered.some(function (entry) {
-      return String(entry && entry.id || "").trim() === currentId;
-    })) {
-      break;
-    }
-
-    ordered.push(current);
-    current = nextId && itemById[nextId] ? itemById[nextId] : null;
-  }
-
-  items.forEach(function (entry) {
-    if (!ordered.some(function (orderedEntry) {
-      return String(orderedEntry && orderedEntry.id || "").trim() === String(entry && entry.id || "").trim();
-    })) {
-      ordered.push(entry);
-    }
-  });
-
-  return ordered;
+  return typeof curriculumPlanningFeature.getOrderedSeriesForClass === "function"
+    ? curriculumPlanningFeature.getOrderedSeriesForClass(getCurriculumCollections(snapshot), classId)
+    : [];
 }
 
 function reconnectCurriculumSeriesChain(items) {
-  items.forEach(function (entry, index) {
-    entry.nextSeriesId = items[index + 1] ? String(items[index + 1].id || "").trim() : "";
-  });
+  if (typeof curriculumPlanningFeature.reconnectSeriesChain === "function") {
+    curriculumPlanningFeature.reconnectSeriesChain(items);
+  }
 }
 
 function applyCurriculumSeriesDropIndicatorToDom() {
@@ -3286,119 +2989,15 @@ function clearCurriculumLessonPointerDrag() {
 }
 
 function getOrderedCurriculumSequencesForSeries(snapshot, seriesId) {
-  const collections = getCurriculumCollections(snapshot);
-  const items = collections.sequences.filter(function (entry) {
-    return String(entry && entry.seriesId || "").trim() === String(seriesId || "").trim();
-  });
-  const incomingCounts = {};
-  const itemById = {};
-  const ordered = [];
-  let current = null;
-
-  items.forEach(function (entry) {
-    const entryId = String(entry && entry.id || "").trim();
-
-    if (!entryId) {
-      return;
-    }
-
-    itemById[entryId] = entry;
-    incomingCounts[entryId] = incomingCounts[entryId] || 0;
-  });
-
-  items.forEach(function (entry) {
-    const nextId = String(entry && entry.nextSequenceId || "").trim();
-
-    if (nextId && Object.prototype.hasOwnProperty.call(incomingCounts, nextId)) {
-      incomingCounts[nextId] += 1;
-    }
-  });
-
-  current = items.find(function (entry) {
-    return !incomingCounts[String(entry && entry.id || "").trim()];
-  }) || items[0] || null;
-
-  while (current) {
-    const currentId = String(current && current.id || "").trim();
-    const nextId = String(current && current.nextSequenceId || "").trim();
-
-    if (!currentId || ordered.some(function (entry) {
-      return String(entry && entry.id || "").trim() === currentId;
-    })) {
-      break;
-    }
-
-    ordered.push(current);
-    current = nextId && itemById[nextId] ? itemById[nextId] : null;
-  }
-
-  items.forEach(function (entry) {
-    if (!ordered.some(function (orderedEntry) {
-      return String(orderedEntry && orderedEntry.id || "").trim() === String(entry && entry.id || "").trim();
-    })) {
-      ordered.push(entry);
-    }
-  });
-
-  return ordered;
+  return typeof curriculumPlanningFeature.getOrderedSequencesForSeries === "function"
+    ? curriculumPlanningFeature.getOrderedSequencesForSeries(getCurriculumCollections(snapshot), seriesId)
+    : [];
 }
 
 function getOrderedCurriculumLessonsForSequence(snapshot, sequenceId) {
-  const collections = getCurriculumCollections(snapshot);
-  const items = collections.lessons.filter(function (entry) {
-    return String(entry && entry.sequenceId || "").trim() === String(sequenceId || "").trim();
-  });
-  const incomingCounts = {};
-  const itemById = {};
-  const ordered = [];
-  let current = null;
-
-  items.forEach(function (entry) {
-    const entryId = String(entry && entry.id || "").trim();
-
-    if (!entryId) {
-      return;
-    }
-
-    itemById[entryId] = entry;
-    incomingCounts[entryId] = incomingCounts[entryId] || 0;
-  });
-
-  items.forEach(function (entry) {
-    const nextId = String(entry && entry.nextLessonId || "").trim();
-
-    if (nextId && Object.prototype.hasOwnProperty.call(incomingCounts, nextId)) {
-      incomingCounts[nextId] += 1;
-    }
-  });
-
-  current = items.find(function (entry) {
-    return !incomingCounts[String(entry && entry.id || "").trim()];
-  }) || items[0] || null;
-
-  while (current) {
-    const currentId = String(current && current.id || "").trim();
-    const nextId = String(current && current.nextLessonId || "").trim();
-
-    if (!currentId || ordered.some(function (entry) {
-      return String(entry && entry.id || "").trim() === currentId;
-    })) {
-      break;
-    }
-
-    ordered.push(current);
-    current = nextId && itemById[nextId] ? itemById[nextId] : null;
-  }
-
-  items.forEach(function (entry) {
-    if (!ordered.some(function (orderedEntry) {
-      return String(orderedEntry && orderedEntry.id || "").trim() === String(entry && entry.id || "").trim();
-    })) {
-      ordered.push(entry);
-    }
-  });
-
-  return ordered;
+  return typeof curriculumPlanningFeature.getOrderedLessonsForSequence === "function"
+    ? curriculumPlanningFeature.getOrderedLessonsForSequence(getCurriculumCollections(snapshot), sequenceId)
+    : [];
 }
 
 function getOrderedCurriculumLessonPhasesForLesson(snapshot, lessonPlanId) {
@@ -3846,357 +3445,108 @@ function moveCurriculumLessonFlowStepToLessonStart(sourcePhaseId, draggedStepId,
 }
 
 function getCurriculumLessonHourDemand(lessonItem) {
-  return String(lessonItem && lessonItem.hourType || "").trim() === "double" ? 2 : 1;
+  return typeof curriculumPlanningFeature.getLessonHourDemand === "function"
+    ? curriculumPlanningFeature.getLessonHourDemand(lessonItem)
+    : (String(lessonItem && lessonItem.hourType || "").trim() === "double" ? 2 : 1);
 }
 
 function getCalculatedCurriculumSequenceHourDemand(snapshot, sequenceId) {
-  return getOrderedCurriculumLessonsForSequence(snapshot, sequenceId).reduce(function (sum, lessonItem) {
-    return sum + getCurriculumLessonHourDemand(lessonItem);
-  }, 0);
+  return typeof curriculumPlanningFeature.getCalculatedSequenceHourDemand === "function"
+    ? curriculumPlanningFeature.getCalculatedSequenceHourDemand(getCurriculumCollections(snapshot), sequenceId)
+    : 0;
 }
 
 function getEffectiveCurriculumSequenceHourDemand(snapshot, sequenceItem) {
-  const calculatedHourDemand = getCalculatedCurriculumSequenceHourDemand(snapshot, String(sequenceItem && sequenceItem.id || "").trim());
-
-  if (calculatedHourDemand > 0) {
-    return calculatedHourDemand;
-  }
-
-  return Math.max(0, Number(sequenceItem && sequenceItem.hourDemand) || 0);
+  return typeof curriculumPlanningFeature.getEffectiveSequenceHourDemand === "function"
+    ? curriculumPlanningFeature.getEffectiveSequenceHourDemand(getCurriculumCollections(snapshot), sequenceItem)
+    : Math.max(0, Number(sequenceItem && sequenceItem.hourDemand) || 0);
 }
 
 function getCalculatedCurriculumSeriesHourDemand(snapshot, seriesId) {
-  return getOrderedCurriculumSequencesForSeries(snapshot, seriesId).reduce(function (sum, sequenceItem) {
-    return sum + getEffectiveCurriculumSequenceHourDemand(snapshot, sequenceItem);
-  }, 0);
+  return typeof curriculumPlanningFeature.getCalculatedSeriesHourDemand === "function"
+    ? curriculumPlanningFeature.getCalculatedSeriesHourDemand(getCurriculumCollections(snapshot), seriesId)
+    : 0;
 }
 
 function reconnectCurriculumSequenceChain(items) {
-  items.forEach(function (entry, index) {
-    entry.nextSequenceId = items[index + 1] ? String(items[index + 1].id || "").trim() : "";
-  });
-}
-
-function getOrderedCurriculumLessonsForSequence(snapshot, sequenceId) {
-  const collections = getCurriculumCollections(snapshot);
-  const items = collections.lessons.filter(function (entry) {
-    return String(entry && entry.sequenceId || "").trim() === String(sequenceId || "").trim();
-  });
-  const incomingCounts = {};
-  const itemById = {};
-  const ordered = [];
-  let current = null;
-
-  items.forEach(function (entry) {
-    const entryId = String(entry && entry.id || "").trim();
-
-    if (!entryId) {
-      return;
-    }
-
-    itemById[entryId] = entry;
-    incomingCounts[entryId] = incomingCounts[entryId] || 0;
-  });
-
-  items.forEach(function (entry) {
-    const nextId = String(entry && entry.nextLessonId || "").trim();
-
-    if (nextId && Object.prototype.hasOwnProperty.call(incomingCounts, nextId)) {
-      incomingCounts[nextId] += 1;
-    }
-  });
-
-  current = items.find(function (entry) {
-    return !incomingCounts[String(entry && entry.id || "").trim()];
-  }) || items[0] || null;
-
-  while (current) {
-    const currentId = String(current && current.id || "").trim();
-    const nextId = String(current && current.nextLessonId || "").trim();
-
-    if (!currentId || ordered.some(function (entry) {
-      return String(entry && entry.id || "").trim() === currentId;
-    })) {
-      break;
-    }
-
-    ordered.push(current);
-    current = nextId && itemById[nextId] ? itemById[nextId] : null;
+  if (typeof curriculumPlanningFeature.reconnectSequenceChain === "function") {
+    curriculumPlanningFeature.reconnectSequenceChain(items);
   }
-
-  items.forEach(function (entry) {
-    if (!ordered.some(function (orderedEntry) {
-      return String(orderedEntry && orderedEntry.id || "").trim() === String(entry && entry.id || "").trim();
-    })) {
-      ordered.push(entry);
-    }
-  });
-
-  return ordered;
 }
 
 function reconnectCurriculumLessonChain(items) {
-  items.forEach(function (entry, index) {
-    entry.nextLessonId = items[index + 1] ? String(items[index + 1].id || "").trim() : "";
-  });
+  if (typeof curriculumPlanningFeature.reconnectLessonChain === "function") {
+    curriculumPlanningFeature.reconnectLessonChain(items);
+  }
 }
 
 function createRandomCurriculumSeriesColor() {
-  const hue = Math.floor(Math.random() * 360);
-  const saturation = 42 + Math.floor(Math.random() * 14);
-  const lightness = 82 + Math.floor(Math.random() * 8);
-
-  function toHexChannel(channelValue) {
-    return Math.max(0, Math.min(255, Math.round(channelValue))).toString(16).padStart(2, "0");
-  }
-
-  function hslToHex(h, s, l) {
-    const normalizedS = s / 100;
-    const normalizedL = l / 100;
-    const chroma = (1 - Math.abs((2 * normalizedL) - 1)) * normalizedS;
-    const scaledHue = h / 60;
-    const secondComponent = chroma * (1 - Math.abs((scaledHue % 2) - 1));
-    const match = normalizedL - (chroma / 2);
-    let red = 0;
-    let green = 0;
-    let blue = 0;
-
-    if (scaledHue >= 0 && scaledHue < 1) {
-      red = chroma;
-      green = secondComponent;
-    } else if (scaledHue < 2) {
-      red = secondComponent;
-      green = chroma;
-    } else if (scaledHue < 3) {
-      green = chroma;
-      blue = secondComponent;
-    } else if (scaledHue < 4) {
-      green = secondComponent;
-      blue = chroma;
-    } else if (scaledHue < 5) {
-      red = secondComponent;
-      blue = chroma;
-    } else {
-      red = chroma;
-      blue = secondComponent;
-    }
-
-    return "#" + [
-      toHexChannel((red + match) * 255),
-      toHexChannel((green + match) * 255),
-      toHexChannel((blue + match) * 255)
-    ].join("");
-  }
-
-  return hslToHex(hue, saturation, lightness);
+  return typeof curriculumPlanningFeature.createRandomSeriesColor === "function"
+    ? curriculumPlanningFeature.createRandomSeriesColor()
+    : "#d9d4cb";
 }
 
 function getCurriculumSeriesColor(seriesItem, fallbackKey) {
-  const normalizedColor = normalizePlanningColorValue(seriesItem && seriesItem.color);
-
-  if (normalizedColor) {
-    return normalizedColor;
-  }
-
-  if (!seriesItem && !fallbackKey) {
-    return createRandomCurriculumSeriesColor();
-  }
-
-  if (typeof createPastelColorFn === "function") {
-    return createPastelColorFn(String(fallbackKey || (seriesItem && seriesItem.topic) || "reihe"));
-  }
-
-  return "#d9d4cb";
+  return typeof curriculumPlanningFeature.getSeriesColor === "function"
+    ? curriculumPlanningFeature.getSeriesColor(seriesItem, fallbackKey, {
+        normalizeColor: normalizePlanningColorValue,
+        createPastelColor: createPastelColorFn
+      })
+    : "#d9d4cb";
 }
 
 function getDefaultPlanningCategoryNames(snapshot) {
-  const classes = snapshot && Array.isArray(snapshot.classes) ? snapshot.classes : [];
-
-  return ["Unterrichtsfrei", "Sonstiges"].concat(classes.map(function (schoolClass) {
-    return [String(schoolClass && schoolClass.name || "").trim(), String(schoolClass && schoolClass.subject || "").trim()]
-      .filter(Boolean)
-      .join(" ")
-      .trim();
-    }).filter(Boolean));
+  return typeof planningCategoriesFeature.getDefaultNames === "function"
+    ? planningCategoriesFeature.getDefaultNames(snapshot)
+    : [];
 }
 
 function normalizePlanningColorValue(value) {
-  const trimmed = String(value || "").trim();
-
-  return /^#[0-9a-f]{6}$/i.test(trimmed) ? trimmed : "";
+  return typeof planningCategoriesFeature.normalizeColor === "function"
+    ? planningCategoriesFeature.normalizeColor(value)
+    : "";
 }
 
 function getStoredPlanningCategoryEntry(snapshot, name) {
-  const collections = getPlanningCollections(snapshot);
-  const normalizedName = String(name || "").trim().toLowerCase();
-
-  if (!normalizedName) {
-    return null;
-  }
-
-  return collections.categories.find(function (entry) {
-    return String(entry && entry.name || "").trim().toLowerCase() === normalizedName;
-  }) || null;
+  return typeof planningCategoriesFeature.getStoredEntry === "function"
+    ? planningCategoriesFeature.getStoredEntry(snapshot, name)
+    : null;
 }
 
 function getDefaultPlanningCategoryDefinition(snapshot, name) {
-  const classes = snapshot && Array.isArray(snapshot.classes) ? snapshot.classes : [];
-  const normalizedName = String(name || "").trim().toLowerCase();
-  let schoolClass = null;
-
-  if (normalizedName === "unterrichtsfrei") {
-    return {
-      name: "Unterrichtsfrei",
-      color: "#a9cf8f",
-      isClassCategory: false,
-      isSystemCategory: true
-    };
-  }
-
-  if (normalizedName === "sonstiges") {
-    return {
-      name: "Sonstiges",
-      color: "#b8bec7",
-      isClassCategory: false,
-      isSystemCategory: true
-    };
-  }
-  schoolClass = classes.find(function (entry) {
-    return [String(entry && entry.name || "").trim(), String(entry && entry.subject || "").trim()]
-      .filter(Boolean)
-      .join(" ")
-      .trim()
-      .toLowerCase() === normalizedName;
-  }) || null;
-
-  if (!schoolClass) {
-    return null;
-  }
-
-  return {
-    name: [String(schoolClass.name || "").trim(), String(schoolClass.subject || "").trim()].filter(Boolean).join(" ").trim(),
-    color: getClassDisplayColor(schoolClass),
-    isClassCategory: true
-  };
+  return typeof planningCategoriesFeature.getDefaultDefinition === "function"
+    ? planningCategoriesFeature.getDefaultDefinition(snapshot, name, getPlanningCategoryFeatureOptions())
+    : null;
 }
 
 function getPlanningCategoryColor(snapshot, name) {
-  const defaultCategory = getDefaultPlanningCategoryDefinition(snapshot, name);
-  const storedCategory = getStoredPlanningCategoryEntry(snapshot, name);
-  const storedColor = normalizePlanningColorValue(storedCategory && storedCategory.color);
-
-  if (defaultCategory) {
-    return defaultCategory.color;
-  }
-
-  if (storedColor) {
-    return storedColor;
-  }
-
-  if (typeof createPastelColorFn === "function") {
-    return createPastelColorFn(String(name || "").trim() || "planung");
-  }
-
-  return "#d9d4cb";
+  return typeof planningCategoriesFeature.getColor === "function"
+    ? planningCategoriesFeature.getColor(snapshot, name, getPlanningCategoryFeatureOptions())
+    : "#d9d4cb";
 }
 
 function getPlanningCategoryDefinitions(snapshot) {
-  const sourceSnapshot = snapshot || {};
-  const definitionsByKey = {};
-  const collections = getPlanningCollections(sourceSnapshot);
-
-  getDefaultPlanningCategoryNames(sourceSnapshot).forEach(function (name) {
-    const trimmedName = String(name || "").trim();
-    const normalizedName = trimmedName.toLowerCase();
-    const defaultDefinition = getDefaultPlanningCategoryDefinition(sourceSnapshot, trimmedName);
-    const storedCategoryEntry = getStoredPlanningCategoryEntry(sourceSnapshot, trimmedName);
-
-    if (!trimmedName || definitionsByKey[normalizedName]) {
-      return;
-    }
-
-    definitionsByKey[normalizedName] = {
-      name: defaultDefinition && defaultDefinition.name ? defaultDefinition.name : trimmedName,
-      color: getPlanningCategoryColor(sourceSnapshot, trimmedName),
-      isClassCategory: Boolean(defaultDefinition && defaultDefinition.isClassCategory),
-      isSystemCategory: Boolean(defaultDefinition && defaultDefinition.isSystemCategory),
-      filterLabels: normalizePlanningCategoryFilterLabels(storedCategoryEntry && storedCategoryEntry.filterLabels)
-    };
-  });
-
-  collections.categories.forEach(function (entry) {
-    const trimmedName = String(entry && entry.name || "").trim();
-    const normalizedName = trimmedName.toLowerCase();
-
-    if (!trimmedName || definitionsByKey[normalizedName]) {
-      return;
-    }
-
-    definitionsByKey[normalizedName] = {
-      name: trimmedName,
-      color: getPlanningCategoryColor(sourceSnapshot, trimmedName),
-      isClassCategory: false,
-      isSystemCategory: false,
-      filterLabels: normalizePlanningCategoryFilterLabels(entry && entry.filterLabels)
-    };
-  });
-
-  collections.events.forEach(function (entry) {
-    const trimmedName = String(entry && entry.category || "").trim();
-    const normalizedName = trimmedName.toLowerCase();
-
-    if (!trimmedName || definitionsByKey[normalizedName]) {
-      return;
-    }
-
-    definitionsByKey[normalizedName] = {
-      name: trimmedName,
-      color: getPlanningCategoryColor(sourceSnapshot, trimmedName),
-      isClassCategory: false,
-      isSystemCategory: false,
-      filterLabels: []
-    };
-  });
-
-  return Object.keys(definitionsByKey).map(function (key) {
-    return definitionsByKey[key];
-  }).sort(function (left, right) {
-    if (left.isClassCategory !== right.isClassCategory) {
-      return left.isClassCategory ? -1 : 1;
-    }
-
-    return String(left.name || "").localeCompare(String(right.name || ""), "de", { sensitivity: "base" });
-  });
+  return typeof planningCategoriesFeature.getDefinitions === "function"
+    ? planningCategoriesFeature.getDefinitions(snapshot, getPlanningCategoryFeatureOptions())
+    : [];
 }
 
 function getDefaultPlanningSidebarFilters(snapshot) {
-  return getPlanningCategoryDefinitions(snapshot)
-    .filter(function (entry) {
-      return String(entry && entry.name || "").trim().toLowerCase() !== "unterrichtsfrei";
-    })
-    .map(function (entry) {
-      return String(entry && entry.name || "").trim();
-    })
-    .filter(Boolean);
+  return typeof planningCategoriesFeature.getDefaultSidebarFilters === "function"
+    ? planningCategoriesFeature.getDefaultSidebarFilters(snapshot, getPlanningCategoryFeatureOptions())
+    : [];
 }
 
 function getDefaultTodoCategoryFilters(snapshot) {
-  return getPlanningCategoryDefinitions(snapshot)
-    .map(function (entry) {
-      return String(entry && entry.name || "").trim();
-    })
-    .filter(Boolean);
+  return typeof planningCategoriesFeature.getDefaultTodoFilters === "function"
+    ? planningCategoriesFeature.getDefaultTodoFilters(snapshot, getPlanningCategoryFeatureOptions())
+    : [];
 }
 
 function getClassSubjectById(rawSnapshot, classId) {
-  const classes = rawSnapshot && Array.isArray(rawSnapshot.classes)
-    ? rawSnapshot.classes
-    : [];
-  const schoolClass = classes.find(function (entry) {
-    return String(entry && entry.id || "") === String(classId || "");
-  }) || null;
-
-  return schoolClass ? String(schoolClass.subject || "").trim() : "";
+  return typeof schoolDisplayFeature.getClassSubjectById === "function"
+    ? schoolDisplayFeature.getClassSubjectById(rawSnapshot, classId)
+    : "";
 }
 
 function getKnowledgeGapSuggestionSubject(inputId) {
@@ -5192,16 +4542,11 @@ function renderStartupError(message) {
 }
 
 function escapeHtml(value) {
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/\\/g, "&#92;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;")
-    .replace(/`/g, "&#96;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\r/g, "&#13;")
-    .replace(/\n/g, "&#10;");
+  if (typeof htmlUtils.escapeHtml === "function") {
+    return htmlUtils.escapeHtml(value);
+  }
+
+  return String(value || "").replace(/&/g, "&amp;").replace(/\\/g, "&#92;").replace(/"/g, "&quot;").replace(/'/g, "&#39;").replace(/`/g, "&#96;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\r/g, "&#13;").replace(/\n/g, "&#10;");
 }
 
 function captureTodoViewScrollState() {
@@ -5264,7 +4609,9 @@ function getClassDisplayName(schoolClass) {
     return "Keine Lerngruppe";
   }
 
-  return [schoolClass.name || "", schoolClass.subject || ""].join(" ").trim() || "Keine Lerngruppe";
+  return (typeof schoolDisplayFeature.getClassDisplayName === "function"
+    ? schoolDisplayFeature.getClassDisplayName(schoolClass)
+    : [schoolClass.name || "", schoolClass.subject || ""].join(" ").trim()) || "Keine Lerngruppe";
 }
 
 function parseCurriculumPlanningDateValue(value) {
@@ -5301,13 +4648,9 @@ function formatCurriculumPlanningDateValue(dateValue) {
 }
 
 function getSchoolClassById(snapshot, classId) {
-  const classes = snapshot && Array.isArray(snapshot.classes)
-    ? snapshot.classes
-    : [];
-
-  return classes.find(function (entry) {
-    return String(entry && entry.id || "").trim() === String(classId || "").trim();
-  }) || null;
+  return typeof schoolDisplayFeature.getClassById === "function"
+    ? schoolDisplayFeature.getClassById(snapshot, classId)
+    : null;
 }
 
 function getCurriculumLessonPlanningContext(snapshot, lessonId) {
@@ -5723,107 +5066,45 @@ function syncCurriculumLessonPreparationTodosInSnapshot(snapshot) {
 }
 
 function getClassDisplayColor(schoolClass) {
-  if (!schoolClass) {
-    return "#d9d4cb";
-  }
-
-  if (schoolClass.displayColor) {
-    return schoolClass.displayColor;
-  }
-
-  if (typeof createPastelColorFn === "function") {
-    return createPastelColorFn((schoolClass.name || "") + "::" + (schoolClass.subject || "") + "::" + (schoolClass.id || ""));
-  }
-
-  return "#d9d4cb";
+  return typeof schoolDisplayFeature.getClassDisplayColor === "function"
+    ? schoolDisplayFeature.getClassDisplayColor(schoolClass, getSchoolDisplayFeatureOptions())
+    : "#d9d4cb";
 }
 
 function formatDateLabel(dateValue) {
-  if (!dateValue) {
-    return "offen";
-  }
-
-  const parts = String(dateValue).split("-");
-
-  if (parts.length !== 3) {
-    return dateValue;
-  }
-
-  return parts[2] + "." + parts[1] + "." + parts[0];
+  return typeof dateTimeUtils.formatDateLabel === "function"
+    ? dateTimeUtils.formatDateLabel(dateValue)
+    : String(dateValue || "offen");
 }
 
 function getStudentDisplayName(student) {
-  const firstName = String(student && student.firstName || "").trim();
-  const lastName = String(student && student.lastName || "").trim();
-  const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
-
-  return fullName || String(student && student.className || "").trim() || "Unbekannt";
+  return typeof schoolDisplayFeature.getStudentDisplayName === "function"
+    ? schoolDisplayFeature.getStudentDisplayName(student)
+    : "Unbekannt";
 }
 
 function getStudentFirstNameSortValue(student) {
-  return String(student && student.firstName || "").trim().toLowerCase();
+  return typeof schoolDisplayFeature.getStudentFirstNameSortValue === "function"
+    ? schoolDisplayFeature.getStudentFirstNameSortValue(student)
+    : "";
 }
 
 function getStudentLastNameSortValue(student) {
-  return String(student && student.lastName || "").trim().toLowerCase();
+  return typeof schoolDisplayFeature.getStudentLastNameSortValue === "function"
+    ? schoolDisplayFeature.getStudentLastNameSortValue(student)
+    : "";
 }
 
 function getStudentCompactDisplayName(student, classStudents) {
-  const firstName = String(student && student.firstName || "").trim();
-  const lastName = String(student && student.lastName || "").trim();
-  const normalizedFirstName = firstName.toLowerCase();
-  const studentsInClass = Array.isArray(classStudents) ? classStudents : [];
-  const hasDuplicateFirstName = Boolean(normalizedFirstName) && studentsInClass.some(function (entry) {
-    return entry !== student
-      && String(entry && entry.firstName || "").trim().toLowerCase() === normalizedFirstName;
-  });
-
-  if (firstName) {
-    return hasDuplicateFirstName && lastName
-      ? firstName + " " + lastName.charAt(0).toUpperCase() + "."
-      : firstName;
-  }
-
-  return lastName || "Unbekannt";
+  return typeof schoolDisplayFeature.getStudentCompactDisplayName === "function"
+    ? schoolDisplayFeature.getStudentCompactDisplayName(student, classStudents)
+    : getStudentDisplayName(student);
 }
 
 function getTodoCategoryClassInfo(rawSnapshot, categoryName) {
-  const snapshot = rawSnapshot || {};
-  const normalizedCategory = String(categoryName || "").trim().toLowerCase();
-  const classes = Array.isArray(snapshot.classes) ? snapshot.classes : [];
-  const students = Array.isArray(snapshot.students) ? snapshot.students : [];
-  const classEntry = classes.find(function (entry) {
-    return [String(entry && entry.name || "").trim(), String(entry && entry.subject || "").trim()]
-      .filter(Boolean)
-      .join(" ")
-      .trim()
-      .toLowerCase() === normalizedCategory;
-  }) || null;
-  const studentIds = classEntry && Array.isArray(classEntry.studentIds)
-    ? classEntry.studentIds.map(function (studentId) {
-        return String(studentId || "").trim();
-      }).filter(Boolean)
-    : [];
-  const classStudents = studentIds.map(function (studentId) {
-    return students.find(function (student) {
-      return String(student && student.id || "").trim() === studentId;
-    }) || null;
-  }).filter(Boolean).sort(function (left, right) {
-    const firstNameComparison = getStudentFirstNameSortValue(left).localeCompare(getStudentFirstNameSortValue(right), "de", { sensitivity: "base" });
-
-    if (firstNameComparison !== 0) {
-      return firstNameComparison;
-    }
-
-    return getStudentLastNameSortValue(left).localeCompare(getStudentLastNameSortValue(right), "de", { sensitivity: "base" });
-  });
-
-  return {
-    isClassCategory: Boolean(classEntry),
-    classEntry: classEntry,
-    classId: String(classEntry && classEntry.id || "").trim(),
-    students: classStudents
-  };
+  return typeof schoolDisplayFeature.getTodoCategoryClassInfo === "function"
+    ? schoolDisplayFeature.getTodoCategoryClassInfo(rawSnapshot, categoryName)
+    : { isClassCategory: false, classEntry: null, classId: "", students: [] };
 }
 
 function normalizeTodoDraftAssignments(rawSnapshot) {
@@ -5872,187 +5153,47 @@ function normalizeTodoDraftAssignments(rawSnapshot) {
 }
 
 function syncTodoAssignedStudentStatuses(todo, completedAtTimestamp) {
-  const assignedStudentIds = Array.isArray(todo && todo.assignedStudentIds)
-    ? todo.assignedStudentIds.map(function (studentId) {
-        return String(studentId || "").trim();
-      }).filter(Boolean)
-    : [];
-  const existingStatuses = Array.isArray(todo && todo.assignedStudentStatuses) ? todo.assignedStudentStatuses : [];
-  const nextStatuses = assignedStudentIds.map(function (studentId) {
-    const existingEntry = existingStatuses.find(function (entry) {
-      return String(entry && entry.studentId || "").trim() === studentId;
-    }) || null;
-
-      return {
-        studentId: studentId,
-        done: Boolean(existingEntry && existingEntry.done),
-        completedAt: Boolean(existingEntry && existingEntry.done)
-          ? (String(existingEntry && existingEntry.completedAt || "").trim() || String(completedAtTimestamp || "").trim() || getActiveDateTimeTimestamp())
-          : "",
-        checklistItems: cloneTodoChecklistItems(existingEntry && existingEntry.checklistItems)
-      };
-    });
-  const isDone = assignedStudentIds.length > 0
-    ? nextStatuses.every(function (entry) {
-        return Boolean(entry && entry.done);
-      })
-    : Boolean(todo && todo.done);
-
-  if (!todo) {
-    return false;
-  }
-
-  todo.assignedStudentStatuses = nextStatuses;
-  todo.done = isDone;
-  todo.completedAt = isDone
-    ? (String(todo.completedAt || "").trim() || String(completedAtTimestamp || "").trim() || getActiveDateTimeTimestamp())
-    : "";
-
-  return isDone;
+  return typeof todoChecklistFeature.syncAssignedStudentStatuses === "function"
+    ? todoChecklistFeature.syncAssignedStudentStatuses(todo, completedAtTimestamp, getTodoChecklistFeatureOptions())
+    : false;
 }
 
 function cloneTodoChecklistItems(items) {
-  return Array.isArray(items)
-    ? items.map(function (entry) {
-        return entry && typeof entry === "object"
-          ? Object.assign({}, entry, {
-              followUpSteps: Array.isArray(entry.followUpSteps)
-                ? entry.followUpSteps.map(function (step) {
-                    return step && typeof step === "object" ? Object.assign({}, step) : step;
-                  })
-                : []
-            })
-          : entry;
-      })
+  return typeof todoChecklistFeature.cloneChecklistItems === "function"
+    ? todoChecklistFeature.cloneChecklistItems(items)
     : [];
 }
 
 function syncChecklistCompletionForItems(checklistItems, completedAtTimestamp) {
-  const completionTimestamp = String(completedAtTimestamp || "").trim() || getActiveDateTimeTimestamp();
-
-  function getNodeSelfDone(nodeId) {
-    const selectedNode = getTodoChecklistNodeById(checklistItems, nodeId);
-
-    return Boolean(selectedNode && selectedNode.entry && selectedNode.entry.done);
-  }
-
-  function getNodeDisplayDone(nodeId) {
-    const selectedNode = getTodoChecklistNodeById(checklistItems, nodeId);
-    const childItems = getTodoChecklistChildItems(checklistItems, nodeId);
-
-    if (!selectedNode) {
-      return false;
-    }
-
-    if (childItems.length > 0) {
-      return childItems.every(function (childItem) {
-        return getAggregateDone(childItem && childItem.id);
-      });
-    }
-
-    return getNodeSelfDone(nodeId);
-  }
-
-  function getAggregateDone(nodeId) {
-    const selectedNode = getTodoChecklistNodeById(checklistItems, nodeId);
-    const followUpSteps = selectedNode && selectedNode.type === "item" && Array.isArray(selectedNode.entry && selectedNode.entry.followUpSteps)
-      ? selectedNode.entry.followUpSteps
-      : [];
-
-    if (!selectedNode) {
-      return false;
-    }
-
-    return getNodeDisplayDone(nodeId) && followUpSteps.every(function (step) {
-      return getAggregateDone(step && step.id);
-    });
-  }
-
-  function syncNode(nodeId) {
-    const selectedNode = getTodoChecklistNodeById(checklistItems, nodeId);
-    const childItems = getTodoChecklistChildItems(checklistItems, nodeId);
-    const followUpSteps = selectedNode && selectedNode.type === "item" && Array.isArray(selectedNode.entry && selectedNode.entry.followUpSteps)
-      ? selectedNode.entry.followUpSteps
-      : [];
-    let childItemsDone = true;
-
-    if (!selectedNode) {
-      return false;
-    }
-
-    childItemsDone = childItems.every(function (childItem) {
-      return syncNode(childItem && childItem.id);
-    });
-    followUpSteps.forEach(function (step) {
-      syncNode(step && step.id);
-    });
-
-    if (childItems.length > 0) {
-      selectedNode.entry.done = childItemsDone;
-    } else {
-      selectedNode.entry.done = Boolean(selectedNode.entry.done);
-    }
-
-    selectedNode.entry.completedAt = selectedNode.entry.done
-      ? (String(selectedNode.entry.completedAt || "").trim() || completionTimestamp)
-      : "";
-
-    return getAggregateDone(nodeId);
-  }
-
-  const topLevelItems = getTodoChecklistChildItems(checklistItems, "");
-
-  return topLevelItems.length > 0
-    ? topLevelItems.every(function (item) {
-        return syncNode(item && item.id);
-      })
+  return typeof todoChecklistFeature.syncChecklistCompletionForItems === "function"
+    ? todoChecklistFeature.syncChecklistCompletionForItems(checklistItems, completedAtTimestamp, getTodoChecklistFeatureOptions())
     : false;
 }
 
 function formatDateTimeLabel(dateTimeValue) {
-  const parsedDate = new Date(String(dateTimeValue || "").trim());
-
-  if (Number.isNaN(parsedDate.getTime())) {
-    return String(dateTimeValue || "");
-  }
-
-  return parsedDate.toLocaleDateString("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric"
-  });
+  return typeof dateTimeUtils.formatDateTimeLabel === "function"
+    ? dateTimeUtils.formatDateTimeLabel(dateTimeValue)
+    : String(dateTimeValue || "");
 }
 
 function normalizeDateValue(dateValue) {
-  return String(dateValue || "").slice(0, 10);
+  return typeof dateTimeUtils.normalizeDateValue === "function"
+    ? dateTimeUtils.normalizeDateValue(dateValue)
+    : String(dateValue || "").slice(0, 10);
 }
 
 function compareDateValues(leftValue, rightValue) {
-  const left = normalizeDateValue(leftValue);
-  const right = normalizeDateValue(rightValue);
-
-  if (left === right) {
-    return 0;
-  }
-
-  if (!left) {
-    return -1;
-  }
-
-  if (!right) {
-    return 1;
-  }
-
-  return left < right ? -1 : 1;
+  return typeof dateTimeUtils.compareDateValues === "function"
+    ? dateTimeUtils.compareDateValues(leftValue, rightValue)
+    : 0;
 }
 
 function getReferenceDateValue() {
   const referenceDate = schoolService ? schoolService.getReferenceDate() : new Date();
-  const year = referenceDate.getFullYear();
-  const month = String(referenceDate.getMonth() + 1).padStart(2, "0");
-  const day = String(referenceDate.getDate()).padStart(2, "0");
 
-  return year + "-" + month + "-" + day;
+  return typeof dateTimeUtils.toDateValue === "function"
+    ? dateTimeUtils.toDateValue(referenceDate)
+    : "";
 }
 
 function getActiveSeatPlanClass() {
@@ -6623,7 +5764,7 @@ function updateSecondaryActions(viewId) {
 }
 
 function normalizePlanningDateValue(value) {
-  return String(value || "").slice(0, 10);
+  return normalizeDateValue(value);
 }
 
 window.UnterrichtsassistentApp.updatePlanningSchoolYearField = function (fieldName, nextValue) {
@@ -7948,156 +7089,45 @@ function parseTodoChecklistText(value) {
 }
 
 function getTodoChecklistChildItems(items, parentId) {
-  return (items || []).filter(function (entry) {
-    return String(entry && entry.parentId || "").trim() === String(parentId || "").trim();
-  });
+  return typeof todoChecklistFeature.getChildItems === "function"
+    ? todoChecklistFeature.getChildItems(items, parentId)
+    : [];
 }
 
 function getTodoChecklistNodeById(items, nodeId) {
-  const normalizedNodeId = String(nodeId || "").trim();
-
-  if (!normalizedNodeId) {
-    return null;
-  }
-
-  return (items || []).reduce(function (foundEntry, entry) {
-    if (foundEntry) {
-      return foundEntry;
-    }
-
-    if (String(entry && entry.id || "").trim() === normalizedNodeId) {
-      return {
-        type: "item",
-        entry: entry,
-        ownerItem: entry
-      };
-    }
-
-    if (Array.isArray(entry && entry.followUpSteps)) {
-      const foundStep = entry.followUpSteps.find(function (step) {
-        return String(step && step.id || "").trim() === normalizedNodeId;
-      }) || null;
-
-      if (foundStep) {
-        return {
-          type: "step",
-          entry: foundStep,
-          ownerItem: entry
-        };
-      }
-    }
-
-    return null;
-  }, null);
+  return typeof todoChecklistFeature.getNodeById === "function"
+    ? todoChecklistFeature.getNodeById(items, nodeId)
+    : null;
 }
 
 function isTodoChecklistItemManuallyToggleable(items, itemId) {
-  const selectedNode = getTodoChecklistNodeById(items, itemId);
-  const childItems = getTodoChecklistChildItems(items, itemId);
-
-  return Boolean(selectedNode) && childItems.length === 0;
+  return typeof todoChecklistFeature.isItemManuallyToggleable === "function"
+    ? todoChecklistFeature.isItemManuallyToggleable(items, itemId)
+    : false;
 }
 
 function isTodoChecklistNodeDisplayDone(items, nodeId) {
-  const selectedNode = getTodoChecklistNodeById(items, nodeId);
-  const childItems = getTodoChecklistChildItems(items, nodeId);
-
-  if (!selectedNode) {
-    return false;
-  }
-
-  if (childItems.length > 0) {
-    return childItems.every(function (childItem) {
-      return isTodoChecklistNodeAggregateDone(items, childItem && childItem.id);
-    });
-  }
-
-  return Boolean(selectedNode.entry && selectedNode.entry.done);
+  return typeof todoChecklistFeature.isNodeDisplayDone === "function"
+    ? todoChecklistFeature.isNodeDisplayDone(items, nodeId)
+    : false;
 }
 
 function isTodoChecklistNodeAggregateDone(items, nodeId) {
-  const selectedNode = getTodoChecklistNodeById(items, nodeId);
-  const followUpSteps = selectedNode && selectedNode.type === "item" && Array.isArray(selectedNode.entry && selectedNode.entry.followUpSteps)
-    ? selectedNode.entry.followUpSteps
-    : [];
-
-  if (!selectedNode) {
-    return false;
-  }
-
-  return isTodoChecklistNodeDisplayDone(items, nodeId) && followUpSteps.every(function (step) {
-    return isTodoChecklistNodeAggregateDone(items, step && step.id);
-  });
+  return typeof todoChecklistFeature.isNodeAggregateDone === "function"
+    ? todoChecklistFeature.isNodeAggregateDone(items, nodeId)
+    : false;
 }
 
 function hasTodoChecklistCompletedFollowUpSuccessor(items, nodeId) {
-  const selectedNode = getTodoChecklistNodeById(items, nodeId);
-  const followUpSteps = selectedNode && selectedNode.type === "item" && Array.isArray(selectedNode.entry && selectedNode.entry.followUpSteps)
-    ? selectedNode.entry.followUpSteps
-    : [];
-
-  if (!selectedNode || !followUpSteps.length) {
-    return false;
-  }
-
-  return followUpSteps.some(function (step) {
-    return isTodoChecklistNodeAggregateDone(items, step && step.id)
-      || hasTodoChecklistCompletedFollowUpSuccessor(items, step && step.id);
-  });
+  return typeof todoChecklistFeature.hasCompletedFollowUpSuccessor === "function"
+    ? todoChecklistFeature.hasCompletedFollowUpSuccessor(items, nodeId)
+    : false;
 }
 
 function syncChecklistTodoCompletion(todo, completedAtTimestamp) {
-  const checklistItems = Array.isArray(todo && todo.checklistItems) ? todo.checklistItems : [];
-  const completionTimestamp = String(completedAtTimestamp || "").trim();
-  const assignedStudentIds = Array.isArray(todo && todo.assignedStudentIds)
-    ? todo.assignedStudentIds.map(function (studentId) {
-        return String(studentId || "").trim();
-      }).filter(Boolean)
-    : [];
-
-  if (!todo || String(todo.type || "").trim().toLowerCase() !== "checkliste") {
-    return false;
-  }
-
-  if (assignedStudentIds.length > 0) {
-    const existingStatuses = Array.isArray(todo.assignedStudentStatuses) ? todo.assignedStudentStatuses : [];
-    const nextStatuses = assignedStudentIds.map(function (studentId) {
-      const existingEntry = existingStatuses.find(function (entry) {
-        return String(entry && entry.studentId || "").trim() === studentId;
-      }) || null;
-      const studentChecklistItems = cloneTodoChecklistItems(existingEntry && existingEntry.checklistItems);
-      const studentDone = syncChecklistCompletionForItems(studentChecklistItems, completionTimestamp);
-
-      return {
-        studentId: studentId,
-        done: studentDone,
-        completedAt: studentDone
-          ? (String(existingEntry && existingEntry.completedAt || "").trim() || completionTimestamp)
-          : "",
-        checklistItems: studentChecklistItems
-      };
-    });
-    const isTodoDone = nextStatuses.length > 0 && nextStatuses.every(function (entry) {
-      return Boolean(entry && entry.done);
-    });
-
-    todo.assignedStudentStatuses = nextStatuses;
-    todo.done = isTodoDone;
-    todo.completedAt = isTodoDone
-      ? (String(todo.completedAt || "").trim() || completionTimestamp)
-      : "";
-
-    return isTodoDone;
-  }
-
-  const isTodoDone = syncChecklistCompletionForItems(checklistItems, completionTimestamp);
-
-  todo.done = isTodoDone;
-  todo.completedAt = isTodoDone
-    ? (String(todo.completedAt || "").trim() || completionTimestamp)
-    : "";
-
-  return isTodoDone;
+  return typeof todoChecklistFeature.syncChecklistTodoCompletion === "function"
+    ? todoChecklistFeature.syncChecklistTodoCompletion(todo, completedAtTimestamp, getTodoChecklistFeatureOptions())
+    : false;
 }
 
 function getRelevantUnterrichtLesson(activeClass, referenceDate) {
@@ -10378,13 +9408,22 @@ function buildDeskLayoutSnapSequence(min, max, step) {
   return values;
 }
 
-function getDeskLayoutItemRect(item) {
+function getSeatPlanGeometryFeatureOptions() {
   return {
-    x: Number(item.x) || 0,
-    y: Number(item.y) || 0,
-    width: Number(item.width) || getDeskTemplateMetrics(item.type).width,
-    height: Number(item.height) || getDeskTemplateMetrics(item.type).height
+    getDeskTemplateMetrics: getDeskTemplateMetrics,
+    getDeskSeatSlots: getDeskSeatSlots
   };
+}
+
+function getDeskLayoutItemRect(item) {
+  return typeof seatPlanGeometryFeature.getDeskLayoutItemRect === "function"
+    ? seatPlanGeometryFeature.getDeskLayoutItemRect(item, getSeatPlanGeometryFeatureOptions())
+    : {
+        x: Number(item.x) || 0,
+        y: Number(item.y) || 0,
+        width: Number(item.width) || getDeskTemplateMetrics(item.type).width,
+        height: Number(item.height) || getDeskTemplateMetrics(item.type).height
+      };
 }
 
 function doDeskLayoutRectsOverlap(rectA, rectB) {
@@ -11147,41 +10186,15 @@ function renderDeskLayoutDragFrame() {
 }
 
 function getDeskLayoutGroupBounds(items, groupIds) {
-  const groupItems = (items || []).filter(function (item) {
-    return (groupIds || []).indexOf(item.id) >= 0;
-  });
-
-  if (!groupItems.length) {
-    return null;
-  }
-
-  return {
-    minX: Math.min.apply(null, groupItems.map(function (item) { return Number(item.x) || 0; })),
-    minY: Math.min.apply(null, groupItems.map(function (item) { return Number(item.y) || 0; })),
-    maxRight: Math.max.apply(null, groupItems.map(function (item) {
-      return (Number(item.x) || 0) + (Number(item.width) || getDeskTemplateMetrics(item.type).width);
-    })),
-    maxBottom: Math.max.apply(null, groupItems.map(function (item) {
-      return (Number(item.y) || 0) + (Number(item.height) || getDeskTemplateMetrics(item.type).height);
-    }))
-  };
+  return typeof seatPlanGeometryFeature.getDeskLayoutGroupBounds === "function"
+    ? seatPlanGeometryFeature.getDeskLayoutGroupBounds(items, groupIds, getSeatPlanGeometryFeatureOptions())
+    : null;
 }
 
 function getDeskLayoutItemsBounds(items) {
-  if (!items || !items.length) {
-    return null;
-  }
-
-  return {
-    minX: Math.min.apply(null, items.map(function (item) { return Number(item.x) || 0; })),
-    minY: Math.min.apply(null, items.map(function (item) { return Number(item.y) || 0; })),
-    maxRight: Math.max.apply(null, items.map(function (item) {
-      return (Number(item.x) || 0) + (Number(item.width) || getDeskTemplateMetrics(item.type).width);
-    })),
-    maxBottom: Math.max.apply(null, items.map(function (item) {
-      return (Number(item.y) || 0) + (Number(item.height) || getDeskTemplateMetrics(item.type).height);
-    }))
-  };
+  return typeof seatPlanGeometryFeature.getDeskLayoutItemsBounds === "function"
+    ? seatPlanGeometryFeature.getDeskLayoutItemsBounds(items, getSeatPlanGeometryFeatureOptions())
+    : null;
 }
 
 function getDeskLayoutShiftToFitCanvas(items, canvasRect) {
@@ -12086,145 +11099,39 @@ function getAutomaticSeatSlots(deskLayoutSeatPlan) {
 }
 
 function getDeskItemMetricsForSeatOptimization(item) {
-  const rawType = String(item && item.type || "");
-  const itemType = ["single", "double", "pult", "tafel"].indexOf(rawType) >= 0 ? rawType : "single";
-  const templateMetrics = getDeskTemplateMetrics(itemType);
-
-  return {
-    type: itemType,
-    width: Number(item && item.width) || templateMetrics.width,
-    height: Number(item && item.height) || templateMetrics.height
-  };
+  return typeof seatPlanGeometryFeature.getDeskItemMetricsForSeatOptimization === "function"
+    ? seatPlanGeometryFeature.getDeskItemMetricsForSeatOptimization(item, getSeatPlanGeometryFeatureOptions())
+    : { type: "single", width: 96, height: 72 };
 }
 
 function getDeskItemCenterForSeatOptimization(item) {
-  const metrics = getDeskItemMetricsForSeatOptimization(item);
-
-  return {
-    x: (Number(item && item.x) || 0) + (metrics.width / 2),
-    y: (Number(item && item.y) || 0) + (metrics.height / 2)
-  };
+  return typeof seatPlanGeometryFeature.getDeskItemCenterForSeatOptimization === "function"
+    ? seatPlanGeometryFeature.getDeskItemCenterForSeatOptimization(item, getSeatPlanGeometryFeatureOptions())
+    : { x: 0, y: 0 };
 }
 
 function getSeatOrderReferenceTargetForSeatOptimization(item, items) {
-  const targetItem = (items || []).find(function (candidate) {
-    return candidate && candidate.type === "tafel";
-  }) || (items || []).find(function (candidate) {
-    return candidate && candidate.type === "pult";
-  });
-  const deskCenter = getDeskItemCenterForSeatOptimization(item);
-
-  if (targetItem) {
-    return getDeskItemCenterForSeatOptimization(targetItem);
-  }
-
-  return {
-    x: deskCenter.x,
-    y: deskCenter.y + 240
-  };
+  return typeof seatPlanGeometryFeature.getSeatOrderReferenceTargetForSeatOptimization === "function"
+    ? seatPlanGeometryFeature.getSeatOrderReferenceTargetForSeatOptimization(item, items, getSeatPlanGeometryFeatureOptions())
+    : { x: 0, y: 0 };
 }
 
 function getDoubleDeskSlotLayoutForSeatOptimization(item, items) {
-  const metrics = getDeskItemMetricsForSeatOptimization(item);
-  const deskCenter = getDeskItemCenterForSeatOptimization(item);
-  const targetPoint = getSeatOrderReferenceTargetForSeatOptimization(item, items);
-  let facingX = (Number(targetPoint.x) || 0) - deskCenter.x;
-  let facingY = (Number(targetPoint.y) || 0) - deskCenter.y;
-  const longAxis = metrics.width >= metrics.height ? "horizontal" : "vertical";
-  const leftVectorFallback = longAxis === "horizontal"
-    ? { x: -1, y: 0 }
-    : { x: 0, y: -1 };
-  let leftVector;
-  let orderedSlots;
-
-  if (!facingX && !facingY) {
-    facingY = 1;
-  }
-
-  leftVector = {
-    x: facingY || leftVectorFallback.x,
-    y: -facingX || leftVectorFallback.y
-  };
-
-  if (longAxis === "horizontal") {
-    orderedSlots = leftVector.x <= 0 ? ["left", "right"] : ["right", "left"];
-  } else {
-    orderedSlots = leftVector.y <= 0 ? ["left", "right"] : ["right", "left"];
-  }
-
-  return {
-    axis: longAxis,
-    orderedSlots: orderedSlots
-  };
+  return typeof seatPlanGeometryFeature.getDoubleDeskSlotLayoutForSeatOptimization === "function"
+    ? seatPlanGeometryFeature.getDoubleDeskSlotLayoutForSeatOptimization(item, items, getSeatPlanGeometryFeatureOptions())
+    : { axis: "horizontal", orderedSlots: ["left", "right"] };
 }
 
 function getDeskSlotRectsForSeatOptimization(item, items) {
-  const metrics = getDeskItemMetricsForSeatOptimization(item);
-  const slotNames = getDeskSeatSlots(String(item && item.type || ""));
-  const rects = [];
-
-  if (slotNames.length === 1) {
-    return [{
-      slot: slotNames[0],
-      x: 0,
-      y: 0,
-      width: metrics.width,
-      height: metrics.height
-    }];
-  }
-
-  if (slotNames.length === 2) {
-    const layout = getDoubleDeskSlotLayoutForSeatOptimization(item, items);
-
-    if (layout.axis === "horizontal") {
-      rects.push({
-        slot: layout.orderedSlots[0],
-        x: 0,
-        y: 0,
-        width: metrics.width / 2,
-        height: metrics.height
-      });
-      rects.push({
-        slot: layout.orderedSlots[1],
-        x: metrics.width / 2,
-        y: 0,
-        width: metrics.width / 2,
-        height: metrics.height
-      });
-    } else {
-      rects.push({
-        slot: layout.orderedSlots[0],
-        x: 0,
-        y: 0,
-        width: metrics.width,
-        height: metrics.height / 2
-      });
-      rects.push({
-        slot: layout.orderedSlots[1],
-        x: 0,
-        y: metrics.height / 2,
-        width: metrics.width,
-        height: metrics.height / 2
-      });
-    }
-  }
-
-  return rects;
+  return typeof seatPlanGeometryFeature.getDeskSlotRectsForSeatOptimization === "function"
+    ? seatPlanGeometryFeature.getDeskSlotRectsForSeatOptimization(item, items, getSeatPlanGeometryFeatureOptions())
+    : [];
 }
 
 function getDeskSlotCenterForSeatOptimization(item, items, slotName) {
-  const slotRect = getDeskSlotRectsForSeatOptimization(item, items).find(function (rect) {
-    return rect && rect.slot === slotName;
-  }) || null;
-
-  if (!slotRect) {
-    return null;
-  }
-
-  return {
-    x: (Number(item && item.x) || 0) + slotRect.x + (slotRect.width / 2),
-    y: (Number(item && item.y) || 0) + slotRect.y + (slotRect.height / 2)
-  };
+  return typeof seatPlanGeometryFeature.getDeskSlotCenterForSeatOptimization === "function"
+    ? seatPlanGeometryFeature.getDeskSlotCenterForSeatOptimization(item, items, slotName, getSeatPlanGeometryFeatureOptions())
+    : null;
 }
 
 function buildSeatSlotZoneLookup(deskLayoutSeatPlan) {
@@ -12289,36 +11196,9 @@ function buildSeatSlotZoneLookup(deskLayoutSeatPlan) {
 }
 
 function getDeskSlotSideProjection(slotRect, item, sideName) {
-  const metrics = getDeskItemMetricsForSeatOptimization(item);
-  const itemX = Number(item && item.x) || 0;
-  const itemY = Number(item && item.y) || 0;
-  const tolerance = 0.5;
-
-  if (sideName === "left") {
-    return Math.abs(slotRect.x) <= tolerance
-      ? { start: itemY + slotRect.y, end: itemY + slotRect.y + slotRect.height }
-      : null;
-  }
-
-  if (sideName === "right") {
-    return Math.abs((slotRect.x + slotRect.width) - metrics.width) <= tolerance
-      ? { start: itemY + slotRect.y, end: itemY + slotRect.y + slotRect.height }
-      : null;
-  }
-
-  if (sideName === "top") {
-    return Math.abs(slotRect.y) <= tolerance
-      ? { start: itemX + slotRect.x, end: itemX + slotRect.x + slotRect.width }
-      : null;
-  }
-
-  if (sideName === "bottom") {
-    return Math.abs((slotRect.y + slotRect.height) - metrics.height) <= tolerance
-      ? { start: itemX + slotRect.x, end: itemX + slotRect.x + slotRect.width }
-      : null;
-  }
-
-  return null;
+  return typeof seatPlanGeometryFeature.getDeskSlotSideProjection === "function"
+    ? seatPlanGeometryFeature.getDeskSlotSideProjection(slotRect, item, sideName, getSeatPlanGeometryFeatureOptions())
+    : null;
 }
 
 function doSeatSlotSideProjectionsOverlap(leftProjection, rightProjection) {
@@ -16036,114 +14916,39 @@ function normalizeEvaluationTaskSheet(rawTaskSheet) {
   };
 }
 
+function getEvaluationCompetencyFeatureOptions() {
+  return {
+    mathCompetencies: MATH_OBSERVATION_COMPETENCIES,
+    mathMarkers: MATH_OBSERVATION_MARKERS,
+    getSortedEvidenceTools: getSortedEvidenceTools,
+    getEvidenceTools: getEvidenceToolsCollection,
+    ensureEvidenceLevel: ensureEvidenceLevel,
+    getEvidenceAspectById: getEvidenceAspectById
+  };
+}
+
 function normalizeEvaluationCompetencyAspectIds(rawValue) {
-  const sourceItems = Array.isArray(rawValue)
-    ? rawValue
-    : String(rawValue || "").split("|");
-  const seen = {};
-
-  return sourceItems.map(function (item) {
-    return String(item || "").trim();
-  }).filter(function (item) {
-    if (!item || seen[item]) {
-      return false;
-    }
-
-    seen[item] = true;
-    return true;
-  });
+  return typeof evaluationCompetenciesFeature.normalizeAspectIds === "function"
+    ? evaluationCompetenciesFeature.normalizeAspectIds(rawValue)
+    : [];
 }
 
 function getEvaluationCompetencySourceOptionsForSnapshot(rawSnapshot) {
-  return [
-    { id: "", label: "Keine Kompetenzquelle" },
-    { id: "mathObservation", label: "K-Werkzeug: Mathematikkompetenzen" }
-  ].concat(getSortedEvidenceTools(rawSnapshot).map(function (tool) {
-    const toolId = String(tool && tool.id || "").trim();
-
-    return {
-      id: toolId ? "evidence:" + toolId : "",
-      label: String(tool && tool.titel || "").trim() || "Bewertungswerkzeug"
-    };
-  }).filter(function (option) {
-    return Boolean(option.id);
-  }));
+  return typeof evaluationCompetenciesFeature.getSourceOptions === "function"
+    ? evaluationCompetenciesFeature.getSourceOptions(rawSnapshot, getEvaluationCompetencyFeatureOptions())
+    : [{ id: "", label: "Keine Kompetenzquelle" }];
 }
 
 function getEvaluationCompetencyAspectOptionsForSnapshot(rawSnapshot, sourceToolId) {
-  const normalizedSourceId = String(sourceToolId || "").trim();
-
-  if (normalizedSourceId === "mathObservation") {
-    return MATH_OBSERVATION_COMPETENCIES.map(function (competency) {
-      return {
-        id: "math:competency:" + String(competency && competency.key || "").trim(),
-        label: String(competency && competency.label || "").trim() || "Kompetenz"
-      };
-    }).concat(MATH_OBSERVATION_MARKERS.filter(function (marker) {
-      return Boolean(marker && marker.swipable);
-    }).map(function (marker) {
-      return {
-        id: "math:marker:" + String(marker && marker.key || "").trim(),
-        label: String(marker && marker.label || "").trim() || "Marker"
-      };
-    })).concat(MATH_OBSERVATION_MARKERS.filter(function (marker) {
-      return !Boolean(marker && marker.swipable);
-    }).map(function (marker) {
-      return {
-        id: "math:marker:" + String(marker && marker.key || "").trim(),
-        label: String(marker && marker.label || "").trim() || "Marker"
-      };
-    })).filter(function (option) {
-      return Boolean(option.id);
-    });
-  }
-
-  if (normalizedSourceId.indexOf("evidence:") === 0) {
-    const evidenceToolId = normalizedSourceId.slice("evidence:".length);
-    const tool = getEvidenceToolsCollection(rawSnapshot).find(function (item) {
-      return String(item && item.id || "").trim() === evidenceToolId;
-    }) || null;
-    const aspects = Array.isArray(tool && tool.aspekte) ? tool.aspekte : [];
-    const mainAspectIds = ensureEvidenceLevel(tool && tool.hauptebene).ebenenAspekte;
-    const seen = {};
-
-    return mainAspectIds.concat(aspects.map(function (aspect) {
-      return String(aspect && aspect.id || "").trim();
-    })).map(function (aspectId) {
-      const aspect = getEvidenceAspectById(tool, aspectId);
-
-      if (!aspect || seen[aspectId]) {
-        return null;
-      }
-
-      seen[aspectId] = true;
-      return {
-        id: "evidence:" + evidenceToolId + ":aspect:" + aspectId,
-        label: String(aspect && aspect.titel || "").trim() || "Aspekt"
-      };
-    }).filter(Boolean);
-  }
-
-  return [];
+  return typeof evaluationCompetenciesFeature.getAspectOptions === "function"
+    ? evaluationCompetenciesFeature.getAspectOptions(rawSnapshot, sourceToolId, getEvaluationCompetencyFeatureOptions())
+    : [];
 }
 
 function normalizeCurriculumLessonCompetencySourceIdForSnapshot(rawSnapshot, sourceToolId) {
-  const normalizedSourceId = String(sourceToolId || "").trim();
-  const options = getEvaluationCompetencySourceOptionsForSnapshot(rawSnapshot);
-
-  if (options.some(function (option) {
-    return String(option && option.id || "").trim() === normalizedSourceId;
-  })) {
-    return normalizedSourceId;
-  }
-
-  if (normalizedSourceId && getEvidenceToolsCollection(rawSnapshot).some(function (tool) {
-    return String(tool && tool.id || "").trim() === normalizedSourceId;
-  })) {
-    return "evidence:" + normalizedSourceId;
-  }
-
-  return "";
+  return typeof evaluationCompetenciesFeature.normalizeSourceId === "function"
+    ? evaluationCompetenciesFeature.normalizeSourceId(rawSnapshot, sourceToolId, getEvaluationCompetencyFeatureOptions())
+    : "";
 }
 
 function getCurriculumPlanningSettingsClassFromSnapshot(rawSnapshot) {
@@ -16172,16 +14977,11 @@ function getCurriculumLessonCompetencyToolIdForSnapshot(rawSnapshot) {
 }
 
 function normalizeCurriculumLessonCompetencyAspectIdForSnapshot(rawSnapshot, aspectId) {
-  const normalizedAspectId = String(aspectId || "").trim();
   const sourceId = getCurriculumLessonCompetencyToolIdForSnapshot(rawSnapshot);
 
-  if (!normalizedAspectId || normalizedAspectId.indexOf("math:") === 0 || normalizedAspectId.indexOf("evidence:") === 0) {
-    return normalizedAspectId;
-  }
-
-  return sourceId.indexOf("evidence:") === 0
-    ? sourceId + ":aspect:" + normalizedAspectId
-    : normalizedAspectId;
+  return typeof evaluationCompetenciesFeature.normalizeAspectId === "function"
+    ? evaluationCompetenciesFeature.normalizeAspectId(aspectId, sourceId)
+    : String(aspectId || "").trim();
 }
 
 function sanitizeEvaluationTaskSheetCompetencyLinks(taskSheet, sourceToolId, rawSnapshot) {
@@ -26188,37 +24988,28 @@ window.UnterrichtsassistentApp.getPlanningViewMode = function () {
   return planningViewMode;
 };
 function normalizeCurriculumTopicNodeIds(nodeIds) {
-  const sourceItems = Array.isArray(nodeIds)
-    ? nodeIds
-    : String(nodeIds || "").split("|");
-  const seen = {};
+  if (typeof curriculumTopicTreeFeature.normalizeTopicNodeIds === "function") {
+    return curriculumTopicTreeFeature.normalizeTopicNodeIds(nodeIds);
+  }
 
-  return sourceItems.map(function (nodeId) {
-    return String(nodeId || "").trim();
-  }).filter(function (nodeId) {
-    if (!nodeId || seen[nodeId]) {
-      return false;
-    }
-
-    seen[nodeId] = true;
-    return true;
-  });
+  return [];
 }
 
 function normalizeCurriculumTopicTreePlanId(planId) {
-  const normalizedPlanId = String(planId || "").trim();
-  const matchingPlan = CURRICULUM_TOPIC_TREE_PLANS.find(function (plan) {
-    return String(plan && plan.id || "").trim() === normalizedPlanId;
-  }) || CURRICULUM_TOPIC_TREE_PLANS[0];
+  if (typeof curriculumTopicTreeFeature.normalizePlanId === "function") {
+    return curriculumTopicTreeFeature.normalizePlanId(planId);
+  }
 
-  return String(matchingPlan && matchingPlan.id || "").trim();
+  const firstPlan = CURRICULUM_TOPIC_TREE_PLANS[0];
+  return String(firstPlan && firstPlan.id || "").trim();
 }
 
 function normalizeCurriculumTopicTreeGradeFilter(filterValue) {
-  const normalizedFilter = String(filterValue || "").trim();
-  const allowedFilters = ["", "5/6", "7/8", "9/10", "Einfuehrungsphase", "Qualifikationsphase eA", "Qualifikationsphase gA"];
+  if (typeof curriculumTopicTreeFeature.normalizeGradeFilter === "function") {
+    return curriculumTopicTreeFeature.normalizeGradeFilter(filterValue);
+  }
 
-  return allowedFilters.indexOf(normalizedFilter) >= 0 ? normalizedFilter : "";
+  return "";
 }
 
 function getCurriculumInstructionTopicTreeSettingsForSnapshot(snapshot) {
@@ -26240,19 +25031,16 @@ function getCurriculumInstructionTopicTreeSettingsForSnapshot(snapshot) {
   return {
     activePlanId: planId,
     gradeFilter,
-    plans: CURRICULUM_TOPIC_TREE_PLANS.map(function (plan) {
-      return {
-        id: String(plan && plan.id || "").trim(),
-        label: String(plan && plan.label || "").trim()
-      };
-    })
+    plans: typeof curriculumTopicTreeFeature.getPlanOptions === "function"
+      ? curriculumTopicTreeFeature.getPlanOptions()
+      : []
   };
 }
 
 function ensureCurriculumTopicTreeLoaded() {
-  const activePlan = CURRICULUM_TOPIC_TREE_PLANS.find(function (plan) {
-    return String(plan && plan.id || "").trim() === activeCurriculumTopicTreePlanId;
-  }) || CURRICULUM_TOPIC_TREE_PLANS[0];
+  const activePlan = typeof curriculumTopicTreeFeature.getPlanById === "function"
+    ? curriculumTopicTreeFeature.getPlanById(activeCurriculumTopicTreePlanId)
+    : CURRICULUM_TOPIC_TREE_PLANS[0];
 
   if (curriculumTopicTreeLoadState === "loading" || curriculumTopicTreeLoadState === "loaded") {
     return;
@@ -26304,19 +25092,15 @@ window.UnterrichtsassistentApp.getCurriculumTopicTreeState = function () {
     expandedPath: curriculumTopicTreeExpandedPath.slice(),
     gradeFilter: curriculumTopicTreeGradeFilter,
     activePlanId: activeCurriculumTopicTreePlanId,
-    plans: CURRICULUM_TOPIC_TREE_PLANS.map(function (plan) {
-      return {
-        id: String(plan && plan.id || "").trim(),
-        label: String(plan && plan.label || "").trim()
-      };
-    })
+    plans: typeof curriculumTopicTreeFeature.getPlanOptions === "function"
+      ? curriculumTopicTreeFeature.getPlanOptions()
+      : []
   };
 };
 window.UnterrichtsassistentApp.updateCurriculumTopicTreePlan = function (planId) {
-  const normalizedPlanId = String(planId || "").trim();
-  const nextPlan = CURRICULUM_TOPIC_TREE_PLANS.find(function (plan) {
-    return String(plan && plan.id || "").trim() === normalizedPlanId;
-  }) || CURRICULUM_TOPIC_TREE_PLANS[0];
+  const nextPlan = typeof curriculumTopicTreeFeature.getPlanById === "function"
+    ? curriculumTopicTreeFeature.getPlanById(planId)
+    : CURRICULUM_TOPIC_TREE_PLANS[0];
 
   activeCurriculumTopicTreePlanId = String(nextPlan.id || "").trim();
   curriculumTopicTreeData = null;

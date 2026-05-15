@@ -45,30 +45,16 @@ window.Unterrichtsassistent.ui.views.todos = {
     const activeDateTimeParts = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveDateTimeParts === "function"
       ? window.UnterrichtsassistentApp.getActiveDateTimeParts()
       : { date: "", time: "00:00" };
+    const checklistFeature = window.Unterrichtsassistent
+      && window.Unterrichtsassistent.features
+      && window.Unterrichtsassistent.features.todos
+      && window.Unterrichtsassistent.features.todos.checklist
+      ? window.Unterrichtsassistent.features.todos.checklist
+      : null;
 
-    function escapeValue(value) {
-      return String(value || "")
-        .replace(/&/g, "&amp;")
-        .replace(/\\/g, "&#92;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;")
-        .replace(/`/g, "&#96;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/\r/g, "&#13;")
-        .replace(/\n/g, "&#10;");
-    }
-
-    function formatDateLabel(dateValue) {
-      const normalizedValue = String(dateValue || "").slice(0, 10);
-      const parts = normalizedValue.split("-");
-
-      if (parts.length !== 3) {
-        return "";
-      }
-
-      return [parts[2], parts[1], parts[0]].join(".");
-    }
+    const escapeValue = window.Unterrichtsassistent.ui.viewHelpers.escapeValue;
+    const callApp = window.Unterrichtsassistent.ui.viewHelpers.callApp;
+    const formatDateLabel = window.Unterrichtsassistent.ui.viewHelpers.formatDateLabel;
 
     function getStudentDisplayName(student) {
       return [String(student && student.firstName || "").trim(), String(student && student.lastName || "").trim()]
@@ -559,156 +545,35 @@ window.Unterrichtsassistent.ui.views.todos = {
       }
 
       function getChecklistChildItems(items, parentId) {
-        return (items || []).filter(function (entry) {
-          return String(entry && entry.parentId || "").trim() === String(parentId || "").trim();
-        });
-      }
-
-      function getChecklistNodeById(items, nodeId) {
-        const normalizedNodeId = String(nodeId || "").trim();
-
-        if (!normalizedNodeId) {
-          return null;
-        }
-
-        return (items || []).reduce(function (foundEntry, entry) {
-          if (foundEntry) {
-            return foundEntry;
-          }
-
-          if (String(entry && entry.id || "").trim() === normalizedNodeId) {
-            return {
-              kind: "item",
-              entry: entry,
-              ownerItem: entry
-            };
-          }
-
-          if (Array.isArray(entry && entry.followUpSteps)) {
-            const foundStep = entry.followUpSteps.find(function (step) {
-              return String(step && step.id || "").trim() === normalizedNodeId;
-            }) || null;
-
-            if (foundStep) {
-              return {
-                kind: "step",
-                entry: foundStep,
-                ownerItem: entry
-              };
-            }
-          }
-
-          return null;
-        }, null);
+        return checklistFeature.getChildItems(items, parentId);
       }
 
       function getChecklistFollowUpSteps(items, itemId) {
-        const selectedNode = getChecklistNodeById(items, itemId);
-
-        if (!selectedNode || selectedNode.kind !== "item" || !Array.isArray(selectedNode.entry && selectedNode.entry.followUpSteps)) {
-          return [];
-        }
-
-        return selectedNode.entry.followUpSteps;
+        return checklistFeature.getFollowUpSteps(items, itemId);
       }
 
       function getDerivedChecklistItemDone(items, itemId) {
-        const selectedNode = getChecklistNodeById(items, itemId);
-        const childItems = getChecklistChildItems(items, itemId);
-
-        if (!selectedNode) {
-          return false;
-        }
-
-        if (childItems.length > 0) {
-          return childItems.every(function (childItem) {
-            return getAggregatedChecklistItemDone(items, childItem && childItem.id);
-          });
-        }
-
-        return Boolean(selectedNode.entry.done);
-      }
-
-      function getAggregatedChecklistItemDone(items, itemId) {
-        const selectedNode = getChecklistNodeById(items, itemId);
-        const followUpSteps = selectedNode && selectedNode.kind === "item"
-          ? getChecklistFollowUpSteps(items, itemId)
-          : [];
-
-        if (!selectedNode) {
-          return false;
-        }
-
-        return getDerivedChecklistItemDone(items, itemId) && followUpSteps.every(function (step) {
-          return getAggregatedChecklistItemDone(items, step && step.id);
-        });
+        return checklistFeature.isNodeDisplayDone(items, itemId);
       }
 
       function hasCompletedFollowUpSuccessor(items, itemId) {
-        const selectedNode = getChecklistNodeById(items, itemId);
-        const followUpSteps = selectedNode && selectedNode.kind === "item"
-          ? getChecklistFollowUpSteps(items, itemId)
-          : [];
-
-        if (!selectedNode || !followUpSteps.length) {
-          return false;
-        }
-
-        return followUpSteps.some(function (step) {
-          return getAggregatedChecklistItemDone(items, step && step.id)
-            || hasCompletedFollowUpSuccessor(items, step && step.id);
-        });
+        return checklistFeature.hasCompletedFollowUpSuccessor(items, itemId);
       }
 
       function getChecklistNodeSelfDone(items, itemId) {
-        const selectedNode = getChecklistNodeById(items, itemId);
-
-        return Boolean(selectedNode && selectedNode.entry && selectedNode.entry.done);
-      }
-
-      function isChecklistNodeReadyForFollowUp(items, nodeId) {
-        return isChecklistItemManuallyToggleable(items, nodeId)
-          ? getChecklistNodeSelfDone(items, nodeId)
-          : getDerivedChecklistItemDone(items, nodeId);
+        return checklistFeature.isNodeSelfDone(items, itemId);
       }
 
       function getDerivedChecklistTodoDone(items) {
-        const topLevelItems = getChecklistChildItems(items, "");
-
-        return topLevelItems.length > 0 && topLevelItems.every(function (item) {
-          return getAggregatedChecklistItemDone(items, item && item.id);
-        });
+        return checklistFeature.isChecklistDone(items);
       }
 
       function isChecklistItemManuallyToggleable(items, itemId) {
-        const selectedNode = getChecklistNodeById(items, itemId);
-        const childItems = getChecklistChildItems(items, itemId);
-
-        return Boolean(selectedNode) && childItems.length === 0;
+        return checklistFeature.isItemManuallyToggleable(items, itemId);
       }
 
       function isChecklistNodeUnlocked(items, nodeId) {
-        const selectedNode = getChecklistNodeById(items, nodeId);
-        const previousNodeId = selectedNode && selectedNode.kind === "step"
-          ? String(selectedNode.entry.previousStepId || selectedNode.ownerItem && selectedNode.ownerItem.id || "").trim()
-          : "";
-        const parentNodeId = selectedNode && selectedNode.kind === "item"
-          ? String(selectedNode.entry && selectedNode.entry.parentId || "").trim()
-          : "";
-
-        if (!selectedNode) {
-          return false;
-        }
-
-        if (selectedNode.kind === "step") {
-          return previousNodeId ? isChecklistNodeReadyForFollowUp(items, previousNodeId) : true;
-        }
-
-        if (parentNodeId) {
-          return isChecklistNodeUnlocked(items, parentNodeId);
-        }
-
-        return true;
+        return checklistFeature.isNodeUnlocked(items, nodeId);
       }
 
       function buildChecklistTree(items, parentId, depth, studentId) {
@@ -850,8 +715,8 @@ window.Unterrichtsassistent.ui.views.todos = {
         ? getDerivedAssignedStudentsDone(todoItem)
         : (isChecklistTodo ? getDerivedChecklistTodoDone(checklistItems) : Boolean(todoItem && todoItem.done));
       const isExpanded = expandedTodoIds.indexOf(normalizedTodoId) >= 0;
-      const categoryColor = categoryLabel && window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningCategoryColor === "function"
-        ? String(window.UnterrichtsassistentApp.getPlanningCategoryColor(categoryLabel) || "").trim()
+      const categoryColor = categoryLabel
+        ? String(callApp("getPlanningCategoryColor", [categoryLabel], "") || "").trim()
         : "";
       const checklistSectionMarkup = hasAssignedStudentChecklists ? "" : buildChecklistSection(todoItem);
       const rowStyle = categoryColor
@@ -956,9 +821,7 @@ window.Unterrichtsassistent.ui.views.todos = {
         if (!Object.prototype.hasOwnProperty.call(groups, normalizedCategory)) {
           groups[normalizedCategory] = {
             name: categoryName,
-            color: window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningCategoryColor === "function"
-              ? String(window.UnterrichtsassistentApp.getPlanningCategoryColor(categoryName) || "").trim()
-              : "",
+            color: String(callApp("getPlanningCategoryColor", [categoryName], "") || "").trim(),
             items: []
           };
           categoryOrder.push(normalizedCategory);

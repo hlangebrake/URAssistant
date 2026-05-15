@@ -25,12 +25,12 @@ window.Unterrichtsassistent.ui.views.bewertung = {
     const snapshot = service && service.snapshot ? service.snapshot : {};
     const schoolYearStart = String(snapshot.schoolYearStart || "").slice(0, 10);
     const schoolYearEnd = String(snapshot.schoolYearEnd || "").slice(0, 10);
-    const planningEvents = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getPlanningEventsForDisplay === "function"
-      ? window.UnterrichtsassistentApp.getPlanningEventsForDisplay(snapshot, {
+    const planningEvents = window.Unterrichtsassistent.ui.viewHelpers.callApp("getPlanningEventsForDisplay", [snapshot, {
           rangeStart: schoolYearStart,
           rangeEnd: schoolYearEnd
-        })
-      : (Array.isArray(snapshot.planningEvents) ? snapshot.planningEvents : []);
+        }], function () {
+          return Array.isArray(snapshot.planningEvents) ? snapshot.planningEvents : [];
+        });
     const referenceDate = service && typeof service.getReferenceDate === "function"
       ? service.getReferenceDate()
       : null;
@@ -89,61 +89,12 @@ window.Unterrichtsassistent.ui.views.bewertung = {
       ? window.UnterrichtsassistentApp.getPerformedCompetencyGridMode()
       : "kompakt";
 
-    function escapeValue(value) {
-      return String(value === undefined || value === null ? "" : value)
-        .replace(/&/g, "&amp;")
-        .replace(/\\/g, "&#92;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;")
-        .replace(/`/g, "&#96;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/\r/g, "&#13;")
-        .replace(/\n/g, "&#10;");
-    }
-
-    function parseLocalDate(dateValue) {
-      const normalized = String(dateValue || "").slice(0, 10);
-      const parts = normalized.split("-");
-      const year = Number(parts[0]);
-      const month = Number(parts[1]);
-      const day = Number(parts[2]);
-
-      if (parts.length !== 3 || Number.isNaN(year) || Number.isNaN(month) || Number.isNaN(day)) {
-        return null;
-      }
-
-      return new Date(year, month - 1, day);
-    }
-
-    function toIsoDate(date) {
-      return [
-        date.getFullYear(),
-        String(date.getMonth() + 1).padStart(2, "0"),
-        String(date.getDate()).padStart(2, "0")
-      ].join("-");
-    }
-
-    function formatShortDateLabel(dateValue) {
-      const parsed = parseLocalDate(dateValue);
-      return parsed
-        ? parsed.toLocaleDateString("de-DE", {
-            day: "2-digit",
-            month: "2-digit"
-          })
-        : "";
-    }
-
-    function formatLongDateLabel(dateValue) {
-      const parsed = parseLocalDate(dateValue);
-      return parsed
-        ? parsed.toLocaleDateString("de-DE", {
-            day: "2-digit",
-            month: "2-digit",
-            year: "numeric"
-          })
-        : "";
-    }
+    const escapeValue = window.Unterrichtsassistent.ui.viewHelpers.escapeValue;
+    const callApp = window.Unterrichtsassistent.ui.viewHelpers.callApp;
+    const parseLocalDate = window.Unterrichtsassistent.ui.viewHelpers.parseLocalDate;
+    const toIsoDate = window.Unterrichtsassistent.ui.viewHelpers.toIsoDate;
+    const formatShortDateLabel = window.Unterrichtsassistent.ui.viewHelpers.formatShortDateLabel;
+    const formatLongDateLabel = window.Unterrichtsassistent.ui.viewHelpers.formatLongDateLabel;
 
     function formatPointsLabel(value) {
       const numericValue = Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -1242,15 +1193,11 @@ window.Unterrichtsassistent.ui.views.bewertung = {
     }
 
     function getCompetencySourceOptions() {
-      return window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getEvaluationCompetencySourceOptions === "function"
-        ? window.UnterrichtsassistentApp.getEvaluationCompetencySourceOptions()
-        : [{ id: "", label: "Keine Kompetenzquelle" }];
+      return callApp("getEvaluationCompetencySourceOptions", [], [{ id: "", label: "Keine Kompetenzquelle" }]);
     }
 
     function getCompetencyAspectOptions(sourceToolId) {
-      return window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getEvaluationCompetencyAspectOptions === "function"
-        ? window.UnterrichtsassistentApp.getEvaluationCompetencyAspectOptions(sourceToolId)
-        : [];
+      return callApp("getEvaluationCompetencyAspectOptions", [sourceToolId], []);
     }
 
     function buildCompetencySourceField(activeSheet) {

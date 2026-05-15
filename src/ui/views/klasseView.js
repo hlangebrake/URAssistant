@@ -63,22 +63,8 @@ window.Unterrichtsassistent.ui.views.klasse = {
       ? window.UnterrichtsassistentApp.getActiveClassAnalysisPerformedEvaluationDraft()
       : null;
 
-    function escapeValue(value) {
-      return String(value === undefined || value === null ? "" : value)
-        .replace(/&/g, "&amp;")
-        .replace(/\\/g, "&#92;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;")
-        .replace(/`/g, "&#96;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/\r/g, "&#13;")
-        .replace(/\n/g, "&#10;");
-    }
-
-    function normalizeDateValue(value) {
-      return String(value || "").slice(0, 10);
-    }
+    const escapeValue = window.Unterrichtsassistent.ui.viewHelpers.escapeValue;
+    const normalizeDateValue = window.Unterrichtsassistent.ui.viewHelpers.normalizeDateValue;
 
     function formatDayLabel(dateValue) {
       if (!dateValue) {
