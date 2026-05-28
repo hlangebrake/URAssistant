@@ -2139,6 +2139,9 @@ window.Unterrichtsassistent.ui.views.bewertung = {
           '<h2 class="bewertung-planung__title">Bewertung vornehmen</h2>',
           '<p class="bewertung-planung__hint">', escapeValue(String(selectedEvaluationSheet && selectedEvaluationSheet.title || "").trim() || "Ohne Titel"), ' | ', escapeValue(formatLongDateLabel(selectedPlannedEvaluation && selectedPlannedEvaluation.date) || String(selectedPlannedEvaluation && selectedPlannedEvaluation.date || "")), '</p>',
           '</div>',
+          '<div class="bewertung-durchfuehrung__student-header-actions">',
+          '<button class="header-utility-button" type="button" onclick="return window.UnterrichtsassistentApp.exportActivePerformedEvaluationPdfSet()">PDF alle</button>',
+          '</div>',
           '</div>',
           '<div class="bewertung-durchfuehrung__layout">',
           '<aside class="bewertung-durchfuehrung__students">',
@@ -2187,6 +2190,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
                     '<h3 class="bewertung-durchfuehrung__student-title">', escapeValue(String(selectedStudent && selectedStudent.fullName || selectedStudent && selectedStudent.firstName || "").trim() || "Ohne Namen"), '</h3>',
                     '<div class="bewertung-durchfuehrung__student-header-actions">',
                     '<div class="bewertung-durchfuehrung__student-meta">', escapeValue(getPlannedEvaluationTypeLabel(selectedPlannedEvaluation && selectedPlannedEvaluation.type)), '</div>',
+                    '<button class="header-utility-button" type="button" onclick="return window.UnterrichtsassistentApp.exportSelectedPerformedEvaluationPdf()">PDF</button>',
                     isCompleted
                       ? '<button class="bewertung-durchfuehrung__completed-badge" type="button" onclick="return window.UnterrichtsassistentApp.togglePerformedEvaluationCompletionForSelectedStudent()">Abgeschlossen</button>'
                       : '<button class="header-utility-button" type="button" onclick="return window.UnterrichtsassistentApp.togglePerformedEvaluationCompletionForSelectedStudent()">Fertig</button>',

@@ -12668,6 +12668,205 @@ function buildPerformedEvaluationSummary(plannedEvaluation, evaluationSheet, per
   };
 }
 
+function getPerformedEvaluationFeedbackList(subtaskResult, detailType) {
+  const normalizedType = String(detailType || "").trim().toLowerCase();
+  const fieldName = normalizedType === "positive" ? "positiveNotes" : "negativeNotes";
+
+  return Array.isArray(subtaskResult && subtaskResult[fieldName])
+    ? subtaskResult[fieldName].map(function (entry) {
+        return String(entry || "").trim();
+      }).filter(Boolean)
+    : [];
+}
+
+function buildPerformedEvaluationPdfDocument(plannedEvaluation, evaluationSheet, performedEvaluation, student) {
+  const tasks = getTaskSheetTasksForSheet(evaluationSheet);
+  const summary = buildPerformedEvaluationSummary(plannedEvaluation, evaluationSheet, performedEvaluation);
+  const subtaskLookup = performedEvaluation && Array.isArray(performedEvaluation.subtaskResults)
+    ? performedEvaluation.subtaskResults.reduce(function (lookup, entry) {
+        const subtaskId = String(entry && entry.subtaskId || "").trim();
+
+        if (subtaskId) {
+          lookup[subtaskId] = entry;
+        }
+
+        return lookup;
+      }, {})
+    : {};
+  const gradingStages = normalizePlannedEvaluationGradingSystem(plannedEvaluation && plannedEvaluation.gradingSystem);
+  const sheetTitle = String(evaluationSheet && evaluationSheet.title || "").trim() || "Bewertung";
+  const studentName = [String(student && student.firstName || "").trim(), String(student && student.lastName || "").trim()].filter(Boolean).join(" ") || "Ohne Namen";
+  const percentLabel = summary.percent.toFixed(1).replace(".", ",") + " %";
+  const signatureDateLabel = formatPerformedEvaluationDateLabel(getReferenceDateValue());
+
+  function buildFeedbackBlock(label, items) {
+    return items.length
+      ? '<div class="feedback-block"><strong>' + escapeHtml(label) + ':</strong><ul>' + items.map(function (item) {
+          return '<li>' + escapeHtml(item) + '</li>';
+        }).join("") + '</ul></div>'
+      : "";
+  }
+
+  function buildGradingKey() {
+    if (!gradingStages.length) {
+      return '<p class="grading-empty">Kein Wertungsschl&uuml;ssel hinterlegt.</p>';
+    }
+
+    return [
+      '<table class="grading-key">',
+      '<tbody>',
+      '<tr><th>Bewertungsstufe</th>',
+      gradingStages.map(function (stage) {
+        return '<td>' + escapeHtml(String(stage && stage.label || "").trim() || "Ohne Bezeichnung") + '</td>';
+      }).join(""),
+      '</tr>',
+      '<tr><th>ab Prozent</th>',
+      gradingStages.map(function (stage) {
+        const minPercent = Math.max(0, Math.min(100, Number(stage && stage.minPercent) || 0));
+        return '<td>' + escapeHtml(formatPerformedEvaluationPointsLabel(minPercent)) + '</td>';
+      }).join(""),
+      '</tr>',
+      '<tr><th>ab Punkten</th>',
+      gradingStages.map(function (stage) {
+        const minPercent = Math.max(0, Math.min(100, Number(stage && stage.minPercent) || 0));
+        const minPoints = summary.totalReachable > 0 ? (summary.totalReachable * minPercent / 100) : 0;
+        return '<td>' + escapeHtml(formatPerformedEvaluationPointsLabel(minPoints)) + '</td>';
+      }).join(""),
+      '</tr>',
+      '</tbody>',
+      '</table>'
+    ].join("");
+  }
+
+  return [
+    '<!doctype html>',
+    '<html lang="de">',
+    '<head>',
+    '<meta charset="utf-8">',
+    '<title>', escapeHtml(sheetTitle + " - " + studentName), '</title>',
+    '<style>',
+    '@page{size:A4;margin:16mm 14mm;}',
+    'body{font-family:Arial,Helvetica,sans-serif;color:#1f2430;font-size:11pt;line-height:1.35;margin:0;}',
+    'h1{font-size:19pt;margin:0 0 3mm;color:#17313e;}',
+    '.student-name{font-size:13pt;font-weight:700;margin:0 0 8mm;}',
+    'table{width:100%;border-collapse:collapse;}',
+    'th,td{border:1px solid #cfd7dc;padding:6px 7px;vertical-align:top;}',
+    'th{background:#eef3f5;color:#17313e;text-align:left;font-size:9pt;}',
+    '.score{width:28mm;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;font-weight:700;}',
+    '.task-row td{background:#dfe8ec;color:#17313e;font-weight:800;border-top:2px solid #17313e;}',
+    '.task-title{width:44mm;font-weight:700;}',
+    '.feedback-block{margin:0 0 3px;}',
+    '.feedback-block:last-child{margin-bottom:0;}',
+    '.feedback-block ul{margin:2px 0 0 18px;padding:0;}',
+    '.feedback-block li{margin:0 0 1px;}',
+    '.total-row td{font-weight:800;background:#f7f9fa;}',
+    '.summary{margin-top:8mm;font-size:12pt;}',
+    '.summary strong{color:#17313e;}',
+    '.overall-note{margin-top:4mm;padding:7px 8px;border:1px solid #cfd7dc;background:#f7f9fa;}',
+    '.signature-row{display:grid;grid-template-columns:42mm minmax(55mm,1fr);gap:16mm;margin-top:11mm;max-width:130mm;}',
+    '.signature-field{display:grid;gap:2mm;}',
+    '.signature-line{border-top:1px solid #1f2430;min-height:8mm;padding-top:1.5mm;}',
+    '.signature-label{font-size:9pt;color:#56636b;}',
+    '.grading-title{margin:8mm 0 2mm;font-size:12pt;color:#17313e;}',
+    '.grading-key{width:auto;max-width:100%;font-size:9pt;}',
+    '.grading-key th,.grading-key td{min-width:10mm;padding:2px 3px;text-align:center;}',
+    '.grading-key th:first-child{min-width:24mm;text-align:left;}',
+    '.grading-empty{color:#66727a;}',
+    '</style>',
+    '</head>',
+    '<body>',
+    '<h1>Bewertung f&uuml;r ', escapeHtml(sheetTitle), '</h1>',
+    '<p class="student-name">', escapeHtml(studentName), '</p>',
+    '<table>',
+    '<thead><tr><th>Aufgabe / Teilaufgabe</th><th>Bewertung</th><th class="score">Punkte</th></tr></thead>',
+    '<tbody>',
+    tasks.map(function (task, taskIndex) {
+      const taskId = String(task && task.id || "").trim();
+      const taskSummary = Array.isArray(summary.taskSummaries)
+        ? summary.taskSummaries.find(function (entry) {
+            return String(entry && entry.taskId || "").trim() === taskId;
+          }) || null
+        : null;
+      const subtasks = getSubtasksForTaskSheetTask(task);
+
+      return [
+        '<tr class="task-row">',
+        '<td colspan="2">Aufgabe ', escapeHtml(String(taskIndex + 1)), ': ', escapeHtml(String(task && task.title || "").trim() || "Ohne Titel"), '</td>',
+        '<td class="score">', escapeHtml(formatPerformedEvaluationPointsLabel(taskSummary ? taskSummary.achieved : 0)), ' / ', escapeHtml(formatPerformedEvaluationPointsLabel(taskSummary ? taskSummary.reachable : 0)), '</td>',
+        '</tr>',
+        subtasks.map(function (subtask) {
+          const subtaskId = String(subtask && subtask.id || "").trim();
+          const subtaskResult = subtaskLookup[subtaskId] || null;
+          const negativeItems = getPerformedEvaluationFeedbackList(subtaskResult, "negative");
+          const positiveItems = getPerformedEvaluationFeedbackList(subtaskResult, "positive");
+          const noteValue = String(subtaskResult && subtaskResult.generalNote || "").trim();
+
+          return [
+            '<tr>',
+            '<td class="task-title">', escapeHtml(String(subtask && subtask.title || "").trim() || "Ohne Titel"), '</td>',
+            '<td>',
+            buildFeedbackBlock("Negative Aspekte", negativeItems),
+            buildFeedbackBlock("Positive Aspekte", positiveItems),
+            noteValue ? '<div class="feedback-block"><strong>Bemerkung:</strong> ' + escapeHtml(noteValue) + '</div>' : '',
+            '</td>',
+            '<td class="score">', escapeHtml(formatPerformedEvaluationPointsLabel(subtaskResult ? Number(subtaskResult.points) || 0 : 0)), ' / ', escapeHtml(formatPerformedEvaluationPointsLabel(getEvaluationSheetBeValue(subtask))), '</td>',
+            '</tr>'
+          ].join("");
+        }).join("")
+      ].join("");
+    }).join(""),
+    '<tr class="total-row"><td colspan="2">Summe</td><td class="score">', escapeHtml(formatPerformedEvaluationPointsLabel(summary.totalAchieved)), ' / ', escapeHtml(formatPerformedEvaluationPointsLabel(summary.totalReachable)), '</td></tr>',
+    '</tbody>',
+    '</table>',
+    '<p class="summary">Insgesamt wurden <strong>', escapeHtml(percentLabel), '</strong> erreicht, eine Punktzahl von <strong>', escapeHtml(formatPerformedEvaluationPointsLabel(summary.totalAchieved)), ' / ', escapeHtml(formatPerformedEvaluationPointsLabel(summary.totalReachable)), '</strong>. Die Leistung wird bewertet mit der Note <strong>', escapeHtml(String(summary.stageLabel || "").trim() || "Keine Bewertungsstufe"), '</strong>.</p>',
+    '<div class="signature-row">',
+    '<div class="signature-field"><div class="signature-line">', escapeHtml(signatureDateLabel), '</div><div class="signature-label">Datum</div></div>',
+    '<div class="signature-field"><div class="signature-line"></div><div class="signature-label">Unterschrift</div></div>',
+    '</div>',
+    String(performedEvaluation && performedEvaluation.overallNote || "").trim() ? '<div class="overall-note"><strong>Anmerkung zur gesamten Bewertung:</strong> ' + escapeHtml(String(performedEvaluation && performedEvaluation.overallNote || "").trim()) + '</div>' : '',
+    '<h2 class="grading-title">Wertungsschl&uuml;ssel</h2>',
+    buildGradingKey(),
+    '</body>',
+    '</html>'
+  ].join("");
+}
+
+function buildPerformedEvaluationMultiPdfDocument(plannedEvaluation, evaluationSheet, entries) {
+  const normalizedEntries = (Array.isArray(entries) ? entries : []).filter(function (entry) {
+    return entry && entry.student;
+  });
+  const firstMarkup = normalizedEntries.length
+    ? buildPerformedEvaluationPdfDocument(plannedEvaluation, evaluationSheet, normalizedEntries[0].performedEvaluation, normalizedEntries[0].student)
+    : buildPerformedEvaluationPdfDocument(plannedEvaluation, evaluationSheet, null, null);
+  const headEndIndex = firstMarkup.indexOf("</head>");
+  const headMarkup = headEndIndex >= 0
+    ? firstMarkup.slice(0, headEndIndex).replace("</style>", ".pdf-page + .pdf-page{break-before:page;page-break-before:always;}</style>") + "</head>"
+    : "";
+
+  function extractBodyContent(markup) {
+    const startIndex = markup.indexOf("<body>");
+    const endIndex = markup.lastIndexOf("</body>");
+
+    if (startIndex < 0 || endIndex < 0 || endIndex <= startIndex) {
+      return markup;
+    }
+
+    return markup.slice(startIndex + 6, endIndex);
+  }
+
+  return [
+    '<!doctype html>',
+    '<html lang="de">',
+    headMarkup,
+    '<body>',
+    normalizedEntries.map(function (entry) {
+      return '<section class="pdf-page">' + extractBodyContent(buildPerformedEvaluationPdfDocument(plannedEvaluation, evaluationSheet, entry.performedEvaluation, entry.student)) + '</section>';
+    }).join(""),
+    '</body>',
+    '</html>'
+  ].join("");
+}
+
 function buildClassAnalysisPerformedEvaluationModalMarkup() {
   const currentRawSnapshot = schoolService && serializeSnapshot ? serializeSnapshot(schoolService.snapshot) : null;
   const plannedEvaluationId = String(activeClassAnalysisPerformedEvaluationDraft && activeClassAnalysisPerformedEvaluationDraft.plannedEvaluationId || "").trim();
@@ -25012,6 +25211,24 @@ function normalizeCurriculumTopicTreeGradeFilter(filterValue) {
   return "";
 }
 
+function isLocalAppResourceUrl(urlValue) {
+  const rawValue = String(urlValue || "").trim();
+  let parsedUrl = null;
+
+  if (!rawValue || /^(?:https?:)?\/\//i.test(rawValue)) {
+    return false;
+  }
+
+  try {
+    parsedUrl = new URL(rawValue, window.location.href);
+  } catch (error) {
+    void error;
+    return false;
+  }
+
+  return parsedUrl.origin === window.location.origin;
+}
+
 function getCurriculumInstructionTopicTreeSettingsForSnapshot(snapshot) {
   const source = snapshot && typeof snapshot === "object" ? snapshot : {};
   const classItem = getCurriculumPlanningSettingsClassFromSnapshot(source);
@@ -25041,6 +25258,7 @@ function ensureCurriculumTopicTreeLoaded() {
   const activePlan = typeof curriculumTopicTreeFeature.getPlanById === "function"
     ? curriculumTopicTreeFeature.getPlanById(activeCurriculumTopicTreePlanId)
     : CURRICULUM_TOPIC_TREE_PLANS[0];
+  const activePlanUrl = String(activePlan && activePlan.url || "").trim();
 
   if (curriculumTopicTreeLoadState === "loading" || curriculumTopicTreeLoadState === "loaded") {
     return;
@@ -25049,7 +25267,13 @@ function ensureCurriculumTopicTreeLoaded() {
   curriculumTopicTreeLoadState = "loading";
   curriculumTopicTreeLoadError = "";
 
-  fetch(activePlan.url)
+  if (!isLocalAppResourceUrl(activePlanUrl)) {
+    curriculumTopicTreeLoadState = "failed";
+    curriculumTopicTreeLoadError = "Die Stoffplanungsdaten muessen lokal im App-Ordner liegen.";
+    return;
+  }
+
+  fetch(activePlanUrl)
     .then(function (response) {
       if (!response || !response.ok) {
         throw new Error("Stoffplanungsdaten konnten nicht geladen werden.");
@@ -27780,6 +28004,131 @@ window.UnterrichtsassistentApp.selectPerformedEvaluationStudent = function (stud
   if (activeViewId === "bewertung") {
     setActiveView("bewertung");
   }
+
+  return false;
+};
+window.UnterrichtsassistentApp.exportSelectedPerformedEvaluationPdf = function () {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const normalizedPlannedEvaluationId = String(activePerformedPlannedEvaluationId || "").trim();
+  const normalizedStudentId = String(activePerformedEvaluationStudentId || "").trim();
+  const plannedEvaluation = currentRawSnapshot
+    ? getPlannedEvaluationsCollection(currentRawSnapshot).find(function (item) {
+        return String(item && item.id || "").trim() === normalizedPlannedEvaluationId;
+      }) || null
+    : null;
+  const evaluationSheetId = String(plannedEvaluation && plannedEvaluation.evaluationSheetId || "").trim();
+  const evaluationSheet = currentRawSnapshot && Array.isArray(currentRawSnapshot.evaluationSheets)
+    ? currentRawSnapshot.evaluationSheets.find(function (item) {
+        return String(item && item.id || "").trim() === evaluationSheetId;
+      }) || null
+    : null;
+  const student = currentRawSnapshot && Array.isArray(currentRawSnapshot.students)
+    ? currentRawSnapshot.students.find(function (item) {
+        return String(item && item.id || "").trim() === normalizedStudentId;
+      }) || null
+    : null;
+  const performedEvaluation = currentRawSnapshot
+    ? getPerformedEvaluationForStudent(currentRawSnapshot, normalizedPlannedEvaluationId, normalizedStudentId) || createPerformedEvaluationRecord(plannedEvaluation, normalizedStudentId)
+    : null;
+  let printWindow = null;
+  let documentMarkup = "";
+
+  if (!currentRawSnapshot || !plannedEvaluation || !evaluationSheet || !student || !performedEvaluation) {
+    window.alert("Der Bewertungsbogen konnte nicht fuer den PDF-Export vorbereitet werden.");
+    return false;
+  }
+
+  if (String(evaluationSheet && evaluationSheet.type || "").trim().toLowerCase() !== "aufgabenbogen") {
+    window.alert("Der PDF-Export ist aktuell fuer Aufgabenboegen verfuegbar.");
+    return false;
+  }
+
+  printWindow = window.open("", "_blank", "width=960,height=720");
+
+  if (!printWindow) {
+    window.alert("Das Druckfenster konnte nicht geoeffnet werden. Bitte Pop-ups fuer diese Seite erlauben.");
+    return false;
+  }
+
+  documentMarkup = buildPerformedEvaluationPdfDocument(plannedEvaluation, evaluationSheet, performedEvaluation, student);
+  printWindow.document.open();
+  printWindow.document.write(documentMarkup);
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.setTimeout(function () {
+    printWindow.print();
+  }, 250);
+
+  return false;
+};
+window.UnterrichtsassistentApp.exportActivePerformedEvaluationPdfSet = function () {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const normalizedPlannedEvaluationId = String(activePerformedPlannedEvaluationId || "").trim();
+  const plannedEvaluation = currentRawSnapshot
+    ? getPlannedEvaluationsCollection(currentRawSnapshot).find(function (item) {
+        return String(item && item.id || "").trim() === normalizedPlannedEvaluationId;
+      }) || null
+    : null;
+  const evaluationSheetId = String(plannedEvaluation && plannedEvaluation.evaluationSheetId || "").trim();
+  const evaluationSheet = currentRawSnapshot && Array.isArray(currentRawSnapshot.evaluationSheets)
+    ? currentRawSnapshot.evaluationSheets.find(function (item) {
+        return String(item && item.id || "").trim() === evaluationSheetId;
+      }) || null
+    : null;
+  const studentLookup = currentRawSnapshot && Array.isArray(currentRawSnapshot.students)
+    ? currentRawSnapshot.students.reduce(function (lookup, student) {
+        const studentId = String(student && student.id || "").trim();
+
+        if (studentId) {
+          lookup[studentId] = student;
+        }
+
+        return lookup;
+      }, {})
+    : {};
+  const entries = plannedEvaluation && Array.isArray(plannedEvaluation.studentIds)
+    ? plannedEvaluation.studentIds.map(function (studentId) {
+        const normalizedStudentId = String(studentId || "").trim();
+        const student = studentLookup[normalizedStudentId] || null;
+
+        if (!student) {
+          return null;
+        }
+
+        return {
+          student: student,
+          performedEvaluation: getPerformedEvaluationForStudent(currentRawSnapshot, normalizedPlannedEvaluationId, normalizedStudentId) || createPerformedEvaluationRecord(plannedEvaluation, normalizedStudentId)
+        };
+      }).filter(Boolean)
+    : [];
+  let printWindow = null;
+  let documentMarkup = "";
+
+  if (!currentRawSnapshot || !plannedEvaluation || !evaluationSheet || !entries.length) {
+    window.alert("Die Bewertungsboegen konnten nicht fuer den PDF-Export vorbereitet werden.");
+    return false;
+  }
+
+  if (String(evaluationSheet && evaluationSheet.type || "").trim().toLowerCase() !== "aufgabenbogen") {
+    window.alert("Der PDF-Export ist aktuell fuer Aufgabenboegen verfuegbar.");
+    return false;
+  }
+
+  printWindow = window.open("", "_blank", "width=960,height=720");
+
+  if (!printWindow) {
+    window.alert("Das Druckfenster konnte nicht geoeffnet werden. Bitte Pop-ups fuer diese Seite erlauben.");
+    return false;
+  }
+
+  documentMarkup = buildPerformedEvaluationMultiPdfDocument(plannedEvaluation, evaluationSheet, entries);
+  printWindow.document.open();
+  printWindow.document.write(documentMarkup);
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.setTimeout(function () {
+    printWindow.print();
+  }, 250);
 
   return false;
 };
