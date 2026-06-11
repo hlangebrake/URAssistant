@@ -1208,6 +1208,10 @@ window.Unterrichtsassistent.ui.views.bewertung = {
         : formatPointsLabel(regularValue);
     }
 
+    function roundUpHalfPointThreshold(value) {
+      return Math.ceil((Math.max(0, Number(value) || 0) - 0.000001) * 2) / 2;
+    }
+
     function getCompetencySourceOptions() {
       return callApp("getEvaluationCompetencySourceOptions", [], [{ id: "", label: "Keine Kompetenzquelle" }]);
     }
@@ -1805,10 +1809,15 @@ window.Unterrichtsassistent.ui.views.bewertung = {
         });
       }
 
-      function getAchievedStageLabel(plannedEvaluation, percentValue) {
-        const normalizedPercent = Math.max(0, Number.isFinite(Number(percentValue)) ? Number(percentValue) : 0);
+      function getAchievedStageLabel(plannedEvaluation, pointsValue, maxValue) {
+        const normalizedPoints = Math.max(0, Number(pointsValue) || 0);
+        const normalizedMax = Math.max(0, Number(maxValue) || 0);
         const stage = getNormalizedGradingSystem(plannedEvaluation).find(function (entry) {
-          return normalizedPercent >= entry.minPercent;
+          const threshold = normalizedMax > 0
+            ? roundUpHalfPointThreshold(normalizedMax * Math.max(0, Number(entry && entry.minPercent) || 0) / 100)
+            : 0;
+
+          return normalizedPoints + 0.000001 >= threshold;
         }) || null;
 
         return stage ? stage.label : "";
@@ -1866,7 +1875,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
           totalReachable: totalReachable,
           totalAdditionalReachable: totalAdditionalReachable,
           percent: percent,
-          stageLabel: getAchievedStageLabel(plannedEvaluation, percent),
+          stageLabel: getAchievedStageLabel(plannedEvaluation, totalAchieved, totalReachable),
           isCompleted: Boolean(performedEvaluation && performedEvaluation.isCompleted),
           completedAt: String(performedEvaluation && performedEvaluation.completedAt || "").trim()
         };
@@ -3081,17 +3090,20 @@ window.Unterrichtsassistent.ui.views.bewertung = {
       }
 
       function getAnalysisStageForPoints(pointsValue, maxValue, gradingStages) {
-        const percent = Math.max(0, Number(maxValue) || 0) > 0
-          ? (Math.max(0, Number(pointsValue) || 0) / Math.max(0, Number(maxValue) || 0)) * 100
-          : 0;
+        const normalizedPoints = Math.max(0, Number(pointsValue) || 0);
+        const normalizedMax = Math.max(0, Number(maxValue) || 0);
 
         return gradingStages.find(function (stage) {
-          return percent >= Number(stage && stage.minPercent);
+          const threshold = normalizedMax > 0
+            ? roundUpHalfPointThreshold(normalizedMax * Math.max(0, Number(stage && stage.minPercent) || 0) / 100)
+            : 0;
+
+          return normalizedPoints + 0.000001 >= threshold;
         }) || null;
       }
 
       function formatHalfPointThreshold(value) {
-        const normalizedValue = Math.ceil((Math.max(0, Number(value) || 0) - 0.000001) * 2) / 2;
+        const normalizedValue = roundUpHalfPointThreshold(value);
 
         return formatCompactPointsLabel(normalizedValue);
       }

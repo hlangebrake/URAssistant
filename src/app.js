@@ -12547,11 +12547,21 @@ function getSelectedPlannedEvaluationFromSnapshot(rawSnapshot) {
   }) || null;
 }
 
-function getPlannedEvaluationStageLabel(gradingSystem, percentValue) {
-  const normalizedPercent = Math.max(0, Number.isFinite(Number(percentValue)) ? Number(percentValue) : 0);
+function roundUpPerformedEvaluationHalfPoint(value) {
+  return Math.ceil((Math.max(0, Number(value) || 0) - 0.000001) * 2) / 2;
+}
+
+function getPlannedEvaluationStageLabelForPoints(gradingSystem, pointsValue, maxValue) {
+  const normalizedPoints = Math.max(0, Number(pointsValue) || 0);
+  const normalizedMax = Math.max(0, Number(maxValue) || 0);
   const orderedStages = normalizePlannedEvaluationGradingSystem(gradingSystem);
   const matchingStage = orderedStages.find(function (entry) {
-    return normalizedPercent >= Number(entry.minPercent);
+    const minPercent = Math.max(0, Math.min(100, Number(entry && entry.minPercent) || 0));
+    const threshold = normalizedMax > 0
+      ? roundUpPerformedEvaluationHalfPoint(normalizedMax * minPercent / 100)
+      : 0;
+
+    return normalizedPoints + 0.000001 >= threshold;
   }) || null;
 
   return matchingStage ? String(matchingStage.label || "").trim() : "";
@@ -12689,7 +12699,7 @@ function buildPerformedEvaluationSummary(plannedEvaluation, evaluationSheet, per
     totalReachable: totalReachable,
     totalAdditionalReachable: totalAdditionalReachable,
     percent: percent,
-    stageLabel: getPlannedEvaluationStageLabel(plannedEvaluation && plannedEvaluation.gradingSystem, percent)
+    stageLabel: getPlannedEvaluationStageLabelForPoints(plannedEvaluation && plannedEvaluation.gradingSystem, totalAchieved, totalReachable)
   };
 }
 
@@ -12754,7 +12764,7 @@ function buildPerformedEvaluationPdfDocument(plannedEvaluation, evaluationSheet,
       '<tr><th>ab Punkten</th>',
       gradingStages.map(function (stage) {
         const minPercent = Math.max(0, Math.min(100, Number(stage && stage.minPercent) || 0));
-        const minPoints = summary.totalReachable > 0 ? (summary.totalReachable * minPercent / 100) : 0;
+        const minPoints = summary.totalReachable > 0 ? roundUpPerformedEvaluationHalfPoint(summary.totalReachable * minPercent / 100) : 0;
         return '<td>' + escapeHtml(formatPerformedEvaluationPointsLabel(minPoints)) + '</td>';
       }).join(""),
       '</tr>',
