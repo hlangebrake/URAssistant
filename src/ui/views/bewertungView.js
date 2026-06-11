@@ -1192,6 +1192,22 @@ window.Unterrichtsassistent.ui.views.bewertung = {
       return Math.max(0, Number.isFinite(Number(item && item.be)) ? Math.round(Number(item.be)) : 0);
     }
 
+    function isAdditionalSubtask(item) {
+      return Boolean(item && item.isAdditionalTask);
+    }
+
+    function getRegularBeValue(item) {
+      return isAdditionalSubtask(item) ? 0 : getBeValue(item);
+    }
+
+    function formatReachableLabel(regularValue, additionalValue) {
+      const additional = Math.max(0, Number(additionalValue) || 0);
+
+      return additional > 0
+        ? formatPointsLabel(regularValue) + " (+" + formatPointsLabel(additional) + ")"
+        : formatPointsLabel(regularValue);
+    }
+
     function getCompetencySourceOptions() {
       return callApp("getEvaluationCompetencySourceOptions", [], [{ id: "", label: "Keine Kompetenzquelle" }]);
     }
@@ -1459,11 +1475,14 @@ window.Unterrichtsassistent.ui.views.bewertung = {
         return items.concat(getSubtasksForTask(task));
       }, []);
       const totalBe = allSubtasks.reduce(function (sum, subtask) {
-        return sum + getBeValue(subtask);
+        return sum + getRegularBeValue(subtask);
+      }, 0);
+      const totalAdditionalBe = allSubtasks.reduce(function (sum, subtask) {
+        return sum + (isAdditionalSubtask(subtask) ? getBeValue(subtask) : 0);
       }, 0);
       const timePerBe = totalBe ? ((Math.max(0, Number(activeSheet && activeSheet.workingTimeMinutes) || 0)) / totalBe) : 0;
       const afbDistribution = allSubtasks.reduce(function (distribution, subtask) {
-        const beValue = getBeValue(subtask);
+        const beValue = getRegularBeValue(subtask);
         const weights = getAfbWeightMap(subtask && subtask.afb);
 
         distribution.afb1 += beValue * weights.afb1;
@@ -1496,21 +1515,28 @@ window.Unterrichtsassistent.ui.views.bewertung = {
         tasks: tasks.map(function (task) {
           const subtasks = getSubtasksForTask(task);
           const totalTaskBe = subtasks.reduce(function (sum, subtask) {
-            return sum + getBeValue(subtask);
+            return sum + getRegularBeValue(subtask);
+          }, 0);
+          const totalTaskAdditionalBe = subtasks.reduce(function (sum, subtask) {
+            return sum + (isAdditionalSubtask(subtask) ? getBeValue(subtask) : 0);
           }, 0);
 
           return {
             id: String(task && task.id || "").trim(),
             title: String(task && task.title || "").trim(),
             be: totalTaskBe,
+            additionalBe: totalTaskAdditionalBe,
             timeMinutes: totalTaskBe * timePerBe,
             subtasks: subtasks.map(function (subtask) {
-              const beValue = getBeValue(subtask);
+              const beValue = getRegularBeValue(subtask);
+              const additionalBeValue = isAdditionalSubtask(subtask) ? getBeValue(subtask) : 0;
 
               return {
                 id: String(subtask && subtask.id || "").trim(),
                 title: String(subtask && subtask.title || "").trim(),
                 be: beValue,
+                additionalBe: additionalBeValue,
+                isAdditionalTask: isAdditionalSubtask(subtask),
                 afb: String(subtask && subtask.afb || "").trim().toUpperCase(),
                 timeMinutes: beValue * timePerBe
               };
@@ -1518,6 +1544,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
           };
         }),
         totalBe: totalBe,
+        totalAdditionalBe: totalAdditionalBe,
         timePerBe: timePerBe,
         afbPercentages: {
           afb1: totalBe ? (afbDistribution.afb1 / totalBe) * 100 : 0,
@@ -1572,15 +1599,15 @@ window.Unterrichtsassistent.ui.views.bewertung = {
             return [
               '<div class="bewertung-analysis__task">',
               '<div class="bewertung-analysis__task-row">',
-              '<span class="bewertung-analysis__task-be">', escapeValue(String(task.be)), '</span>',
+              '<span class="bewertung-analysis__task-be">', escapeValue(formatReachableLabel(task.be, task.additionalBe)), '</span>',
               '<span class="bewertung-analysis__task-title">Aufgabe ', escapeValue(String(index + 1)), ': ', escapeValue(task.title || "Ohne Titel"), '</span>',
               '<span class="bewertung-analysis__time">', escapeValue(formatMinutesCompact(task.timeMinutes)), '</span>',
               '</div>',
               task.subtasks.length ? task.subtasks.map(function (subtask) {
                 return [
                   '<div class="bewertung-analysis__subtask-row">',
-                  '<span class="bewertung-analysis__subtask-be">', escapeValue(String(subtask.be)), '</span>',
-                  '<span class="bewertung-analysis__subtask-title">', escapeValue(subtask.title || "Ohne Titel"), ' <span class="bewertung-analysis__subtask-afb">', escapeValue(subtask.afb || "AFB1"), '</span></span>',
+                  '<span class="bewertung-analysis__subtask-be">', escapeValue(formatReachableLabel(subtask.be, subtask.additionalBe)), '</span>',
+                  '<span class="bewertung-analysis__subtask-title">', escapeValue(subtask.title || "Ohne Titel"), subtask.isAdditionalTask ? ' <span class="bewertung-analysis__subtask-afb">Zusatzaufgabe</span>' : '', ' <span class="bewertung-analysis__subtask-afb">', escapeValue(subtask.afb || "AFB1"), '</span></span>',
                   '<span class="bewertung-analysis__time">', escapeValue(formatMinutesCompact(subtask.timeMinutes)), '</span>',
                   '</div>'
                 ].join("");
@@ -1598,7 +1625,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
           '</div>',
           '<div class="bewertung-analysis__card">',
           '<h4 class="bewertung-analysis__card-title">Zeit</h4>',
-          '<div class="bewertung-analysis__metric"><span>Gesamt-BE</span><strong>', escapeValue(String(analysis.totalBe)), '</strong></div>',
+          '<div class="bewertung-analysis__metric"><span>Gesamt-BE</span><strong>', escapeValue(formatReachableLabel(analysis.totalBe, analysis.totalAdditionalBe)), '</strong></div>',
           '<div class="bewertung-analysis__metric"><span>Zeit pro BE</span><strong>', escapeValue(formatMinutesCompact(analysis.timePerBe)), '</strong></div>',
           '</div>',
           '<div class="bewertung-analysis__card">',
@@ -1807,13 +1834,17 @@ window.Unterrichtsassistent.ui.views.bewertung = {
             return sum + Math.max(0, Number(result && result.points) || 0);
           }, 0);
           const reachable = subtasks.reduce(function (sum, subtask) {
-            return sum + getBeValue(subtask);
+            return sum + getRegularBeValue(subtask);
+          }, 0);
+          const additionalReachable = subtasks.reduce(function (sum, subtask) {
+            return sum + (isAdditionalSubtask(subtask) ? getBeValue(subtask) : 0);
           }, 0);
 
           return {
             taskId: String(task && task.id || "").trim(),
             achieved: achieved,
-            reachable: reachable
+            reachable: reachable,
+            additionalReachable: additionalReachable
           };
         });
         const totalAchieved = taskSummaries.reduce(function (sum, entry) {
@@ -1821,6 +1852,9 @@ window.Unterrichtsassistent.ui.views.bewertung = {
         }, 0);
         const totalReachable = taskSummaries.reduce(function (sum, entry) {
           return sum + entry.reachable;
+        }, 0);
+        const totalAdditionalReachable = taskSummaries.reduce(function (sum, entry) {
+          return sum + entry.additionalReachable;
         }, 0);
         const percent = totalReachable > 0
           ? (totalAchieved / totalReachable) * 100
@@ -1830,6 +1864,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
           taskSummaries: taskSummaries,
           totalAchieved: totalAchieved,
           totalReachable: totalReachable,
+          totalAdditionalReachable: totalAdditionalReachable,
           percent: percent,
           stageLabel: getAchievedStageLabel(plannedEvaluation, percent),
           isCompleted: Boolean(performedEvaluation && performedEvaluation.isCompleted),
@@ -2212,7 +2247,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
                             return [
                               '<div class="bewertung-durchfuehrung__compact-task-row">',
                               '<span class="bewertung-durchfuehrung__compact-task-title">Aufgabe ', escapeValue(String(taskIndex + 1)), ': ', escapeValue(taskTitle || "Ohne Titel"), '</span>',
-                              '<span class="bewertung-durchfuehrung__compact-task-score">', escapeValue(formatPointsLabel(taskSummary ? taskSummary.achieved : 0)), ' / ', escapeValue(formatPointsLabel(taskSummary ? taskSummary.reachable : 0)), '</span>',
+                              '<span class="bewertung-durchfuehrung__compact-task-score">', escapeValue(formatPointsLabel(taskSummary ? taskSummary.achieved : 0)), ' / ', escapeValue(formatReachableLabel(taskSummary ? taskSummary.reachable : 0, taskSummary ? taskSummary.additionalReachable : 0)), '</span>',
                               '</div>',
                               subtasks.length ? subtasks.map(function (subtask) {
                                 const subtaskId = String(subtask && subtask.id || "").trim();
@@ -2223,13 +2258,13 @@ window.Unterrichtsassistent.ui.views.bewertung = {
 
                                 return [
                                   '<div class="bewertung-durchfuehrung__compact-subtask-row">',
-                                  '<span class="bewertung-durchfuehrung__compact-subtask-title">', escapeValue(String(subtask && subtask.title || "").trim() || "Ohne Titel"), '</span>',
+                                  '<span class="bewertung-durchfuehrung__compact-subtask-title">', escapeValue(String(subtask && subtask.title || "").trim() || "Ohne Titel"), isAdditionalSubtask(subtask) ? ' <span class="bewertung-analysis__subtask-afb">Zusatzaufgabe</span>' : '', '</span>',
                                   '<span class="bewertung-durchfuehrung__compact-subtask-notes">',
                                   negativeItems.length ? '<span class="bewertung-durchfuehrung__compact-note"><strong>N:</strong> ' + escapeValue(buildFeedbackSummary(negativeItems)) + '</span>' : '',
                                   positiveItems.length ? '<span class="bewertung-durchfuehrung__compact-note"><strong>P:</strong> ' + escapeValue(buildFeedbackSummary(positiveItems)) + '</span>' : '',
                                   noteValue ? '<span class="bewertung-durchfuehrung__compact-note"><strong>Notiz:</strong> ' + escapeValue(noteValue) + '</span>' : '',
                                   '</span>',
-                                  '<span class="bewertung-durchfuehrung__compact-subtask-score">', escapeValue(formatPointsLabel(subtaskResult ? Number(subtaskResult.points) || 0 : 0)), ' / ', escapeValue(formatPointsLabel(getBeValue(subtask))), '</span>',
+                                  '<span class="bewertung-durchfuehrung__compact-subtask-score">', escapeValue(formatPointsLabel(subtaskResult ? Number(subtaskResult.points) || 0 : 0)), ' / ', escapeValue(formatReachableLabel(getRegularBeValue(subtask), isAdditionalSubtask(subtask) ? getBeValue(subtask) : 0)), '</span>',
                                   '</div>'
                                 ].join("");
                               }).join("") : ''
@@ -2251,7 +2286,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
                         '<section class="bewertung-durchfuehrung__task">',
                         '<div class="bewertung-durchfuehrung__task-header">',
                         '<div class="bewertung-durchfuehrung__task-title">Aufgabe ', escapeValue(String(taskIndex + 1)), ': ', escapeValue(taskTitle || "Ohne Titel"), '</div>',
-                        '<div class="bewertung-durchfuehrung__task-score">', escapeValue(formatPointsLabel(taskSummary ? taskSummary.achieved : 0)), ' / ', escapeValue(formatPointsLabel(taskSummary ? taskSummary.reachable : 0)), '</div>',
+                        '<div class="bewertung-durchfuehrung__task-score">', escapeValue(formatPointsLabel(taskSummary ? taskSummary.achieved : 0)), ' / ', escapeValue(formatReachableLabel(taskSummary ? taskSummary.reachable : 0, taskSummary ? taskSummary.additionalReachable : 0)), '</div>',
                         '</div>',
                         subtasks.length ? subtasks.map(function (subtask) {
                           const subtaskId = String(subtask && subtask.id || "").trim();
@@ -2263,7 +2298,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
                           return [
                             '<div class="bewertung-durchfuehrung__subtask">',
                             '<div class="bewertung-durchfuehrung__subtask-head">',
-                            '<div class="bewertung-durchfuehrung__subtask-title">', escapeValue(String(subtask && subtask.title || "").trim() || "Ohne Titel"), '</div>',
+                            '<div class="bewertung-durchfuehrung__subtask-title">', escapeValue(String(subtask && subtask.title || "").trim() || "Ohne Titel"), isAdditionalSubtask(subtask) ? ' <span class="bewertung-analysis__subtask-afb">Zusatzaufgabe</span>' : '', '</div>',
                             '<div class="bewertung-durchfuehrung__detail-grid">',
                             '<button class="bewertung-durchfuehrung__detail" type="button" onclick="return window.UnterrichtsassistentApp.openPerformedEvaluationDetailModal(\'', escapeValue(subtaskId), '\', \'negative\', \'list\')">',
                             '<span class="bewertung-durchfuehrung__detail-head">Negativ <span class="bewertung-durchfuehrung__detail-add" onclick="window.UnterrichtsassistentApp.stopEventPropagation(event); return window.UnterrichtsassistentApp.openPerformedEvaluationDetailModal(\'', escapeValue(subtaskId), '\', \'negative\', \'add\')">+</span></span>',
@@ -2289,7 +2324,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
                         '</section>'
                       ].join("");
                     }).join("") : '<div class="bewertung-editor__placeholder">Der verknuepfte Aufgabenbogen enthaelt noch keine Aufgaben.</div>'),
-                    '<div class="bewertung-durchfuehrung__overall-score">', escapeValue(formatPointsLabel(selectedPerformanceSummary ? selectedPerformanceSummary.totalAchieved : 0)), ' / ', escapeValue(formatPointsLabel(selectedPerformanceSummary ? selectedPerformanceSummary.totalReachable : 0)), ' <span>(', escapeValue((selectedPerformanceSummary ? selectedPerformanceSummary.percent : 0).toFixed(1).replace(".", ",")), '%)</span></div>',
+                    '<div class="bewertung-durchfuehrung__overall-score">', escapeValue(formatPointsLabel(selectedPerformanceSummary ? selectedPerformanceSummary.totalAchieved : 0)), ' / ', escapeValue(formatReachableLabel(selectedPerformanceSummary ? selectedPerformanceSummary.totalReachable : 0, selectedPerformanceSummary ? selectedPerformanceSummary.totalAdditionalReachable : 0)), ' <span>(', escapeValue((selectedPerformanceSummary ? selectedPerformanceSummary.percent : 0).toFixed(1).replace(".", ",")), '%)</span></div>',
                     '<div class="bewertung-durchfuehrung__overall-stage">', escapeValue(String(selectedPerformanceSummary && selectedPerformanceSummary.stageLabel || "").trim() || "Keine Bewertungsstufe"), '</div>',
                     isCompleted
                       ? '<div class="bewertung-durchfuehrung__overall-note"><span>Anmerkung zur gesamten Bewertung</span><div>' + escapeValue(String(selectedPerformedEvaluation && selectedPerformedEvaluation.overallNote || "").trim() || "Keine") + '</div></div>'
@@ -2859,7 +2894,8 @@ window.Unterrichtsassistent.ui.views.bewertung = {
             taskId: taskId,
             subtaskIds: [String(subtask && subtask.id || "").trim()].filter(Boolean),
             label: taskTitle ? taskLabel + ": " + taskTitle : taskLabel,
-            max: getBeValue(subtask),
+            max: getRegularBeValue(subtask),
+            additionalMax: isAdditionalSubtask(subtask) ? getBeValue(subtask) : 0,
             isTaskStart: true
           });
           return result;
@@ -2874,7 +2910,10 @@ window.Unterrichtsassistent.ui.views.bewertung = {
           }).filter(Boolean),
           label: taskTitle ? taskLabel + ": " + taskTitle : taskLabel,
           max: subtasks.reduce(function (sum, subtask) {
-            return sum + getBeValue(subtask);
+            return sum + getRegularBeValue(subtask);
+          }, 0),
+          additionalMax: subtasks.reduce(function (sum, subtask) {
+            return sum + (isAdditionalSubtask(subtask) ? getBeValue(subtask) : 0);
           }, 0),
           isTaskStart: true
         });
@@ -2887,8 +2926,9 @@ window.Unterrichtsassistent.ui.views.bewertung = {
             type: "subtask",
             taskId: taskId,
             subtaskId: String(subtask && subtask.id || "").trim(),
-            label: subtaskTitle || taskLabel + "." + String(subtaskIndex + 1),
-            max: getBeValue(subtask),
+            label: (subtaskTitle || taskLabel + "." + String(subtaskIndex + 1)) + (isAdditionalSubtask(subtask) ? " (Zusatzaufgabe)" : ""),
+            max: getRegularBeValue(subtask),
+            additionalMax: isAdditionalSubtask(subtask) ? getBeValue(subtask) : 0,
             isTaskStart: false
           });
         });
@@ -2903,6 +2943,11 @@ window.Unterrichtsassistent.ui.views.bewertung = {
           return column.type === "task" || column.isTaskStart;
         }).reduce(function (sum, column) {
           return sum + (column.type === "task" || column.isTaskStart ? Math.max(0, Number(column.max) || 0) : 0);
+        }, 0),
+        additionalMax: columns.filter(function (column) {
+          return column.type === "task" || column.isTaskStart;
+        }).reduce(function (sum, column) {
+          return sum + (column.type === "task" || column.isTaskStart ? Math.max(0, Number(column.additionalMax) || 0) : 0);
         }, 0),
         isTaskStart: true
       };
@@ -3078,13 +3123,13 @@ window.Unterrichtsassistent.ui.views.bewertung = {
           '<th class="bewertung-analysis-table__student-head">', buildSortButton("Schueler", "student"), '</th>',
           '<th class="bewertung-analysis-table__score-head is-total is-task-start">',
           buildSortButton(totalColumn.label, totalColumn.key),
-          '<span class="bewertung-analysis-table__max">/', escapeValue(formatCompactPointsLabel(totalColumn.max)), '</span>',
+          '<span class="bewertung-analysis-table__max">/', escapeValue(formatReachableLabel(totalColumn.max, totalColumn.additionalMax)), '</span>',
           '</th>',
           visibleAnalysisColumns.map(function (column) {
             return [
               '<th class="bewertung-analysis-table__score-head', column.isTaskStart ? ' is-task-start' : '', '">',
               buildSortButton(column.label, column.key),
-              '<span class="bewertung-analysis-table__max">/', escapeValue(formatCompactPointsLabel(column.max)), '</span>',
+              '<span class="bewertung-analysis-table__max">/', escapeValue(formatReachableLabel(column.max, column.additionalMax)), '</span>',
               '</th>'
             ].join("");
           }).join(""),
@@ -4008,6 +4053,10 @@ window.Unterrichtsassistent.ui.views.bewertung = {
                 '<label class="bewertung-task-sheet__field">',
                 '<span class="bewertung-task-sheet__field-label">BE</span>',
                 '<input type="number" min="0" step="1" value="', escapeValue(String(Number(subtask && subtask.be) || 0)), '" onchange="return window.UnterrichtsassistentApp.updateEvaluationSubtaskField(\'', escapeValue(taskId), '\', \'', escapeValue(subtaskId), '\', \'be\', this.value)">',
+                '</label>',
+                '<label class="bewertung-task-sheet__field bewertung-task-sheet__field--additional">',
+                '<span class="bewertung-task-sheet__field-label">Zusatz</span>',
+                '<input type="checkbox"', isAdditionalSubtask(subtask) ? ' checked' : '', ' onchange="return window.UnterrichtsassistentApp.updateEvaluationSubtaskField(\'', escapeValue(taskId), '\', \'', escapeValue(subtaskId), '\', \'isAdditionalTask\', this.checked)">',
                 '</label>',
                 '</div>',
                 buildSubtaskCompetencySelect(taskId, subtaskId, subtask, activeSheet),

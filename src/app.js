@@ -12595,6 +12595,23 @@ function getEvaluationSheetBeValue(item) {
   return Math.max(0, Number.isFinite(Number(item && item.be)) ? Number(item.be) : 0);
 }
 
+function isEvaluationSubtaskAdditional(item) {
+  return Boolean(item && item.isAdditionalTask);
+}
+
+function getEvaluationSheetRegularBeValue(item) {
+  return isEvaluationSubtaskAdditional(item) ? 0 : getEvaluationSheetBeValue(item);
+}
+
+function formatPerformedEvaluationReachableLabel(regularValue, additionalValue) {
+  const regularLabel = formatPerformedEvaluationPointsLabel(regularValue);
+  const additional = Math.max(0, Number(additionalValue) || 0);
+
+  return additional > 0
+    ? regularLabel + " (+" + formatPerformedEvaluationPointsLabel(additional) + ")"
+    : regularLabel;
+}
+
 function getPerformedEvaluationFeedbackItems(subtaskResult, detailType) {
   const normalizedType = String(detailType || "").trim().toLowerCase();
   const sourceItems = normalizedType === "negative"
@@ -12640,13 +12657,17 @@ function buildPerformedEvaluationSummary(plannedEvaluation, evaluationSheet, per
       return sum + Math.max(0, Number(result && result.points) || 0);
     }, 0);
     const reachable = subtasks.reduce(function (sum, subtask) {
-      return sum + getEvaluationSheetBeValue(subtask);
+      return sum + getEvaluationSheetRegularBeValue(subtask);
+    }, 0);
+    const additionalReachable = subtasks.reduce(function (sum, subtask) {
+      return sum + (isEvaluationSubtaskAdditional(subtask) ? getEvaluationSheetBeValue(subtask) : 0);
     }, 0);
 
     return {
       taskId: String(task && task.id || "").trim(),
       achieved: achieved,
-      reachable: reachable
+      reachable: reachable,
+      additionalReachable: additionalReachable
     };
   });
   const totalAchieved = taskSummaries.reduce(function (sum, entry) {
@@ -12654,6 +12675,9 @@ function buildPerformedEvaluationSummary(plannedEvaluation, evaluationSheet, per
   }, 0);
   const totalReachable = taskSummaries.reduce(function (sum, entry) {
     return sum + entry.reachable;
+  }, 0);
+  const totalAdditionalReachable = taskSummaries.reduce(function (sum, entry) {
+    return sum + entry.additionalReachable;
   }, 0);
   const percent = totalReachable > 0
     ? (totalAchieved / totalReachable) * 100
@@ -12663,6 +12687,7 @@ function buildPerformedEvaluationSummary(plannedEvaluation, evaluationSheet, per
     taskSummaries: taskSummaries,
     totalAchieved: totalAchieved,
     totalReachable: totalReachable,
+    totalAdditionalReachable: totalAdditionalReachable,
     percent: percent,
     stageLabel: getPlannedEvaluationStageLabel(plannedEvaluation && plannedEvaluation.gradingSystem, percent)
   };
@@ -12755,6 +12780,7 @@ function buildPerformedEvaluationPdfDocument(plannedEvaluation, evaluationSheet,
     '.score{width:28mm;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;font-weight:700;}',
     '.task-row td{background:#dfe8ec;color:#17313e;font-weight:800;border-top:2px solid #17313e;}',
     '.task-title{width:44mm;font-weight:700;}',
+    '.additional-badge{display:inline-block;margin-left:4px;padding:1px 4px;border:1px solid #7a8b96;border-radius:3px;color:#40515b;font-size:8pt;font-weight:700;}',
     '.feedback-block{margin:0 0 3px;}',
     '.feedback-block:last-child{margin-bottom:0;}',
     '.feedback-block ul{margin:2px 0 0 18px;padding:0;}',
@@ -12792,7 +12818,7 @@ function buildPerformedEvaluationPdfDocument(plannedEvaluation, evaluationSheet,
       return [
         '<tr class="task-row">',
         '<td colspan="2">Aufgabe ', escapeHtml(String(taskIndex + 1)), ': ', escapeHtml(String(task && task.title || "").trim() || "Ohne Titel"), '</td>',
-        '<td class="score">', escapeHtml(formatPerformedEvaluationPointsLabel(taskSummary ? taskSummary.achieved : 0)), ' / ', escapeHtml(formatPerformedEvaluationPointsLabel(taskSummary ? taskSummary.reachable : 0)), '</td>',
+        '<td class="score">', escapeHtml(formatPerformedEvaluationPointsLabel(taskSummary ? taskSummary.achieved : 0)), ' / ', escapeHtml(formatPerformedEvaluationReachableLabel(taskSummary ? taskSummary.reachable : 0, taskSummary ? taskSummary.additionalReachable : 0)), '</td>',
         '</tr>',
         subtasks.map(function (subtask) {
           const subtaskId = String(subtask && subtask.id || "").trim();
@@ -12803,22 +12829,22 @@ function buildPerformedEvaluationPdfDocument(plannedEvaluation, evaluationSheet,
 
           return [
             '<tr>',
-            '<td class="task-title">', escapeHtml(String(subtask && subtask.title || "").trim() || "Ohne Titel"), '</td>',
+            '<td class="task-title">', escapeHtml(String(subtask && subtask.title || "").trim() || "Ohne Titel"), isEvaluationSubtaskAdditional(subtask) ? '<span class="additional-badge">Zusatzaufgabe</span>' : '', '</td>',
             '<td>',
             buildFeedbackBlock("Negative Aspekte", negativeItems),
             buildFeedbackBlock("Positive Aspekte", positiveItems),
             noteValue ? '<div class="feedback-block"><strong>Bemerkung:</strong> ' + escapeHtml(noteValue) + '</div>' : '',
             '</td>',
-            '<td class="score">', escapeHtml(formatPerformedEvaluationPointsLabel(subtaskResult ? Number(subtaskResult.points) || 0 : 0)), ' / ', escapeHtml(formatPerformedEvaluationPointsLabel(getEvaluationSheetBeValue(subtask))), '</td>',
+            '<td class="score">', escapeHtml(formatPerformedEvaluationPointsLabel(subtaskResult ? Number(subtaskResult.points) || 0 : 0)), ' / ', escapeHtml(formatPerformedEvaluationReachableLabel(getEvaluationSheetRegularBeValue(subtask), isEvaluationSubtaskAdditional(subtask) ? getEvaluationSheetBeValue(subtask) : 0)), '</td>',
             '</tr>'
           ].join("");
         }).join("")
       ].join("");
     }).join(""),
-    '<tr class="total-row"><td colspan="2">Summe</td><td class="score">', escapeHtml(formatPerformedEvaluationPointsLabel(summary.totalAchieved)), ' / ', escapeHtml(formatPerformedEvaluationPointsLabel(summary.totalReachable)), '</td></tr>',
+    '<tr class="total-row"><td colspan="2">Summe</td><td class="score">', escapeHtml(formatPerformedEvaluationPointsLabel(summary.totalAchieved)), ' / ', escapeHtml(formatPerformedEvaluationReachableLabel(summary.totalReachable, summary.totalAdditionalReachable)), '</td></tr>',
     '</tbody>',
     '</table>',
-    '<p class="summary">Insgesamt wurden <strong>', escapeHtml(percentLabel), '</strong> erreicht, eine Punktzahl von <strong>', escapeHtml(formatPerformedEvaluationPointsLabel(summary.totalAchieved)), ' / ', escapeHtml(formatPerformedEvaluationPointsLabel(summary.totalReachable)), '</strong>. Die Leistung wird bewertet mit der Note <strong>', escapeHtml(String(summary.stageLabel || "").trim() || "Keine Bewertungsstufe"), '</strong>.</p>',
+    '<p class="summary">Insgesamt wurden <strong>', escapeHtml(percentLabel), '</strong> erreicht, eine Punktzahl von <strong>', escapeHtml(formatPerformedEvaluationPointsLabel(summary.totalAchieved)), ' / ', escapeHtml(formatPerformedEvaluationReachableLabel(summary.totalReachable, summary.totalAdditionalReachable)), '</strong>. Die Leistung wird bewertet mit der Note <strong>', escapeHtml(String(summary.stageLabel || "").trim() || "Keine Bewertungsstufe"), '</strong>.</p>',
     '<div class="signature-row">',
     '<div class="signature-field"><div class="signature-line">', escapeHtml(signatureDateLabel), '</div><div class="signature-label">Datum</div></div>',
     '<div class="signature-field"><div class="signature-line"></div><div class="signature-label">Unterschrift</div></div>',
@@ -12941,7 +12967,7 @@ function buildClassAnalysisPerformedEvaluationModalMarkup() {
       return [
         '<div class="bewertung-durchfuehrung__compact-task-row">',
         '<span class="bewertung-durchfuehrung__compact-task-title">Aufgabe ', escapeHtml(String(taskIndex + 1)), ': ', escapeHtml(String(task && task.title || "").trim() || "Ohne Titel"), '</span>',
-        '<span class="bewertung-durchfuehrung__compact-task-score">', escapeHtml(formatPerformedEvaluationPointsLabel(taskSummary ? taskSummary.achieved : 0)), ' / ', escapeHtml(formatPerformedEvaluationPointsLabel(taskSummary ? taskSummary.reachable : 0)), '</span>',
+        '<span class="bewertung-durchfuehrung__compact-task-score">', escapeHtml(formatPerformedEvaluationPointsLabel(taskSummary ? taskSummary.achieved : 0)), ' / ', escapeHtml(formatPerformedEvaluationReachableLabel(taskSummary ? taskSummary.reachable : 0, taskSummary ? taskSummary.additionalReachable : 0)), '</span>',
         '</div>',
         getSubtasksForTaskSheetTask(task).map(function (subtask) {
           const subtaskId = String(subtask && subtask.id || "").trim();
@@ -12952,20 +12978,20 @@ function buildClassAnalysisPerformedEvaluationModalMarkup() {
 
           return [
             '<div class="bewertung-durchfuehrung__compact-subtask-row">',
-            '<span class="bewertung-durchfuehrung__compact-subtask-title">', escapeHtml(String(subtask && subtask.title || "").trim() || "Ohne Titel"), '</span>',
+            '<span class="bewertung-durchfuehrung__compact-subtask-title">', escapeHtml(String(subtask && subtask.title || "").trim() || "Ohne Titel"), isEvaluationSubtaskAdditional(subtask) ? ' <span class="bewertung-analysis__subtask-afb">Zusatzaufgabe</span>' : '', '</span>',
             '<span class="bewertung-durchfuehrung__compact-subtask-notes">',
             negativeItems.length ? '<span class="bewertung-durchfuehrung__compact-note"><strong>N:</strong> ' + escapeHtml(buildPerformedEvaluationFeedbackSummary(negativeItems)) + '</span>' : '',
             positiveItems.length ? '<span class="bewertung-durchfuehrung__compact-note"><strong>P:</strong> ' + escapeHtml(buildPerformedEvaluationFeedbackSummary(positiveItems)) + '</span>' : '',
             noteValue ? '<span class="bewertung-durchfuehrung__compact-note"><strong>Notiz:</strong> ' + escapeHtml(noteValue) + '</span>' : '',
             '</span>',
-            '<span class="bewertung-durchfuehrung__compact-subtask-score">', escapeHtml(formatPerformedEvaluationPointsLabel(subtaskResult ? Number(subtaskResult.points) || 0 : 0)), ' / ', escapeHtml(formatPerformedEvaluationPointsLabel(getEvaluationSheetBeValue(subtask))), '</span>',
+            '<span class="bewertung-durchfuehrung__compact-subtask-score">', escapeHtml(formatPerformedEvaluationPointsLabel(subtaskResult ? Number(subtaskResult.points) || 0 : 0)), ' / ', escapeHtml(formatPerformedEvaluationReachableLabel(getEvaluationSheetRegularBeValue(subtask), isEvaluationSubtaskAdditional(subtask) ? getEvaluationSheetBeValue(subtask) : 0)), '</span>',
             '</div>'
           ].join("");
         }).join("")
       ].join("");
     }).join(""),
     '</div>',
-    '<div class="bewertung-durchfuehrung__overall-score">', escapeHtml(formatPerformedEvaluationPointsLabel(summary ? summary.totalAchieved : 0)), ' / ', escapeHtml(formatPerformedEvaluationPointsLabel(summary ? summary.totalReachable : 0)), ' <span>(', escapeHtml(summary ? summary.percent.toFixed(1).replace(".", ",") : "0,0"), '%)</span></div>',
+    '<div class="bewertung-durchfuehrung__overall-score">', escapeHtml(formatPerformedEvaluationPointsLabel(summary ? summary.totalAchieved : 0)), ' / ', escapeHtml(formatPerformedEvaluationReachableLabel(summary ? summary.totalReachable : 0, summary ? summary.totalAdditionalReachable : 0)), ' <span>(', escapeHtml(summary ? summary.percent.toFixed(1).replace(".", ",") : "0,0"), '%)</span></div>',
     '<div class="bewertung-durchfuehrung__overall-stage">', escapeHtml(String(summary && summary.stageLabel || "").trim() || "Keine Bewertungsstufe"), '</div>',
     '<div class="bewertung-durchfuehrung__overall-note"><span>Anmerkung zur gesamten Bewertung</span><div>', escapeHtml(String(performedEvaluation && performedEvaluation.overallNote || "").trim() || "Keine"), '</div></div>',
     '</div>',
@@ -15106,6 +15132,7 @@ function normalizeEvaluationTaskSheet(rawTaskSheet) {
               ? String(subtaskSource.afb || "").trim().toLowerCase()
               : "afb1",
             be: Math.max(0, Number.isFinite(Number(subtaskSource.be)) ? Math.round(Number(subtaskSource.be)) : 0),
+            isAdditionalTask: Boolean(subtaskSource.isAdditionalTask),
             competencyAspectIds: normalizeEvaluationCompetencyAspectIds(subtaskSource.competencyAspectIds),
             curriculumTopicNodeIds: normalizeCurriculumTopicNodeIds(subtaskSource.curriculumTopicNodeIds)
           };
@@ -15304,6 +15331,7 @@ function createEvaluationSubtaskRecord() {
     topics: "",
     afb: "afb1",
     be: 0,
+    isAdditionalTask: false,
     competencyAspectIds: [],
     curriculumTopicNodeIds: []
   };
@@ -29320,6 +29348,8 @@ window.UnterrichtsassistentApp.updateEvaluationSubtaskField = function (taskId, 
       : "afb1";
   } else if (normalizedFieldName === "be") {
     subtask.be = beValue;
+  } else if (normalizedFieldName === "isAdditionalTask") {
+    subtask.isAdditionalTask = Boolean(nextValue);
   } else if (normalizedFieldName === "competencyAspectIds") {
     const validLookup = getEvaluationCompetencyAspectOptionsForSnapshot(currentRawSnapshot, activeSheet.competencySourceToolId).reduce(function (lookup, option) {
       lookup[String(option && option.id || "").trim()] = true;

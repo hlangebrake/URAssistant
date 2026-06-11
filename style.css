@@ -12245,7 +12245,7 @@ body.is-desk-dragging {
 
 .bewertung-task-sheet__subtask-basics {
   display: grid;
-  grid-template-columns: minmax(160px, 1.2fr) minmax(190px, 1.4fr);
+  grid-template-columns: minmax(150px, 1.2fr) minmax(180px, 1.4fr) minmax(86px, 0.5fr);
   gap: 0.55rem;
   min-width: 0;
 }
@@ -12256,6 +12256,15 @@ body.is-desk-dragging {
 
 .bewertung-task-sheet__subtask-basics .bewertung-task-sheet__field:nth-child(4) {
   grid-column: 2;
+}
+
+.bewertung-task-sheet__field--additional {
+  grid-column: 3;
+}
+
+.bewertung-task-sheet__field--additional input {
+  width: 1.05rem;
+  height: 1.05rem;
 }
 
 .bewertung-task-sheet__field--competency select {

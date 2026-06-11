@@ -165,6 +165,7 @@ class EvaluationSheet {
                 topics: String(subtaskSource.topics || "").trim(),
                 afb: String(subtaskSource.afb || "").trim(),
                 be: Math.max(0, Number.isFinite(Number(subtaskSource.be)) ? Math.round(Number(subtaskSource.be)) : 0),
+                isAdditionalTask: Boolean(subtaskSource.isAdditionalTask),
                 competencyAspectIds: Array.isArray(subtaskSource.competencyAspectIds)
                   ? subtaskSource.competencyAspectIds.map(function (aspectId) {
                       return String(aspectId || "").trim();
