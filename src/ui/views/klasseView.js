@@ -587,6 +587,31 @@ window.Unterrichtsassistent.ui.views.klasse = {
       return label || (normalizedValue.indexOf("__") === 0 ? "" : normalizedValue);
     }
 
+    function formatMathObservationQualityDetailValue(value) {
+      const normalizedValue = value === undefined || value === null ? "" : String(value).trim();
+      const legacyLabels = {
+        "--": "0",
+        "-": "1",
+        "+": "3",
+        "++": "4",
+        "-2": "0",
+        "-1": "1"
+      };
+      const numericValue = Number(normalizedValue);
+
+      if (!normalizedValue) {
+        return "";
+      }
+
+      if (Object.prototype.hasOwnProperty.call(legacyLabels, normalizedValue)) {
+        return legacyLabels[normalizedValue];
+      }
+
+      return Number.isFinite(numericValue)
+        ? String(Math.max(0, Math.min(4, Math.round(numericValue))))
+        : normalizedValue;
+    }
+
     function formatDetailValue(key, value) {
       const normalizedValue = value === undefined || value === null ? "" : String(value).trim();
       const competencyLabels = {
@@ -597,21 +622,14 @@ window.Unterrichtsassistent.ui.views.klasse = {
         k5: "K5",
         k6: "K6"
       };
-      const qualityLabels = {
-        "-2": "--",
-        "-1": "-",
-        "0": "0",
-        "1": "+",
-        "2": "++"
-      };
 
       if (key === "competencyQualities") {
         return (Array.isArray(value) ? value : []).map(function (entry) {
           const source = entry && typeof entry === "object" ? entry : {};
           const competencyKey = String(source.competencyId || source.competency || "").trim().toLowerCase();
-          const qualityValue = String(source.quality === undefined || source.quality === null ? "" : source.quality).trim();
+          const qualityValue = formatMathObservationQualityDetailValue(source.quality);
 
-          return [competencyLabels[competencyKey] || competencyKey, qualityLabels[qualityValue] || qualityValue].filter(Boolean).join(" ");
+          return [competencyLabels[competencyKey] || competencyKey, qualityValue].filter(Boolean).join(" ");
         }).filter(Boolean).join(", ");
       }
 
@@ -677,7 +695,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
       }
 
       if (key === "processQuality" || key === "markerQuality") {
-        return qualityLabels[normalizedValue] || normalizedValue;
+        return formatMathObservationQualityDetailValue(normalizedValue);
       }
 
       if (key === "marker") {
