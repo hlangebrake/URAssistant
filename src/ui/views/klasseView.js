@@ -878,6 +878,26 @@ window.Unterrichtsassistent.ui.views.klasse = {
       return Math.max(0, Number.isFinite(Number(item && item.be)) ? Number(item.be) : 0);
     }
 
+    function isAdditionalSubtask(item) {
+      return Boolean(item && item.isAdditionalTask);
+    }
+
+    function getRegularBeValue(item) {
+      return isAdditionalSubtask(item) ? 0 : getBeValue(item);
+    }
+
+    function formatReachableLabel(regularValue, additionalValue) {
+      const additional = Math.max(0, Number(additionalValue) || 0);
+
+      return additional > 0
+        ? formatPointsLabel(regularValue) + " (+" + formatPointsLabel(additional) + ")"
+        : formatPointsLabel(regularValue);
+    }
+
+    function roundUpHalfPointThreshold(value) {
+      return Math.ceil((Math.max(0, Number(value) || 0) - 0.000001) * 2) / 2;
+    }
+
     function getFeedbackItems(subtaskResult, detailType) {
       const normalizedType = String(detailType || "").trim().toLowerCase();
       const sourceItems = normalizedType === "negative"
@@ -920,10 +940,15 @@ window.Unterrichtsassistent.ui.views.klasse = {
       });
     }
 
-    function getCompletedEvaluationStageLabel(plannedEvaluation, percentValue) {
-      const normalizedPercent = Math.max(0, Number.isFinite(Number(percentValue)) ? Number(percentValue) : 0);
+    function getCompletedEvaluationStageLabel(plannedEvaluation, pointsValue, maxValue) {
+      const normalizedPoints = Math.max(0, Number(pointsValue) || 0);
+      const normalizedMax = Math.max(0, Number(maxValue) || 0);
       const stage = normalizeGradingSystem(plannedEvaluation && plannedEvaluation.gradingSystem).find(function (entry) {
-        return normalizedPercent >= entry.minPercent;
+        const threshold = normalizedMax > 0
+          ? roundUpHalfPointThreshold(normalizedMax * Math.max(0, Number(entry && entry.minPercent) || 0) / 100)
+          : 0;
+
+        return normalizedPoints + 0.000001 >= threshold;
       }) || null;
 
       return stage ? stage.label : "";
@@ -949,13 +974,17 @@ window.Unterrichtsassistent.ui.views.klasse = {
           return sum + Math.max(0, Number(result && result.points) || 0);
         }, 0);
         const reachable = subtasks.reduce(function (sum, subtask) {
-          return sum + getBeValue(subtask);
+          return sum + getRegularBeValue(subtask);
+        }, 0);
+        const additionalReachable = subtasks.reduce(function (sum, subtask) {
+          return sum + (isAdditionalSubtask(subtask) ? getBeValue(subtask) : 0);
         }, 0);
 
         return {
           taskId: String(task && task.id || "").trim(),
           achieved: achieved,
-          reachable: reachable
+          reachable: reachable,
+          additionalReachable: additionalReachable
         };
       });
       const totalAchieved = taskSummaries.reduce(function (sum, entry) {
@@ -963,6 +992,9 @@ window.Unterrichtsassistent.ui.views.klasse = {
       }, 0);
       const totalReachable = taskSummaries.reduce(function (sum, entry) {
         return sum + entry.reachable;
+      }, 0);
+      const totalAdditionalReachable = taskSummaries.reduce(function (sum, entry) {
+        return sum + entry.additionalReachable;
       }, 0);
       const percent = totalReachable > 0
         ? (totalAchieved / totalReachable) * 100
@@ -972,8 +1004,9 @@ window.Unterrichtsassistent.ui.views.klasse = {
         taskSummaries: taskSummaries,
         totalAchieved: totalAchieved,
         totalReachable: totalReachable,
+        totalAdditionalReachable: totalAdditionalReachable,
         percent: percent,
-        stageLabel: getCompletedEvaluationStageLabel(plannedEvaluation, percent)
+        stageLabel: getCompletedEvaluationStageLabel(plannedEvaluation, totalAchieved, totalReachable)
       };
     }
 
@@ -1172,7 +1205,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
       if (isCompletedEvaluation) {
         return [
           String(record.evaluationSheet && record.evaluationSheet.title || "").trim() || "Bewertung",
-          completedSummary ? formatPointsLabel(completedSummary.totalAchieved) + " / " + formatPointsLabel(completedSummary.totalReachable) : "",
+          completedSummary ? formatPointsLabel(completedSummary.totalAchieved) + " / " + formatReachableLabel(completedSummary.totalReachable, completedSummary.totalAdditionalReachable) : "",
           completedSummary && completedSummary.stageLabel ? completedSummary.stageLabel : "",
           String(record.raw && record.raw.overallNote || "").trim()
         ].filter(Boolean).join(" | ");
@@ -1852,7 +1885,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
       const summaryText = isCompletedEvaluation
         ? [
             String(record.evaluationSheet && record.evaluationSheet.title || "").trim() || "Bewertung",
-            completedSummary ? formatPointsLabel(completedSummary.totalAchieved) + " / " + formatPointsLabel(completedSummary.totalReachable) : "",
+            completedSummary ? formatPointsLabel(completedSummary.totalAchieved) + " / " + formatReachableLabel(completedSummary.totalReachable, completedSummary.totalAdditionalReachable) : "",
             completedSummary && completedSummary.stageLabel ? completedSummary.stageLabel : ""
           ].filter(Boolean).join(" | ")
         : (isEvidenceObservation

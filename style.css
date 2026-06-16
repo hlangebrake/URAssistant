@@ -13464,6 +13464,10 @@ body.is-competency-grid-dragging {
   display: none;
 }
 
+.app-shell.is-collapsed .sidebar__storage-button--secondary {
+  display: none;
+}
+
 .app-shell.is-collapsed .sidebar__live-button--collapsed {
   display: grid;
 }
