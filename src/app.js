@@ -18,6 +18,7 @@ const liveDateTimeButton = document.getElementById("liveDateTimeButton");
 const collapsedLiveDateTimeButton = document.getElementById("collapsedLiveDateTimeButton");
 const persistenceButton = document.getElementById("persistenceButton");
 const appDataImportInput = document.getElementById("appDataImportInput");
+const appDataMergeInput = document.getElementById("appDataMergeInput");
 const evidenceToolCsvImportInput = document.getElementById("evidenceToolCsvImportInput");
 const appDataImportPasswordModal = document.getElementById("appDataImportPasswordModal");
 const appDataImportPasswordMeta = document.getElementById("appDataImportPasswordMeta");
@@ -842,6 +843,17 @@ let forcePersistAfterCurrentSave = false;
 let idleLockTimerId = 0;
 let isLockingForAuth = false;
 let pendingEncryptedImportPayload = null;
+let pendingEncryptedImportMode = "replace";
+let pendingEncryptedImportFileName = "";
+let activeMergeState = {
+  status: "empty",
+  fileName: "",
+  importedSnapshot: null,
+  groups: [],
+  choices: {},
+  selectedDetailKey: "",
+  error: ""
+};
 const CURRICULUM_TOPIC_TREE_PLANS = Array.isArray(curriculumTopicTreeFeature.plans)
   ? curriculumTopicTreeFeature.plans
   : [];
@@ -4382,16 +4394,23 @@ function showAppDataImportPasswordError(message) {
 
 function openAppDataImportPasswordModal(fileName) {
   const modal = getAppDataImportPasswordModal();
+  const title = document.getElementById("appDataImportPasswordTitle");
+  const isMergeImport = pendingEncryptedImportMode === "merge";
 
   if (!modal || !pendingEncryptedImportPayload) {
     return false;
   }
 
   clearAppDataImportPasswordError();
+  if (title) {
+    title.textContent = isMergeImport ? "Merge-Datei entsperren" : "Verschluesselten Import entsperren";
+  }
   if (appDataImportPasswordMeta) {
     appDataImportPasswordMeta.textContent = fileName
       ? "Datei: " + String(fileName)
-      : "Bitte Passwort eingeben, um den verschluesselten Datenbestand zu importieren.";
+      : (isMergeImport
+        ? "Bitte Passwort eingeben, um den Speicherstand zu vergleichen."
+        : "Bitte Passwort eingeben, um den verschluesselten Datenbestand zu importieren.");
   }
 
   if (appDataImportPasswordInput) {
@@ -4414,6 +4433,8 @@ function closeAppDataImportPasswordModalInternal() {
   const modal = getAppDataImportPasswordModal();
 
   pendingEncryptedImportPayload = null;
+  pendingEncryptedImportMode = "replace";
+  pendingEncryptedImportFileName = "";
   clearAppDataImportPasswordError();
 
   if (appDataImportPasswordInput) {
@@ -4424,6 +4445,325 @@ function closeAppDataImportPasswordModalInternal() {
     modal.hidden = true;
     modal.classList.remove("is-open");
   }
+}
+
+const MERGE_COLLECTIONS = [
+  { key: "students", label: "Schueler", labelFields: ["lastName", "firstName", "className"] },
+  { key: "classes", label: "Lerngruppen", labelFields: ["name", "subject", "room"] },
+  { key: "lessons", label: "Unterrichtsstunden", labelFields: ["subject", "weekday", "startTime"] },
+  { key: "timetables", label: "Stundenplaene", labelFields: ["validFrom", "validTo", "startTime"] },
+  { key: "assessments", label: "Bewertungen", labelFields: ["studentId", "type", "lessonDate", "recordedAt"] },
+  { key: "evaluationSheets", label: "Bewertungsboegen", labelFields: ["title", "createdAt"] },
+  { key: "evidenceTools", label: "Evidenzraster", labelFields: ["titel", "symbol"] },
+  { key: "evidenceObservations", label: "Evidenz-Beobachtungen", labelFields: ["studentId", "lessonDate", "recordedAt"] },
+  { key: "plannedEvaluations", label: "Geplante Bewertungen", labelFields: ["type", "date", "createdAt"] },
+  { key: "performedEvaluations", label: "Durchgefuehrte Bewertungen", labelFields: ["studentId", "overallNote", "updatedAt", "createdAt"] },
+  { key: "attendanceRecords", label: "Anwesenheiten", labelFields: ["studentId", "lessonDate", "status", "recordedAt"] },
+  { key: "homeworkRecords", label: "Hausaufgaben", labelFields: ["studentId", "lessonDate", "quality", "recordedAt"] },
+  { key: "warningRecords", label: "Warnungen", labelFields: ["studentId", "lessonDate", "category", "recordedAt"] },
+  { key: "knowledgeGapRecords", label: "Wissensluecken", labelFields: ["studentId", "lessonDate", "content", "status"] },
+  { key: "mathObservationRecords", label: "Mathematik-Beobachtungen", labelFields: ["studentId", "lessonDate", "recordedAt"] },
+  { key: "todos", label: "TODOs", labelFields: ["title", "category", "dueDate"] },
+  { key: "seatPlans", label: "Sitzplaene", labelFields: ["classId", "room", "validFrom", "updatedAt"] },
+  { key: "seatOrders", label: "Sitzordnungen", labelFields: ["classId", "room", "validFrom", "updatedAt"] },
+  { key: "planningEvents", label: "Planungstermine", labelFields: ["title", "startDate", "category"] },
+  { key: "planningCategories", label: "Planungskategorien", labelFields: ["name", "color"] },
+  { key: "planningInstructionLessonStatuses", label: "Unterrichtsstatus", labelFields: ["classId", "lessonDate", "cancelReason"] },
+  { key: "curriculumSeries", label: "Unterrichtsreihen", labelFields: ["topic", "classId", "startDate"] },
+  { key: "curriculumSequences", label: "Sequenzen", labelFields: ["topic", "seriesId"] },
+  { key: "curriculumLessonPlans", label: "Stundenplanungen", labelFields: ["topic", "sequenceId", "summary"] },
+  { key: "curriculumLessonPhases", label: "Stundenphasen", labelFields: ["title", "lessonPlanId"] },
+  { key: "curriculumLessonSteps", label: "Phasenschritte", labelFields: ["title", "phaseId", "content"] },
+  { key: "curriculumLessonPhaseStatuses", label: "Phasenstatus", labelFields: ["classId", "lessonDate", "phaseId"] },
+  { key: "curriculumLessonStepStatuses", label: "Schrittstatus", labelFields: ["classId", "lessonDate", "stepId"] }
+];
+
+function stableStringify(value) {
+  if (Array.isArray(value)) {
+    return "[" + value.map(stableStringify).join(",") + "]";
+  }
+
+  if (value && typeof value === "object") {
+    return "{" + Object.keys(value).sort().map(function (key) {
+      return JSON.stringify(key) + ":" + stableStringify(value[key]);
+    }).join(",") + "}";
+  }
+
+  return JSON.stringify(value);
+}
+
+function getMergeCollectionConfig(collectionKey) {
+  return MERGE_COLLECTIONS.find(function (entry) {
+    return entry.key === collectionKey;
+  }) || { key: collectionKey, label: collectionKey, labelFields: [] };
+}
+
+function getMergeItemId(item) {
+  return String(item && item.id || "").trim();
+}
+
+function getMergeItemLabel(item, config) {
+  const fields = Array.isArray(config && config.labelFields) ? config.labelFields : [];
+  const parts = fields.map(function (fieldName) {
+    return String(item && item[fieldName] || "").trim();
+  }).filter(Boolean);
+
+  return parts.join(" | ") || getMergeItemId(item) || "Ohne ID";
+}
+
+function getMergeItemTimestamp(item) {
+  const fields = ["updatedAt", "recordedAt", "createdAt", "completedAt", "effectiveAt", "date", "lessonDate", "startDate"];
+  let index = 0;
+  let value = "";
+  let timestamp = 0;
+
+  for (index = 0; index < fields.length; index += 1) {
+    value = String(item && item[fields[index]] || "").trim();
+    timestamp = value ? Date.parse(value) : 0;
+    if (Number.isFinite(timestamp) && timestamp > 0) {
+      return timestamp;
+    }
+  }
+
+  return 0;
+}
+
+function getDefaultMergeConflictChoice(currentItem, importedItem) {
+  const currentTimestamp = getMergeItemTimestamp(currentItem);
+  const importedTimestamp = getMergeItemTimestamp(importedItem);
+
+  return importedTimestamp > currentTimestamp ? "imported" : "current";
+}
+
+function getMergeChoiceKey(collectionKey, itemId) {
+  return String(collectionKey || "").trim() + "::" + String(itemId || "").trim();
+}
+
+function buildMergeComparison(currentSnapshot, importedSnapshot, existingChoices) {
+  const currentSource = currentSnapshot || {};
+  const importedSource = importedSnapshot || {};
+  const choices = Object.assign({}, existingChoices || {});
+  const groups = [];
+  let totalAdded = 0;
+  let totalConflicts = 0;
+
+  MERGE_COLLECTIONS.forEach(function (config) {
+    const currentItems = Array.isArray(currentSource[config.key]) ? currentSource[config.key] : [];
+    const importedItems = Array.isArray(importedSource[config.key]) ? importedSource[config.key] : [];
+    const currentById = {};
+    const added = [];
+    const conflicts = [];
+
+    currentItems.forEach(function (item) {
+      const itemId = getMergeItemId(item);
+      if (itemId) {
+        currentById[itemId] = item;
+      }
+    });
+
+    importedItems.forEach(function (importedItem) {
+      const itemId = getMergeItemId(importedItem);
+      const currentItem = itemId ? currentById[itemId] : null;
+      const choiceKey = getMergeChoiceKey(config.key, itemId);
+
+      if (!itemId) {
+        return;
+      }
+
+      if (!currentItem) {
+        added.push({
+          id: itemId,
+          label: getMergeItemLabel(importedItem, config)
+        });
+        return;
+      }
+
+      if (stableStringify(currentItem) !== stableStringify(importedItem)) {
+        if (!choices[choiceKey]) {
+          choices[choiceKey] = getDefaultMergeConflictChoice(currentItem, importedItem);
+        }
+        conflicts.push({
+          id: itemId,
+          label: getMergeItemLabel(importedItem, config),
+          selectedSource: choices[choiceKey]
+        });
+      }
+    });
+
+    if (added.length || conflicts.length) {
+      added.sort(function (left, right) {
+        return String(left.label || "").localeCompare(String(right.label || ""), "de", { sensitivity: "base" });
+      });
+      conflicts.sort(function (left, right) {
+        return String(left.label || "").localeCompare(String(right.label || ""), "de", { sensitivity: "base" });
+      });
+      totalAdded += added.length;
+      totalConflicts += conflicts.length;
+      groups.push({
+        key: config.key,
+        label: config.label,
+        added: added,
+        conflicts: conflicts
+      });
+    }
+  });
+
+  return {
+    groups: groups,
+    choices: choices,
+    totals: {
+      added: totalAdded,
+      conflicts: totalConflicts
+    }
+  };
+}
+
+function rebuildActiveMergeComparison() {
+  const importedSnapshot = activeMergeState && activeMergeState.importedSnapshot;
+  const currentSnapshot = getMutableRawSnapshot();
+  const comparison = importedSnapshot && currentSnapshot
+    ? buildMergeComparison(currentSnapshot, importedSnapshot, activeMergeState.choices)
+    : { groups: [], choices: {}, totals: { added: 0, conflicts: 0 } };
+
+  activeMergeState.groups = comparison.groups;
+  activeMergeState.choices = comparison.choices;
+  activeMergeState.totals = comparison.totals;
+}
+
+function findMergeItem(collectionKey, itemId, sourceName) {
+  const source = sourceName === "imported" ? activeMergeState.importedSnapshot : getMutableRawSnapshot();
+  const items = Array.isArray(source && source[collectionKey]) ? source[collectionKey] : [];
+
+  return items.find(function (item) {
+    return getMergeItemId(item) === String(itemId || "").trim();
+  }) || null;
+}
+
+function getSelectedMergeDetail() {
+  const detailKey = String(activeMergeState && activeMergeState.selectedDetailKey || "");
+  const parts = detailKey.split("::");
+  const detailType = parts[0] || "";
+  const collectionKey = parts[1] || "";
+  const itemId = parts.slice(2).join("::");
+  const config = getMergeCollectionConfig(collectionKey);
+  const currentItem = detailType === "conflict" ? findMergeItem(collectionKey, itemId, "current") : null;
+  const importedItem = findMergeItem(collectionKey, itemId, "imported");
+  const labelSource = importedItem || currentItem;
+
+  if (!detailType || !collectionKey || !itemId || !labelSource) {
+    return null;
+  }
+
+  return {
+    type: detailType,
+    collectionKey: collectionKey,
+    collectionLabel: config.label,
+    id: itemId,
+    label: getMergeItemLabel(labelSource, config),
+    currentJson: currentItem ? JSON.stringify(currentItem, null, 2) : "",
+    importedJson: importedItem ? JSON.stringify(importedItem, null, 2) : ""
+  };
+}
+
+function resetMergeState(status, extra) {
+  activeMergeState = Object.assign({
+    status: status || "empty",
+    fileName: "",
+    importedSnapshot: null,
+    groups: [],
+    choices: {},
+    totals: { added: 0, conflicts: 0 },
+    selectedDetailKey: "",
+    error: ""
+  }, extra || {});
+}
+
+function loadMergeSnapshotFromPayload(payload, password) {
+  if (!payload || !passwordAuthApi || !appDataCryptoApi) {
+    return Promise.reject(new Error("Merge-Datei kann nicht gelesen werden."));
+  }
+
+  return passwordAuthApi.unlockPasswordAuthRecord(password, payload.passwordAuth)
+    .then(function (masterKeyBytes) {
+      return appDataCryptoApi.decryptSnapshot(payload.appState, masterKeyBytes);
+    })
+    .then(function (snapshot) {
+      return normalizeImportedAppSnapshot(snapshot);
+    });
+}
+
+function acceptMergeImportedSnapshot(importedSnapshot, fileName) {
+  const normalizedSnapshot = normalizeImportedAppSnapshot(importedSnapshot || {});
+  const comparison = buildMergeComparison(getMutableRawSnapshot(), normalizedSnapshot, {});
+
+  activeMergeState = {
+    status: "ready",
+    fileName: String(fileName || "").trim(),
+    importedSnapshot: normalizedSnapshot,
+    groups: comparison.groups,
+    choices: comparison.choices,
+    totals: comparison.totals,
+    selectedDetailKey: "",
+    error: ""
+  };
+
+  setActiveView("merge");
+}
+
+function applyActiveMergeToSnapshot() {
+  const importedSnapshot = activeMergeState && activeMergeState.importedSnapshot;
+  const currentSnapshot = getMutableRawSnapshot();
+  const nextSnapshot = cloneRawSnapshot(currentSnapshot);
+  let appliedAdded = 0;
+  let appliedConflicts = 0;
+
+  if (!importedSnapshot || !currentSnapshot) {
+    return { appliedAdded: 0, appliedConflicts: 0 };
+  }
+
+  MERGE_COLLECTIONS.forEach(function (config) {
+    const currentItems = Array.isArray(nextSnapshot[config.key]) ? nextSnapshot[config.key] : [];
+    const importedItems = Array.isArray(importedSnapshot[config.key]) ? importedSnapshot[config.key] : [];
+    const currentIndexById = {};
+
+    currentItems.forEach(function (item, index) {
+      const itemId = getMergeItemId(item);
+      if (itemId) {
+        currentIndexById[itemId] = index;
+      }
+    });
+
+    importedItems.forEach(function (importedItem) {
+      const itemId = getMergeItemId(importedItem);
+      const currentIndex = Object.prototype.hasOwnProperty.call(currentIndexById, itemId)
+        ? currentIndexById[itemId]
+        : -1;
+
+      if (!itemId) {
+        return;
+      }
+
+      if (currentIndex < 0) {
+        currentItems.push(cloneRawSnapshot(importedItem));
+        appliedAdded += 1;
+        return;
+      }
+
+      if (stableStringify(currentItems[currentIndex]) !== stableStringify(importedItem)
+        && activeMergeState.choices[getMergeChoiceKey(config.key, itemId)] === "imported") {
+        currentItems[currentIndex] = cloneRawSnapshot(importedItem);
+        appliedConflicts += 1;
+      }
+    });
+
+    nextSnapshot[config.key] = currentItems;
+  });
+
+  saveAndRefreshSnapshot(normalizeRawSnapshot(nextSnapshot), "merge", { forcePersist: true });
+  return {
+    appliedAdded: appliedAdded,
+    appliedConflicts: appliedConflicts
+  };
 }
 
 function schedulePendingPersist(delayMs) {
@@ -32239,6 +32579,121 @@ window.UnterrichtsassistentApp.flushPersistence = function () {
   queueSnapshotPersist(getMutableRawSnapshot(), { immediate: true });
   return false;
 };
+window.UnterrichtsassistentApp.openMergeView = function () {
+  setActiveView("merge");
+  return false;
+};
+window.UnterrichtsassistentApp.openMergeFilePicker = function () {
+  if (!appDataMergeInput) {
+    return false;
+  }
+
+  appDataMergeInput.value = "";
+  appDataMergeInput.click();
+  return false;
+};
+window.UnterrichtsassistentApp.getMergeState = function () {
+  rebuildActiveMergeComparison();
+  return {
+    status: activeMergeState.status,
+    fileName: activeMergeState.fileName,
+    groups: activeMergeState.groups,
+    totals: activeMergeState.totals || { added: 0, conflicts: 0 },
+    selectedDetail: getSelectedMergeDetail(),
+    error: activeMergeState.error
+  };
+};
+window.UnterrichtsassistentApp.selectMergeDetail = function (detailType, collectionKey, itemId) {
+  activeMergeState.selectedDetailKey = [String(detailType || "").trim(), String(collectionKey || "").trim(), String(itemId || "").trim()].join("::");
+  if (activeViewId === "merge") {
+    setActiveView("merge");
+  }
+  return false;
+};
+window.UnterrichtsassistentApp.setMergeConflictChoice = function (collectionKey, itemId, sourceName) {
+  const normalizedSourceName = sourceName === "imported" ? "imported" : "current";
+  activeMergeState.choices[getMergeChoiceKey(collectionKey, itemId)] = normalizedSourceName;
+  rebuildActiveMergeComparison();
+  if (activeViewId === "merge") {
+    setActiveView("merge");
+  }
+  return false;
+};
+window.UnterrichtsassistentApp.mergeAppDataFromFile = function (event) {
+  const input = event && event.target ? event.target : appDataMergeInput;
+  const file = input && input.files ? input.files[0] : null;
+  const reader = new FileReader();
+
+  if (!file) {
+    return false;
+  }
+
+  resetMergeState("loading", { fileName: file && file.name ? file.name : "" });
+  setActiveView("merge");
+
+  reader.onload = function () {
+    try {
+      pendingEncryptedImportPayload = JSON.parse(String(reader.result || "{}"));
+      pendingEncryptedImportMode = "merge";
+      pendingEncryptedImportFileName = file && file.name ? file.name : "";
+
+      if (!isEncryptedExportPayload(pendingEncryptedImportPayload)) {
+        throw new Error("Dateiformat wird nicht unterstuetzt.");
+      }
+
+      openAppDataImportPasswordModal(pendingEncryptedImportFileName);
+    } catch (error) {
+      pendingEncryptedImportPayload = null;
+      pendingEncryptedImportMode = "replace";
+      pendingEncryptedImportFileName = "";
+      resetMergeState("error", {
+        fileName: file && file.name ? file.name : "",
+        error: "Die Datei ist keine gueltige verschluesselte Exportdatei."
+      });
+      console.error("Merge-Datei konnte nicht vorbereitet werden.", error);
+      setActiveView("merge");
+    } finally {
+      if (input) {
+        input.value = "";
+      }
+    }
+  };
+
+  reader.onerror = function () {
+    if (input) {
+      input.value = "";
+    }
+    resetMergeState("error", {
+      fileName: file && file.name ? file.name : "",
+      error: "Die Datei konnte nicht gelesen werden."
+    });
+    setActiveView("merge");
+  };
+
+  reader.readAsText(file, "utf-8");
+  return false;
+};
+window.UnterrichtsassistentApp.applyMerge = function () {
+  const totals = activeMergeState && activeMergeState.totals ? activeMergeState.totals : { added: 0, conflicts: 0 };
+  const selectedImportedConflicts = Object.keys(activeMergeState.choices || {}).filter(function (choiceKey) {
+    return activeMergeState.choices[choiceKey] === "imported";
+  }).length;
+  let result = null;
+
+  if (!activeMergeState || !activeMergeState.importedSnapshot) {
+    return false;
+  }
+
+  if (!window.confirm("Merge anwenden? Es werden " + String(totals.added || 0) + " neue Datensaetze uebernommen und " + String(selectedImportedConflicts) + " Konflikte mit der Import-Version ersetzt.")) {
+    return false;
+  }
+
+  result = applyActiveMergeToSnapshot();
+  resetMergeState("empty");
+  window.alert("Merge abgeschlossen: " + String(result.appliedAdded) + " neue Datensaetze, " + String(result.appliedConflicts) + " ersetzte Konflikte.");
+  setActiveView("merge");
+  return false;
+};
 window.UnterrichtsassistentApp.exportAppData = function () {
   const currentRawSnapshot = getMutableRawSnapshot();
   const currentMasterKeyBytes = getUnlockedMasterKey();
@@ -32369,6 +32824,8 @@ window.UnterrichtsassistentApp.closeAppDataImportPasswordModal = function () {
 window.UnterrichtsassistentApp.submitImportedAppDataPassword = function (event) {
   const password = String(appDataImportPasswordInput && appDataImportPasswordInput.value || "");
   const payload = pendingEncryptedImportPayload;
+  const importMode = pendingEncryptedImportMode;
+  const importFileName = pendingEncryptedImportFileName;
   let importedMasterKeyBytes = null;
   let decryptedSnapshot = null;
   let normalizedImportedSnapshot = null;
@@ -32385,6 +32842,20 @@ window.UnterrichtsassistentApp.submitImportedAppDataPassword = function (event) 
 
   if (!password.trim()) {
     showAppDataImportPasswordError("Bitte das Passwort der Importdatei eingeben.");
+    return false;
+  }
+
+  if (importMode === "merge") {
+    loadMergeSnapshotFromPayload(payload, password)
+      .then(function (snapshot) {
+        acceptMergeImportedSnapshot(snapshot, importFileName);
+        closeAppDataImportPasswordModalInternal();
+        noteUnlockActivity();
+      })
+      .catch(function (error) {
+        console.error("Merge-Datei konnte nicht entsperrt werden.", error);
+        showAppDataImportPasswordError("Passwort oder Merge-Datei sind nicht korrekt.");
+      });
     return false;
   }
 

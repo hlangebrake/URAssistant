@@ -9,5 +9,6 @@ window.Unterrichtsassistent.ui.viewConfig = {
   sitzplan: window.Unterrichtsassistent.ui.views.sitzplan,
   planung: window.Unterrichtsassistent.ui.views.planung,
   bewertung: window.Unterrichtsassistent.ui.views.bewertung,
-  todos: window.Unterrichtsassistent.ui.views.todos
+  todos: window.Unterrichtsassistent.ui.views.todos,
+  merge: window.Unterrichtsassistent.ui.views.merge
 };
