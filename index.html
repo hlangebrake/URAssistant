@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./apple-touch-icon-167x167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./apple-touch-icon-152x152.png">
-  <link rel="stylesheet" href="style.css?v=20260502a">
+  <link rel="stylesheet" href="style.css?v=20260616a">
 </head>
 <body>
   <div class="app-shell is-collapsed">
@@ -213,6 +213,11 @@
         }
       };
 
+      window.UnterrichtsassistentApp.openMergeView = function () {
+        window.UnterrichtsassistentApp.activateView("merge");
+        return false;
+      };
+
       window.UnterrichtsassistentApp.toggleMenu = function () {
         if (!appShell || !menuToggle) {
           return false;
@@ -294,8 +299,8 @@
   <script src="src/ui/views/bewertungView.js?v=20260401b"></script>
   <script src="src/ui/views/todosView.js?v=20260402a"></script>
   <script src="src/ui/views/mergeView.js?v=20260616a"></script>
-  <script src="src/ui/viewRegistry.js?v=20260401a"></script>
+  <script src="src/ui/viewRegistry.js?v=20260616a"></script>
   <script src="src/ui/renderers.js?v=20260515a"></script>
-    <script src="src/app.js?v=20260515a"></script>
+    <script src="src/app.js?v=20260616a"></script>
   </body>
 </html>
