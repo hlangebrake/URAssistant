@@ -87,7 +87,93 @@ window.Unterrichtsassistent.ui.views.merge = {
       return rows.join("");
     }
 
+    function getSharedPrefixLength(left, right) {
+      const maxLength = Math.min(left.length, right.length);
+      let index = 0;
+
+      while (index < maxLength && left.charAt(index) === right.charAt(index)) {
+        index += 1;
+      }
+
+      return index;
+    }
+
+    function getSharedSuffixLength(left, right, prefixLength) {
+      const maxLength = Math.min(left.length, right.length) - prefixLength;
+      let index = 0;
+
+      while (index < maxLength && left.charAt(left.length - 1 - index) === right.charAt(right.length - 1 - index)) {
+        index += 1;
+      }
+
+      return index;
+    }
+
+    function renderChangedLine(line, otherLine, side) {
+      const safeLine = String(line || "");
+      const safeOtherLine = String(otherLine || "");
+      const prefixLength = getSharedPrefixLength(safeLine, safeOtherLine);
+      const suffixLength = getSharedSuffixLength(safeLine, safeOtherLine, prefixLength);
+      const changedEnd = Math.max(prefixLength, safeLine.length - suffixLength);
+      const before = safeLine.slice(0, prefixLength);
+      const changed = safeLine.slice(prefixLength, changedEnd);
+      const after = safeLine.slice(changedEnd);
+
+      if (!changed) {
+        return escapeValue(safeLine);
+      }
+
+      return [
+        escapeValue(before),
+        '<mark class="merge-diff__mark merge-diff__mark--', side, '">',
+          escapeValue(changed),
+        '</mark>',
+        escapeValue(after)
+      ].join("");
+    }
+
+    function buildJsonDiffRows(leftJson, rightJson) {
+      const leftLines = String(leftJson || "").split("\n");
+      const rightLines = String(rightJson || "").split("\n");
+      const maxLength = Math.max(leftLines.length, rightLines.length);
+      const rows = [];
+      let index = 0;
+
+      for (index = 0; index < maxLength; index += 1) {
+        const leftLine = leftLines[index];
+        const rightLine = rightLines[index];
+        const hasLeft = typeof leftLine !== "undefined";
+        const hasRight = typeof rightLine !== "undefined";
+        const isChanged = leftLine !== rightLine;
+
+        rows.push({
+          left: hasLeft ? leftLine : "",
+          right: hasRight ? rightLine : "",
+          leftHtml: isChanged && hasLeft && hasRight
+            ? renderChangedLine(leftLine, rightLine, "current")
+            : escapeValue(hasLeft ? leftLine : ""),
+          rightHtml: isChanged && hasLeft && hasRight
+            ? renderChangedLine(rightLine, leftLine, "imported")
+            : escapeValue(hasRight ? rightLine : ""),
+          leftClass: !isChanged ? "" : (hasLeft ? " is-changed" : " is-missing"),
+          rightClass: !isChanged ? "" : (hasRight ? " is-changed" : " is-missing")
+        });
+      }
+
+      return rows;
+    }
+
+    function renderDiffPre(lines, side) {
+      return '<pre class="merge-diff merge-diff--' + side + '">' + lines.map(function (line) {
+        return '<span class="merge-diff__line' + (side === "current" ? line.leftClass : line.rightClass) + '">' + (side === "current" ? line.leftHtml : line.rightHtml) + '</span>';
+      }).join("\n") + '</pre>';
+    }
+
     function renderDetail() {
+      const diffRows = selectedDetail && selectedDetail.currentJson && selectedDetail.importedJson
+        ? buildJsonDiffRows(selectedDetail.currentJson, selectedDetail.importedJson)
+        : null;
+
       if (!selectedDetail) {
         return '<aside class="merge-detail"><div class="merge-detail__empty">Datensatz anklicken, um Details zu sehen.</div></aside>';
       }
@@ -102,10 +188,10 @@ window.Unterrichtsassistent.ui.views.merge = {
           '</div>',
           '<div class="merge-detail__grid">',
             selectedDetail.currentJson
-              ? '<section><h4>Aktuell</h4><pre>' + escapeValue(selectedDetail.currentJson) + '</pre></section>'
+              ? '<section><h4>Aktuell</h4>' + (diffRows ? renderDiffPre(diffRows, "current") : '<pre class="merge-diff">' + escapeValue(selectedDetail.currentJson) + '</pre>') + '</section>'
               : '',
             selectedDetail.importedJson
-              ? '<section><h4>Import</h4><pre>' + escapeValue(selectedDetail.importedJson) + '</pre></section>'
+              ? '<section><h4>Import</h4>' + (diffRows ? renderDiffPre(diffRows, "imported") : '<pre class="merge-diff">' + escapeValue(selectedDetail.importedJson) + '</pre>') + '</section>'
               : '',
           '</div>',
         '</aside>'

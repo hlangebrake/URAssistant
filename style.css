@@ -12240,6 +12240,36 @@ button.merge-row,
   line-height: 1.42;
 }
 
+.merge-diff__line {
+  display: block;
+  min-height: 1.42em;
+  margin-inline: -0.25rem;
+  padding-inline: 0.25rem;
+  white-space: pre;
+}
+
+.merge-diff__line.is-changed {
+  background: rgba(199, 104, 55, 0.09);
+}
+
+.merge-diff__line.is-missing {
+  background: rgba(23, 49, 62, 0.06);
+}
+
+.merge-diff__mark {
+  border-radius: 4px;
+  padding: 0.03rem 0.08rem;
+  color: inherit;
+}
+
+.merge-diff__mark--current {
+  background: rgba(199, 104, 55, 0.24);
+}
+
+.merge-diff__mark--imported {
+  background: rgba(52, 121, 104, 0.24);
+}
+
 .class-analysis-performed-evaluation-modal {
   width: min(860px, calc(100% - 2rem));
   max-width: 860px;
