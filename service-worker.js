@@ -1,4 +1,4 @@
-const CACHE_NAME = "unterrichtsassistent-allinone-v7";
+const CACHE_NAME = "unterrichtsassistent-allinone-v8";
 const APP_SHELL_URL = "./index.html";
 const PRECACHE_URLS = [
   APP_SHELL_URL,

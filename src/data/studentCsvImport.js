@@ -182,7 +182,45 @@ function mergeImportedStudents(rawSnapshot, importedStudents, className, subject
   return rawSnapshot;
 }
 
+function appendImportedStudentsToClass(rawSnapshot, importedStudents, classId) {
+  const normalizedClassId = sanitizeValue(classId);
+  let targetClass = null;
+
+  rawSnapshot.classes = Array.isArray(rawSnapshot.classes) ? rawSnapshot.classes : [];
+  rawSnapshot.students = Array.isArray(rawSnapshot.students) ? rawSnapshot.students : [];
+
+  targetClass = rawSnapshot.classes.find(function (schoolClass) {
+    return sanitizeValue(schoolClass && schoolClass.id) === normalizedClassId;
+  }) || null;
+
+  if (!targetClass) {
+    return rawSnapshot;
+  }
+
+  targetClass.studentIds = Array.isArray(targetClass.studentIds) ? targetClass.studentIds : [];
+
+  importedStudents.forEach(function (student) {
+    const nextStudent = Object.assign({}, student, {
+      className: targetClass.name || "",
+      socialRelations: {
+        likesWith: [],
+        dislikesWith: [],
+        shouldWith: [],
+        shouldNotWith: []
+      }
+    });
+
+    rawSnapshot.students.push(nextStudent);
+    targetClass.studentIds.push(nextStudent.id);
+  });
+
+  rawSnapshot.activeClassId = targetClass.id;
+
+  return rawSnapshot;
+}
+
 window.Unterrichtsassistent.data.parseStudentCsv = parseStudentCsv;
 window.Unterrichtsassistent.data.createEmptyClass = createEmptyClass;
 window.Unterrichtsassistent.data.mergeImportedStudents = mergeImportedStudents;
+window.Unterrichtsassistent.data.appendImportedStudentsToClass = appendImportedStudentsToClass;
 window.Unterrichtsassistent.data.createPastelColor = createPastelColor;

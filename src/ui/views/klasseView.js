@@ -2252,7 +2252,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
         '</tbody>',
         '</table>',
         '</div>',
-        '<div class="table-actions"><button class="import-box__label" type="button" onclick="return window.UnterrichtsassistentApp.addStudentRow()">Neue Zeile</button></div>'
+        '<div class="table-actions"><button class="import-box__label" type="button" onclick="return window.UnterrichtsassistentApp.addStudentRow()">Neue Zeile</button><button class="import-box__label" type="button" onclick="return window.UnterrichtsassistentApp.openActiveClassStudentCsvImport()">CSV importieren</button><input id="activeClassStudentCsvFile" type="file" accept=".csv,.txt,text/csv,text/plain" hidden onchange="return window.UnterrichtsassistentApp.importActiveClassStudentsFromCsvFile(event)"></div>'
         ].join("") : "",
         '</section>'
       ].join("") : "",

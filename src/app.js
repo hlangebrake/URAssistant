@@ -65,6 +65,7 @@ const serializeDomainSnapshotFn = domainLayer.serializeDomainSnapshot;
 const parseStudentCsvFn = dataLayer.parseStudentCsv;
 const createEmptyClassFn = dataLayer.createEmptyClass;
 const mergeImportedStudentsFn = dataLayer.mergeImportedStudents;
+const appendImportedStudentsToClassFn = dataLayer.appendImportedStudentsToClass;
 const createPastelColorFn = dataLayer.createPastelColor;
 const passwordAuthApi = securityLayer.passwordAuth || null;
 const appDataCryptoApi = securityLayer.appDataCrypto || null;
@@ -32187,6 +32188,62 @@ window.UnterrichtsassistentApp.addStudentRow = function () {
   });
 
   saveAndRefreshSnapshot(currentRawSnapshot, "klasse");
+  return false;
+};
+window.UnterrichtsassistentApp.openActiveClassStudentCsvImport = function () {
+  const fileInput = document.getElementById("activeClassStudentCsvFile");
+
+  if (!isClassManageMode() || !schoolService || !schoolService.getActiveClass()) {
+    return false;
+  }
+
+  if (fileInput) {
+    fileInput.value = "";
+    fileInput.click();
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.importActiveClassStudentsFromCsvFile = function (event) {
+  const input = event && event.target ? event.target : document.getElementById("activeClassStudentCsvFile");
+  const file = input && input.files ? input.files[0] : null;
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const reader = new FileReader();
+
+  if (!isClassManageMode() || !activeClass || !file || !parseStudentCsvFn || !appendImportedStudentsToClassFn) {
+    return false;
+  }
+
+  reader.onload = function () {
+    const importedStudents = parseStudentCsvFn(String(reader.result || ""));
+
+    if (!importedStudents.length) {
+      window.alert("In der CSV-Datei wurden keine Schuelerdaten gefunden.");
+      if (input) {
+        input.value = "";
+      }
+      return;
+    }
+
+    const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
+    const nextRawSnapshot = appendImportedStudentsToClassFn(currentRawSnapshot, importedStudents, activeClass.id);
+
+    classBasisdatenExpanded = true;
+    saveAndRefreshSnapshot(nextRawSnapshot, "klasse").then(function () {
+      if (input) {
+        input.value = "";
+      }
+    });
+  };
+
+  reader.onerror = function () {
+    window.alert("Die CSV-Datei konnte nicht gelesen werden.");
+    if (input) {
+      input.value = "";
+    }
+  };
+
+  reader.readAsText(file, "utf-8");
   return false;
 };
 window.UnterrichtsassistentApp.deleteStudent = function (studentId) {
