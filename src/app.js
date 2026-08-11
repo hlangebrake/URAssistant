@@ -229,6 +229,7 @@ const timetableWeekdayKeys = ["1", "2", "3", "4", "5"];
 let liveDateTimeIntervalId = null;
 let lastLiveDateTimeRenderSignature = "";
 let isClassImportModalOpen = false;
+let isClassStudentPdfExportModalOpen = false;
 let isClassAnalysisDetailModalOpen = false;
 let activeClassAnalysisDetailDraft = null;
 let activeClassSocialRelationsDraft = null;
@@ -1132,6 +1133,10 @@ function getClassImportModal() {
   return document.getElementById("classImportModal");
 }
 
+function getClassStudentPdfExportModal() {
+  return document.getElementById("classStudentPdfExportModal");
+}
+
 function getClassAnalysisDetailModal() {
   return document.getElementById("classAnalysisDetailModal");
 }
@@ -1387,7 +1392,7 @@ function restoreActiveViewScrollState(scrollState) {
 }
 
 function syncLiveDateTimeUi() {
-  if (!schoolService || !isLiveDateTimeMode() || activeDeskLayoutDrag || activeDeskLayoutResize || activeUnterrichtMathObservationPress || activeUnterrichtMathObservationMarkerPress || isClassImportModalOpen || isClassAnalysisDetailModalOpen || isClassAnalysisRecordEditModalOpen || isUnterrichtAssessmentModalOpen || isUnterrichtKnowledgeGapModalOpen || isUnterrichtMathObservationModalOpen || activeUnterrichtEvidenceModalDraft || isEditingFocusableInput()) {
+  if (!schoolService || !isLiveDateTimeMode() || activeDeskLayoutDrag || activeDeskLayoutResize || activeUnterrichtMathObservationPress || activeUnterrichtMathObservationMarkerPress || isClassImportModalOpen || isClassStudentPdfExportModalOpen || isClassAnalysisDetailModalOpen || isClassAnalysisRecordEditModalOpen || isUnterrichtAssessmentModalOpen || isUnterrichtKnowledgeGapModalOpen || isUnterrichtMathObservationModalOpen || activeUnterrichtEvidenceModalDraft || isEditingFocusableInput()) {
     return;
   }
 
@@ -6510,6 +6515,10 @@ function setActiveView(viewId) {
 
   if (viewId === "klasse" && isClassImportModalOpen && window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.openClassImportModal === "function") {
     window.UnterrichtsassistentApp.openClassImportModal();
+  }
+
+  if (viewId === "klasse" && isClassStudentPdfExportModalOpen && window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.openClassStudentPdfExportModal === "function") {
+    window.UnterrichtsassistentApp.openClassStudentPdfExportModal();
   }
 
   if (viewId === "klasse" && isClassAnalysisDetailModalOpen && window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.openClassAnalysisDetailModal === "function") {
@@ -13053,6 +13062,83 @@ function getPerformedEvaluationFeedbackList(subtaskResult, detailType) {
         return String(entry || "").trim();
       }).filter(Boolean)
     : [];
+}
+
+function buildClassStudentPdfDocument(schoolClass, students, settings) {
+  const normalizedSettings = settings && typeof settings === "object" ? settings : {};
+  const sortBy = String(normalizedSettings.sortBy || "").trim() === "firstName" ? "firstName" : "lastName";
+  const freeColumnCount = Math.max(0, Math.min(12, Math.round(Number(normalizedSettings.freeColumnCount) || 5)));
+  const rowHeightMm = Math.max(6, Math.min(30, Math.round(Number(normalizedSettings.rowHeightMm) || 12)));
+  const pageSize = String(normalizedSettings.pageSize || "").trim().toUpperCase() === "A3" ? "A3" : "A4";
+  const orientation = String(normalizedSettings.orientation || "").trim() === "portrait" ? "portrait" : "landscape";
+  const orientationLabel = orientation === "portrait" ? "Hochformat" : "Querformat";
+  const classLabel = [String(schoolClass && schoolClass.name || "").trim(), String(schoolClass && schoolClass.subject || "").trim()].filter(Boolean).join(" - ") || "Lerngruppe";
+  const sortedStudents = (Array.isArray(students) ? students.slice() : []).sort(function (left, right) {
+    const leftPrimary = String(left && left[sortBy] || "").trim();
+    const rightPrimary = String(right && right[sortBy] || "").trim();
+    const secondaryKey = sortBy === "lastName" ? "firstName" : "lastName";
+    const leftSecondary = String(left && left[secondaryKey] || "").trim();
+    const rightSecondary = String(right && right[secondaryKey] || "").trim();
+    const primaryCompare = leftPrimary.localeCompare(rightPrimary, "de-DE", { sensitivity: "base" });
+
+    if (primaryCompare !== 0) {
+      return primaryCompare;
+    }
+
+    return leftSecondary.localeCompare(rightSecondary, "de-DE", { sensitivity: "base" });
+  });
+  const freeHeaders = new Array(freeColumnCount).fill(null).map(function (_, index) {
+    return '<th class="free-column">' + escapeHtml(String(index + 1)) + '</th>';
+  }).join("");
+  const freeCells = new Array(freeColumnCount).fill(null).map(function () {
+    return '<td class="free-column"></td>';
+  }).join("");
+  const rows = sortedStudents.map(function (student, index) {
+    const firstName = String(student && student.firstName || "").trim();
+    const lastName = String(student && student.lastName || "").trim();
+
+    return [
+      '<tr>',
+      '<td class="index-column">', escapeHtml(String(index + 1)), '</td>',
+      '<td class="name-column">', escapeHtml(lastName), '</td>',
+      '<td class="name-column">', escapeHtml(firstName), '</td>',
+      freeCells,
+      '</tr>'
+    ].join("");
+  }).join("");
+
+  return [
+    '<!doctype html>',
+    '<html lang="de">',
+    '<head>',
+    '<meta charset="utf-8">',
+    '<title>', escapeHtml(classLabel + " - Schuelerliste"), '</title>',
+    '<style>',
+    '@page{size:', escapeHtml(pageSize), ' ', escapeHtml(orientation), ';margin:12mm 12mm;}',
+    'body{font-family:Arial,Helvetica,sans-serif;color:#1f2430;font-size:10pt;line-height:1.25;margin:0;}',
+    'h1{font-size:16pt;margin:0 0 2mm;color:#17313e;}',
+    '.meta{display:flex;justify-content:space-between;gap:8mm;margin:0 0 6mm;color:#56636b;font-size:9pt;}',
+    'table{width:100%;border-collapse:collapse;table-layout:fixed;}',
+    'th,td{border:1px solid #9aa7af;padding:2mm 2.5mm;text-align:left;vertical-align:middle;height:', escapeHtml(String(rowHeightMm)), 'mm;}',
+    'th{height:8mm;background:#eef3f5;color:#17313e;font-size:9pt;font-weight:700;}',
+    '.index-column{width:10mm;text-align:right;color:#56636b;}',
+    '.name-column{width:42mm;}',
+    '.free-column{min-width:18mm;}',
+    'tbody td{font-size:10.5pt;}',
+    '</style>',
+    '</head>',
+    '<body>',
+    '<h1>', escapeHtml(classLabel), '</h1>',
+    '<div class="meta"><span>Schuelerliste</span><span>', escapeHtml(pageSize), ' ', escapeHtml(orientationLabel), ' | Sortierung: ', escapeHtml(sortBy === "firstName" ? "Vorname" : "Nachname"), '</span></div>',
+    '<table>',
+    '<thead><tr><th class="index-column">#</th><th class="name-column">Nachname</th><th class="name-column">Vorname</th>', freeHeaders, '</tr></thead>',
+    '<tbody>',
+    rows || '<tr><td colspan="' + escapeHtml(String(freeColumnCount + 3)) + '">Keine Schuelerdaten vorhanden.</td></tr>',
+    '</tbody>',
+    '</table>',
+    '</body>',
+    '</html>'
+  ].join("");
 }
 
 function buildPerformedEvaluationPdfDocument(plannedEvaluation, evaluationSheet, performedEvaluation, student) {
@@ -31465,6 +31551,87 @@ window.UnterrichtsassistentApp.closeClassImportModal = function () {
     modal.hidden = true;
     modal.classList.remove("is-open");
   }
+
+  return false;
+};
+window.UnterrichtsassistentApp.openClassStudentPdfExportModal = function () {
+  const modal = getClassStudentPdfExportModal();
+
+  if (!isClassManageMode()) {
+    return false;
+  }
+
+  if (modal) {
+    isClassStudentPdfExportModalOpen = true;
+    modal.hidden = false;
+    modal.classList.add("is-open");
+
+    window.setTimeout(function () {
+      const sortSelect = document.getElementById("classStudentPdfSortBy");
+      if (sortSelect && typeof sortSelect.focus === "function") {
+        sortSelect.focus();
+      }
+    }, 0);
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.closeClassStudentPdfExportModal = function () {
+  const modal = getClassStudentPdfExportModal();
+
+  if (modal) {
+    isClassStudentPdfExportModalOpen = false;
+    modal.hidden = true;
+    modal.classList.remove("is-open");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.submitClassStudentPdfExport = function (event) {
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const form = event && event.target ? event.target : null;
+  const sortSelect = form ? form.querySelector("#classStudentPdfSortBy") : document.getElementById("classStudentPdfSortBy");
+  const freeColumnsInput = form ? form.querySelector("#classStudentPdfFreeColumns") : document.getElementById("classStudentPdfFreeColumns");
+  const pageSizeSelect = form ? form.querySelector("#classStudentPdfPageSize") : document.getElementById("classStudentPdfPageSize");
+  const orientationSelect = form ? form.querySelector("#classStudentPdfOrientation") : document.getElementById("classStudentPdfOrientation");
+  const rowHeightInput = form ? form.querySelector("#classStudentPdfRowHeight") : document.getElementById("classStudentPdfRowHeight");
+  const settings = {
+    sortBy: sortSelect ? sortSelect.value : "lastName",
+    freeColumnCount: freeColumnsInput ? Number(freeColumnsInput.value) : 5,
+    pageSize: pageSizeSelect ? pageSizeSelect.value : "A4",
+    orientation: orientationSelect ? orientationSelect.value : "landscape",
+    rowHeightMm: rowHeightInput ? Number(rowHeightInput.value) : 12
+  };
+  const students = activeClass && schoolService && typeof schoolService.getStudentsForClass === "function"
+    ? schoolService.getStudentsForClass(activeClass.id)
+    : [];
+  let printWindow = null;
+  let documentMarkup = "";
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  if (!isClassManageMode() || !activeClass) {
+    return false;
+  }
+
+  printWindow = window.open("", "_blank", "width=1120,height=760");
+
+  if (!printWindow) {
+    window.alert("Das Druckfenster konnte nicht geoeffnet werden. Bitte Pop-ups fuer diese Seite erlauben.");
+    return false;
+  }
+
+  documentMarkup = buildClassStudentPdfDocument(activeClass, students, settings);
+  window.UnterrichtsassistentApp.closeClassStudentPdfExportModal();
+  printWindow.document.open();
+  printWindow.document.write(documentMarkup);
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.setTimeout(function () {
+    printWindow.print();
+  }, 250);
 
   return false;
 };
