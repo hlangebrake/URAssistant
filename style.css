@@ -1112,6 +1112,27 @@ button {
   border-color: rgba(57, 117, 171, 0.26);
 }
 
+.planning-curriculum__import-button {
+  border: 1px solid rgba(57, 117, 171, 0.24);
+  background: rgba(57, 117, 171, 0.08);
+  color: #2f6594;
+  border-radius: 999px;
+  padding: 0.5rem 0.9rem;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.planning-curriculum__import-button:hover,
+.planning-curriculum__import-button:focus-visible {
+  outline: none;
+  background: rgba(57, 117, 171, 0.14);
+  border-color: rgba(57, 117, 171, 0.4);
+}
+
 .planning-curriculum__auto-apply {
   display: inline-flex;
   align-items: center;
@@ -1807,6 +1828,94 @@ button {
 .import-modal__dialog--curriculum {
   width: min(640px, calc(100% - 2rem));
   max-width: 640px;
+}
+
+.import-modal__dialog--curriculum-import {
+  width: min(720px, calc(100% - 2rem));
+  max-width: 720px;
+  max-height: calc(100vh - 4rem);
+  margin-top: 2rem;
+  overflow: auto;
+}
+
+.curriculum-series-import__intro {
+  margin: 0.35rem 0 0;
+  color: rgba(23, 49, 62, 0.68);
+  font-size: 0.86rem;
+  font-weight: 500;
+}
+
+.curriculum-series-import__fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.curriculum-series-import__fieldset legend {
+  margin-bottom: 0.55rem;
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.curriculum-series-import__list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.curriculum-series-import__option {
+  display: grid;
+  grid-template-columns: auto 5px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 58px;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgba(23, 49, 62, 0.12);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+}
+
+.curriculum-series-import__option:hover {
+  border-color: rgba(57, 117, 171, 0.3);
+  background: rgba(57, 117, 171, 0.05);
+}
+
+.curriculum-series-import__option input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: #3975ab;
+}
+
+.curriculum-series-import__option-color {
+  align-self: stretch;
+  border-radius: 999px;
+  background: var(--curriculum-series-import-color, #d9d4cb);
+}
+
+.curriculum-series-import__option-copy {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.curriculum-series-import__option-copy strong {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.curriculum-series-import__option-copy small {
+  color: rgba(23, 49, 62, 0.62);
+  font-size: 0.78rem;
+}
+
+.import-modal__icon-button:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
 }
 
 .import-modal__dialog--curriculum-lesson {

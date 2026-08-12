@@ -166,6 +166,7 @@ let todoStudentAssignmentOpen = false;
 let activePlanningInstructionLessonDraft = null;
 let activeTimetablePlanningEventDetail = null;
 let activeCurriculumSeriesDraft = null;
+let activeCurriculumSeriesImportDraft = null;
 let activeCurriculumSequenceDraft = null;
 let activeCurriculumLessonDraft = null;
 let activeCurriculumLessonFlowLessonId = "";
@@ -20425,6 +20426,223 @@ window.UnterrichtsassistentApp.openPlanningEventFromInstructionLessonModal = fun
   refreshSnapshotInMemory(currentRawSnapshot, "planung");
   return false;
 };
+window.UnterrichtsassistentApp.openCurriculumSeriesImportModal = function () {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const activeClassId = String(activeClass && activeClass.id || "").trim();
+  const sourceClasses = currentRawSnapshot && Array.isArray(currentRawSnapshot.classes)
+    ? currentRawSnapshot.classes.filter(function (classItem) {
+        return String(classItem && classItem.id || "").trim() !== activeClassId;
+      })
+    : [];
+  const preferredSourceClass = sourceClasses.find(function (classItem) {
+    return getOrderedCurriculumSeriesForClass(currentRawSnapshot, String(classItem && classItem.id || "").trim()).length > 0;
+  }) || sourceClasses[0] || null;
+
+  if (!isCurriculumPlanningMode() || planningAdminMode || !currentRawSnapshot || !activeClass) {
+    return false;
+  }
+
+  activeCurriculumSeriesImportDraft = {
+    sourceClassId: String(preferredSourceClass && preferredSourceClass.id || "").trim(),
+    selectedSeriesIds: []
+  };
+  activeCurriculumSeriesDraft = null;
+  activeCurriculumSequenceDraft = null;
+  activeCurriculumLessonDraft = null;
+  setActiveView("planung");
+  return false;
+};
+window.UnterrichtsassistentApp.closeCurriculumSeriesImportModal = function () {
+  activeCurriculumSeriesImportDraft = null;
+
+  if (activeViewId === "planung") {
+    setActiveView("planung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.updateCurriculumSeriesImportSourceClass = function (classId) {
+  if (!activeCurriculumSeriesImportDraft) {
+    return false;
+  }
+
+  activeCurriculumSeriesImportDraft.sourceClassId = String(classId || "").trim();
+  activeCurriculumSeriesImportDraft.selectedSeriesIds = [];
+  setActiveView("planung");
+  return false;
+};
+window.UnterrichtsassistentApp.toggleCurriculumSeriesImportSelection = function (seriesId, isSelected) {
+  const normalizedSeriesId = String(seriesId || "").trim();
+  const confirmButton = document.getElementById("curriculumSeriesImportConfirmButton");
+  let selectedIds;
+
+  if (!activeCurriculumSeriesImportDraft || !normalizedSeriesId) {
+    return false;
+  }
+
+  selectedIds = Array.isArray(activeCurriculumSeriesImportDraft.selectedSeriesIds)
+    ? activeCurriculumSeriesImportDraft.selectedSeriesIds.slice()
+    : [];
+
+  if (isSelected && selectedIds.indexOf(normalizedSeriesId) < 0) {
+    selectedIds.push(normalizedSeriesId);
+  } else if (!isSelected) {
+    selectedIds = selectedIds.filter(function (entry) {
+      return entry !== normalizedSeriesId;
+    });
+  }
+
+  activeCurriculumSeriesImportDraft.selectedSeriesIds = selectedIds;
+  if (confirmButton) {
+    confirmButton.disabled = selectedIds.length === 0;
+  }
+  return false;
+};
+window.UnterrichtsassistentApp.submitCurriculumSeriesImportModal = function (event) {
+  const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
+  const activeClass = schoolService ? schoolService.getActiveClass() : null;
+  const collections = currentRawSnapshot ? getCurriculumCollections(currentRawSnapshot) : null;
+  const activeClassId = String(activeClass && activeClass.id || "").trim();
+  const sourceClassId = String(activeCurriculumSeriesImportDraft && activeCurriculumSeriesImportDraft.sourceClassId || "").trim();
+  const selectedSeriesIds = Array.isArray(activeCurriculumSeriesImportDraft && activeCurriculumSeriesImportDraft.selectedSeriesIds)
+    ? activeCurriculumSeriesImportDraft.selectedSeriesIds.map(function (entry) {
+        return String(entry || "").trim();
+      }).filter(Boolean)
+    : [];
+  const selectedSeriesLookup = selectedSeriesIds.reduce(function (lookup, seriesId) {
+    lookup[seriesId] = true;
+    return lookup;
+  }, {});
+  const sourceSeries = currentRawSnapshot && sourceClassId
+    ? getOrderedCurriculumSeriesForClass(currentRawSnapshot, sourceClassId).filter(function (seriesItem) {
+        return Boolean(selectedSeriesLookup[String(seriesItem && seriesItem.id || "").trim()]);
+      })
+    : [];
+  const usedIds = {};
+  const importedSeries = [];
+
+  function rememberCollectionIds(items) {
+    (Array.isArray(items) ? items : []).forEach(function (item) {
+      const itemId = String(item && item.id || "").trim();
+      if (itemId) {
+        usedIds[itemId] = true;
+      }
+    });
+  }
+
+  function createUniqueId(factory) {
+    let nextId = "";
+    do {
+      nextId = String(factory() || "").trim();
+    } while (!nextId || usedIds[nextId]);
+    usedIds[nextId] = true;
+    return nextId;
+  }
+
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+
+  if (!isCurriculumPlanningMode() || planningAdminMode || !currentRawSnapshot || !collections || !activeClassId || !sourceClassId) {
+    return false;
+  }
+
+  if (!sourceSeries.length) {
+    window.alert("Waehle mindestens eine Unterrichtsreihe aus.");
+    return false;
+  }
+
+  [collections.series, collections.sequences, collections.lessons, collections.lessonPhases, collections.lessonSteps].forEach(rememberCollectionIds);
+
+  sourceSeries.forEach(function (sourceSeriesItem) {
+    const sourceSeriesId = String(sourceSeriesItem && sourceSeriesItem.id || "").trim();
+    const importedSeriesItem = Object.assign({}, sourceSeriesItem, {
+      id: createUniqueId(createCurriculumSeriesId),
+      classId: activeClassId,
+      curriculumTopicNodeIds: normalizeCurriculumTopicNodeIds(sourceSeriesItem && sourceSeriesItem.curriculumTopicNodeIds),
+      nextSeriesId: ""
+    });
+    const importedSequences = [];
+
+    getOrderedCurriculumSequencesForSeries(currentRawSnapshot, sourceSeriesId).forEach(function (sourceSequenceItem) {
+      const sourceSequenceId = String(sourceSequenceItem && sourceSequenceItem.id || "").trim();
+      const importedSequenceItem = Object.assign({}, sourceSequenceItem, {
+        id: createUniqueId(createCurriculumSequenceId),
+        seriesId: importedSeriesItem.id,
+        curriculumTopicNodeIds: normalizeCurriculumTopicNodeIds(sourceSequenceItem && sourceSequenceItem.curriculumTopicNodeIds),
+        nextSequenceId: ""
+      });
+      const importedLessons = [];
+
+      getOrderedCurriculumLessonsForSequence(currentRawSnapshot, sourceSequenceId).forEach(function (sourceLessonItem) {
+        const sourceLessonId = String(sourceLessonItem && sourceLessonItem.id || "").trim();
+        const importedLessonItem = Object.assign({}, sourceLessonItem, {
+          id: createUniqueId(createCurriculumLessonPlanId),
+          sequenceId: importedSequenceItem.id,
+          preparationTodoId: "",
+          competencyAspectIds: Array.isArray(sourceLessonItem && sourceLessonItem.competencyAspectIds) ? sourceLessonItem.competencyAspectIds.slice() : [],
+          curriculumTopicNodeIds: normalizeCurriculumTopicNodeIds(sourceLessonItem && sourceLessonItem.curriculumTopicNodeIds),
+          nextLessonId: ""
+        });
+        const importedPhases = [];
+
+        getOrderedCurriculumLessonPhasesForLesson(currentRawSnapshot, sourceLessonId).forEach(function (sourcePhaseItem) {
+          const sourcePhaseId = String(sourcePhaseItem && sourcePhaseItem.id || "").trim();
+          const importedPhaseItem = Object.assign({}, sourcePhaseItem, {
+            id: createUniqueId(createCurriculumLessonPhaseId),
+            lessonPlanId: importedLessonItem.id,
+            nextPhaseId: ""
+          });
+          const importedSteps = getOrderedCurriculumLessonStepsForPhase(currentRawSnapshot, sourcePhaseId).map(function (sourceStepItem) {
+            return Object.assign({}, sourceStepItem, {
+              id: createUniqueId(createCurriculumLessonStepId),
+              phaseId: importedPhaseItem.id,
+              competencyAspectIds: Array.isArray(sourceStepItem && sourceStepItem.competencyAspectIds) ? sourceStepItem.competencyAspectIds.slice() : [],
+              nextStepId: ""
+            });
+          });
+
+          reconnectCurriculumLessonStepChain(importedSteps);
+          collections.lessonSteps = collections.lessonSteps.concat(importedSteps);
+          importedPhases.push(importedPhaseItem);
+        });
+
+        reconnectCurriculumLessonPhaseChain(importedPhases);
+        collections.lessonPhases = collections.lessonPhases.concat(importedPhases);
+        importedLessons.push(importedLessonItem);
+      });
+
+      reconnectCurriculumLessonChain(importedLessons);
+      collections.lessons = collections.lessons.concat(importedLessons);
+      importedSequences.push(importedSequenceItem);
+    });
+
+    reconnectCurriculumSequenceChain(importedSequences);
+    collections.sequences = collections.sequences.concat(importedSequences);
+    importedSeries.push(importedSeriesItem);
+  });
+
+  const targetSeries = getOrderedCurriculumSeriesForClass(currentRawSnapshot, activeClassId).slice().concat(importedSeries);
+  reconnectCurriculumSeriesChain(targetSeries);
+  collections.series = collections.series.filter(function (seriesItem) {
+    return String(seriesItem && seriesItem.classId || "").trim() !== activeClassId;
+  }).concat(targetSeries);
+  currentRawSnapshot.curriculumSeries = collections.series;
+  currentRawSnapshot.curriculumSequences = collections.sequences;
+  currentRawSnapshot.curriculumLessonPlans = collections.lessons;
+  currentRawSnapshot.curriculumLessonPhases = collections.lessonPhases;
+  currentRawSnapshot.curriculumLessonSteps = collections.lessonSteps;
+
+  expandedCurriculumSeriesIds = expandedCurriculumSeriesIds.concat(importedSeries.map(function (seriesItem) {
+    return String(seriesItem && seriesItem.id || "").trim();
+  })).filter(function (seriesId, index, allIds) {
+    return seriesId && allIds.indexOf(seriesId) === index;
+  });
+  activeCurriculumSeriesImportDraft = null;
+  saveAndRefreshSnapshot(currentRawSnapshot, "planung");
+  return false;
+};
 window.UnterrichtsassistentApp.openCurriculumSeriesModal = function (seriesId) {
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
   const activeClass = schoolService ? schoolService.getActiveClass() : null;
@@ -26314,6 +26532,16 @@ window.UnterrichtsassistentApp.getActivePlanningInstructionLessonDraft = functio
 };
 window.UnterrichtsassistentApp.getActiveCurriculumSeriesDraft = function () {
   return activeCurriculumSeriesDraft;
+};
+window.UnterrichtsassistentApp.getActiveCurriculumSeriesImportDraft = function () {
+  return activeCurriculumSeriesImportDraft
+    ? {
+        sourceClassId: String(activeCurriculumSeriesImportDraft.sourceClassId || "").trim(),
+        selectedSeriesIds: Array.isArray(activeCurriculumSeriesImportDraft.selectedSeriesIds)
+          ? activeCurriculumSeriesImportDraft.selectedSeriesIds.slice()
+          : []
+      }
+    : null;
 };
 window.UnterrichtsassistentApp.getActiveCurriculumSequenceDraft = function () {
   return activeCurriculumSequenceDraft;

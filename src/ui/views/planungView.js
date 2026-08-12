@@ -24,6 +24,9 @@ window.Unterrichtsassistent.ui.views.planung = {
     const curriculumSeriesDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveCurriculumSeriesDraft === "function"
       ? window.UnterrichtsassistentApp.getActiveCurriculumSeriesDraft()
       : null;
+    const curriculumSeriesImportDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveCurriculumSeriesImportDraft === "function"
+      ? window.UnterrichtsassistentApp.getActiveCurriculumSeriesImportDraft()
+      : null;
     const curriculumSequenceDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveCurriculumSequenceDraft === "function"
       ? window.UnterrichtsassistentApp.getActiveCurriculumSequenceDraft()
       : null;
@@ -1568,6 +1571,7 @@ window.Unterrichtsassistent.ui.views.planung = {
         '<section class="planning-instruction__section planning-instruction__section--planned">',
         '<div class="planning-instruction__section-header">',
         '<h2 class="planning-instruction__title">Geplante Unterrichtsstunden</h2>',
+        '<button class="planning-curriculum__import-button" type="button" onclick="return window.UnterrichtsassistentApp.openCurriculumSeriesImportModal()">&Uuml;bernehmen von&nbsp;&hellip;</button>',
         '</div>',
         hasPlanningCapacityWarning
           ? '<p class="empty-message planning-instruction__warning-message">Nicht genuegend verfuegbare Stunden vorhanden: Mindestens eine Unterrichtsreihe hat noch offene Bedarfsstunden, die aktuell nicht mehr zugeordnet werden koennen. Es wurden insgesamt ' + escapeValue(String(missingPlanningCapacityUnits)) + ' Unterrichtsstunden zu viel geplant.</p>'
@@ -1633,9 +1637,9 @@ window.Unterrichtsassistent.ui.views.planung = {
       ].join("");
     }
 
-    function getOrderedCurriculumSeriesForActiveClass() {
+    function getOrderedCurriculumSeriesForClass(classId) {
       const allSeries = Array.isArray(snapshot.curriculumSeries) ? snapshot.curriculumSeries.filter(function (entry) {
-        return String(entry && entry.classId || "").trim() === String(activeClass && activeClass.id || "").trim();
+        return String(entry && entry.classId || "").trim() === String(classId || "").trim();
       }) : [];
       const incomingCounts = {};
       const itemById = {};
@@ -1688,6 +1692,10 @@ window.Unterrichtsassistent.ui.views.planung = {
       });
 
       return ordered;
+    }
+
+    function getOrderedCurriculumSeriesForActiveClass() {
+      return getOrderedCurriculumSeriesForClass(activeClass && activeClass.id);
     }
 
     function getOrderedCurriculumSequencesForSeries(seriesId) {
@@ -2508,6 +2516,72 @@ window.Unterrichtsassistent.ui.views.planung = {
       ].join("");
     }
 
+    function buildCurriculumSeriesImportModal() {
+      if (!curriculumSeriesImportDraft) {
+        return "";
+      }
+
+      const activeClassId = String(activeClass && activeClass.id || "").trim();
+      const sourceClasses = (Array.isArray(snapshot.classes) ? snapshot.classes : []).filter(function (classItem) {
+        return String(classItem && classItem.id || "").trim() !== activeClassId;
+      });
+      const sourceClassId = String(curriculumSeriesImportDraft.sourceClassId || "").trim();
+      const sourceSeries = sourceClassId ? getOrderedCurriculumSeriesForClass(sourceClassId) : [];
+      const selectedLookup = (Array.isArray(curriculumSeriesImportDraft.selectedSeriesIds) ? curriculumSeriesImportDraft.selectedSeriesIds : []).reduce(function (lookup, seriesId) {
+        lookup[String(seriesId || "").trim()] = true;
+        return lookup;
+      }, {});
+
+      return [
+        '<div class="import-modal is-open" id="curriculumSeriesImportModal">',
+        '<div class="import-modal__backdrop" onclick="return window.UnterrichtsassistentApp.closeCurriculumSeriesImportModal()"></div>',
+        '<div class="import-modal__dialog import-modal__dialog--planning import-modal__dialog--curriculum-import" role="dialog" aria-modal="true" aria-labelledby="curriculumSeriesImportTitle">',
+        '<div class="import-modal__header">',
+        '<div><h3 id="curriculumSeriesImportTitle">Unterrichtsreihen &uuml;bernehmen</h3><p class="curriculum-series-import__intro">Die ausgew&auml;hlten Reihen werden vollst&auml;ndig und unabh&auml;ngig in ', escapeValue(getClassDisplayName(activeClass) || "die aktuelle Lerngruppe"), ' kopiert.</p></div>',
+        '<div class="import-modal__icon-actions">',
+        '<button class="import-modal__icon-button import-modal__icon-button--confirm" id="curriculumSeriesImportConfirmButton" type="submit" form="curriculumSeriesImportForm" aria-label="Ausgewaehlte Unterrichtsreihen uebernehmen"', Object.keys(selectedLookup).length ? '' : ' disabled', '>&#10003;</button>',
+        '<button class="import-modal__icon-button import-modal__icon-button--cancel" type="button" aria-label="Uebernahme abbrechen" onclick="return window.UnterrichtsassistentApp.closeCurriculumSeriesImportModal()">&#10005;</button>',
+        '</div>',
+        '</div>',
+        '<form class="import-modal__form curriculum-series-import" id="curriculumSeriesImportForm" autocomplete="off" method="post" action="about:blank" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitCurriculumSeriesImportModal(event)">',
+        sourceClasses.length
+          ? [
+              '<label class="import-modal__field"><span>Von Lerngruppe</span><select id="curriculumSeriesImportClassInput" onchange="return window.UnterrichtsassistentApp.updateCurriculumSeriesImportSourceClass(this.value)">',
+              sourceClasses.map(function (classItem) {
+                const classId = String(classItem && classItem.id || "").trim();
+                const seriesCount = getOrderedCurriculumSeriesForClass(classId).length;
+                const classLabel = getClassDisplayName(classItem) || "Lerngruppe";
+
+                return '<option value="' + escapeValue(classId) + '"' + (classId === sourceClassId ? ' selected' : '') + '>' + escapeValue(classLabel + ' (' + String(seriesCount) + ')') + '</option>';
+              }).join(""),
+              '</select></label>',
+              '<fieldset class="curriculum-series-import__fieldset"><legend>Unterrichtsreihen ausw&auml;hlen</legend>',
+              sourceSeries.length
+                ? '<div class="curriculum-series-import__list">' + sourceSeries.map(function (seriesItem) {
+                    const seriesId = String(seriesItem && seriesItem.id || "").trim();
+                    const sequences = getOrderedCurriculumSequencesForSeries(seriesId);
+                    const lessonCount = sequences.reduce(function (sum, sequenceItem) {
+                      return sum + getOrderedCurriculumLessonsForSequence(String(sequenceItem && sequenceItem.id || "").trim()).length;
+                    }, 0);
+
+                    return [
+                      '<label class="curriculum-series-import__option">',
+                      '<input type="checkbox" value="', escapeValue(seriesId), '"', selectedLookup[seriesId] ? ' checked' : '', ' onchange="return window.UnterrichtsassistentApp.toggleCurriculumSeriesImportSelection(\'', escapeValue(seriesId), '\', this.checked)">',
+                      '<span class="curriculum-series-import__option-color" style="--curriculum-series-import-color:', escapeValue(String(seriesItem && seriesItem.color || "#d9d4cb")), ';"></span>',
+                      '<span class="curriculum-series-import__option-copy"><strong>', escapeValue(String(seriesItem && seriesItem.topic || "").trim() || "Ohne Thema"), '</strong><small>', escapeValue(String(sequences.length)), ' Sequenzen &middot; ', escapeValue(String(lessonCount)), ' Stunden</small></span>',
+                      '</label>'
+                    ].join("");
+                  }).join("") + '</div>'
+                : '<p class="empty-message">In dieser Lerngruppe sind noch keine Unterrichtsreihen gespeichert.</p>',
+              '</fieldset>'
+            ].join("")
+          : '<p class="empty-message">Es gibt keine weitere Lerngruppe, aus der Unterrichtsreihen &uuml;bernommen werden k&ouml;nnen.</p>',
+        '</form>',
+        '</div>',
+        '</div>'
+      ].join("");
+    }
+
     function buildCurriculumSequenceModal() {
       if (!curriculumSequenceDraft) {
         return "";
@@ -3164,6 +3238,7 @@ window.Unterrichtsassistent.ui.views.planung = {
         '</div>',
         shouldWrapInPanel ? '</article>' : '</div>',
         buildCurriculumSeriesModal(),
+        buildCurriculumSeriesImportModal(),
         buildCurriculumSequenceModal(),
         buildCurriculumLessonModal(),
         buildCurriculumTopicSelectionModal(),
