@@ -6070,7 +6070,7 @@ button {
   box-shadow: 0 6px 16px rgba(23, 49, 62, 0.08);
 }
 
-.unterricht-seatplan-actions--fallback {
+.unterricht-seatplan-actions.unterricht-seatplan-actions--fallback {
   position: static;
   width: fit-content;
   max-width: 100%;
