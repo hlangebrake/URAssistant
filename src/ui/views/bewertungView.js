@@ -1745,7 +1745,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
       });
       const selectedStudent = visibleAssignedStudents.find(function (student) {
         return String(student && student.id || "").trim() === activePerformedEvaluationStudentId;
-      }) || visibleAssignedStudents[0] || null;
+      }) || null;
       const selectedPerformedEvaluation = selectedStudent
         ? performedEvaluationLookup[String(selectedStudent && selectedStudent.id || "").trim()] || null
         : null;
@@ -2214,9 +2214,8 @@ window.Unterrichtsassistent.ui.views.bewertung = {
               '<button class="bewertung-durchfuehrung__student', isSelectedStudent ? ' is-selected' : '', isCompleted ? ' is-completed' : '', '" type="button" onclick="return window.UnterrichtsassistentApp.selectPerformedEvaluationStudent(\'', escapeValue(studentId), '\')">',
               '<span class="bewertung-durchfuehrung__student-main">',
               '<span class="bewertung-durchfuehrung__student-name">', escapeValue(String(student && student.firstName || "").trim() || "Ohne Namen"), '</span>',
-              stageLabel ? '<span class="bewertung-durchfuehrung__student-stage">' + escapeValue(stageLabel) + '</span>' : '',
+              '<span class="bewertung-durchfuehrung__student-stage">', escapeValue(stageLabel || "–"), '</span>',
               '</span>',
-              '<span class="bewertung-durchfuehrung__student-status">', escapeValue(isCompleted ? "abgeschlossen" : "offen"), '</span>',
               '</button>'
             ].join("");
           }).join("") : '<div class="bewertung-analysis__empty">Keine Schueler passen zum aktiven Filter.</div>',

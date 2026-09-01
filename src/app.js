@@ -29734,6 +29734,14 @@ window.UnterrichtsassistentApp.togglePerformedEvaluationCompletionForSelectedStu
     : "";
   performedEvaluation.updatedAt = getCurrentTimestamp();
   activePerformedEvaluationDetailModal = null;
+
+  if (performedEvaluation.isCompleted) {
+    activePerformedEvaluationStudentId = "";
+  } else {
+    activePerformedEvaluationStudentFilter = "offen";
+    activePerformedEvaluationStudentId = normalizedStudentId;
+  }
+
   saveAndRefreshSnapshot(currentRawSnapshot, "bewertung");
   return false;
 };
