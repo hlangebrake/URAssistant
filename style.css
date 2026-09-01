@@ -13515,11 +13515,28 @@ body.is-competency-grid-dragging {
 }
 
 .bewertung-discussion-groups__members td {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.55rem;
   padding: 0.42rem 0.5rem;
   border-bottom: 1px solid rgba(23, 49, 62, 0.08);
   color: rgba(31, 36, 48, 0.78);
   font-size: 0.78rem;
   font-weight: 800;
+}
+
+.bewertung-discussion-groups__member-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bewertung-discussion-groups__member-score {
+  flex: 0 0 auto;
+  color: var(--sidebar);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .bewertung-discussion-groups__members tr:last-child td {

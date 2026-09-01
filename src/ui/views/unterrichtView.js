@@ -1021,14 +1021,14 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       const activePhaseId = String(activePhase && activePhase.id || "").trim();
       const fallbackLessonPlanId = activeSegment && activeSegment.lessonPlan
         ? String(activeSegment.lessonPlan.id || "").trim()
-        : "";
-      const fallbackPhaseId = activePhaseId;
-      const liveOverride = activePhaseId && activeSegment && window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getCurriculumLessonPhaseLiveOverride === "function"
+        : "__live_without_plan__";
+      const fallbackPhaseId = activePhaseId || "__live_without_phase__";
+      const liveOverride = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getCurriculumLessonPhaseLiveOverride === "function"
         ? window.UnterrichtsassistentApp.getCurriculumLessonPhaseLiveOverride(
             String(activeClass && activeClass.id || "").trim(),
-            String(lessonFlowData && lessonFlowData.lessonDate || "").trim(),
-            String(activeSegment && activeSegment.lessonPlan && activeSegment.lessonPlan.id || "").trim(),
-            activePhaseId
+            String(lessonFlowData && lessonFlowData.lessonDate || toIsoDate(referenceDate) || "").trim(),
+            fallbackLessonPlanId,
+            fallbackPhaseId
           )
         : null;
       const normalizedSituation = String(liveOverride && liveOverride.situationType || activePhase && activePhase.situationType || "").trim().toLowerCase();

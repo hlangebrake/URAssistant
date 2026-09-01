@@ -135,7 +135,8 @@ let bewertungDiscussionGroupSettings = {
   seed: 0,
   generatedConfig: null,
   displayMode: "default",
-  displaySeed: 0
+  displaySeed: 0,
+  showPoints: false
 };
 let performedCompetencyGridMode = "kompakt";
 let activePerformedEvaluationDetailModal = null;
@@ -26531,6 +26532,7 @@ window.UnterrichtsassistentApp.getBewertungDiscussionGroupSettings = function ()
     seed: Number(bewertungDiscussionGroupSettings.seed) || 0,
     displayMode: String(bewertungDiscussionGroupSettings.displayMode || "default"),
     displaySeed: Number(bewertungDiscussionGroupSettings.displaySeed) || 0,
+    showPoints: Boolean(bewertungDiscussionGroupSettings.showPoints),
     generatedConfig: bewertungDiscussionGroupSettings.generatedConfig && typeof bewertungDiscussionGroupSettings.generatedConfig === "object"
       ? Object.assign({}, bewertungDiscussionGroupSettings.generatedConfig, {
           selectedColumns: Array.isArray(bewertungDiscussionGroupSettings.generatedConfig.selectedColumns)
@@ -28704,6 +28706,24 @@ window.UnterrichtsassistentApp.setBewertungDiscussionGroupDisplayMode = function
       : [],
     displayMode: normalizedDisplayMode === "leistung" ? "leistung" : "zufaellig",
     displaySeed: normalizedDisplayMode === "leistung" ? 0 : Date.now()
+  });
+
+  if (activeViewId === "bewertung") {
+    setActiveView("bewertung");
+  }
+
+  return false;
+};
+window.UnterrichtsassistentApp.toggleBewertungDiscussionGroupPoints = function () {
+  if (!bewertungDiscussionGroupSettings || !Number(bewertungDiscussionGroupSettings.seed)) {
+    return false;
+  }
+
+  bewertungDiscussionGroupSettings = Object.assign({}, bewertungDiscussionGroupSettings, {
+    selectedColumns: Array.isArray(bewertungDiscussionGroupSettings.selectedColumns)
+      ? bewertungDiscussionGroupSettings.selectedColumns.slice()
+      : [],
+    showPoints: !Boolean(bewertungDiscussionGroupSettings.showPoints)
   });
 
   if (activeViewId === "bewertung") {

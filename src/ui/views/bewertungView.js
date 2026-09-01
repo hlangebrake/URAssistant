@@ -3247,7 +3247,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
       function getDiscussionGroupSettings() {
         return window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getBewertungDiscussionGroupSettings === "function"
           ? window.UnterrichtsassistentApp.getBewertungDiscussionGroupSettings()
-          : { amount: 4, unit: "gruppen", mode: "heterogen", includeWarnings: true, includeGender: true, optimizationIterations: 500, optimizationRestarts: 8, selectedColumns: [] };
+          : { amount: 4, unit: "gruppen", mode: "heterogen", includeWarnings: true, includeGender: true, optimizationIterations: 500, optimizationRestarts: 8, selectedColumns: [], showPoints: false };
       }
 
       function normalizeAnalysisGender(student) {
@@ -3342,14 +3342,26 @@ window.Unterrichtsassistent.ui.views.bewertung = {
           lookup[String(key || "").trim()] = true;
           return lookup;
         }, {});
-
-        return selectedColumnKeys.length
+        const defaultColumns = columns.filter(function (column) {
+          return Boolean(column && column.isTaskStart);
+        });
+        const requestedColumns = selectedColumnKeys.length
           ? columns.filter(function (column) {
               return Boolean(selectedLookup[String(column && column.key || "").trim()]);
             })
-          : columns.filter(function (column) {
-              return Boolean(column && column.isTaskStart);
-            });
+          : defaultColumns;
+        const selectedTaskLookup = requestedColumns.reduce(function (lookup, column) {
+          if (column && column.type === "task") {
+            lookup[String(column.taskId || "").trim()] = true;
+          }
+
+          return lookup;
+        }, {});
+        const effectiveColumns = requestedColumns.filter(function (column) {
+          return !column || column.type !== "subtask" || !selectedTaskLookup[String(column.taskId || "").trim()];
+        });
+
+        return effectiveColumns.length ? effectiveColumns : defaultColumns;
       }
 
       function getDiscussionScoreProfile(student, effectiveColumns) {
@@ -3357,8 +3369,14 @@ window.Unterrichtsassistent.ui.views.bewertung = {
           return Number(getStudentColumnValue(student, column)) || 0;
         });
         const maxValues = effectiveColumns.map(function (column) {
-          return Math.max(0, Number(column && column.max) || 0);
+          return Math.max(0, Number(column && column.max) || 0) + Math.max(0, Number(column && column.additionalMax) || 0);
         });
+        const total = values.reduce(function (sum, value) {
+          return sum + value;
+        }, 0);
+        const max = maxValues.reduce(function (sum, value) {
+          return sum + value;
+        }, 0);
 
         return {
           values: values,
@@ -3366,246 +3384,10 @@ window.Unterrichtsassistent.ui.views.bewertung = {
             const maxValue = maxValues[index] || 0;
             return maxValue > 0 ? Math.max(0, Number(value) || 0) / maxValue : 0;
           }),
-          total: values.reduce(function (sum, value) {
-            return sum + value;
-          }, 0)
+          total: total,
+          max: max,
+          ratio: max > 0 ? total / max : 0
         };
-      }
-
-      function getDiscussionProfileDistance(leftProfile, rightProfile) {
-        const leftValues = Array.isArray(leftProfile && leftProfile.scoreValues) ? leftProfile.scoreValues : [];
-        const rightValues = Array.isArray(rightProfile && rightProfile.scoreValues) ? rightProfile.scoreValues : [];
-        const length = Math.max(leftValues.length, rightValues.length);
-        let sum = 0;
-        let index;
-
-        if (!length) {
-          return 0;
-        }
-
-        for (index = 0; index < length; index += 1) {
-          sum += Math.abs((Number(leftValues[index]) || 0) - (Number(rightValues[index]) || 0));
-        }
-
-        return sum / length;
-      }
-
-      function getDiscussionComplementScore(leftProfile, rightProfile) {
-        const leftValues = Array.isArray(leftProfile && leftProfile.scoreRatios) ? leftProfile.scoreRatios : [];
-        const rightValues = Array.isArray(rightProfile && rightProfile.scoreRatios) ? rightProfile.scoreRatios : [];
-        const length = Math.max(leftValues.length, rightValues.length);
-        let positiveDiff = 0;
-        let negativeDiff = 0;
-        let differenceSum = 0;
-        let index;
-
-        if (length < 2) {
-          return getDiscussionProfileDistance(leftProfile, rightProfile);
-        }
-
-        for (index = 0; index < length; index += 1) {
-          const diff = (Number(leftValues[index]) || 0) - (Number(rightValues[index]) || 0);
-          const absoluteDiff = Math.abs(diff);
-
-          differenceSum += absoluteDiff;
-
-          if (diff > 0) {
-            positiveDiff += absoluteDiff;
-          } else if (diff < 0) {
-            negativeDiff += absoluteDiff;
-          }
-        }
-
-        if (!differenceSum) {
-          return 0;
-        }
-
-        return differenceSum * (Math.min(positiveDiff, negativeDiff) / differenceSum);
-      }
-
-      function getDiscussionGroupSpreadScore(members, profile) {
-        const groupMembers = (Array.isArray(members) ? members : []).concat(profile ? [profile] : []);
-        const valueCount = groupMembers.reduce(function (maxValueCount, member) {
-          const values = Array.isArray(member && member.scoreValues) ? member.scoreValues : [];
-          return Math.max(maxValueCount, values.length);
-        }, 0);
-        let spreadScore = 0;
-        let index;
-
-        if (groupMembers.length < 2 || !valueCount) {
-          return 0;
-        }
-
-        for (index = 0; index < valueCount; index += 1) {
-          const values = groupMembers.map(function (member) {
-            const scoreValues = Array.isArray(member && member.scoreValues) ? member.scoreValues : [];
-            return Number(scoreValues[index]) || 0;
-          });
-          const minValue = Math.min.apply(Math, values);
-          const maxValue = Math.max.apply(Math, values);
-          const range = maxValue - minValue;
-
-          spreadScore += range * range;
-        }
-
-        return spreadScore / valueCount;
-      }
-
-      function getBalancedGroupSizes(studentCount, groupCount) {
-        const sizes = [];
-        const baseSize = Math.floor(studentCount / groupCount);
-        const remainder = studentCount % groupCount;
-        let index;
-
-        for (index = 0; index < groupCount; index += 1) {
-          sizes.push(baseSize + (index < remainder ? 1 : 0));
-        }
-
-        return sizes;
-      }
-
-      function cloneDiscussionGroups(groups) {
-        return (Array.isArray(groups) ? groups : []).map(function (group) {
-          return {
-            maxSize: Number(group && group.maxSize) || 0,
-            members: Array.isArray(group && group.members) ? group.members.slice() : []
-          };
-        });
-      }
-
-      function scoreDiscussionGroup(group, settings, mode) {
-        const members = Array.isArray(group && group.members) ? group.members : [];
-        let score = 0;
-        let leftIndex;
-        let rightIndex;
-
-        if (members.length < 2) {
-          return 0;
-        }
-
-        if (mode === "heterogen") {
-          score += getDiscussionGroupSpreadScore(members, null) * 24;
-        } else if (mode === "homogen") {
-          score -= getDiscussionGroupSpreadScore(members, null) * 28;
-        }
-
-        for (leftIndex = 0; leftIndex < members.length; leftIndex += 1) {
-          for (rightIndex = leftIndex + 1; rightIndex < members.length; rightIndex += 1) {
-            const left = members[leftIndex];
-            const right = members[rightIndex];
-            const distance = getDiscussionProfileDistance(left, right);
-
-            if (mode === "heterogen") {
-              score += distance * 6;
-            } else if (mode === "homogen") {
-              score -= distance * 10;
-            } else {
-              score += getDiscussionComplementScore(left, right) * 36;
-              score += distance * 1.5;
-            }
-
-            if (settings && settings.includeWarnings && left.warned && right.warned) {
-              score -= 18;
-            }
-          }
-        }
-
-        if (settings && settings.includeGender) {
-          const genderCounts = members.reduce(function (counts, member) {
-            const gender = String(member && member.gender || "").trim();
-
-            if (gender === "m" || gender === "w") {
-              counts[gender] += 1;
-            }
-
-            return counts;
-          }, { m: 0, w: 0 });
-
-          score -= Math.abs(genderCounts.m - genderCounts.w) * 3;
-        }
-
-        return score;
-      }
-
-      function scoreDiscussionGroups(groups, settings, mode) {
-        return (Array.isArray(groups) ? groups : []).reduce(function (sum, group) {
-          return sum + scoreDiscussionGroup(group, settings, mode);
-        }, 0);
-      }
-
-      function createRandomDiscussionGroups(profiles, groupSizes, random) {
-        const shuffledProfiles = shuffleDiscussionItems(profiles, random);
-        let offset = 0;
-
-        return groupSizes.map(function (size) {
-          const group = {
-            maxSize: size,
-            members: shuffledProfiles.slice(offset, offset + size)
-          };
-
-          offset += size;
-          return group;
-        });
-      }
-
-      function optimizeDiscussionGroups(profiles, groupSizes, settings, mode, random) {
-        const iterations = Math.max(0, Math.min(5000, Math.round(Number(settings && settings.optimizationIterations) || 0)));
-        const restarts = Math.max(1, Math.min(50, Math.round(Number(settings && settings.optimizationRestarts) || 1)));
-        let bestGroups = [];
-        let bestScore = -Infinity;
-        let restartIndex;
-
-        for (restartIndex = 0; restartIndex < restarts; restartIndex += 1) {
-          let groups = createRandomDiscussionGroups(profiles, groupSizes, random);
-          let currentScore = scoreDiscussionGroups(groups, settings, mode);
-          let iterationIndex;
-
-          for (iterationIndex = 0; iterationIndex < iterations; iterationIndex += 1) {
-            const nonEmptyGroups = groups.filter(function (group) {
-              return group.members.length > 0;
-            });
-            const leftGroup = nonEmptyGroups[Math.floor(random() * nonEmptyGroups.length)] || null;
-            let rightGroup = nonEmptyGroups[Math.floor(random() * nonEmptyGroups.length)] || null;
-            let leftMemberIndex;
-            let rightMemberIndex;
-            let nextScore;
-            let tmp;
-
-            if (!leftGroup || !rightGroup || nonEmptyGroups.length < 2) {
-              break;
-            }
-
-            while (rightGroup === leftGroup && nonEmptyGroups.length > 1) {
-              rightGroup = nonEmptyGroups[Math.floor(random() * nonEmptyGroups.length)] || null;
-            }
-
-            if (!rightGroup || rightGroup === leftGroup) {
-              continue;
-            }
-
-            leftMemberIndex = Math.floor(random() * leftGroup.members.length);
-            rightMemberIndex = Math.floor(random() * rightGroup.members.length);
-            tmp = leftGroup.members[leftMemberIndex];
-            leftGroup.members[leftMemberIndex] = rightGroup.members[rightMemberIndex];
-            rightGroup.members[rightMemberIndex] = tmp;
-            nextScore = scoreDiscussionGroups(groups, settings, mode);
-
-            if (nextScore >= currentScore) {
-              currentScore = nextScore;
-            } else {
-              tmp = leftGroup.members[leftMemberIndex];
-              leftGroup.members[leftMemberIndex] = rightGroup.members[rightMemberIndex];
-              rightGroup.members[rightMemberIndex] = tmp;
-            }
-          }
-
-          if (currentScore > bestScore) {
-            bestScore = currentScore;
-            bestGroups = cloneDiscussionGroups(groups);
-          }
-        }
-
-        return bestGroups;
       }
 
       function generateDiscussionGroups(settings) {
@@ -3618,6 +3400,11 @@ window.Unterrichtsassistent.ui.views.bewertung = {
         const selectedColumnKeys = Array.isArray(settings && settings.selectedColumns) ? settings.selectedColumns.map(function (key) { return String(key || "").trim(); }).filter(Boolean) : [];
         const effectiveColumns = getDiscussionColumns(selectedColumnKeys);
         const warningLookup = settings && settings.includeWarnings ? getRecentWarningLookupForAnalysis() : {};
+        const discussionGroupsFeature = window.Unterrichtsassistent
+          && window.Unterrichtsassistent.features
+          && window.Unterrichtsassistent.features.evaluation
+          ? window.Unterrichtsassistent.features.evaluation.discussionGroups
+          : null;
         const profiles = shuffleDiscussionItems(assignedStudents, random).map(function (student) {
           const studentId = String(student && student.id || "").trim();
           const scoreProfile = getDiscussionScoreProfile(student, effectiveColumns);
@@ -3626,6 +3413,8 @@ window.Unterrichtsassistent.ui.views.bewertung = {
             student: student,
             id: studentId,
             score: scoreProfile.total,
+            scoreMax: scoreProfile.max,
+            scoreRatio: scoreProfile.ratio,
             scoreValues: scoreProfile.values,
             scoreRatios: scoreProfile.ratios,
             warned: Boolean(warningLookup[studentId]),
@@ -3635,15 +3424,32 @@ window.Unterrichtsassistent.ui.views.bewertung = {
         const groupCount = profiles.length
           ? Math.max(1, Math.min(profiles.length, unit === "personen" ? Math.ceil(profiles.length / amount) : amount))
           : 0;
-        const groupSizes = getBalancedGroupSizes(profiles.length, groupCount);
-        const groups = optimizeDiscussionGroups(profiles, groupSizes, settings, mode, random);
+        const groups = discussionGroupsFeature && typeof discussionGroupsFeature.generate === "function"
+          ? discussionGroupsFeature.generate(profiles, {
+              groupCount: groupCount,
+              mode: mode,
+              seed: seed,
+              includeWarnings: Boolean(settings && settings.includeWarnings),
+              includeGender: Boolean(settings && settings.includeGender),
+              optimizationIterations: settings && settings.optimizationIterations,
+              optimizationRestarts: settings && settings.optimizationRestarts
+            })
+          : [];
 
         return groups.map(function (group) {
-          return shuffleDiscussionItems(group.members, random);
+          return shuffleDiscussionItems(group, random);
         });
       }
 
       function getDiscussionGroupsCacheKey(settings) {
+        const selectedColumnKeys = Array.isArray(settings && settings.selectedColumns) ? settings.selectedColumns.map(function (key) {
+          return String(key || "").trim();
+        }).filter(Boolean) : [];
+        const effectiveColumns = getDiscussionColumns(selectedColumnKeys);
+        const includeWarnings = Boolean(settings && settings.includeWarnings);
+        const includeGender = Boolean(settings && settings.includeGender);
+        const warningLookup = includeWarnings ? getRecentWarningLookupForAnalysis() : {};
+
         return JSON.stringify({
           classId: activeClass ? String(activeClass.id || "").trim() : "",
           plannedEvaluationId: selectedPlannedEvaluationId,
@@ -3653,15 +3459,29 @@ window.Unterrichtsassistent.ui.views.bewertung = {
           mode: ["homogen", "ergaenzend"].indexOf(String(settings && settings.mode || "heterogen").trim().toLowerCase()) >= 0
             ? String(settings && settings.mode || "heterogen").trim().toLowerCase()
             : "heterogen",
-          includeWarnings: Boolean(settings && settings.includeWarnings),
-          includeGender: Boolean(settings && settings.includeGender),
+          includeWarnings: includeWarnings,
+          includeGender: includeGender,
           optimizationIterations: Math.max(0, Math.min(5000, Math.round(Number(settings && settings.optimizationIterations) || 0))),
           optimizationRestarts: Math.max(1, Math.min(50, Math.round(Number(settings && settings.optimizationRestarts) || 1))),
-          selectedColumns: Array.isArray(settings && settings.selectedColumns) ? settings.selectedColumns.map(function (key) {
-            return String(key || "").trim();
-          }).filter(Boolean) : [],
-          assignedStudentIds: assignedStudents.map(function (student) {
-            return String(student && student.id || "").trim();
+          selectedColumns: selectedColumnKeys,
+          effectiveColumns: effectiveColumns.map(function (column) {
+            return {
+              key: String(column && column.key || "").trim(),
+              max: Math.max(0, Number(column && column.max) || 0),
+              additionalMax: Math.max(0, Number(column && column.additionalMax) || 0)
+            };
+          }),
+          assignedStudentScores: assignedStudents.map(function (student) {
+            const studentId = String(student && student.id || "").trim();
+
+            return {
+              id: studentId,
+              values: effectiveColumns.map(function (column) {
+                return Number(getStudentColumnValue(student, column)) || 0;
+              }),
+              warned: includeWarnings ? Boolean(warningLookup[studentId]) : false,
+              gender: includeGender ? normalizeAnalysisGender(student) : ""
+            };
           })
         });
       }
@@ -3752,14 +3572,24 @@ window.Unterrichtsassistent.ui.views.bewertung = {
         const mode = ["homogen", "ergaenzend"].indexOf(rawMode) >= 0 ? rawMode : "heterogen";
         const optimizationIterations = Math.max(0, Math.min(5000, Math.round(Number(settings.optimizationIterations) || 0)));
         const optimizationRestarts = Math.max(1, Math.min(50, Math.round(Number(settings.optimizationRestarts) || 1)));
+        const columnOptions = buildDiscussionColumnOptions();
+        const validColumnLookup = columnOptions.reduce(function (lookup, option) {
+          lookup[String(option && option.key || "").trim()] = true;
+          return lookup;
+        }, {});
         const selectedLookup = (Array.isArray(settings.selectedColumns) ? settings.selectedColumns : []).reduce(function (lookup, key) {
-          lookup[String(key || "").trim()] = true;
+          const normalizedKey = String(key || "").trim();
+
+          if (validColumnLookup[normalizedKey]) {
+            lookup[normalizedKey] = true;
+          }
+
           return lookup;
         }, {});
         const hasExplicitColumnSelection = Object.keys(selectedLookup).length > 0;
-        const columnOptions = buildDiscussionColumnOptions();
         const seed = Number(settings.seed) || 0;
         const displayMode = String(settings.displayMode || "default").trim().toLowerCase();
+        const showPoints = Boolean(settings.showPoints);
         const generatedSettings = settings.generatedConfig && typeof settings.generatedConfig === "object"
           ? Object.assign({}, settings.generatedConfig, {
               selectedColumns: Array.isArray(settings.generatedConfig.selectedColumns) ? settings.generatedConfig.selectedColumns.slice() : [],
@@ -3827,7 +3657,14 @@ window.Unterrichtsassistent.ui.views.bewertung = {
               '<h4>Gruppe ', escapeValue(String(index + 1)), '</h4>',
               '<table class="bewertung-discussion-groups__members"><tbody>',
               group.map(function (profile) {
-                return '<tr><td>' + escapeValue(getDiscussionStudentLabel(profile.student)) + '</td></tr>';
+                return [
+                  '<tr><td>',
+                  '<span class="bewertung-discussion-groups__member-name">', escapeValue(getDiscussionStudentLabel(profile.student)), '</span>',
+                  showPoints
+                    ? '<span class="bewertung-discussion-groups__member-score" aria-label="Punktzahl ' + escapeValue(formatCompactPointsLabel(profile.score)) + '">' + escapeValue(formatCompactPointsLabel(profile.score)) + ' P.</span>'
+                    : "",
+                  '</td></tr>'
+                ].join("");
               }).join(""),
               '</tbody></table>',
               '</article>'
@@ -3835,8 +3672,9 @@ window.Unterrichtsassistent.ui.views.bewertung = {
           }).join(""),
           '</div>',
           '<div class="bewertung-discussion-groups__display-actions">',
-          '<button class="bewertung-discussion-groups__display-button', displayMode === "zufaellig" ? ' is-active' : '', '" type="button" onclick="return window.UnterrichtsassistentApp.setBewertungDiscussionGroupDisplayMode(\'zufaellig\')">zuf&auml;llig</button>',
-          '<button class="bewertung-discussion-groups__display-button', displayMode === "leistung" ? ' is-active' : '', '" type="button" onclick="return window.UnterrichtsassistentApp.setBewertungDiscussionGroupDisplayMode(\'leistung\')">Leistung</button>',
+          '<button class="bewertung-discussion-groups__display-button', displayMode === "zufaellig" ? ' is-active' : '', '" type="button" aria-pressed="', displayMode === "zufaellig" ? 'true' : 'false', '" onclick="return window.UnterrichtsassistentApp.setBewertungDiscussionGroupDisplayMode(\'zufaellig\')">zuf&auml;llig</button>',
+          '<button class="bewertung-discussion-groups__display-button', displayMode === "leistung" ? ' is-active' : '', '" type="button" aria-pressed="', displayMode === "leistung" ? 'true' : 'false', '" onclick="return window.UnterrichtsassistentApp.setBewertungDiscussionGroupDisplayMode(\'leistung\')">Leistung</button>',
+          '<button class="bewertung-discussion-groups__display-button', showPoints ? ' is-active' : '', '" type="button" aria-pressed="', showPoints ? 'true' : 'false', '" onclick="return window.UnterrichtsassistentApp.toggleBewertungDiscussionGroupPoints()">Punktzahl</button>',
           '</div>'
           ].join("") : '<p class="empty-message">Klicke auf einteilen, um die Besprechungsgruppen zu generieren.</p>',
           '</div>'
