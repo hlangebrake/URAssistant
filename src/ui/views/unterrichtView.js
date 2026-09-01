@@ -1852,7 +1852,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
           }
         }).join("") + '</div>'
         : "";
-      const toolButtons = [
+      const liveToolButtons = [
         isToolEnabled("attendance") ? '<button class="' + getToolButtonClass("attendance") + '" type="button" aria-label="Anwesenheit markieren" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'attendance\')">&#10003;</button>' : "",
         isToolEnabled("homework") ? '<button class="' + getToolButtonClass("homework") + '" type="button" aria-label="Hausaufgabe markieren" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'homework\')">H</button>' : "",
         isToolEnabled("warning") ? '<button class="' + getToolButtonClass("warning") + '" type="button" aria-label="Warnung vergeben" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'warning\')">&#9888;</button>' : "",
@@ -1868,20 +1868,39 @@ window.Unterrichtsassistent.ui.views.unterricht = {
           }
 
           return '<button class="' + getToolButtonClass(toolKey) + '" type="button" aria-label="' + escapeValue(String(tool && tool.titel || "Bewertungswerkzeug")) + '" title="' + escapeValue(String(tool && tool.titel || "Bewertungswerkzeug")) + '" onclick="return window.UnterrichtsassistentApp.setUnterrichtToolMode(\'' + escapeValue(toolKey) + '\')">' + escapeValue(String(tool && tool.symbol || "").trim() || "E") + '</button>';
-        }).join(""),
-        '<button class="' + getRotationButtonClass() + '" type="button" aria-label="Sitzplan um 180 Grad drehen" aria-pressed="' + (isSeatPlanRotated ? "true" : "false") + '" onclick="return window.UnterrichtsassistentApp.toggleUnterrichtSeatPlanRotation()">180&deg;</button>'
+        }).join("")
       ].join("");
+      const seatPlanToolButtons = liveToolButtons + '<button class="' + getRotationButtonClass() + '" type="button" aria-label="Sitzplan um 180 Grad drehen" aria-pressed="' + (isSeatPlanRotated ? "true" : "false") + '" onclick="return window.UnterrichtsassistentApp.toggleUnterrichtSeatPlanRotation()">180&deg;</button>';
 
       if (!activeClass) {
         return '<div class="seat-plan-placeholder">Noch keine aktive Lerngruppe vorhanden.</div>';
       }
 
-      if (!currentSeatPlan || !currentSeatOrder) {
-        return '<div class="seat-plan-placeholder">Fuer die aktuellen globalen Daten ist noch kein Sitzplan hinterlegt.</div>';
+      if (!students.length) {
+        return '<div class="seat-plan-placeholder">In dieser Lerngruppe sind noch keine Schuelerinnen und Schueler hinterlegt.</div>';
       }
 
-      if (!deskLayoutItems.length) {
-        return '<div class="seat-plan-placeholder">Die aktuelle Tischordnung enthaelt noch keine Tische.</div>';
+      if (!currentSeatPlan || !currentSeatOrder || !deskLayoutItems.length || !seatAssignments.length) {
+        return [
+          '<div class="unterricht-seatplan unterricht-seatplan--fallback">',
+          '<div class="unterricht-seatplan-fallback" aria-label="Automatischer Ersatz-Sitzplan">',
+          '<div class="unterricht-seatplan-fallback__header">',
+          '<span class="unterricht-seatplan-fallback__title">Automatische Anordnung</span>',
+          '<span class="unterricht-seatplan-fallback__count">', escapeValue(String(students.length)), ' Lernende</span>',
+          '</div>',
+          '<div class="unterricht-seatplan-fallback__grid" role="list" aria-label="Alle Schuelerinnen und Schueler">',
+          students.map(function (student) {
+            const fullName = [String(student && student.firstName || "").trim(), String(student && student.lastName || "").trim()].filter(Boolean).join(" ") || "Ohne Namen";
+
+            return '<div class="unterricht-seatplan-fallback__cell" role="listitem" aria-label="' + escapeValue(fullName) + '">' + renderReadonlySeatSlot(student, "unterricht-seatplan-slot--fallback") + '</div>';
+          }).join(""),
+          '</div>',
+          liveToolButtons
+            ? '<div class="unterricht-seatplan-actions unterricht-seatplan-actions--fallback" aria-label="Unterrichtsaktionen">' + liveToolButtons + '</div>'
+            : "",
+          '</div>',
+          '</div>'
+        ].join("");
       }
 
       return [
@@ -1928,7 +1947,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         '</div>',
         '</div>',
         '<div class="unterricht-seatplan-actions" aria-label="Unterrichtsaktionen">',
-        toolButtons,
+        seatPlanToolButtons,
         '</div>',
         '</div>',
         '</div>',

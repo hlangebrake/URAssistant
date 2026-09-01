@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./apple-touch-icon-167x167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./apple-touch-icon-152x152.png">
-  <link rel="stylesheet" href="style.css?v=20260812a">
+  <link rel="stylesheet" href="style.css?v=20260901b">
 </head>
 <body>
   <div class="app-shell is-collapsed">
@@ -48,31 +48,31 @@
       </div>
 
       <nav class="sidebar__nav" id="sidebarNav" aria-label="Hauptnavigation">
-        <button class="nav-link is-active" type="button" data-view-target="unterricht" data-view-title="Unterricht" onclick="window.UnterrichtsassistentApp.activateView('unterricht'); return false;">
+        <button class="nav-link is-active" type="button" data-view-target="unterricht" data-view-title="Unterricht" aria-label="Unterricht" title="Unterricht" onclick="window.UnterrichtsassistentApp.activateView('unterricht'); return false;">
           <span class="nav-link__icon" aria-hidden="true">U</span>
           <span class="nav-link__label">Unterricht</span>
         </button>
-        <button class="nav-link" type="button" data-view-target="klasse" data-view-title="Lerngruppe" onclick="window.UnterrichtsassistentApp.activateView('klasse'); return false;">
+        <button class="nav-link" type="button" data-view-target="klasse" data-view-title="Lerngruppe" aria-label="Lerngruppe" title="Lerngruppe" onclick="window.UnterrichtsassistentApp.activateView('klasse'); return false;">
           <span class="nav-link__icon" aria-hidden="true">L</span>
           <span class="nav-link__label">Lerngruppe</span>
         </button>
-        <button class="nav-link" type="button" data-view-target="stundenplan" data-view-title="Stundenplan" onclick="window.UnterrichtsassistentApp.activateView('stundenplan'); return false;">
+        <button class="nav-link" type="button" data-view-target="stundenplan" data-view-title="Stundenplan" aria-label="Stundenplan" title="Stundenplan" onclick="window.UnterrichtsassistentApp.activateView('stundenplan'); return false;">
           <span class="nav-link__icon" aria-hidden="true">S</span>
           <span class="nav-link__label">Stundenplan</span>
         </button>
-        <button class="nav-link" type="button" data-view-target="sitzplan" data-view-title="Sitzplan" onclick="window.UnterrichtsassistentApp.activateView('sitzplan'); return false;">
+        <button class="nav-link" type="button" data-view-target="sitzplan" data-view-title="Sitzplan" aria-label="Sitzplan" title="Sitzplan" onclick="window.UnterrichtsassistentApp.activateView('sitzplan'); return false;">
           <span class="nav-link__icon" aria-hidden="true">P</span>
           <span class="nav-link__label">Sitzplan</span>
         </button>
-        <button class="nav-link" type="button" data-view-target="planung" data-view-title="Planung" onclick="window.UnterrichtsassistentApp.activateView('planung'); return false;">
+        <button class="nav-link" type="button" data-view-target="planung" data-view-title="Planung" aria-label="Planung" title="Planung" onclick="window.UnterrichtsassistentApp.activateView('planung'); return false;">
           <span class="nav-link__icon" aria-hidden="true">J</span>
           <span class="nav-link__label">Planung</span>
         </button>
-        <button class="nav-link" type="button" data-view-target="bewertung" data-view-title="Bewertung" onclick="window.UnterrichtsassistentApp.activateView('bewertung'); return false;">
+        <button class="nav-link" type="button" data-view-target="bewertung" data-view-title="Bewertung" aria-label="Bewertung" title="Bewertung" onclick="window.UnterrichtsassistentApp.activateView('bewertung'); return false;">
           <span class="nav-link__icon" aria-hidden="true">B</span>
           <span class="nav-link__label">Bewertung</span>
         </button>
-        <button class="nav-link" type="button" data-view-target="todos" data-view-title="TODOs" onclick="window.UnterrichtsassistentApp.activateView('todos'); return false;">
+        <button class="nav-link" type="button" data-view-target="todos" data-view-title="TODOs" aria-label="TODOs" title="TODOs" onclick="window.UnterrichtsassistentApp.activateView('todos'); return false;">
           <span class="nav-link__icon" aria-hidden="true">T</span>
           <span class="nav-link__label">TODOs</span>
         </button>
@@ -282,25 +282,25 @@
   <script src="src/features/evaluation/competencies.js?v=20260515a"></script>
   <script src="src/features/seatPlan/geometry.js?v=20260515a"></script>
   <script src="src/domain/models.js?v=20260401b"></script>
-  <script src="src/domain/factories.js?v=20260401b"></script>
+  <script src="src/domain/factories.js?v=20260901a"></script>
   <script src="src/data/demoData.js?v=20260401b"></script>
   <script src="src/data/indexedDb.js?v=20260330a"></script>
   <script src="src/data/appRepository.js?v=20260330a"></script>
-  <script src="src/data/studentCsvImport.js?v=20260810a"></script>
+  <script src="src/data/studentCsvImport.js?v=20260901a"></script>
   <script src="src/security/passwordAuth.js?v=20260330a"></script>
   <script src="src/security/appDataCrypto.js?v=20260330a"></script>
   <script src="src/services/schoolService.js?v=20260330a"></script>
   <script src="src/ui/viewHelpers.js?v=20260515a"></script>
-  <script src="src/ui/views/unterrichtView.js?v=20260330a"></script>
+  <script src="src/ui/views/unterrichtView.js?v=20260901a"></script>
   <script src="src/ui/views/klasseView.js?v=20260810a"></script>
   <script src="src/ui/views/stundenplanView.js?v=20260331b"></script>
   <script src="src/ui/views/sitzplanView.js?v=20260331b"></script>
   <script src="src/ui/views/planungView.js?v=20260812a"></script>
   <script src="src/ui/views/bewertungView.js?v=20260401b"></script>
-  <script src="src/ui/views/todosView.js?v=20260402a"></script>
+  <script src="src/ui/views/todosView.js?v=20260901a"></script>
   <script src="src/ui/views/mergeView.js?v=20260616b"></script>
   <script src="src/ui/viewRegistry.js?v=20260616a"></script>
   <script src="src/ui/renderers.js?v=20260515a"></script>
-    <script src="src/app.js?v=20260812a"></script>
+    <script src="src/app.js?v=20260901a"></script>
   </body>
 </html>

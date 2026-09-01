@@ -6019,6 +6019,69 @@ button {
   width: 100%;
 }
 
+.unterricht-layout--live .unterricht-seatplan--fallback {
+  margin-left: 0;
+}
+
+.unterricht-seatplan-fallback {
+  width: 100%;
+}
+
+.unterricht-seatplan-fallback__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0 0 0.65rem;
+  color: rgba(31, 36, 48, 0.62);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.unterricht-seatplan-fallback__title {
+  color: var(--text);
+  font-size: 0.86rem;
+}
+
+.unterricht-seatplan-fallback__count {
+  white-space: nowrap;
+}
+
+.unterricht-seatplan-fallback__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.unterricht-seatplan-fallback__cell {
+  min-width: 0;
+  min-height: 74px;
+}
+
+.unterricht-seatplan-slot--fallback {
+  min-width: 0;
+  min-height: 74px;
+  padding: 0.5rem 0.35rem;
+  overflow: hidden;
+  border: 1px solid rgba(23, 49, 62, 0.16);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(246, 241, 229, 0.98), rgba(231, 222, 204, 0.98));
+  box-shadow: 0 6px 16px rgba(23, 49, 62, 0.08);
+}
+
+.unterricht-seatplan-actions--fallback {
+  position: static;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0.75rem auto 0;
+  transform: none;
+  flex-wrap: wrap;
+  justify-content: center;
+  border-top: 1px solid rgba(23, 49, 62, 0.12);
+  border-radius: 18px;
+}
+
 .unterricht-live-notice {
   margin: 0 0 1rem 0;
   padding: 0.85rem 1rem;
@@ -14302,6 +14365,21 @@ body.is-competency-grid-dragging {
   .unterricht-seatplan-actions {
     gap: 0.45rem;
     padding: 0.4rem 0.55rem;
+  }
+
+  .unterricht-seatplan-fallback__grid {
+    grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));
+    gap: 0.4rem;
+  }
+
+  .unterricht-seatplan-fallback__cell,
+  .unterricht-seatplan-slot--fallback {
+    min-height: 66px;
+  }
+
+  .unterricht-seatplan-slot--fallback {
+    padding: 0.42rem 0.25rem;
+    border-radius: 12px;
   }
 
   .unterricht-seatplan-action {

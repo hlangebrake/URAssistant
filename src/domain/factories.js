@@ -2,6 +2,8 @@ window.Unterrichtsassistent = window.Unterrichtsassistent || {};
 window.Unterrichtsassistent.domain = window.Unterrichtsassistent.domain || {};
 
 function createDomainSnapshot(rawData) {
+  rawData = rawData && typeof rawData === "object" ? rawData : {};
+
   const {
     Assessment,
     EvaluationSheet,
@@ -47,10 +49,16 @@ function createDomainSnapshot(rawData) {
     });
   }
 
+  const classes = Array.isArray(rawData.classes) ? rawData.classes : [];
+  const students = Array.isArray(rawData.students) ? rawData.students : [];
+  const lessons = Array.isArray(rawData.lessons) ? rawData.lessons : [];
+  const assessments = Array.isArray(rawData.assessments) ? rawData.assessments : [];
+  const todos = Array.isArray(rawData.todos) ? rawData.todos : [];
+  const seatPlans = Array.isArray(rawData.seatPlans) ? rawData.seatPlans : [];
   const timetables = normalizeTimetables(rawData);
 
   return {
-    activeClassId: rawData.activeClassId || (rawData.classes[0] ? rawData.classes[0].id : null),
+    activeClassId: rawData.activeClassId || (classes[0] ? classes[0].id : null),
     activeTimetableId: rawData.activeTimetableId || (timetables[0] ? timetables[0].id : null),
     activeSeatPlanId: rawData.activeSeatPlanId || null,
     activeSeatOrderId: rawData.activeSeatOrderId || null,
@@ -70,10 +78,10 @@ function createDomainSnapshot(rawData) {
     hidePastPlanningMonths: rawData.hidePastPlanningMonths !== false,
     autoApplyCalculatedCurriculumHourDemands: rawData.autoApplyCalculatedCurriculumHourDemands === true,
     timetables: timetables,
-    students: rawData.students.map((item) => new Student(item)),
-    classes: rawData.classes.map((item) => new SchoolClass(item)),
-    lessons: rawData.lessons.map((item) => new Lesson(item)),
-    assessments: rawData.assessments.map((item) => new Assessment(item)),
+    students: students.map((item) => new Student(item)),
+    classes: classes.map((item) => new SchoolClass(item)),
+    lessons: lessons.map((item) => new Lesson(item)),
+    assessments: assessments.map((item) => new Assessment(item)),
     evaluationSheets: (Array.isArray(rawData.evaluationSheets) ? rawData.evaluationSheets : []).map((item) => new EvaluationSheet(item)),
     evidenceTools: (Array.isArray(rawData.evidenceTools) ? rawData.evidenceTools : []).map((item) => new EvidenceTool(item)),
     evidenceObservations: (Array.isArray(rawData.evidenceObservations) ? rawData.evidenceObservations : []).map((item) => new EvidenceObservationRecord(item)),
@@ -84,8 +92,8 @@ function createDomainSnapshot(rawData) {
     warningRecords: (Array.isArray(rawData.warningRecords) ? rawData.warningRecords : []).map((item) => new WarningRecord(item)),
     knowledgeGapRecords: (Array.isArray(rawData.knowledgeGapRecords) ? rawData.knowledgeGapRecords : []).map((item) => new KnowledgeGapRecord(item)),
     mathObservationRecords: (Array.isArray(rawData.mathObservationRecords) ? rawData.mathObservationRecords : []).map((item) => new MathObservationRecord(item)),
-    todos: rawData.todos.map((item) => new TodoItem(item)),
-    seatPlans: rawData.seatPlans.map((item) => new SeatPlan(item)),
+    todos: todos.map((item) => new TodoItem(item)),
+    seatPlans: seatPlans.map((item) => new SeatPlan(item)),
     planningEvents: (Array.isArray(rawData.planningEvents) ? rawData.planningEvents : []).map((item) => new PlanningEvent(item)),
     planningCategories: (Array.isArray(rawData.planningCategories) ? rawData.planningCategories : []).map((item) => new PlanningCategory(item)),
     planningInstructionLessonStatuses: (Array.isArray(rawData.planningInstructionLessonStatuses) ? rawData.planningInstructionLessonStatuses : []).map((item) => new PlanningInstructionLessonStatus(item)),
@@ -96,7 +104,7 @@ function createDomainSnapshot(rawData) {
     curriculumLessonSteps: (Array.isArray(rawData.curriculumLessonSteps) ? rawData.curriculumLessonSteps : []).map((item) => new CurriculumLessonStep(item)),
     curriculumLessonPhaseStatuses: (Array.isArray(rawData.curriculumLessonPhaseStatuses) ? rawData.curriculumLessonPhaseStatuses : []).map((item) => new CurriculumLessonPhaseStatus(item)),
     curriculumLessonStepStatuses: (Array.isArray(rawData.curriculumLessonStepStatuses) ? rawData.curriculumLessonStepStatuses : []).map((item) => new CurriculumLessonStepStatus(item)),
-    seatOrders: (Array.isArray(rawData.seatOrders) ? rawData.seatOrders : rawData.seatPlans.map(function (item) {
+    seatOrders: (Array.isArray(rawData.seatOrders) ? rawData.seatOrders : seatPlans.map(function (item) {
       return {
         id: (item && item.id ? String(item.id) : "seat-order") + "-order",
         classId: item && item.classId ? item.classId : "",

@@ -1058,7 +1058,7 @@ window.Unterrichtsassistent.ui.views.todos = {
       buildFilterBar(),
       '</div>',
       '</article>',
-      todoViewMode === "liste" ? listPanelContent : groupedPanels,
+      todoViewMode === "liste" || !filteredTodos.length ? listPanelContent : groupedPanels,
       buildTodoModal(),
       '</div>'
     ].join("");

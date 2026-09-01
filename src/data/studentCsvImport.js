@@ -65,28 +65,68 @@ function createClassKey(className, subjectName) {
   return [sanitizeValue(className), sanitizeValue(subjectName)].join("::");
 }
 
-function parseDelimitedLine(line, delimiter) {
-  return line.split(delimiter).map(function (cell) {
-    return sanitizeValue(cell);
-  });
+function parseDelimitedRows(text, delimiter) {
+  const normalizedText = String(text || "");
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let isQuoted = false;
+  let index;
+
+  for (index = 0; index < normalizedText.length; index += 1) {
+    const character = normalizedText[index];
+
+    if (character === '"') {
+      if (isQuoted && normalizedText[index + 1] === '"') {
+        cell += '"';
+        index += 1;
+      } else {
+        isQuoted = !isQuoted;
+      }
+    } else if (character === delimiter && !isQuoted) {
+      row.push(sanitizeValue(cell));
+      cell = "";
+    } else if ((character === "\n" || character === "\r") && !isQuoted) {
+      if (character === "\r" && normalizedText[index + 1] === "\n") {
+        index += 1;
+      }
+      row.push(sanitizeValue(cell));
+      cell = "";
+      if (row.some(function (value) { return value !== ""; })) {
+        rows.push(row);
+      }
+      row = [];
+    } else {
+      cell += character;
+    }
+  }
+
+  row.push(sanitizeValue(cell));
+  if (row.some(function (value) { return value !== ""; })) {
+    rows.push(row);
+  }
+
+  return rows;
 }
 
 function parseStudentCsv(text) {
-  const lines = text.replace(/\r/g, "").split("\n").filter(function (line) {
-    return line.trim() !== "";
-  });
+  const normalizedText = String(text || "");
+  const firstLine = normalizedText.split(/\r?\n/, 1)[0] || "";
+  const delimiter = firstLine.indexOf("\t") >= 0 ? "\t" : ";";
+  const rows = parseDelimitedRows(normalizedText, delimiter);
 
-  if (!lines.length) {
+  if (!rows.length) {
     return [];
   }
 
-  const delimiter = lines[0].indexOf("\t") >= 0 ? "\t" : ";";
-  const headers = parseDelimitedLine(lines[0], delimiter);
+  const headers = rows[0].map(function (header, index) {
+    return index === 0 ? String(header || "").replace(/^\uFEFF/, "") : header;
+  });
   const records = [];
-  var lineIndex;
+  var rowIndex;
 
-  for (lineIndex = 1; lineIndex < lines.length; lineIndex += 1) {
-    const cells = parseDelimitedLine(lines[lineIndex], delimiter);
+  for (rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
+    const cells = rows[rowIndex];
     const row = {};
     var columnIndex;
 
@@ -99,7 +139,7 @@ function parseStudentCsv(text) {
     }
 
     records.push({
-      id: "import-" + lineIndex + "-" + Date.now(),
+      id: "import-" + rowIndex + "-" + Date.now(),
       firstName: sanitizeValue(row.Vorname),
       lastName: sanitizeValue(row.Langname),
       className: normalizeClassName(row.Klasse),

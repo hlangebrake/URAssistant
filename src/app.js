@@ -78,6 +78,7 @@ let rawState = null;
 let unlockedMasterKeyBytes = null;
 let pendingAuthReturnState = null;
 let activeViewId = "unterricht";
+let activeViewRenderRevision = 0;
 let activeSidebarSubviewDrag = null;
 let sidebarSubviewOverlay = null;
 let suppressSidebarNavClickUntil = 0;
@@ -1333,10 +1334,13 @@ function getStableScrollElementKey(element, root) {
 
 function captureActiveViewScrollState() {
   const activeView = document.querySelector(".view.is-active");
+  const mainContent = document.getElementById("mainContent") || document.querySelector(".content");
   const scrollingElement = document.scrollingElement || document.documentElement;
   const state = {
     windowTop: scrollingElement ? scrollingElement.scrollTop || 0 : 0,
     windowLeft: scrollingElement ? scrollingElement.scrollLeft || 0 : 0,
+    contentTop: mainContent ? mainContent.scrollTop || 0 : 0,
+    contentLeft: mainContent ? mainContent.scrollLeft || 0 : 0,
     elements: {}
   };
 
@@ -1345,12 +1349,10 @@ function captureActiveViewScrollState() {
   }
 
   [activeView].concat(Array.from(activeView.querySelectorAll("*"))).forEach(function (element) {
-    const canScrollY = element.scrollHeight > element.clientHeight + 1;
-    const canScrollX = element.scrollWidth > element.clientWidth + 1;
     const top = element.scrollTop || 0;
     const left = element.scrollLeft || 0;
 
-    if (!canScrollY && !canScrollX && !top && !left) {
+    if (!top && !left) {
       return;
     }
 
@@ -1365,6 +1367,7 @@ function captureActiveViewScrollState() {
 
 function restoreActiveViewScrollState(scrollState) {
   const activeView = document.querySelector(".view.is-active");
+  const mainContent = document.getElementById("mainContent") || document.querySelector(".content");
   const scrollingElement = document.scrollingElement || document.documentElement;
 
   if (!scrollState) {
@@ -1374,6 +1377,11 @@ function restoreActiveViewScrollState(scrollState) {
   if (scrollingElement) {
     scrollingElement.scrollTop = Number(scrollState.windowTop) || 0;
     scrollingElement.scrollLeft = Number(scrollState.windowLeft) || 0;
+  }
+
+  if (mainContent) {
+    mainContent.scrollTop = Number(scrollState.contentTop) || 0;
+    mainContent.scrollLeft = Number(scrollState.contentLeft) || 0;
   }
 
   if (!activeView) {
@@ -6405,6 +6413,10 @@ function initializePlanningCurriculumInteractions() {
 
 function setActiveView(viewId) {
   const previousViewId = activeViewId;
+  const renderRevision = activeViewRenderRevision + 1;
+  const activeViewScrollState = viewId === previousViewId
+    ? captureActiveViewScrollState()
+    : null;
   const shouldPreserveTodoScroll = viewId === "todos";
   todoViewScrollState = shouldPreserveTodoScroll ? captureTodoViewScrollState() : null;
 
@@ -6417,6 +6429,7 @@ function setActiveView(viewId) {
   }
 
   activeViewId = viewId;
+  activeViewRenderRevision = renderRevision;
   const config = registeredViews[viewId];
 
   if (viewId === "klasse" && previousViewId !== "klasse") {
@@ -6544,6 +6557,15 @@ function setActiveView(viewId) {
     initializePlanningCurriculumInteractions();
   } else {
     clearPlanningCurriculumDragScroll();
+  }
+
+  if (activeViewScrollState) {
+    restoreActiveViewScrollState(activeViewScrollState);
+    window.requestAnimationFrame(function () {
+      if (activeViewId === viewId && activeViewRenderRevision === renderRevision) {
+        restoreActiveViewScrollState(activeViewScrollState);
+      }
+    });
   }
 }
 
