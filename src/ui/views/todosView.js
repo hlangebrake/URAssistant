@@ -6,6 +6,10 @@ window.Unterrichtsassistent.ui.views.todos = {
   id: "todos",
   title: "TODOs",
   render: function (service) {
+    const app = window.UnterrichtsassistentApp;
+    if (app && app.getTodoWorkspaceMode && app.getTodoWorkspaceMode() === "kanban") {
+      return window.Unterrichtsassistent.ui.views.kanban.render(service, app.kanban.getState());
+    }
     const snapshot = service && service.snapshot ? service.snapshot : {};
     const todoDraft = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getActiveTodoDraft === "function"
       ? window.UnterrichtsassistentApp.getActiveTodoDraft()

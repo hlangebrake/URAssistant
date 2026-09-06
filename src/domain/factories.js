@@ -32,6 +32,7 @@ function createDomainSnapshot(rawData) {
     Student,
     Timetable,
     TodoItem,
+    TaskPerson,
     WarningRecord
   } = window.Unterrichtsassistent.domain;
 
@@ -93,6 +94,7 @@ function createDomainSnapshot(rawData) {
     knowledgeGapRecords: (Array.isArray(rawData.knowledgeGapRecords) ? rawData.knowledgeGapRecords : []).map((item) => new KnowledgeGapRecord(item)),
     mathObservationRecords: (Array.isArray(rawData.mathObservationRecords) ? rawData.mathObservationRecords : []).map((item) => new MathObservationRecord(item)),
     todos: todos.map((item) => new TodoItem(item)),
+    taskPeople: (Array.isArray(rawData.taskPeople) ? rawData.taskPeople : []).filter((item) => item && typeof item === "object").map((item) => new TaskPerson(item)),
     seatPlans: seatPlans.map((item) => new SeatPlan(item)),
     planningEvents: (Array.isArray(rawData.planningEvents) ? rawData.planningEvents : []).map((item) => new PlanningEvent(item)),
     planningCategories: (Array.isArray(rawData.planningCategories) ? rawData.planningCategories : []).map((item) => new PlanningCategory(item)),
@@ -372,8 +374,12 @@ function serializeDomainSnapshot(snapshot) {
           : []
       });
     }),
-    todos: cloneItems(snapshot.todos, ["id", "title", "description", "category", "dueDate", "relatedClassId", "assignedStudentIds", "assignedStudentStatuses", "priority", "type", "checklistItems", "done", "completedAt"]).map(function (item) {
+    taskPeople: cloneItems(snapshot.taskPeople || [], ["id", "name"]),
+    todos: cloneItems(snapshot.todos, ["id", "title", "description", "category", "dueDate", "relatedClassId", "assignedStudentIds", "assignedStudentStatuses", "priority", "type", "checklistItems", "done", "completedAt", "taskStatus", "categoryId", "createdAt", "updatedAt", "responsiblePersonId", "participantPersonIds", "waitingForPersonId", "waitingSince", "history", "protocol"]).map(function (item) {
       return Object.assign({}, item, {
+        participantPersonIds: Array.isArray(item.participantPersonIds) ? item.participantPersonIds.slice() : [],
+        history: Array.isArray(item.history) ? JSON.parse(JSON.stringify(item.history)) : [],
+        protocol: Array.isArray(item.protocol) ? JSON.parse(JSON.stringify(item.protocol)) : [],
         assignedStudentIds: Array.isArray(item.assignedStudentIds) ? item.assignedStudentIds.slice() : [],
         assignedStudentStatuses: Array.isArray(item.assignedStudentStatuses)
           ? item.assignedStudentStatuses.map(function (entry) {

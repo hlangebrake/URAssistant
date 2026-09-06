@@ -767,8 +767,15 @@ class EvidenceObservationRecord {
   }
 }
 
+class TaskPerson {
+  constructor({ id, name = "" }) {
+    this.id = String(id || "").trim();
+    this.name = String(name || "").trim();
+  }
+}
+
 class TodoItem {
-  constructor({ id, title = "", description = "", category = "", dueDate = "", relatedClassId = "", assignedStudentIds = [], assignedStudentStatuses = [], priority = "niedrig", type = "standard", checklistItems = [], done = false, completedAt = "" }) {
+  constructor({ id, title = "", description = "", category = "", dueDate = "", relatedClassId = "", assignedStudentIds = [], assignedStudentStatuses = [], priority = "niedrig", type = "standard", checklistItems = [], done = false, completedAt = "", taskStatus = "", categoryId = "", createdAt = "", updatedAt = "", responsiblePersonId = "", participantPersonIds = [], waitingForPersonId = "", waitingSince = "", history = [], protocol = [] }) {
     this.id = id;
     this.title = String(title || "").trim();
     this.description = String(description || "").trim();
@@ -882,6 +889,18 @@ class TodoItem {
       : [];
     this.done = Boolean(done);
     this.completedAt = this.done ? String(completedAt || "").trim() : "";
+    this.taskStatus = String(taskStatus || "").trim();
+    this.categoryId = String(categoryId || "").trim();
+    this.createdAt = String(createdAt || "").trim();
+    this.updatedAt = String(updatedAt || "").trim();
+    this.responsiblePersonId = String(responsiblePersonId || "").trim();
+    this.participantPersonIds = Array.isArray(participantPersonIds) ? participantPersonIds.slice() : [];
+    this.waitingForPersonId = String(waitingForPersonId || "").trim();
+    this.waitingSince = String(waitingSince || "").trim();
+    this.history = Array.isArray(history) ? JSON.parse(JSON.stringify(history)) : [];
+    this.protocol = Array.isArray(protocol) ? JSON.parse(JSON.stringify(protocol)) : [];
+    const taskModel = window.Unterrichtsassistent.features && window.Unterrichtsassistent.features.tasks && window.Unterrichtsassistent.features.tasks.model;
+    if (taskModel) { Object.assign(this, taskModel.normalizeTask(Object.assign({}, this, { completedAt: completedAt }))); }
   }
 }
 
@@ -1222,6 +1241,7 @@ window.Unterrichtsassistent.domain.KnowledgeGapRecord = KnowledgeGapRecord;
 window.Unterrichtsassistent.domain.MathObservationRecord = MathObservationRecord;
 window.Unterrichtsassistent.domain.EvidenceObservationRecord = EvidenceObservationRecord;
 window.Unterrichtsassistent.domain.TodoItem = TodoItem;
+window.Unterrichtsassistent.domain.TaskPerson = TaskPerson;
 window.Unterrichtsassistent.domain.SeatPlan = SeatPlan;
 window.Unterrichtsassistent.domain.SeatOrder = SeatOrder;
 window.Unterrichtsassistent.domain.PlanningEvent = PlanningEvent;

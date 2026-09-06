@@ -49,6 +49,8 @@ const schoolFeatureLayer = featuresLayer.school || {};
 const schoolDisplayFeature = schoolFeatureLayer.display || {};
 const todosFeatureLayer = featuresLayer.todos || {};
 const todoChecklistFeature = todosFeatureLayer.checklist || {};
+const taskFeature = featuresLayer.tasks || {};
+const taskReconciler = taskFeature.model ? taskFeature.model.createReconciler() : null;
 const evaluationFeatureLayer = featuresLayer.evaluation || {};
 const evaluationCompetenciesFeature = evaluationFeatureLayer.competencies || {};
 const seatPlanFeatureLayer = featuresLayer.seatPlan || {};
@@ -159,6 +161,7 @@ let activeTodoDraft = null;
 let expandedTodoIds = [];
 let todoStatusFilter = "offen";
 let todoViewMode = "kategorie";
+let todoWorkspaceMode = "todos";
 let todoSortMode = "dringlichkeit";
 let todoCategoryFilterOpen = false;
 let todoCategoryFilters = [];
@@ -360,7 +363,7 @@ const SIDEBAR_SUBVIEW_CONFIG = {
   },
   todos: {
     label: "TODOs",
-    modes: []
+    modes: [{ value: "todos", label: "TODOs" }, { value: "kanban", label: "Kanban" }]
   }
 };
 const HOMEWORK_LONG_PRESS_DELAY_MS = 380;
@@ -915,6 +918,8 @@ function syncSchoolServiceWithRawState() {
     return null;
   }
 
+  if (taskReconciler) taskReconciler(rawState);
+
   if (!schoolService) {
     schoolService = new SchoolServiceClass(rawState);
   } else {
@@ -925,6 +930,8 @@ function syncSchoolServiceWithRawState() {
 }
 
 function clearSensitiveRuntimeState() {
+  if (taskReconciler && taskReconciler.reset) taskReconciler.reset();
+  if (window.UnterrichtsassistentApp.kanban) window.UnterrichtsassistentApp.kanban.clear();
   rawState = null;
   schoolService = null;
   unlockedMasterKeyBytes = null;
@@ -1790,6 +1797,7 @@ function getSidebarSubviewConfig(viewId) {
 }
 
 function getActiveSidebarSubviewMode(viewId) {
+  if (viewId === "todos") return todoWorkspaceMode;
   if (viewId === "unterricht") {
     return unterrichtViewMode;
   }
@@ -1941,6 +1949,8 @@ function applySidebarSubviewSelection(viewId, mode) {
   const normalizedMode = String(mode || "").trim();
 
   setActiveView(normalizedViewId);
+
+  if (normalizedViewId === "todos") return window.UnterrichtsassistentApp.setTodoWorkspaceMode(normalizedMode);
 
   if (normalizedViewId === "unterricht") {
     return window.UnterrichtsassistentApp.setUnterrichtViewMode(normalizedMode);
@@ -4480,6 +4490,7 @@ const MERGE_COLLECTIONS = [
   { key: "knowledgeGapRecords", label: "Wissensluecken", labelFields: ["studentId", "lessonDate", "content", "status"] },
   { key: "mathObservationRecords", label: "Mathematik-Beobachtungen", labelFields: ["studentId", "lessonDate", "recordedAt"] },
   { key: "todos", label: "TODOs", labelFields: ["title", "category", "dueDate"] },
+  { key: "taskPeople", label: "Aufgabenpersonen", labelFields: ["name"] },
   { key: "seatPlans", label: "Sitzplaene", labelFields: ["classId", "room", "validFrom", "updatedAt"] },
   { key: "seatOrders", label: "Sitzordnungen", labelFields: ["classId", "room", "validFrom", "updatedAt"] },
   { key: "planningEvents", label: "Planungstermine", labelFields: ["title", "startDate", "category"] },
@@ -4765,10 +4776,15 @@ function applyActiveMergeToSnapshot() {
         return;
       }
 
+      const existingTaskLogs = config.key === "todos" ? cloneRawSnapshot(currentItems[currentIndex]) : null;
       if (stableStringify(currentItems[currentIndex]) !== stableStringify(importedItem)
         && activeMergeState.choices[getMergeChoiceKey(config.key, itemId)] === "imported") {
         currentItems[currentIndex] = cloneRawSnapshot(importedItem);
         appliedConflicts += 1;
+      }
+      if (existingTaskLogs && taskFeature.model) {
+        taskFeature.model.mergeTaskLogs(currentItems[currentIndex], existingTaskLogs);
+        taskFeature.model.mergeTaskLogs(currentItems[currentIndex], importedItem);
       }
     });
 
@@ -5893,6 +5909,15 @@ function updateHeaderActions(viewId) {
     return;
   }
 
+  if (viewId === "todos") {
+    viewHeaderActions.innerHTML = buildViewModeToggleHtml({
+      ariaLabel: "Aufgabenansicht wechseln", activeMode: todoWorkspaceMode,
+      leftMode: "todos", leftLabel: "TODOs", leftAction: "window.UnterrichtsassistentApp.setTodoWorkspaceMode('todos')",
+      rightMode: "kanban", rightLabel: "Kanban", rightAction: "window.UnterrichtsassistentApp.setTodoWorkspaceMode('kanban')"
+    });
+    return;
+  }
+
   if (viewId === "klasse") {
     viewHeaderActions.innerHTML = buildMultiModeToggleHtml({
       ariaLabel: "Ansicht der Lerngruppe wechseln",
@@ -6413,6 +6438,10 @@ function initializePlanningCurriculumInteractions() {
 }
 
 function setActiveView(viewId) {
+  const kanbanController = window.UnterrichtsassistentApp && window.UnterrichtsassistentApp.kanban;
+  if (viewId !== activeViewId && kanbanController && !kanbanController.canLeave()) return false;
+  if (viewId !== activeViewId && kanbanController) kanbanController.clear();
+  if (kanbanController) kanbanController.unmount();
   const previousViewId = activeViewId;
   const renderRevision = activeViewRenderRevision + 1;
   const activeViewScrollState = viewId === previousViewId
@@ -6518,6 +6547,10 @@ function setActiveView(viewId) {
   }
 
   viewTitle.textContent = config.title;
+  if (viewId === "todos" && todoWorkspaceMode === "kanban" && kanbanController) {
+    viewTitle.textContent = "Aufgaben";
+    kanbanController.mount(document.getElementById("todos"));
+  }
   updateHeaderSubtitle(viewId, config);
   updateHeaderActions(viewId);
   updateHeaderUtility(viewId);
@@ -16136,6 +16169,25 @@ function syncManagedSeatPlanToCurrent(targetViewId) {
 }
 
 window.UnterrichtsassistentApp = window.UnterrichtsassistentApp || {};
+window.UnterrichtsassistentApp.getTodoWorkspaceMode = function () { return todoWorkspaceMode; };
+window.UnterrichtsassistentApp.setTodoWorkspaceMode = function (mode) {
+  if (["todos", "kanban"].indexOf(mode) < 0) return false;
+  const controller = window.UnterrichtsassistentApp.kanban;
+  if (controller && !controller.canLeave()) return false;
+  if (controller) controller.clear();
+  activeTodoDraft = null;
+  todoWorkspaceMode = mode;
+  setActiveView("todos");
+  return false;
+};
+if (taskFeature.createController) {
+  window.UnterrichtsassistentApp.kanban = taskFeature.createController({
+    getSnapshot: function () { return schoolService ? serializeSnapshot(schoolService.snapshot) : { todos: [], taskPeople: [], planningCategories: [] }; },
+    render: function () { if (schoolService) setActiveView("todos"); },
+    save: function (snapshot) { return saveAndRefreshSnapshot(snapshot, "todos"); },
+    openLegacyTodo: function (id) { todoWorkspaceMode = "todos"; setActiveView("todos"); window.UnterrichtsassistentApp.openTodoModal(id); }
+  });
+}
 window.UnterrichtsassistentApp.activateView = setActiveView;
 window.UnterrichtsassistentApp.toggleMenu = toggleMenu;
 window.UnterrichtsassistentApp.collapseMenu = collapseMenu;
@@ -33379,6 +33431,7 @@ window.UnterrichtsassistentApp.submitImportedAppDataPassword = function (event) 
       closeOpenTransientUi();
       return repository.saveProtectedState(encryptedSnapshotRecord, payload.passwordAuth).then(function () {
         passwordAuthApi.createUnlockSession();
+        if (taskReconciler) taskReconciler.reset();
         refreshSnapshotInMemory(normalizedImportedSnapshot, activeViewId);
         persistenceHasStoredState = true;
         persistenceHasPendingChanges = false;
@@ -33414,6 +33467,8 @@ document.addEventListener("touchstart", handleUnterrichtMathObservationDocumentT
 document.addEventListener("submit", preventLocalOnlyFormSubmit, true);
 
 document.addEventListener("touchmove", function (event) {
+  // The Kanban board owns two-axis native scrolling; its drag handles opt out via touch-action.
+  if (event.target.closest && event.target.closest("[data-kanban-board]")) return;
   const touch = event && event.touches && event.touches[0];
   const currentClientY = touch ? Number(touch.clientY) || 0 : 0;
   const deltaY = currentClientY - lastTouchClientY;
