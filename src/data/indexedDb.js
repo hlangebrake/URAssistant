@@ -18,8 +18,12 @@ function openDatabase() {
       });
     };
 
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      request.result.onversionchange = () => request.result.close();
+      resolve(request.result);
+    };
     request.onerror = () => reject(request.error);
+    request.onblocked = () => reject(new Error("Bitte andere App-Fenster schliessen und erneut speichern."));
   });
 }
 
@@ -39,6 +43,10 @@ async function withStore(mode, callback) {
     transaction.onerror = () => {
       database.close();
       reject(transaction.error);
+    };
+    transaction.onabort = () => {
+      database.close();
+      reject(transaction.error || new Error("Speichervorgang wurde abgebrochen."));
     };
   });
 }
@@ -71,6 +79,34 @@ async function writeStates(entries) {
   });
 }
 
+async function writeStatesWithAuthCheck(entries, expectedAuthRecord) {
+  const database = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(STORE_NAMES, "readwrite");
+    const store = transaction.objectStore("appState");
+    let conflictError = null;
+    const request = store.get("passwordAuth");
+    request.onsuccess = () => {
+      const actual = request.result;
+      const sameKey = actual && expectedAuthRecord && expectedAuthRecord.encryptedMasterKey
+        && actual.encryptedMasterKey === expectedAuthRecord.encryptedMasterKey
+        && actual.salt === expectedAuthRecord.salt && actual.wrapIv === expectedAuthRecord.wrapIv;
+      if (!sameKey) {
+        conflictError = new Error("Ein anderes App-Fenster hat den Datenbestand ersetzt. Bitte diese Änderungen sichern und die App neu öffnen.");
+        conflictError.name = "StalePasswordAuthError";
+        transaction.abort();
+        return;
+      }
+      Object.keys(entries || {}).forEach(key => store.put(entries[key], key));
+    };
+    transaction.oncomplete = () => { database.close(); resolve(true); };
+    transaction.onerror = transaction.onabort = () => {
+      database.close();
+      reject(conflictError || transaction.error || new Error("Speichervorgang wurde abgebrochen."));
+    };
+  });
+}
+
 function deleteDatabase() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.deleteDatabase(DB_NAME);
@@ -84,4 +120,5 @@ function deleteDatabase() {
 window.Unterrichtsassistent.data.readState = readState;
 window.Unterrichtsassistent.data.writeState = writeState;
 window.Unterrichtsassistent.data.writeStates = writeStates;
+window.Unterrichtsassistent.data.writeStatesWithAuthCheck = writeStatesWithAuthCheck;
 window.Unterrichtsassistent.data.deleteDatabase = deleteDatabase;

@@ -38,6 +38,7 @@ const sharedLayer = namespace.shared || {};
 const htmlUtils = sharedLayer.html || {};
 const dateTimeUtils = sharedLayer.dateTime || {};
 const featuresLayer = namespace.features || {};
+const storageFeature = featuresLayer.storage || {};
 const curriculumFeatureLayer = featuresLayer.curriculum || {};
 const curriculumTopicTreeFeature = curriculumFeatureLayer.topicTree || {};
 const curriculumPlanningFeature = curriculumFeatureLayer.planning || {};
@@ -78,8 +79,9 @@ const AUTH_RETURN_STATE_STORAGE_KEY = "unterrichtsassistent-auth-return-state";
 let schoolService = null;
 let rawState = null;
 let unlockedMasterKeyBytes = null;
+let unlockedPasswordAuthRecord = null;
 let pendingAuthReturnState = null;
-let activeViewId = "unterricht";
+let activeViewId = "overview";
 let activeViewRenderRevision = 0;
 let activeSidebarSubviewDrag = null;
 let sidebarSubviewOverlay = null;
@@ -310,7 +312,8 @@ let activeUnterrichtLivePhaseControlOverride = null;
 let activeUnterrichtLiveAfbSliderDrag = null;
 let suppressKnowledgeGapSuggestionClickUntil = 0;
 let lastTouchClientY = 0;
-const AUTOSAVE_DELAY_MS = 30000;
+const AUTOSAVE_DELAY_MS = 800;
+const AUTOSAVE_MAX_WAIT_MS = 5000;
 const SIDEBAR_SUBVIEW_DRAG_THRESHOLD = 10;
 const SIDEBAR_SUBVIEW_CONFIG = {
   unterricht: {
@@ -848,6 +851,18 @@ let persistenceIsSaving = false;
 let persistenceLastError = null;
 let persistInFlightPromise = null;
 let forcePersistAfterCurrentSave = false;
+let pendingPersistSince = null;
+let persistenceLastSavedAt = "";
+let storageMetadata = {};
+let recoveryPointInfo = null;
+let lastStorageStatusJson = "";
+let protectedImportInProgress = false;
+let persistenceWriteBarrier = false;
+let protectedOperationPreviousInert = false;
+let idleLockRequestedAfterOperation = false;
+let idleLockAttemptInProgress = false;
+let emergencyRecoveryLock = null;
+let persistenceAuthConflict = false;
 let idleLockTimerId = 0;
 let isLockingForAuth = false;
 let pendingEncryptedImportPayload = null;
@@ -934,12 +949,15 @@ function clearSensitiveRuntimeState() {
   if (window.UnterrichtsassistentApp.kanban) window.UnterrichtsassistentApp.kanban.clear();
   if (window.UnterrichtsassistentApp.nachpflege) window.UnterrichtsassistentApp.nachpflege.clear();
   if (window.UnterrichtsassistentApp.studentOverview) window.UnterrichtsassistentApp.studentOverview.clear();
+  if (window.UnterrichtsassistentApp.workspace) window.UnterrichtsassistentApp.workspace.clear();
   rawState = null;
   schoolService = null;
   unlockedMasterKeyBytes = null;
+  unlockedPasswordAuthRecord = null;
   pendingAuthReturnState = null;
   pendingPersistSnapshot = null;
   clearPendingPersistTimer();
+  pendingPersistSince = null;
 }
 
 function getUnlockedMasterKey() {
@@ -1086,6 +1104,11 @@ function clearIdleLockTimer() {
 }
 
 function triggerIdleLock() {
+  if (isLockingForAuth || idleLockAttemptInProgress) return;
+  if (protectedImportInProgress) {
+    idleLockRequestedAfterOperation = true;
+    return;
+  }
   const snapshotToPersist = schoolService && getMutableRawSnapshot()
     ? getMutableRawSnapshot()
     : null;
@@ -1097,12 +1120,51 @@ function triggerIdleLock() {
     return;
   }
 
+  idleLockAttemptInProgress = true;
   flushPendingPersist({
     snapshot: snapshotToPersist,
     immediate: true
+  }).then(function (saved) {
+    if (saved) redirectToAuthPage("unlock", "idle");
+    else return lockUnsavedRuntimeState();
   }).finally(function () {
-    redirectToAuthPage("unlock", "idle");
+    idleLockAttemptInProgress = false;
   });
+}
+
+async function lockUnsavedRuntimeState() {
+  const snapshot = cloneRawSnapshot(getMutableRawSnapshot());
+  const key = getUnlockedMasterKey();
+  const authRecord = unlockedPasswordAuthRecord;
+  isLockingForAuth = true;
+  persistenceWriteBarrier = true;
+  clearIdleLockTimer();
+  clearPendingPersistTimer();
+  const recovery = storageFeature.createRecoveryLock(appDataCryptoApi, passwordAuthApi);
+  emergencyRecoveryLock = recovery;
+  const panel = storageFeature.mountRecoveryLock(async function (password) {
+    const restored = await recovery.unlock(password);
+    unlockedMasterKeyBytes = restored.key;
+    unlockedPasswordAuthRecord = restored.authRecord;
+    passwordAuthApi.createUnlockSession();
+    rawState = restored.snapshot;
+    syncSchoolServiceWithRawState();
+    isLockingForAuth = false;
+    persistenceWriteBarrier = false;
+    emergencyRecoveryLock = null;
+    recovery.clear();
+    panel.destroy();
+    refreshSnapshotInMemory(rawState, activeViewId);
+    queueSnapshotPersist(rawState, { immediate: true });
+    noteUnlockActivity();
+  }, function () {
+    const payload = recovery.getPayload();
+    if (payload) storageFeature.download(payload, "unterrichtsassistent-ungespeicherter-stand-" + getCurrentTimestampFilePart() + ".json");
+  }, persistenceAuthConflict);
+  const encrypted = await recovery.protect(snapshot, key, authRecord);
+  passwordAuthApi.clearUnlockSession();
+  clearSensitiveRuntimeState();
+  panel.ready(encrypted);
 }
 
 function noteUnlockActivity() {
@@ -1741,6 +1803,7 @@ async function ensureAuthAccess() {
   }
 
   unlockedMasterKeyBytes = sessionMasterKeyBytes;
+  unlockedPasswordAuthRecord = authRecord;
   passwordAuthApi.clearSessionMasterKey();
   restoreAuthReturnState();
   noteUnlockActivity();
@@ -4359,27 +4422,72 @@ function endEvaluationTopicSuggestionsDrag(event, listId) {
 }
 
 function renderPersistenceIndicator() {
-  if (!persistenceButton) {
+  const status = getStorageStatus();
+  const isPersisted = persistenceHasStoredState && !persistenceHasPendingChanges && !persistenceIsSaving;
+  if (persistenceButton) {
+    persistenceButton.classList.toggle("is-persisted", isPersisted);
+    persistenceButton.classList.toggle("is-saving", persistenceIsSaving);
+    persistenceButton.setAttribute("aria-label", status.label + ". Jetzt speichern.");
+    persistenceButton.setAttribute("title", status.label + ". Jetzt speichern.");
+  }
+  if (storageFeature.render) storageFeature.render(status);
+  const statusJson = JSON.stringify(status);
+  if (statusJson !== lastStorageStatusJson) {
+    lastStorageStatusJson = statusJson;
+    window.dispatchEvent(new CustomEvent("unterrichtsassistent:storage-status", { detail: status }));
+  }
+}
+
+function getStorageStatus() {
+  return storageFeature.describe ? storageFeature.describe({
+    error: persistenceLastError, saving: persistenceIsSaving, pending: persistenceHasPendingChanges,
+    stored: persistenceHasStoredState, lastSavedAt: persistenceLastSavedAt,
+    lastExportAt: storageMetadata.lastExportAt, recovery: recoveryPointInfo,
+    offline: window.UnterrichtsassistentOffline
+  }) : { state: "empty", label: "Speicher wird geladen …" };
+}
+
+async function createProtectedRecoveryPoint(reason) {
+  // Finish earlier writes before any operation can replace the authentication key.
+  if (!(await flushPendingPersist({ immediate: true }))) {
+    throw new Error("Der aktuelle Stand konnte nicht gespeichert werden. Es wurden keine Importdaten übernommen.");
+  }
+  persistenceWriteBarrier = true;
+  clearPendingPersistTimer();
+  const key = getUnlockedMasterKey();
+  const snapshot = buildImportableSnapshot(getMutableRawSnapshot());
+  const authRecord = unlockedPasswordAuthRecord;
+  const encrypted = await appDataCryptoApi.encryptSnapshot(snapshot, key);
+  const point = await repository.saveRecoveryPoint(encrypted, authRecord, reason);
+  recoveryPointInfo = { exportedAt: point.exportedAt, reason: point.reason };
+  renderPersistenceIndicator();
+  return point;
+}
+
+function beginProtectedStorageOperation() {
+  protectedImportInProgress = true;
+  protectedOperationPreviousInert = document.body.inert;
+  document.body.inert = true;
+  document.body.classList.add("is-storage-busy");
+  clearIdleLockTimer();
+}
+
+function finishProtectedStorageOperation() {
+  protectedImportInProgress = false;
+  persistenceWriteBarrier = false;
+  document.body.inert = protectedOperationPreviousInert;
+  document.body.classList.remove("is-storage-busy");
+  if (persistenceAuthConflict && !isLockingForAuth && getMutableRawSnapshot()) {
+    lockUnsavedRuntimeState();
     return;
   }
-
-  const isPersisted = persistenceHasStoredState && !persistenceHasPendingChanges && !persistenceIsSaving;
-  let title = "Daten manuell in IndexedDB speichern";
-
-  if (persistenceIsSaving) {
-    title = "Speichere Aenderungen in IndexedDB ...";
-  } else if (isPersisted) {
-    title = "Aenderungen sind in IndexedDB gespeichert. Klick fuer erneutes Speichern.";
-  } else if (persistenceHasPendingChanges) {
-    title = "Es gibt ungespeicherte Aenderungen. Klick zum Speichern.";
-  } else if (persistenceLastError) {
-    title = "Persistenz ist aktuell nicht verfuegbar. Klick fuer einen neuen Speicher-Versuch.";
+  if (pendingPersistSnapshot) schedulePendingPersist(0);
+  if (idleLockRequestedAfterOperation || !passwordAuthApi.hasValidUnlockSession()) {
+    idleLockRequestedAfterOperation = false;
+    triggerIdleLock();
+  } else {
+    noteUnlockActivity();
   }
-
-  persistenceButton.classList.toggle("is-persisted", isPersisted);
-  persistenceButton.classList.toggle("is-saving", persistenceIsSaving);
-  persistenceButton.setAttribute("aria-label", title);
-  persistenceButton.setAttribute("title", title);
 }
 
 function isEncryptedExportPayload(payload) {
@@ -4504,6 +4612,9 @@ const MERGE_COLLECTIONS = [
   { key: "curriculumLessonPlans", label: "Stundenplanungen", labelFields: ["topic", "sequenceId", "summary"] },
   { key: "curriculumLessonPhases", label: "Stundenphasen", labelFields: ["title", "lessonPlanId"] },
   { key: "curriculumLessonSteps", label: "Phasenschritte", labelFields: ["title", "phaseId", "content"] },
+  { key: "lessonReflections", label: "Stundenreflexionen", labelFields: ["classId", "lessonDate", "summary"] },
+  { key: "learningActions", label: "Lernmaßnahmen", labelFields: ["title", "studentId", "classId"] },
+  { key: "lessonResources", label: "Unterrichtsmaterialien", labelFields: ["title", "lessonPlanId", "classId"] },
   { key: "curriculumLessonPhaseStatuses", label: "Phasenstatus", labelFields: ["classId", "lessonDate", "phaseId"] },
   { key: "curriculumLessonStepStatuses", label: "Schrittstatus", labelFields: ["classId", "lessonDate", "stepId"] }
 ];
@@ -4740,7 +4851,7 @@ function acceptMergeImportedSnapshot(importedSnapshot, fileName) {
   setActiveView("merge");
 }
 
-function applyActiveMergeToSnapshot() {
+async function applyActiveMergeToSnapshot() {
   const importedSnapshot = activeMergeState && activeMergeState.importedSnapshot;
   const currentSnapshot = getMutableRawSnapshot();
   const nextSnapshot = cloneRawSnapshot(currentSnapshot);
@@ -4794,7 +4905,9 @@ function applyActiveMergeToSnapshot() {
     nextSnapshot[config.key] = currentItems;
   });
 
-  saveAndRefreshSnapshot(normalizeRawSnapshot(nextSnapshot), "merge", { forcePersist: true });
+  persistenceWriteBarrier = false;
+  const saved = await saveAndRefreshSnapshot(normalizeRawSnapshot(nextSnapshot), "merge", { forcePersist: true });
+  if (!saved) throw new Error("Das Zusammenführen ist noch nicht gespeichert. Der Vorzustand bleibt als Sicherung erhalten.");
   return {
     appliedAdded: appliedAdded,
     appliedConflicts: appliedConflicts
@@ -4802,14 +4915,19 @@ function applyActiveMergeToSnapshot() {
 }
 
 function schedulePendingPersist(delayMs) {
-  if (!persistenceHasPendingChanges || persistenceIsSaving) {
+  if (!persistenceHasPendingChanges || persistenceIsSaving || persistenceWriteBarrier) {
     return;
   }
 
   clearPendingPersistTimer();
+  const requestedDelay = typeof delayMs === "number" ? delayMs : AUTOSAVE_DELAY_MS;
+  const delay = pendingPersistSince !== null
+    ? storageFeature.nextSaveDelay(pendingPersistSince, Date.now(), requestedDelay, AUTOSAVE_MAX_WAIT_MS)
+    : requestedDelay;
   pendingPersistTimerId = window.setTimeout(function () {
+    pendingPersistTimerId = 0;
     flushPendingPersist();
-  }, typeof delayMs === "number" ? delayMs : AUTOSAVE_DELAY_MS);
+  }, delay);
 }
 
 function persistSnapshotNow(snapshotToPersist) {
@@ -4831,21 +4949,29 @@ function persistSnapshotNow(snapshotToPersist) {
       return appDataCryptoApi.encryptSnapshot(persistedSnapshot, masterKeyBytes);
     })
     .then(function (encryptedSnapshotRecord) {
-      return repository.saveSnapshot(encryptedSnapshotRecord);
+      return repository.saveSnapshot(encryptedSnapshotRecord, unlockedPasswordAuthRecord);
     })
     .then(function () {
       didPersistSucceed = true;
       persistenceHasStoredState = true;
       persistenceLastError = null;
+      persistenceLastSavedAt = new Date().toISOString();
       return true;
     })
     .catch(function (error) {
+      if (error && error.name === "StalePasswordAuthError" && !persistenceAuthConflict) {
+        persistenceAuthConflict = true;
+        window.setTimeout(function () {
+          if (getMutableRawSnapshot() && !isLockingForAuth && !protectedImportInProgress) lockUnsavedRuntimeState();
+        }, 0);
+      }
       persistenceHasStoredState = false;
       persistenceLastError = error;
       persistenceHasPendingChanges = true;
       if (!pendingPersistSnapshot) {
         pendingPersistSnapshot = snapshotToPersist;
       }
+      pendingPersistSince = null;
       console.warn("Speichern in IndexedDB fehlgeschlagen.", error);
       return false;
     })
@@ -4856,7 +4982,8 @@ function persistSnapshotNow(snapshotToPersist) {
 
       if (forcePersistAfterCurrentSave && pendingPersistSnapshot) {
         forcePersistAfterCurrentSave = false;
-        flushPendingPersist({ immediate: true });
+        if (didPersistSucceed) flushPendingPersist({ immediate: true });
+        else schedulePendingPersist(5000);
         return;
       }
 
@@ -4864,14 +4991,25 @@ function persistSnapshotNow(snapshotToPersist) {
 
       if (didPersistSucceed && persistenceHasPendingChanges && pendingPersistSnapshot && !pendingPersistTimerId) {
         schedulePendingPersist(AUTOSAVE_DELAY_MS);
+      } else if (!didPersistSucceed && pendingPersistSnapshot) {
+        schedulePendingPersist(5000);
       }
     });
 
   return persistInFlightPromise;
 }
 
+async function waitForPersistenceDrain(firstPromise) {
+  let saved = await firstPromise;
+  while (saved && (persistInFlightPromise || pendingPersistSnapshot)) {
+    saved = await (persistInFlightPromise || flushPendingPersist({ immediate: true }));
+  }
+  return saved;
+}
+
 function flushPendingPersist(options) {
   const config = options || {};
+  if (persistenceWriteBarrier) return Promise.resolve(false);
   const snapshotToPersist = config.snapshot
     || pendingPersistSnapshot
     || getMutableRawSnapshot();
@@ -4888,15 +5026,18 @@ function flushPendingPersist(options) {
     persistenceHasPendingChanges = true;
     forcePersistAfterCurrentSave = forcePersistAfterCurrentSave || Boolean(config.immediate);
     renderPersistenceIndicator();
-    return persistInFlightPromise;
+    return waitForPersistenceDrain(persistInFlightPromise);
   }
 
   pendingPersistSnapshot = null;
+  pendingPersistSince = null;
   persistenceHasPendingChanges = false;
-  return persistSnapshotNow(snapshotToPersist);
+  const savePromise = persistSnapshotNow(snapshotToPersist);
+  return config.immediate ? waitForPersistenceDrain(savePromise) : savePromise;
 }
 
 function queueSnapshotPersist(nextRawSnapshot, options) {
+  if (pendingPersistSince === null) pendingPersistSince = Date.now();
   pendingPersistSnapshot = nextRawSnapshot;
   persistenceHasPendingChanges = true;
   persistenceLastError = null;
@@ -5083,219 +5224,38 @@ function getCurriculumPlanningLessonUnitCount(classId, cursorDate, lessonUnit) {
   return Math.max(1, matchingRowCount || 0);
 }
 
+const instructionScheduleCache = new WeakMap();
+window.UnterrichtsassistentApp.getInstructionSchedule = function (classId, snapshot, referenceDateOverride) {
+  const source = snapshot || (schoolService && schoolService.snapshot) || {};
+  const referenceDate = referenceDateOverride || (schoolService && schoolService.getReferenceDate ? schoolService.getReferenceDate() : new Date());
+  const cacheKey = String(classId || "") + "::" + Math.floor(referenceDate.getTime() / 60000);
+  const canCache = schoolService && source === schoolService.snapshot;
+  const cached = canCache ? instructionScheduleCache.get(source) : null;
+  // rawState is intentionally mutated in place. Snapshot identity alone is not
+  // a revision; fingerprint every input that affects dated units or assignment.
+  const signature = canCache ? JSON.stringify([
+    source.schoolYearStart, source.schoolYearEnd, source.timetables,
+    source.planningInstructionLessonStatuses, source.planningEvents,
+    (source.classes || []).map(function (item) { return [item.id, item.name, item.subject, item.room]; }),
+    source.curriculumSeries, source.curriculumSequences,
+    (source.curriculumLessonPlans || []).map(function (item) { return [item.id, item.sequenceId, item.hourType, item.nextLessonId]; })
+  ]) : "";
+  if (cached && cached.signature === signature && cached.entries[cacheKey]) { return cached.entries[cacheKey]; }
+  const schedule = planningInstructionFeature.buildInstructionSchedule(source, schoolService, classId, {
+    referenceDate: referenceDate,
+    getEventsForDisplay: function (currentSnapshot, range) { return getPlanningEventsForDisplay(currentSnapshot, range); }
+  });
+  if (canCache) {
+    const minute = Math.floor(referenceDate.getTime() / 60000);
+    const nextCache = cached && cached.signature === signature && cached.minute === minute ? cached : { signature: signature, minute: minute, entries: {} };
+    nextCache.entries[cacheKey] = schedule;
+    instructionScheduleCache.set(source, nextCache);
+  }
+  return schedule;
+};
+
 function buildCurriculumLessonPlanAssignmentsForClass(snapshot, classId) {
-  const normalizedClassId = String(classId || "").trim();
-  const startDate = parseCurriculumPlanningDateValue(snapshot && snapshot.schoolYearStart);
-  const endDate = parseCurriculumPlanningDateValue(snapshot && snapshot.schoolYearEnd);
-  const orderedSeries = normalizedClassId
-    ? getOrderedCurriculumSeriesForClass(snapshot, normalizedClassId)
-    : [];
-  const lessonStatusLookup = (Array.isArray(snapshot && snapshot.planningInstructionLessonStatuses)
-    ? snapshot.planningInstructionLessonStatuses
-    : []).reduce(function (lookup, statusItem) {
-      const statusClassId = String(statusItem && statusItem.classId || "").trim();
-      const lessonDate = String(statusItem && statusItem.lessonDate || "").slice(0, 10);
-
-      if (!Boolean(statusItem && statusItem.isAdditionalLesson) && statusClassId && lessonDate) {
-        lookup[[statusClassId, lessonDate].join("::")] = statusItem;
-      }
-
-      return lookup;
-    }, {});
-  const additionalLessonStatuses = (Array.isArray(snapshot && snapshot.planningInstructionLessonStatuses)
-    ? snapshot.planningInstructionLessonStatuses
-    : []).filter(function (statusItem) {
-      return Boolean(statusItem && statusItem.isAdditionalLesson)
-        && String(statusItem && statusItem.classId || "").trim() === normalizedClassId
-        && String(statusItem && statusItem.lessonDate || "").slice(0, 10);
-    });
-  const lessonSlots = [];
-  const lessonPlanAssignments = {};
-  let previousSeriesLastAssignedSlotIndex = -1;
-  let cursor;
-
-  if (!snapshot || !normalizedClassId || !startDate || !endDate || !schoolService || typeof schoolService.getLessonUnitsForClass !== "function") {
-    return lessonPlanAssignments;
-  }
-
-  cursor = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
-
-  while (cursor <= endDate) {
-    const lessonDate = formatCurriculumPlanningDateValue(cursor);
-    const lessonStatus = lessonStatusLookup[[normalizedClassId, lessonDate].join("::")] || null;
-
-    schoolService.getLessonUnitsForClass(normalizedClassId, cursor).forEach(function (lessonUnit) {
-      const outageInfo = getPlanningInstructionOutageInfo(
-        snapshot,
-        normalizedClassId,
-        lessonDate,
-        lessonUnit && lessonUnit.startTime,
-        lessonUnit && lessonUnit.endTime
-      );
-      const lessonCount = getCurriculumPlanningLessonUnitCount(normalizedClassId, cursor, lessonUnit);
-      let unitIndex;
-
-      if (Boolean(lessonStatus && lessonStatus.isCancelled) || Boolean(outageInfo && outageInfo.isCancelled)) {
-        return;
-      }
-
-      for (unitIndex = 0; unitIndex < lessonCount; unitIndex += 1) {
-        lessonSlots.push({
-          lessonDate: lessonDate,
-          assignedSeriesId: "",
-          assignedSequenceId: "",
-          assignedLessonId: ""
-        });
-      }
-    });
-
-    cursor.setDate(cursor.getDate() + 1);
-  }
-
-  additionalLessonStatuses.forEach(function (statusItem) {
-    const lessonDate = String(statusItem && statusItem.lessonDate || "").slice(0, 10);
-    const lessonCount = String(statusItem && statusItem.additionalLessonType || "").trim() === "double" ? 2 : 1;
-    let unitIndex;
-
-    if (!lessonDate || lessonDate < formatCurriculumPlanningDateValue(startDate) || lessonDate > formatCurriculumPlanningDateValue(endDate)) {
-      return;
-    }
-
-    for (unitIndex = 0; unitIndex < lessonCount; unitIndex += 1) {
-      lessonSlots.push({
-        lessonDate: lessonDate,
-        assignedSeriesId: "",
-        assignedSequenceId: "",
-        assignedLessonId: ""
-      });
-    }
-  });
-
-  lessonSlots.sort(function (left, right) {
-    return String(left && left.lessonDate || "").localeCompare(String(right && right.lessonDate || ""));
-  });
-
-  orderedSeries.forEach(function (seriesItem) {
-    const seriesId = String(seriesItem && seriesItem.id || "").trim();
-    const startMode = String(seriesItem && seriesItem.startMode || "").trim() === "manual" ? "manual" : "automatic";
-    const manualStartDate = String(seriesItem && seriesItem.startDate || "").slice(0, 10);
-    let remainingDemand = Math.max(0, Number(seriesItem && seriesItem.hourDemand) || 0);
-    const earliestAllowedSlotIndex = previousSeriesLastAssignedSlotIndex + 1;
-    let startIndex = -1;
-    let cursorIndex;
-    let lastAssignedSlotIndex = -1;
-
-    if (!remainingDemand) {
-      return;
-    }
-
-    startIndex = lessonSlots.findIndex(function (slot, slotIndex) {
-      if (slotIndex < earliestAllowedSlotIndex) {
-        return false;
-      }
-
-      if (slot.assignedSeriesId) {
-        return false;
-      }
-
-      if (startMode === "manual" && manualStartDate) {
-        return String(slot.lessonDate || "") >= manualStartDate;
-      }
-
-      return true;
-    });
-
-    if (startIndex < 0) {
-      return;
-    }
-
-    cursorIndex = startIndex;
-
-    while (cursorIndex < lessonSlots.length && remainingDemand > 0) {
-      const slot = lessonSlots[cursorIndex];
-
-      if (slot && !slot.assignedSeriesId) {
-        slot.assignedSeriesId = seriesId;
-        remainingDemand -= 1;
-        lastAssignedSlotIndex = cursorIndex;
-      }
-
-      cursorIndex += 1;
-    }
-
-    if (lastAssignedSlotIndex >= 0) {
-      previousSeriesLastAssignedSlotIndex = lastAssignedSlotIndex;
-    }
-  });
-
-  orderedSeries.forEach(function (seriesItem) {
-    const seriesId = String(seriesItem && seriesItem.id || "").trim();
-    const seriesSlots = lessonSlots.filter(function (slot) {
-      return String(slot && slot.assignedSeriesId || "").trim() === seriesId;
-    });
-    const orderedSequences = getOrderedCurriculumSequencesForSeries(snapshot, seriesId);
-    let seriesSlotIndex = 0;
-
-    orderedSequences.forEach(function (sequenceItem) {
-      const sequenceId = String(sequenceItem && sequenceItem.id || "").trim();
-      let remainingDemand = Math.max(0, Number(sequenceItem && sequenceItem.hourDemand) || 0);
-
-      while (seriesSlotIndex < seriesSlots.length && remainingDemand > 0) {
-        if (seriesSlots[seriesSlotIndex]) {
-          seriesSlots[seriesSlotIndex].assignedSequenceId = sequenceId;
-          remainingDemand -= 1;
-        }
-
-        seriesSlotIndex += 1;
-      }
-    });
-  });
-
-  orderedSeries.forEach(function (seriesItem) {
-    const seriesId = String(seriesItem && seriesItem.id || "").trim();
-    const orderedSequences = getOrderedCurriculumSequencesForSeries(snapshot, seriesId);
-
-    orderedSequences.forEach(function (sequenceItem) {
-      const sequenceId = String(sequenceItem && sequenceItem.id || "").trim();
-      const sequenceSlots = lessonSlots.filter(function (slot) {
-        return String(slot && slot.assignedSequenceId || "").trim() === sequenceId;
-      });
-      const orderedLessons = getOrderedCurriculumLessonsForSequence(snapshot, sequenceId);
-      let sequenceSlotIndex = 0;
-
-      orderedLessons.forEach(function (lessonItem) {
-        const lessonId = String(lessonItem && lessonItem.id || "").trim();
-        let remainingDemand = getCurriculumLessonHourDemand(lessonItem);
-
-        lessonPlanAssignments[lessonId] = {
-          firstDate: "",
-          lastDate: "",
-          assignedUnitCount: 0,
-          sequenceId: sequenceId
-        };
-
-        while (sequenceSlotIndex < sequenceSlots.length && remainingDemand > 0) {
-          const slot = sequenceSlots[sequenceSlotIndex];
-
-          if (slot) {
-            slot.assignedLessonId = lessonId;
-            lessonPlanAssignments[lessonId].assignedUnitCount += 1;
-
-            if (!lessonPlanAssignments[lessonId].firstDate) {
-              lessonPlanAssignments[lessonId].firstDate = String(slot.lessonDate || "").trim();
-            }
-
-            lessonPlanAssignments[lessonId].lastDate = String(slot.lessonDate || "").trim();
-            remainingDemand -= 1;
-          }
-
-          sequenceSlotIndex += 1;
-        }
-      });
-    });
-  });
-
-  return lessonPlanAssignments;
+  return window.UnterrichtsassistentApp.getInstructionSchedule(classId, snapshot).lessonPlanAssignments;
 }
 
 function syncCurriculumLessonPreparationTodo(snapshot, lessonItem, lessonAssignments) {
@@ -5815,6 +5775,7 @@ function renderActiveClassContext() {
   if (collapsedLiveDateTimeButton) {
     collapsedLiveDateTimeButton.classList.toggle("is-live", isLiveDateTimeMode());
     collapsedLiveDateTimeButton.setAttribute("aria-pressed", String(isLiveDateTimeMode()));
+    collapsedLiveDateTimeButton.textContent = isLiveDateTimeMode() ? "Live" : "Datum";
   }
 
   renderPersistenceIndicator();
@@ -6449,7 +6410,7 @@ function setActiveView(viewId) {
   const renderRevision = activeViewRenderRevision + 1;
   const activeViewScrollState = viewId === previousViewId
     ? captureActiveViewScrollState()
-    : null;
+    : { windowTop: 0, windowLeft: 0, contentTop: 0, contentLeft: 0, elements: {} };
   const shouldPreserveTodoScroll = viewId === "todos";
   todoViewScrollState = shouldPreserveTodoScroll ? captureTodoViewScrollState() : null;
 
@@ -6465,22 +6426,7 @@ function setActiveView(viewId) {
   activeViewRenderRevision = renderRevision;
   const config = registeredViews[viewId];
 
-  if (viewId === "klasse" && previousViewId !== "klasse") {
-    classViewMode = "analyse";
-    classAnalysisSort = { key: "name", direction: "asc" };
-    classAnalysisGrouping = "day";
-    classAnalysisCriterion = "count";
-    classAnalysisEnabledTypes = {
-      attendance: true,
-      homework: true,
-      warning: true,
-      assessment: true,
-      mathObservation: true,
-      knowledgeGap: true,
-      evidenceObservation: true,
-      completedEvaluation: true
-    };
-  }
+  // Keep the selected learner, analysis filters and workspace when returning.
 
   if (viewId === "unterricht" && previousViewId !== "unterricht") {
     unterrichtViewMode = "live";
@@ -19256,12 +19202,12 @@ window.UnterrichtsassistentApp.openPlanningInstructionLessonModal = function (le
   setActiveView(activeViewId);
   return false;
 };
-window.UnterrichtsassistentApp.openPlanningInstructionAdditionalLessonModal = function (additionalLessonId) {
+window.UnterrichtsassistentApp.openPlanningInstructionAdditionalLessonModal = function (additionalLessonId, classId) {
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
   const activeClass = schoolService ? schoolService.getActiveClass() : null;
   const collections = currentRawSnapshot ? getPlanningCollections(currentRawSnapshot) : null;
   const normalizedAdditionalLessonId = String(additionalLessonId || "").trim();
-  const normalizedClassId = String(activeClass && activeClass.id || "").trim();
+  const normalizedClassId = String(classId || activeClass && activeClass.id || "").trim();
   const existingStatus = collections && normalizedAdditionalLessonId
     ? collections.lessonStatuses.find(function (entry) {
         return Boolean(entry && entry.isAdditionalLesson)
@@ -19284,6 +19230,8 @@ window.UnterrichtsassistentApp.openPlanningInstructionAdditionalLessonModal = fu
         isNewAdditionalLesson: false,
         additionalLessonType: String(existingStatus.additionalLessonType || "").trim() === "double" ? "double" : "single",
         additionalLessonNote: String(existingStatus.additionalLessonNote || "").trim(),
+        additionalStartTime: String(existingStatus.additionalStartTime || ""),
+        additionalEndTime: String(existingStatus.additionalEndTime || ""),
         isCancelled: false,
         cancelReason: "",
         isControlledByOutageEvent: false,
@@ -19297,6 +19245,8 @@ window.UnterrichtsassistentApp.openPlanningInstructionAdditionalLessonModal = fu
         isNewAdditionalLesson: true,
         additionalLessonType: "single",
         additionalLessonNote: "",
+        additionalStartTime: "",
+        additionalEndTime: "",
         isCancelled: false,
         cancelReason: "",
         isControlledByOutageEvent: false,
@@ -20390,6 +20340,14 @@ window.UnterrichtsassistentApp.submitPlanningInstructionLessonModal = function (
     const additionalDate = String(additionalDateInput && additionalDateInput.value || lessonDateValue).slice(0, 10);
     const additionalType = String(additionalTypeInput && additionalTypeInput.value || "").trim() === "double" ? "double" : "single";
     const additionalNote = String(additionalNoteInput && additionalNoteInput.value || "").trim();
+    const additionalStartInput = document.getElementById("planningInstructionLessonAdditionalStartInput");
+    const additionalEndInput = document.getElementById("planningInstructionLessonAdditionalEndInput");
+    const additionalStart = String(additionalStartInput && additionalStartInput.value || "");
+    const additionalEnd = String(additionalEndInput && additionalEndInput.value || "");
+    if (Boolean(additionalStart) !== Boolean(additionalEnd) || (additionalStart && additionalEnd <= additionalStart)) {
+      if (additionalEndInput) { additionalEndInput.setCustomValidity("Bitte Beginn und ein späteres Ende angeben oder beide Zeiten leer lassen."); additionalEndInput.reportValidity(); }
+      return false;
+    }
 
     if (!additionalDate) {
       return false;
@@ -20408,7 +20366,9 @@ window.UnterrichtsassistentApp.submitPlanningInstructionLessonModal = function (
       cancelReason: "",
       isAdditionalLesson: true,
       additionalLessonType: additionalType,
-      additionalLessonNote: additionalNote
+      additionalLessonNote: additionalNote,
+      additionalStartTime: additionalStart,
+      additionalEndTime: additionalEnd
     };
 
     if (existingIndex >= 0) {
@@ -21487,6 +21447,49 @@ window.UnterrichtsassistentApp.updateCurriculumLessonHomeworkField = function (l
       lessonItem.homeworkDueUnit = normalizeCurriculumLessonHomeworkDueUnit(nextValue);
     }
   });
+};
+function createQuickCurriculumId(kind) {
+  return kind === "phase" ? createCurriculumLessonPhaseId() : (kind === "step" ? createCurriculumLessonStepId() : createCurriculumLessonPlanId());
+}
+window.UnterrichtsassistentApp.submitQuickCurriculumLessons = function (event) {
+  if (event) { event.preventDefault(); }
+  if (!isCurriculumPlanningMode() || !schoolService) { return false; }
+  const snapshot = serializeSnapshot(schoolService.snapshot);
+  const sequenceId = String(document.getElementById("planningQuickSequence").value || "");
+  const sequence = (snapshot.curriculumSequences || []).find(function (item) { return item.id === sequenceId; });
+  const activeClass = schoolService.getActiveClass();
+  const series = sequence && (snapshot.curriculumSeries || []).find(function (item) { return item.id === sequence.seriesId && item.classId === (activeClass && activeClass.id); });
+  if (!series) { return false; }
+  const result = curriculumPlanningFeature.appendQuickLessons(snapshot, sequenceId,
+    document.getElementById("planningQuickTopics").value,
+    document.getElementById("planningQuickHourType").value,
+    document.getElementById("planningQuickTemplate").checked, createQuickCurriculumId);
+  if (result.error) {
+    document.getElementById("planningQuickMessage").textContent = result.error;
+    return false;
+  }
+  if (expandedCurriculumSeriesIds.indexOf(series.id) < 0) { expandedCurriculumSeriesIds.push(series.id); }
+  const expansionKey = [series.id, sequenceId].join("::");
+  if (expandedCurriculumSequenceIds.indexOf(expansionKey) < 0) { expandedCurriculumSequenceIds.push(expansionKey); }
+  activeCurriculumLessonFlowLessonId = result.lessonIds[0] || "";
+  activeCurriculumLessonFlowViewPhaseIds = [];
+  saveAndRefreshSnapshot(snapshot, "planung");
+  return false;
+};
+window.UnterrichtsassistentApp.applyStandardCurriculumLessonFlow = function (lessonId) {
+  if (!isCurriculumPlanningMode() || !schoolService) { return false; }
+  const snapshot = serializeSnapshot(schoolService.snapshot);
+  const collections = getCurriculumCollections(snapshot);
+  const lesson = collections.lessons.find(function (item) { return item.id === lessonId; });
+  // Templates only fill empty plans; existing work and completion records remain intact.
+  if (!lesson || collections.lessonPhases.some(function (item) { return item.lessonPlanId === lessonId; })) { return false; }
+  const flow = curriculumPlanningFeature.createStandardLessonFlow(lesson, createQuickCurriculumId);
+  snapshot.curriculumLessonPhases.push.apply(snapshot.curriculumLessonPhases, flow.phases);
+  snapshot.curriculumLessonSteps.push.apply(snapshot.curriculumLessonSteps, flow.steps);
+  activeCurriculumLessonFlowLessonId = lessonId;
+  activeCurriculumLessonFlowViewPhaseIds = [];
+  saveAndRefreshSnapshot(snapshot, "planung");
+  return false;
 };
 window.UnterrichtsassistentApp.addCurriculumLessonPhase = function (lessonId) {
   const currentRawSnapshot = schoolService ? serializeSnapshot(schoolService.snapshot) : null;
@@ -23205,6 +23208,7 @@ window.UnterrichtsassistentApp.deleteCurriculumLesson = function (lessonId) {
   currentRawSnapshot.curriculumLessonPlans = collections.lessons;
   currentRawSnapshot.curriculumLessonPhases = collections.lessonPhases;
   currentRawSnapshot.curriculumLessonSteps = collections.lessonSteps;
+  curriculumPlanningFeature.removeLessonResources(currentRawSnapshot, [normalizedLessonId]);
 
   if (activeCurriculumLessonDraft && String(activeCurriculumLessonDraft.id || "").trim() === normalizedLessonId) {
     activeCurriculumLessonDraft = null;
@@ -23353,6 +23357,7 @@ window.UnterrichtsassistentApp.deleteCurriculumSequence = function (sequenceId) 
   currentRawSnapshot.curriculumLessonPlans = collections.lessons;
   currentRawSnapshot.curriculumLessonPhases = collections.lessonPhases;
   currentRawSnapshot.curriculumLessonSteps = collections.lessonSteps;
+  curriculumPlanningFeature.removeLessonResources(currentRawSnapshot, lessonIdsToDelete);
 
   if (activeCurriculumSequenceDraft && String(activeCurriculumSequenceDraft.id || "").trim() === normalizedSequenceId) {
     activeCurriculumSequenceDraft = null;
@@ -23591,6 +23596,7 @@ window.UnterrichtsassistentApp.deleteCurriculumSeries = function (seriesId) {
   currentRawSnapshot.curriculumLessonPlans = collections.lessons;
   currentRawSnapshot.curriculumLessonPhases = collections.lessonPhases;
   currentRawSnapshot.curriculumLessonSteps = collections.lessonSteps;
+  curriculumPlanningFeature.removeLessonResources(currentRawSnapshot, lessonIdsToDelete);
 
   if (activeCurriculumSeriesDraft && String(activeCurriculumSeriesDraft.id || "").trim() === normalizedSeriesId) {
     activeCurriculumSeriesDraft = null;
@@ -32749,6 +32755,20 @@ window.UnterrichtsassistentApp.importActiveClassStudentsFromCsvFile = function (
   reader.readAsText(file, "utf-8");
   return false;
 };
+function cleanupWorkspaceForDeletion(snapshot, classId, studentIds) {
+  const ids = new Set(studentIds || []);
+  const removedActions = (snapshot.learningActions || []).filter(function (item) {
+    return (classId && item.classId === classId) || ids.has(item.studentId);
+  });
+  const removedTaskIds = new Set(removedActions.map(function (item) { return item.todoId; }).filter(Boolean));
+  snapshot.learningActions = (snapshot.learningActions || []).filter(function (item) { return removedActions.indexOf(item) < 0; });
+  snapshot.todos = (snapshot.todos || []).filter(function (item) { return !removedTaskIds.has(item.id); });
+  if (classId) {
+    snapshot.lessonReflections = (snapshot.lessonReflections || []).filter(function (item) { return item.classId !== classId; });
+    snapshot.lessonResources = (snapshot.lessonResources || []).filter(function (item) { return item.classId !== classId; });
+  }
+}
+
 window.UnterrichtsassistentApp.deleteStudent = function (studentId) {
   if (!isClassManageMode()) {
     return false;
@@ -32759,6 +32779,8 @@ window.UnterrichtsassistentApp.deleteStudent = function (studentId) {
   if (!window.confirm("Soll dieser Schueler mit allen zugehoerigen Daten dauerhaft geloescht werden?")) {
     return false;
   }
+
+  cleanupWorkspaceForDeletion(currentRawSnapshot, "", [studentId]);
 
   currentRawSnapshot.students = currentRawSnapshot.students.filter(function (student) {
     return student.id !== studentId;
@@ -33009,6 +33031,8 @@ window.UnterrichtsassistentApp.deleteActiveClass = function () {
     studentIdsToDelete[studentId] = true;
   });
 
+  cleanupWorkspaceForDeletion(currentRawSnapshot, activeClass.id, Object.keys(studentIdsToDelete));
+
   currentRawSnapshot.students = currentRawSnapshot.students.filter(function (student) {
     return !studentIdsToDelete[student.id];
   });
@@ -33093,6 +33117,10 @@ async function startApp() {
     }
 
     storedSnapshotRecord = await repository.loadSnapshot();
+    storageMetadata = await repository.loadStorageMetadata().catch(function () { return {}; });
+    const recovery = await repository.loadRecoveryPoint().catch(function () { return null; });
+    recoveryPointInfo = recovery ? { exportedAt: recovery.exportedAt, reason: recovery.reason } : null;
+    persistenceLastSavedAt = storedSnapshotRecord && storedSnapshotRecord.encryptedAt || "";
     shouldPersistEncryptedSnapshot = !storedSnapshotRecord
       || !appDataCryptoApi
       || !appDataCryptoApi.isEncryptedSnapshotRecord
@@ -33143,6 +33171,17 @@ window.UnterrichtsassistentApp.flushPersistence = function () {
   }
 
   queueSnapshotPersist(getMutableRawSnapshot(), { immediate: true });
+  return false;
+};
+window.UnterrichtsassistentApp.getStorageStatus = getStorageStatus;
+window.UnterrichtsassistentApp.exportRecoveryPoint = async function () {
+  try {
+    const recovery = await repository.loadRecoveryPoint();
+    if (!isEncryptedExportPayload(recovery)) throw new Error("Es ist noch kein Wiederherstellungspunkt vorhanden.");
+    storageFeature.download(recovery, "unterrichtsassistent-vorzustand-" + getCurrentTimestampFilePart() + ".json");
+  } catch (error) {
+    window.alert(error.message || "Der Vorzustand konnte nicht heruntergeladen werden.");
+  }
   return false;
 };
 window.UnterrichtsassistentApp.openMergeView = function () {
@@ -33239,14 +33278,14 @@ window.UnterrichtsassistentApp.mergeAppDataFromFile = function (event) {
   reader.readAsText(file, "utf-8");
   return false;
 };
-window.UnterrichtsassistentApp.applyMerge = function () {
+window.UnterrichtsassistentApp.applyMerge = async function () {
   const totals = activeMergeState && activeMergeState.totals ? activeMergeState.totals : { added: 0, conflicts: 0 };
   const selectedImportedConflicts = Object.keys(activeMergeState.choices || {}).filter(function (choiceKey) {
     return activeMergeState.choices[choiceKey] === "imported";
   }).length;
   let result = null;
 
-  if (!activeMergeState || !activeMergeState.importedSnapshot) {
+  if (protectedImportInProgress || !activeMergeState || !activeMergeState.importedSnapshot) {
     return false;
   }
 
@@ -33254,10 +33293,18 @@ window.UnterrichtsassistentApp.applyMerge = function () {
     return false;
   }
 
-  result = applyActiveMergeToSnapshot();
-  resetMergeState("empty");
-  window.alert("Merge abgeschlossen: " + String(result.appliedAdded) + " neue Datensaetze, " + String(result.appliedConflicts) + " ersetzte Konflikte.");
-  setActiveView("merge");
+  beginProtectedStorageOperation();
+  try {
+    await createProtectedRecoveryPoint("Vor Zusammenführen");
+    result = await applyActiveMergeToSnapshot();
+    resetMergeState("empty");
+    window.alert("Zusammenführen gespeichert: " + String(result.appliedAdded) + " neue Datensätze, " + String(result.appliedConflicts) + " ersetzte Konflikte. Der Vorzustand bleibt unter Speicher verfügbar.");
+    setActiveView("merge");
+  } catch (error) {
+    window.alert(error.message || "Zusammenführen fehlgeschlagen. Der Vorzustand wurde beibehalten.");
+  } finally {
+    finishProtectedStorageOperation();
+  }
   return false;
 };
 window.UnterrichtsassistentApp.exportAppData = function () {
@@ -33276,7 +33323,9 @@ window.UnterrichtsassistentApp.exportAppData = function () {
   }
 
   try {
-    passwordAuthRecord = repository ? repository.loadPasswordAuthRecord() : null;
+    // Keep the exported wrapper paired with this tab's key, even after another
+    // tab has imported a different password-protected data set.
+    passwordAuthRecord = Promise.resolve(unlockedPasswordAuthRecord);
     encryptedSnapshotRecord = appDataCryptoApi.encryptSnapshot(
       buildImportableSnapshot(currentRawSnapshot),
       currentMasterKeyBytes
@@ -33306,7 +33355,11 @@ window.UnterrichtsassistentApp.exportAppData = function () {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      URL.revokeObjectURL(downloadUrl);
+      const completedDownloadUrl = downloadUrl;
+      window.setTimeout(function () { URL.revokeObjectURL(completedDownloadUrl); }, 60000);
+      storageMetadata.lastExportAt = exportPayload.exportedAt;
+      repository.saveStorageMetadata(storageMetadata).catch(function (error) { console.warn("Sicherungsdatum konnte nicht gespeichert werden.", error); });
+      renderPersistenceIndicator();
       return false;
     }).catch(function (error) {
       if (downloadUrl) {
@@ -33402,6 +33455,8 @@ window.UnterrichtsassistentApp.submitImportedAppDataPassword = function (event) 
 
   clearAppDataImportPasswordError();
 
+  if (protectedImportInProgress) return false;
+
   if (!payload || !repository || !passwordAuthApi || !appDataCryptoApi) {
     return window.UnterrichtsassistentApp.closeAppDataImportPasswordModal();
   }
@@ -33425,6 +33480,7 @@ window.UnterrichtsassistentApp.submitImportedAppDataPassword = function (event) 
     return false;
   }
 
+  beginProtectedStorageOperation();
   Promise.resolve()
     .then(function () {
       return passwordAuthApi.unlockPasswordAuthRecord(password, payload.passwordAuth);
@@ -33438,17 +33494,22 @@ window.UnterrichtsassistentApp.submitImportedAppDataPassword = function (event) 
       normalizedImportedSnapshot = normalizeImportedAppSnapshot(decryptedSnapshot);
       return appDataCryptoApi.encryptSnapshot(buildImportableSnapshot(normalizedImportedSnapshot), importedMasterKeyBytes);
     })
-    .then(function (encryptedSnapshotRecord) {
-      unlockedMasterKeyBytes = importedMasterKeyBytes;
+    .then(async function (encryptedSnapshotRecord) {
+      await createProtectedRecoveryPoint("Vor Import");
       closeOpenTransientUi();
-      return repository.saveProtectedState(encryptedSnapshotRecord, payload.passwordAuth).then(function () {
+      return repository.saveProtectedState(encryptedSnapshotRecord, payload.passwordAuth, unlockedPasswordAuthRecord).then(function () {
+        unlockedMasterKeyBytes = importedMasterKeyBytes;
+        unlockedPasswordAuthRecord = payload.passwordAuth;
+        persistenceAuthConflict = false;
         passwordAuthApi.createUnlockSession();
         if (taskReconciler) taskReconciler.reset();
         refreshSnapshotInMemory(normalizedImportedSnapshot, activeViewId);
         persistenceHasStoredState = true;
         persistenceHasPendingChanges = false;
         persistenceLastError = null;
+        persistenceLastSavedAt = encryptedSnapshotRecord.encryptedAt || new Date().toISOString();
         pendingPersistSnapshot = null;
+        pendingPersistSince = null;
         clearPendingPersistTimer();
         renderPersistenceIndicator();
         noteUnlockActivity();
@@ -33458,7 +33519,12 @@ window.UnterrichtsassistentApp.submitImportedAppDataPassword = function (event) 
     })
     .catch(function (error) {
       console.error("Verschluesselter Import konnte nicht uebernommen werden.", error);
-      showAppDataImportPasswordError("Passwort oder Importdatei sind nicht korrekt.");
+      showAppDataImportPasswordError(error && error.name === "OperationError"
+        ? "Passwort oder Importdatei sind nicht korrekt."
+        : error.message || "Die Importdatei konnte nicht übernommen werden.");
+    })
+    .finally(function () {
+      finishProtectedStorageOperation();
     });
 
   return false;
@@ -33573,6 +33639,25 @@ window.UnterrichtsassistentApp.studentOverview = window.Unterrichtsassistent.fea
   }
 });
 
+window.addEventListener("unterrichtsassistent:offline-status", renderPersistenceIndicator);
+document.addEventListener("visibilitychange", function () {
+  if (document.visibilityState === "hidden" && persistenceHasPendingChanges && !isLockingForAuth) {
+    flushPendingPersist({ immediate: true });
+  }
+});
+window.addEventListener("beforeunload", function (event) {
+  if (emergencyRecoveryLock) {
+    event.preventDefault();
+    event.returnValue = "";
+    return;
+  }
+  if (!isLockingForAuth && (persistenceHasPendingChanges || persistenceIsSaving)) {
+    flushPendingPersist({ immediate: true });
+    event.preventDefault();
+    event.returnValue = "";
+  }
+});
+
 window.UnterrichtsassistentApp.nachpflege = window.Unterrichtsassistent.features.evaluation.nachpflege.createController({
   escape: escapeHtml,
   mathCompetencies: MATH_OBSERVATION_COMPETENCIES,
@@ -33598,6 +33683,61 @@ window.UnterrichtsassistentApp.nachpflege = window.Unterrichtsassistent.features
     rawState = snapshot;
     syncSchoolServiceWithRawState();
     queueSnapshotPersist(snapshot, { immediate: true });
+  }
+});
+
+window.UnterrichtsassistentApp.workspace = window.Unterrichtsassistent.features.workspace.createController({
+  context: function () {
+    const parts = getActiveDateTimeParts();
+    const currentClass = schoolService && schoolService.getActiveClass();
+    return { snapshot: rawState || {}, classId: currentClass ? currentClass.id : "", date: parts.date || window.Unterrichtsassistent.features.workspace.model.localDate(new Date()), time: parts.time || "12:00", manual: rawState && rawState.activeDateTimeMode === "manual" };
+  },
+  schedule: function (classId) {
+    return schoolService && typeof window.UnterrichtsassistentApp.getInstructionSchedule === "function"
+      ? window.UnterrichtsassistentApp.getInstructionSchedule(classId, schoolService.snapshot) : { lessons: [], slots: [] };
+  },
+  save: function (snapshot) { return saveAndRefreshSnapshot(snapshot, activeViewId, { forcePersist: true }); },
+  refresh: function () { if (schoolService) setActiveView(activeViewId); },
+  announce: function (message) {
+    const node = document.getElementById("workspaceMessage");
+    if (node) { node.textContent = message; window.setTimeout(function () { if (node.textContent === message) node.textContent = ""; }, 6000); }
+  },
+  navigate: function (target) {
+    if (!schoolService) return false;
+    const kanban = window.UnterrichtsassistentApp.kanban;
+    if (kanban && !kanban.canLeave()) return false;
+    const snapshot = serializeSnapshot(schoolService.snapshot);
+    if (target.classId) {
+      snapshot.activeClassId = target.classId;
+      snapshot.activeDateTimeMode = "manual";
+      snapshot.activeSeatPlanId = null;
+      snapshot.activeSeatOrderId = null;
+      snapshot.activeSeatPlanRoom = "";
+    }
+    if (target.date) { snapshot.activeDateTime = target.date + "T" + (target.time || "12:00"); snapshot.activeDateTimeMode = "manual"; }
+    let view = target.type === "task" ? "todos" : target.type === "lesson" ? "planung" : target.type === "live" ? "unterricht" : target.type === "view" ? target.view : "klasse";
+    refreshSnapshotInMemory(snapshot, view);
+    if (target.type === "task") {
+      window.UnterrichtsassistentApp.setTodoWorkspaceMode("kanban");
+      window.UnterrichtsassistentApp.kanban.openTask(target.id);
+    } else if (target.type === "student") {
+      activeClassStudentAnalysisStudentId = target.id;
+      window.UnterrichtsassistentApp.setClassViewMode("schueler");
+    } else if (target.type === "lesson") {
+      const lesson = (snapshot.curriculumLessonPlans || []).find(function (entry) { return entry.id === target.id; });
+      const sequence = lesson && (snapshot.curriculumSequences || []).find(function (entry) { return entry.id === lesson.sequenceId; });
+      if (sequence) window.UnterrichtsassistentApp.openCurriculumLessonFlowFromUnterrichtLive(sequence.seriesId, sequence.id, lesson.id);
+      else window.UnterrichtsassistentApp.setPlanningViewMode("unterrichtsplanung");
+    } else if (view === "klasse" && !(snapshot.classes || []).length) {
+      window.UnterrichtsassistentApp.setClassViewMode("verwalten");
+    }
+    return false;
+  }
+});
+
+document.addEventListener("keydown", function (event) {
+  if (schoolService && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault(); window.UnterrichtsassistentApp.workspace.openSearch();
   }
 });
 

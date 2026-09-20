@@ -3,6 +3,8 @@ window.Unterrichtsassistent.data = window.Unterrichtsassistent.data || {};
 
 const SNAPSHOT_KEY = "domainSnapshot";
 const PASSWORD_AUTH_KEY = "passwordAuth";
+const RECOVERY_POINT_KEY = "encryptedRecoveryPoint";
+const STORAGE_META_KEY = "storageMetadata";
 
 function isLegacySeedSnapshot(snapshot) {
   if (!snapshot || !snapshot.students || !snapshot.classes) {
@@ -32,8 +34,11 @@ class AppRepository {
     return storedSnapshot;
   }
 
-  async saveSnapshot(snapshot) {
-    const { writeState } = window.Unterrichtsassistent.data;
+  async saveSnapshot(snapshot, expectedAuthRecord) {
+    const { writeState, writeStatesWithAuthCheck } = window.Unterrichtsassistent.data;
+    if (expectedAuthRecord && writeStatesWithAuthCheck) {
+      return writeStatesWithAuthCheck({ [SNAPSHOT_KEY]: snapshot }, expectedAuthRecord);
+    }
     await writeState(SNAPSHOT_KEY, snapshot);
   }
 
@@ -47,8 +52,48 @@ class AppRepository {
     await writeState(PASSWORD_AUTH_KEY, record);
   }
 
-  async saveProtectedState(snapshotRecord, passwordAuthRecord) {
-    const { writeState, writeStates } = window.Unterrichtsassistent.data;
+  async loadStorageMetadata() {
+    return (await window.Unterrichtsassistent.data.readState(STORAGE_META_KEY)) || {};
+  }
+
+  async saveStorageMetadata(metadata) {
+    await window.Unterrichtsassistent.data.writeState(STORAGE_META_KEY, metadata || {});
+  }
+
+  async loadRecoveryPoint() {
+    return window.Unterrichtsassistent.data.readState(RECOVERY_POINT_KEY);
+  }
+
+  async saveRecoveryPoint(snapshotRecord, passwordAuthRecord, reason) {
+    // A recovery point is an ordinary encrypted export, including its own wrapped key.
+    // In particular, never write a decrypted clone of the user's school data here.
+    if (!snapshotRecord || snapshotRecord.algorithm !== "AES-GCM"
+      || typeof snapshotRecord.ciphertext !== "string" || typeof snapshotRecord.iv !== "string"
+      || !passwordAuthRecord || !passwordAuthRecord.encryptedMasterKey) {
+      throw new Error("Der Wiederherstellungspunkt muss verschluesselt sein.");
+    }
+    const recovery = {
+      format: "unterrichtsassistent-encrypted-export",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      reason: String(reason || "Vor Änderung"),
+      passwordAuth: passwordAuthRecord,
+      appState: snapshotRecord
+    };
+    const data = window.Unterrichtsassistent.data;
+    if (data.writeStatesWithAuthCheck) {
+      await data.writeStatesWithAuthCheck({ [RECOVERY_POINT_KEY]: recovery }, passwordAuthRecord);
+    } else {
+      await data.writeState(RECOVERY_POINT_KEY, recovery);
+    }
+    return recovery;
+  }
+
+  async saveProtectedState(snapshotRecord, passwordAuthRecord, expectedAuthRecord) {
+    const { writeState, writeStates, writeStatesWithAuthCheck } = window.Unterrichtsassistent.data;
+    if (expectedAuthRecord && writeStatesWithAuthCheck) {
+      return writeStatesWithAuthCheck({ [SNAPSHOT_KEY]: snapshotRecord, [PASSWORD_AUTH_KEY]: passwordAuthRecord }, expectedAuthRecord);
+    }
 
     if (typeof writeStates === "function") {
       await writeStates({

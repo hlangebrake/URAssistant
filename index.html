@@ -2,10 +2,10 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="referrer" content="no-referrer">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; media-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; child-src 'none'; worker-src 'self'; manifest-src 'self'">
-  <meta name="theme-color" content="#f4efe4">
+  <meta name="theme-color" content="#f3f6f9">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>Unterrichtsassistent</title>
@@ -13,10 +13,13 @@
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./apple-touch-icon-167x167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./apple-touch-icon-152x152.png">
-  <link rel="stylesheet" href="style.css?v=20260901e">
-  <link rel="stylesheet" href="src/ui/kanban.css?v=20260906a">
-  <link rel="stylesheet" href="src/ui/nachpflege.css?v=20260920a">
-  <link rel="stylesheet" href="src/ui/studentOverview.css?v=20260920b">
+  <link rel="stylesheet" href="style.css?v=20260920-workspace-5">
+  <link rel="stylesheet" href="src/ui/kanban.css?v=20260920-workspace-5">
+  <link rel="stylesheet" href="src/ui/nachpflege.css?v=20260920-workspace-5">
+  <link rel="stylesheet" href="src/ui/studentOverview.css?v=20260920-workspace-5">
+  <link rel="stylesheet" href="src/features/storage/status.css?v=20260920-workspace-5">
+  <link rel="stylesheet" href="src/ui/modern.css?v=20260920-workspace-5">
+  <link rel="stylesheet" href="src/ui/workspace.css?v=20260920-workspace-5">
 </head>
 <body>
   <div class="app-shell is-collapsed">
@@ -51,32 +54,36 @@
       </div>
 
       <nav class="sidebar__nav" id="sidebarNav" aria-label="Hauptnavigation">
-        <button class="nav-link is-active" type="button" data-view-target="unterricht" data-view-title="Unterricht" aria-label="Unterricht" title="Unterricht" onclick="window.UnterrichtsassistentApp.activateView('unterricht'); return false;">
-          <span class="nav-link__icon" aria-hidden="true">U</span>
+        <button class="nav-link is-active" type="button" data-view-target="overview" data-view-title="Übersicht" aria-label="Übersicht" title="Übersicht" onclick="window.UnterrichtsassistentApp.activateView('overview'); return false;">
+          <span class="nav-link__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span>
+          <span class="nav-link__label">Übersicht</span>
+        </button>
+        <button class="nav-link" type="button" data-view-target="unterricht" data-view-title="Unterricht" aria-label="Unterricht" title="Unterricht" onclick="window.UnterrichtsassistentApp.activateView('unterricht'); return false;">
+          <span class="nav-link__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="m10 8 5 3-5 3zM8 21h8M12 17v4"/></svg></span>
           <span class="nav-link__label">Unterricht</span>
         </button>
         <button class="nav-link" type="button" data-view-target="klasse" data-view-title="Lerngruppe" aria-label="Lerngruppe" title="Lerngruppe" onclick="window.UnterrichtsassistentApp.activateView('klasse'); return false;">
-          <span class="nav-link__icon" aria-hidden="true">L</span>
+          <span class="nav-link__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6M18 15a5 5 0 0 1 3 5"/></svg></span>
           <span class="nav-link__label">Lerngruppe</span>
         </button>
         <button class="nav-link" type="button" data-view-target="stundenplan" data-view-title="Stundenplan" aria-label="Stundenplan" title="Stundenplan" onclick="window.UnterrichtsassistentApp.activateView('stundenplan'); return false;">
-          <span class="nav-link__icon" aria-hidden="true">S</span>
+          <span class="nav-link__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 11h18M8 15h2M14 15h2M8 18h2"/></svg></span>
           <span class="nav-link__label">Stundenplan</span>
         </button>
         <button class="nav-link" type="button" data-view-target="sitzplan" data-view-title="Sitzplan" aria-label="Sitzplan" title="Sitzplan" onclick="window.UnterrichtsassistentApp.activateView('sitzplan'); return false;">
-          <span class="nav-link__icon" aria-hidden="true">P</span>
+          <span class="nav-link__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="5" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="3" y="14" width="7" height="5" rx="1"/><rect x="14" y="14" width="7" height="5" rx="1"/><path d="M5 8v3M8 8v3M16 8v3M19 8v3M5 19v2M8 19v2M16 19v2M19 19v2"/></svg></span>
           <span class="nav-link__label">Sitzplan</span>
         </button>
         <button class="nav-link" type="button" data-view-target="planung" data-view-title="Planung" aria-label="Planung" title="Planung" onclick="window.UnterrichtsassistentApp.activateView('planung'); return false;">
-          <span class="nav-link__icon" aria-hidden="true">J</span>
+          <span class="nav-link__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h9M8 18h11"/><circle cx="3" cy="6" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="18" r="1"/></svg></span>
           <span class="nav-link__label">Planung</span>
         </button>
         <button class="nav-link" type="button" data-view-target="bewertung" data-view-title="Bewertung" aria-label="Bewertung" title="Bewertung" onclick="window.UnterrichtsassistentApp.activateView('bewertung'); return false;">
-          <span class="nav-link__icon" aria-hidden="true">B</span>
+          <span class="nav-link__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 3v18h17M8 16v-5M13 16V7M18 16v-8"/></svg></span>
           <span class="nav-link__label">Bewertung</span>
         </button>
         <button class="nav-link" type="button" data-view-target="todos" data-view-title="TODOs" aria-label="TODOs" title="TODOs" onclick="window.UnterrichtsassistentApp.activateView('todos'); return false;">
-          <span class="nav-link__icon" aria-hidden="true">T</span>
+          <span class="nav-link__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m3 6 2 2 4-4M12 6h9M3 13l2 2 4-4M12 13h9M12 20h9"/><circle cx="5" cy="20" r="1"/></svg></span>
           <span class="nav-link__label">TODOs</span>
         </button>
       </nav>
@@ -112,7 +119,7 @@
             </span>
             <span class="sidebar__storage-label">Merge</span>
           </button>
-          <button class="sidebar__storage-button" id="persistenceButton" type="button" aria-label="Daten manuell in IndexedDB speichern" title="Daten manuell in IndexedDB speichern" onclick="return window.UnterrichtsassistentApp.flushPersistence()">
+          <button class="sidebar__storage-button" id="persistenceButton" type="button" aria-label="Auf diesem Gerät speichern" title="Auf diesem Gerät speichern" onclick="return window.UnterrichtsassistentApp.flushPersistence()">
             <span class="sidebar__storage-icon" aria-hidden="true">&#128190;</span>
             <span class="sidebar__storage-label">Speicher</span>
           </button>
@@ -127,17 +134,34 @@
       <header class="content__header">
         <div class="content__title-row">
           <div class="content__title-group">
-            <h1 id="viewTitle">Unterricht</h1>
+            <h1 id="viewTitle">Übersicht</h1>
             <p class="content__subtitle" id="viewSubtitle" hidden></p>
           </div>
           <div id="viewHeaderActions"></div>
           <div id="viewHeaderUtility"></div>
         </div>
       </header>
+      <details class="storage-status" id="storageStatusBar" data-state="empty">
+        <summary><span class="storage-status__line"><span id="storageSaveStatus" role="status" aria-live="polite">Speicher wird geladen …</span><span id="storageOfflineStatus">Offline-Verfügbarkeit wird geprüft …</span></span></summary>
+        <div class="storage-status__details">
+          <span id="storageBackupStatus">Noch keine Sicherung erstellt</span>
+          <button type="button" onclick="window.UnterrichtsassistentApp.exportAppData()">Sicherung erstellen</button>
+          <button id="storageRetryButton" type="button" hidden onclick="window.UnterrichtsassistentApp.flushPersistence()">Erneut speichern</button>
+          <button id="storageRecoveryButton" type="button" hidden onclick="window.UnterrichtsassistentApp.exportRecoveryPoint()">Vorzustand herunterladen</button>
+          <p>Die Daten bleiben in diesem Browser. Eine Sicherungsdatei schützt zusätzlich bei Gerätewechsel oder gelöschten Browserdaten.</p>
+          <p id="storageRecoveryNote"></p>
+        </div>
+      </details>
       <div class="content__secondary-actions" id="viewSecondaryActions" hidden></div>
+      <div class="workspace-toolbar" aria-label="Schnellzugriff">
+        <button class="ws-button workspace-toolbar__search" type="button" onclick="return window.UnterrichtsassistentApp.workspace.openSearch()"><span>Suchen …</span><kbd>Strg K</kbd></button>
+        <button class="ws-button" type="button" onclick="return window.UnterrichtsassistentApp.workspace.openQuick()">+ Aufgabe</button>
+        <span id="workspaceMessage" role="status" aria-live="polite"></span>
+      </div>
       <input id="evidenceToolCsvImportInput" type="file" accept=".csv,text/csv,text/plain" hidden onchange="return window.UnterrichtsassistentApp.importEvidenceToolFromCsvFile(event)">
 
-      <section class="view is-active" id="unterricht" data-view></section>
+      <section class="view is-active" id="overview" data-view></section>
+      <section class="view" id="unterricht" data-view hidden></section>
       <section class="view" id="klasse" data-view hidden></section>
       <section class="view" id="stundenplan" data-view hidden></section>
       <section class="view" id="sitzplan" data-view hidden></section>
@@ -242,77 +266,51 @@
       };
     }());
   </script>
-  <script>
-    (function () {
-      if (!("serviceWorker" in navigator) || window.location.protocol === "file:") {
-        return;
-      }
-
-      window.addEventListener("load", function () {
-        navigator.serviceWorker.getRegistrations().then(function (registrations) {
-          return Promise.all(
-            registrations.map(function (registration) {
-              return registration.unregister();
-            })
-          );
-        }).then(function () {
-          if (!("caches" in window)) {
-            return Promise.resolve();
-          }
-
-          return caches.keys().then(function (cacheNames) {
-            return Promise.all(
-              cacheNames.map(function (cacheName) {
-                return caches.delete(cacheName);
-              })
-            );
-          });
-        }).catch(function (error) {
-          console.warn("Service Worker oder Cache konnten nicht entfernt werden.", error);
-        });
-      });
-    }());
-  </script>
-  <script src="src/shared/html.js?v=20260515a"></script>
-  <script src="src/shared/dateTime.js?v=20260515a"></script>
-  <script src="src/features/curriculum/topicTree.js?v=20260515a"></script>
-  <script src="src/features/curriculum/planning.js?v=20260515a"></script>
-  <script src="src/features/planning/categories.js?v=20260515a"></script>
-  <script src="src/features/planning/recurrence.js?v=20260515a"></script>
-  <script src="src/features/planning/instruction.js?v=20260515a"></script>
-  <script src="src/features/school/display.js?v=20260515a"></script>
-  <script src="src/features/todos/checklist.js?v=20260515a"></script>
-  <script src="src/features/tasks/model.js?v=20260906a"></script>
-  <script src="src/features/tasks/vendor/jspdf.umd.min.js?v=20260906a"></script>
-  <script src="src/features/tasks/vendor/liberation-sans.js?v=20260906a"></script>
-  <script src="src/features/tasks/pdf.js?v=20260906a"></script>
-  <script src="src/features/tasks/controller.js?v=20260906a"></script>
-  <script src="src/features/evaluation/competencies.js?v=20260515a"></script>
-  <script src="src/features/evaluation/discussionGroups.js?v=20260901a"></script>
-  <script src="src/features/evaluation/nachpflege.js?v=20260920a"></script>
-  <script src="src/features/evaluation/studentOverview.js?v=20260920b"></script>
-  <script src="src/features/seatPlan/geometry.js?v=20260515a"></script>
-  <script src="src/domain/models.js?v=20260920b"></script>
-  <script src="src/domain/factories.js?v=20260920b"></script>
-  <script src="src/data/demoData.js?v=20260401b"></script>
-  <script src="src/data/indexedDb.js?v=20260330a"></script>
-  <script src="src/data/appRepository.js?v=20260330a"></script>
-  <script src="src/data/studentCsvImport.js?v=20260901a"></script>
-  <script src="src/security/passwordAuth.js?v=20260330a"></script>
-  <script src="src/security/appDataCrypto.js?v=20260330a"></script>
-  <script src="src/services/schoolService.js?v=20260330a"></script>
-  <script src="src/ui/viewHelpers.js?v=20260515a"></script>
-  <script src="src/ui/views/unterrichtView.js?v=20260920a"></script>
-  <script src="src/ui/views/klasseView.js?v=20260920b"></script>
-  <script src="src/ui/views/stundenplanView.js?v=20260331b"></script>
-  <script src="src/ui/views/sitzplanView.js?v=20260331b"></script>
-  <script src="src/ui/views/planungView.js?v=20260812a"></script>
-  <script src="src/ui/views/bewertungView.js?v=20260901b"></script>
-  <script src="src/ui/views/kanbanView.js?v=20260906a"></script>
-  <script src="src/ui/views/todosView.js?v=20260906a"></script>
-  <script src="src/ui/views/mergeView.js?v=20260616b"></script>
-  <script src="src/ui/viewRegistry.js?v=20260616a"></script>
-  <script src="src/ui/renderers.js?v=20260515a"></script>
-    <script src="src/app.js?v=20260920b"></script>
+  <script src="src/features/storage/offline.js?v=20260920-workspace-5"></script>
+  <script src="src/shared/html.js?v=20260920-workspace-5"></script>
+  <script src="src/shared/dateTime.js?v=20260920-workspace-5"></script>
+  <script src="src/features/curriculum/topicTree.js?v=20260920-workspace-5"></script>
+  <script src="src/features/curriculum/planning.js?v=20260920-workspace-5"></script>
+  <script src="src/features/planning/categories.js?v=20260920-workspace-5"></script>
+  <script src="src/features/planning/recurrence.js?v=20260920-workspace-5"></script>
+  <script src="src/features/planning/instruction.js?v=20260920-workspace-5"></script>
+  <script src="src/features/school/display.js?v=20260920-workspace-5"></script>
+  <script src="src/features/todos/checklist.js?v=20260920-workspace-5"></script>
+  <script src="src/features/tasks/model.js?v=20260920-workspace-5"></script>
+  <script src="src/features/tasks/vendor/jspdf.umd.min.js?v=20260920-workspace-5"></script>
+  <script src="src/features/tasks/vendor/liberation-sans.js?v=20260920-workspace-5"></script>
+  <script src="src/features/tasks/pdf.js?v=20260920-workspace-5"></script>
+  <script src="src/features/tasks/controller.js?v=20260920-workspace-5"></script>
+  <script src="src/features/evaluation/competencies.js?v=20260920-workspace-5"></script>
+  <script src="src/features/evaluation/discussionGroups.js?v=20260920-workspace-5"></script>
+  <script src="src/features/evaluation/nachpflege.js?v=20260920-workspace-5"></script>
+  <script src="src/features/evaluation/studentOverview.js?v=20260920-workspace-5"></script>
+  <script src="src/features/seatPlan/geometry.js?v=20260920-workspace-5"></script>
+  <script src="src/features/storage/status.js?v=20260920-workspace-5"></script>
+  <script src="src/features/workspace/model.js?v=20260920-workspace-5"></script>
+  <script src="src/features/workspace/controller.js?v=20260920-workspace-5"></script>
+  <script src="src/domain/models.js?v=20260920-workspace-5"></script>
+  <script src="src/domain/factories.js?v=20260920-workspace-5"></script>
+  <script src="src/data/demoData.js?v=20260920-workspace-5"></script>
+  <script src="src/data/indexedDb.js?v=20260920-workspace-5"></script>
+  <script src="src/data/appRepository.js?v=20260920-workspace-5"></script>
+  <script src="src/data/studentCsvImport.js?v=20260920-workspace-5"></script>
+  <script src="src/security/passwordAuth.js?v=20260920-workspace-5"></script>
+  <script src="src/security/appDataCrypto.js?v=20260920-workspace-5"></script>
+  <script src="src/services/schoolService.js?v=20260920-workspace-5"></script>
+  <script src="src/ui/viewHelpers.js?v=20260920-workspace-5"></script>
+  <script src="src/ui/views/unterrichtView.js?v=20260920-workspace-5"></script>
+  <script src="src/ui/views/klasseView.js?v=20260920-workspace-5"></script>
+  <script src="src/ui/views/stundenplanView.js?v=20260920-workspace-5"></script>
+  <script src="src/ui/views/sitzplanView.js?v=20260920-workspace-5"></script>
+  <script src="src/ui/views/planungView.js?v=20260920-workspace-5"></script>
+  <script src="src/ui/views/bewertungView.js?v=20260920-workspace-5"></script>
+  <script src="src/ui/views/kanbanView.js?v=20260920-workspace-5"></script>
+  <script src="src/ui/views/todosView.js?v=20260920-workspace-5"></script>
+  <script src="src/ui/views/mergeView.js?v=20260920-workspace-5"></script>
+  <script src="src/ui/views/overviewView.js?v=20260920-workspace-5"></script>
+  <script src="src/ui/viewRegistry.js?v=20260920-workspace-5"></script>
+  <script src="src/ui/renderers.js?v=20260920-workspace-5"></script>
+    <script src="src/app.js?v=20260920-workspace-5"></script>
   </body>
 </html>

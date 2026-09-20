@@ -1032,7 +1032,7 @@ class PlanningCategory {
   }
 
 class PlanningInstructionLessonStatus {
-  constructor({ id, classId = "", lessonDate = "", isCancelled = false, cancelReason = "", isAdditionalLesson = false, additionalLessonType = "single", additionalLessonNote = "" }) {
+  constructor({ id, classId = "", lessonDate = "", isCancelled = false, cancelReason = "", isAdditionalLesson = false, additionalLessonType = "single", additionalLessonNote = "", additionalStartTime = "", additionalEndTime = "" }) {
     const normalizedAdditionalLessonType = String(additionalLessonType || "").trim().toLowerCase();
 
     this.id = id;
@@ -1041,6 +1041,8 @@ class PlanningInstructionLessonStatus {
     this.isAdditionalLesson = Boolean(isAdditionalLesson);
     this.additionalLessonType = normalizedAdditionalLessonType === "double" ? "double" : "single";
     this.additionalLessonNote = this.isAdditionalLesson ? String(additionalLessonNote || "").trim() : "";
+    this.additionalStartTime = this.isAdditionalLesson && /^([01]\d|2[0-3]):[0-5]\d$/.test(additionalStartTime) ? additionalStartTime : "";
+    this.additionalEndTime = this.isAdditionalLesson && /^([01]\d|2[0-3]):[0-5]\d$/.test(additionalEndTime) ? additionalEndTime : "";
     this.isCancelled = Boolean(isCancelled);
     this.cancelReason = this.isCancelled ? String(cancelReason || "").trim() : "";
   }

@@ -674,275 +674,17 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
       ].join(" ");
     }
 
-    function buildInstructionLessonOccurrencesForClass(classId) {
-      const occurrencesByDate = {};
-      const startDate = parseLocalDate(schoolYearStart);
-      const endDate = parseLocalDate(schoolYearEnd);
-      const cursor = startDate ? new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()) : null;
-      const lastDate = endDate ? new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate()) : null;
-
-      function isLessonOccurrencePast(lessonDateValue, lessonEndTime) {
-        const lessonDate = parseLocalDate(lessonDateValue);
-        const endTimeValue = String(lessonEndTime || "").trim();
-        let endMoment;
-
-        if (!referenceDate || !lessonDate) {
-          return false;
-        }
-
-        if (!endTimeValue) {
-          return lessonDateValue < toIsoDate(referenceDate);
-        }
-
-        endMoment = new Date(
-          lessonDate.getFullYear(),
-          lessonDate.getMonth(),
-          lessonDate.getDate(),
-          Number(endTimeValue.slice(0, 2)) || 0,
-          Number(endTimeValue.slice(3, 5)) || 0,
-          59,
-          999
-        );
-
-        return endMoment < referenceDate;
-      }
-
-      if (!classId || !cursor || !lastDate || !service || typeof service.getLessonUnitsForClass !== "function") {
-        return [];
-      }
-
-      while (cursor <= lastDate) {
-        const isoDate = toIsoDate(cursor);
-
-        if (!isInstructionFreeDateValue(isoDate)) {
-          service.getLessonUnitsForClass(classId, cursor).forEach(function (lessonUnit) {
-            const currentTimetable = typeof service.getCurrentTimetable === "function"
-              ? service.getCurrentTimetable(cursor)
-              : null;
-            const timetableRows = currentTimetable && typeof service.getTimetableRows === "function"
-              ? service.getTimetableRows(currentTimetable)
-              : [];
-            const weekdayKey = String(Number(lessonUnit && lessonUnit.weekday));
-            const sourceRowId = String(lessonUnit && lessonUnit.sourceRowId || "");
-            const lessonCount = timetableRows.filter(function (row) {
-              const cell = row && row.cells ? row.cells[weekdayKey] : null;
-              const effectiveClassId = row && row.type === "lesson" && cell
-                ? (cell.isBlocked ? cell.inheritedClassId : cell.classId)
-                : "";
-              const effectiveSourceRowId = row && row.type === "lesson" && cell
-                ? String(cell.isBlocked ? (cell.sourceRowId || row.id) : row.id)
-                : "";
-
-              return effectiveClassId === classId && effectiveSourceRowId === sourceRowId;
-            }).length || 1;
-
-            if (!occurrencesByDate[isoDate]) {
-              const lessonStatus = lessonStatusLookup[[String(classId || "").trim(), isoDate].join("::")] || null;
-
-              occurrencesByDate[isoDate] = {
-                id: getInstructionOccurrenceId(isoDate),
-                lessonDate: isoDate,
-                lessonCount: 0,
-                cancelledLessonCount: 0,
-                remainingLessonCount: 0,
-                isCancelled: Boolean(lessonStatus && lessonStatus.isCancelled),
-                cancelReason: String(lessonStatus && lessonStatus.cancelReason || "").trim()
-              };
-            }
-
-            const outageInfo = getInstructionOutageInfoForLesson(classId, isoDate, lessonUnit && lessonUnit.startTime, lessonUnit && lessonUnit.endTime);
-            const isLessonCancelled = Boolean(occurrencesByDate[isoDate].isCancelled) || Boolean(outageInfo && outageInfo.isCancelled);
-
-            occurrencesByDate[isoDate].lessonCount += Math.max(1, lessonCount);
-            if (isLessonCancelled) {
-              occurrencesByDate[isoDate].cancelledLessonCount += Math.max(1, lessonCount);
-              if (!occurrencesByDate[isoDate].cancelReason) {
-                occurrencesByDate[isoDate].cancelReason = String(outageInfo && (outageInfo.reason || outageInfo.title) || "").trim();
-              }
-            }
-
-            if (!isLessonCancelled && !isLessonOccurrencePast(isoDate, lessonUnit && lessonUnit.endTime)) {
-              occurrencesByDate[isoDate].remainingLessonCount += Math.max(1, lessonCount);
-            }
-          });
-        }
-
-        cursor.setDate(cursor.getDate() + 1);
-      }
-
-      return Object.keys(occurrencesByDate).map(function (dateKey) {
-        const entry = occurrencesByDate[dateKey];
-
-        if (entry && Number(entry.lessonCount || 0) > 0 && Number(entry.cancelledLessonCount || 0) >= Number(entry.lessonCount || 0)) {
-          entry.isCancelled = true;
-        }
-
-        return occurrencesByDate[dateKey];
-      }).sort(function (left, right) {
-        const leftKey = [left.lessonDate, left.id].join("|");
-        const rightKey = [right.lessonDate, right.id].join("|");
-        return leftKey.localeCompare(rightKey);
-      });
-    }
-
     function getInstructionAssignmentDataForClass(classId) {
-      const normalizedClassId = String(classId || "").trim();
-
-      if (!normalizedClassId) {
-        return {
-          occurrenceLookup: {}
-        };
+      const id = String(classId || "");
+      if (!instructionAssignmentCache[id]) {
+        instructionAssignmentCache[id] = window.UnterrichtsassistentApp.getInstructionSchedule(id, snapshot);
       }
-
-      if (instructionAssignmentCache[normalizedClassId]) {
-        return instructionAssignmentCache[normalizedClassId];
-      }
-
-      const lessonOccurrences = buildInstructionLessonOccurrencesForClass(normalizedClassId);
-      const orderedSeries = getOrderedCurriculumSeriesForClass(normalizedClassId);
-      const lessonSlots = [];
-      const occurrenceLookup = {};
-      let previousSeriesLastAssignedSlotIndex = -1;
-
-      lessonOccurrences.forEach(function (occurrence) {
-        const occurrenceId = String(occurrence && occurrence.id || "").trim();
-        const totalUnits = Math.max(1, Number(occurrence && occurrence.lessonCount || 1));
-        const isCancelled = Boolean(occurrence && occurrence.isCancelled);
-        let slotIndex = 0;
-
-        occurrenceLookup[occurrenceId] = {
-          occurrence: occurrence,
-          assignmentSeriesIds: [],
-          assignmentSequenceIds: [],
-          assignmentLessonIds: []
-        };
-
-        while (slotIndex < (isCancelled ? 0 : totalUnits)) {
-          lessonSlots.push({
-            occurrenceId: occurrenceId,
-            lessonDate: String(occurrence && occurrence.lessonDate || "").trim(),
-            assignedSeriesId: "",
-            assignedSequenceId: "",
-            assignedLessonId: ""
-          });
-          slotIndex += 1;
-        }
-      });
-
-      orderedSeries.forEach(function (seriesItem) {
-        const seriesId = String(seriesItem && seriesItem.id || "").trim();
-        const startMode = String(seriesItem && seriesItem.startMode || "").trim() === "manual" ? "manual" : "automatic";
-        const manualStartDate = String(seriesItem && seriesItem.startDate || "").slice(0, 10);
-        let remainingDemand = Math.max(0, Number(seriesItem && seriesItem.hourDemand) || 0);
-        const earliestAllowedSlotIndex = previousSeriesLastAssignedSlotIndex + 1;
-        let startIndex = -1;
-        let cursorIndex;
-        let lastAssignedSlotIndex = -1;
-
-        if (!remainingDemand) {
-          return;
-        }
-
-        startIndex = lessonSlots.findIndex(function (slot, slotIndex) {
-          if (slotIndex < earliestAllowedSlotIndex || slot.assignedSeriesId) {
-            return false;
-          }
-
-          if (startMode === "manual" && manualStartDate) {
-            return String(slot.lessonDate || "") >= manualStartDate;
-          }
-
-          return true;
-        });
-
-        if (startIndex < 0) {
-          return;
-        }
-
-        cursorIndex = startIndex;
-
-        while (cursorIndex < lessonSlots.length && remainingDemand > 0) {
-          const slot = lessonSlots[cursorIndex];
-          const occurrenceEntry = occurrenceLookup[String(slot && slot.occurrenceId || "").trim()];
-
-          if (slot && !slot.assignedSeriesId && occurrenceEntry) {
-            slot.assignedSeriesId = seriesId;
-            occurrenceEntry.assignmentSeriesIds.push(seriesId);
-            remainingDemand -= 1;
-            lastAssignedSlotIndex = cursorIndex;
-          }
-
-          cursorIndex += 1;
-        }
-
-        if (lastAssignedSlotIndex >= 0) {
-          previousSeriesLastAssignedSlotIndex = lastAssignedSlotIndex;
-        }
-      });
-
-      orderedSeries.forEach(function (seriesItem) {
-        const seriesId = String(seriesItem && seriesItem.id || "").trim();
-        const seriesSlots = lessonSlots.filter(function (slot) {
-          return String(slot && slot.assignedSeriesId || "").trim() === seriesId;
-        });
-        const orderedSequences = getOrderedCurriculumSequencesForSeries(seriesId);
-        let seriesSlotIndex = 0;
-
-        orderedSequences.forEach(function (sequenceItem) {
-          const sequenceId = String(sequenceItem && sequenceItem.id || "").trim();
-          let remainingDemand = Math.max(0, Number(sequenceItem && sequenceItem.hourDemand) || 0);
-
-          while (seriesSlotIndex < seriesSlots.length && remainingDemand > 0) {
-            const slot = seriesSlots[seriesSlotIndex];
-            const occurrenceEntry = occurrenceLookup[String(slot && slot.occurrenceId || "").trim()];
-
-            if (slot && occurrenceEntry) {
-              slot.assignedSequenceId = sequenceId;
-              occurrenceEntry.assignmentSequenceIds.push(sequenceId);
-              remainingDemand -= 1;
-            }
-
-            seriesSlotIndex += 1;
-          }
-        });
-      });
-
-      (Array.isArray(snapshot.curriculumSequences) ? snapshot.curriculumSequences : []).forEach(function (sequenceItem) {
-        const sequenceId = String(sequenceItem && sequenceItem.id || "").trim();
-        const sequenceSlots = lessonSlots.filter(function (slot) {
-          return String(slot && slot.assignedSequenceId || "").trim() === sequenceId;
-        });
-        const orderedLessons = getOrderedCurriculumLessonsForSequence(sequenceId);
-        let sequenceSlotIndex = 0;
-
-        orderedLessons.forEach(function (lessonItem) {
-          const lessonId = String(lessonItem && lessonItem.id || "").trim();
-          let remainingDemand = getCurriculumLessonHourDemand(lessonItem);
-
-          while (sequenceSlotIndex < sequenceSlots.length && remainingDemand > 0) {
-            const slot = sequenceSlots[sequenceSlotIndex];
-            const occurrenceEntry = occurrenceLookup[String(slot && slot.occurrenceId || "").trim()];
-
-            if (slot && occurrenceEntry) {
-              slot.assignedLessonId = lessonId;
-              occurrenceEntry.assignmentLessonIds.push(lessonId);
-              remainingDemand -= 1;
-            }
-
-            sequenceSlotIndex += 1;
-          }
-        });
-      });
-
-      instructionAssignmentCache[normalizedClassId] = {
-        occurrenceLookup: occurrenceLookup
-      };
-
-      return instructionAssignmentCache[normalizedClassId];
+      return instructionAssignmentCache[id];
     }
 
-    function getInstructionDisplayTopicForClassAndDate(classId, lessonDateValue) {
-      const occurrenceEntry = getInstructionAssignmentDataForClass(classId).occurrenceLookup[getInstructionOccurrenceId(lessonDateValue)] || null;
+    function getInstructionDisplayTopicForClassAndDate(classId, lessonDateValue, sourceRowId) {
+      const slots = getInstructionAssignmentDataForClass(classId).slots.filter(function (slot) { return slot.lessonDate === lessonDateValue && (!sourceRowId || slot.sourceRowId === sourceRowId); });
+      const occurrenceEntry = { assignmentLessonIds: slots.map(function (slot) { return slot.assignedLessonId; }), assignmentSequenceIds: slots.map(function (slot) { return slot.assignedSequenceId; }), assignmentSeriesIds: slots.map(function (slot) { return slot.assignedSeriesId; }) };
       const lessonTopics = getUniqueIds(occurrenceEntry && occurrenceEntry.assignmentLessonIds).map(function (lessonId) {
         return String(lessonPlanLookup[lessonId] && lessonPlanLookup[lessonId].topic || "").trim();
       }).filter(Boolean);
@@ -968,6 +710,21 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
       return "";
     }
 
+    function renderWeekAdditionalLessons() {
+      const week = getWeekDates();
+      const from = week['1'].isoDate;
+      const sunday = parseLocalDate(from); sunday.setDate(sunday.getDate() + 6);
+      const to = toIsoDate(sunday);
+      const cards = classes.map(function (schoolClass) {
+        return getInstructionAssignmentDataForClass(schoolClass.id).occurrences.filter(function (entry) { return entry.isAdditionalLesson && entry.lessonDate >= from && entry.lessonDate <= to; }).map(function (entry) {
+          const topic = getInstructionDisplayTopicForClassAndDate(schoolClass.id, entry.lessonDate, entry.id);
+          const time = entry.startTime && entry.endTime ? entry.startTime + '–' + entry.endTime : 'ohne Uhrzeit';
+          return '<article class="planning-quick-additional"><strong>' + escapeValue(getClassDisplayName(schoolClass)) + ' · ' + escapeValue(formatShortDateLabel(entry.lessonDate)) + ' · ' + escapeValue(time) + '</strong><p>' + escapeValue(topic || entry.additionalLessonNote || 'Zusatzstunde') + '</p><button class="header-utility-button" type="button" onclick="return window.UnterrichtsassistentApp.openPlanningInstructionAdditionalLessonModal(\'' + escapeValue(entry.additionalLessonId) + '\', \'' + escapeValue(schoolClass.id) + '\')">' + (entry.startTime ? 'Bearbeiten' : 'Uhrzeit ergänzen') + '</button></article>';
+        }).join('');
+      }).join('');
+      return cards ? '<section class="planning-quick-additions"><h3>Zusatzstunden diese Woche</h3>' + cards + '</section>' : '';
+    }
+
     function renderClassOptions(selectedClassId) {
       return ['<option value="">-</option>'].concat(classes.map(function (schoolClass) {
         return '<option value="' + escapeValue(schoolClass.id) + '"' + (selectedClassId === schoolClass.id ? " selected" : "") + '>' + escapeValue(getClassDisplayName(schoolClass)) + "</option>";
@@ -981,7 +738,7 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
         : null;
       const assignmentData = draft ? getInstructionAssignmentDataForClass(String(draft.classId || "").trim()) : null;
       const occurrenceEntry = draft && assignmentData
-        ? assignmentData.occurrenceLookup[getInstructionOccurrenceId(draft.lessonDate)] || null
+        ? assignmentData.occurrenceLookup[draft.isAdditionalLesson ? "zusatzstunde::" + draft.id : getInstructionOccurrenceId(draft.lessonDate)] || null
         : null;
 
       function buildSummaryList(itemIds, lookup, formatter) {
@@ -1014,6 +771,12 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
         '</div>',
         '</div>',
         '<form class="import-modal__form planning-instruction-modal" id="planningInstructionLessonForm" autocomplete="off" method="post" action="about:blank" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitPlanningInstructionLessonModal(event)">',
+        draft.isAdditionalLesson ? [
+          '<label class="import-modal__field"><span>Datum</span><input id="planningInstructionLessonAdditionalDateInput" type="date" value="', escapeValue(draft.lessonDate), '"></label>',
+          '<label class="import-modal__field"><span>Stundentyp</span><select id="planningInstructionLessonAdditionalTypeInput"><option value="single"', draft.additionalLessonType === 'double' ? '' : ' selected', '>Einzelstunde</option><option value="double"', draft.additionalLessonType === 'double' ? ' selected' : '', '>Doppelstunde</option></select></label>',
+          '<div class="planning-quick-fields"><label class="import-modal__field"><span>Beginn (optional)</span><input id="planningInstructionLessonAdditionalStartInput" type="time" value="', escapeValue(draft.additionalStartTime || ''), '" oninput="document.getElementById(\'planningInstructionLessonAdditionalEndInput\').setCustomValidity(\'\')"></label><label class="import-modal__field"><span>Ende (optional)</span><input id="planningInstructionLessonAdditionalEndInput" type="time" value="', escapeValue(draft.additionalEndTime || ''), '" oninput="this.setCustomValidity(\'\')"></label></div>',
+          '<label class="import-modal__field"><span>Notiz</span><textarea id="planningInstructionLessonAdditionalNoteInput" rows="2">', escapeValue(draft.additionalLessonNote || ''), '</textarea></label>'
+        ].join('') : '',
         '<section class="planning-instruction-modal__section">',
         '<h4 class="planning-instruction-modal__title">Zugeordnete Reihe</h4>',
         buildSummaryList(
@@ -1047,10 +810,12 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
           }
         ),
         '</section>',
+        draft.isAdditionalLesson ? '' : [
         '<section class="planning-instruction-modal__section planning-instruction-modal__section--settings">',
         '<label class="planning-instruction-modal__checkbox"><input id="planningInstructionLessonCancelledInput" type="checkbox"' + (draft && draft.isCancelled ? ' checked' : '') + ' onchange="return window.UnterrichtsassistentApp.handlePlanningInstructionLessonCancelledChange(this.checked)"><span>Faellt aus</span></label>',
         '<label class="import-modal__field planning-instruction-modal__reason" id="planningInstructionLessonReasonField"' + (draft && draft.isCancelled ? '' : ' hidden') + '><span>Grund</span><textarea id="planningInstructionLessonReasonInput" rows="4" placeholder="Grund fuer den Ausfall"' + (draft && draft.isCancelled ? '' : ' disabled') + '>' + escapeValue(String(draft && draft.cancelReason || "").trim()) + '</textarea></label>',
         '</section>',
+        ].join(''),
         '</form>',
         '</div>',
         '</div>'
@@ -1128,8 +893,10 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
       const outageInfo = resolvedClass
         ? getInstructionOutageInfoForLesson(String(resolvedClass.id || "").trim(), lessonDateValue, lessonUnit && lessonUnit.startTime, lessonUnit && lessonUnit.endTime)
         : { isCancelled: false };
-      const lessonTopic = resolvedClass ? getInstructionDisplayTopicForClassAndDate(resolvedClass.id, lessonDateValue) : "";
+      const lessonTopic = resolvedClass ? getInstructionDisplayTopicForClassAndDate(resolvedClass.id, lessonDateValue, sourceRowId) : "";
       const rowspan = countCellRowspan(lessonRows, rowIndex, weekday.key);
+      const availableBlockSlots = resolvedClass ? getInstructionAssignmentDataForClass(resolvedClass.id).slots.filter(function (slot) { return slot.lessonDate === lessonDateValue && slot.sourceRowId === sourceRowId; }) : [];
+      const hasPartialOutage = availableBlockSlots.length > 0 && availableBlockSlots.length < rowspan;
       const isWithinVisibleSchoolYear = isWithinSchoolYear(lessonDateValue);
       const overlappingTimedEvents = (timeContext.weekPlanningEvents && timeContext.weekPlanningEvents.timedByWeekday
         ? timeContext.weekPlanningEvents.timedByWeekday[String(weekday && weekday.key || "").trim()] || []
@@ -1153,7 +920,7 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
       const actionLabel = resolvedClass
         ? getClassDisplayName(resolvedClass) + ", " + weekday.shortLabel + " " + timeContext.weekDates[weekday.key].label + ", " + row.startTime
         : "";
-      const actionAttributes = ' type="button" aria-label="' + escapeValue(actionLabel) + '" title="' + escapeValue(actionLabel) + '" onclick="return window.UnterrichtsassistentApp.setContextFromTimetableCell(\'' + escapeValue(resolvedClassId) + '\', \'' + escapeValue(timeContext.weekDates[weekday.key].isoDate) + '\', \'' + escapeValue(row.startTime) + '\', \'' + escapeValue(timetable ? timetable.id : "") + '\')"';
+      const actionAttributes = ' type="button" aria-label="' + escapeValue(actionLabel) + '" title="' + escapeValue(actionLabel) + '" onclick="return window.UnterrichtsassistentApp.setContextFromTimetableCell(\'' + escapeValue(resolvedClassId) + '\', \'' + escapeValue(timeContext.weekDates[weekday.key].isoDate) + '\', \'' + escapeValue(availableBlockSlots[0] ? availableBlockSlots[0].startTime : row.startTime) + '\', \'' + escapeValue(timetable ? timetable.id : "") + '\')"';
 
       if (cell.isBlocked) {
         return "";
@@ -1169,9 +936,10 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
 
       return [
         '<td class="schedule-compact__lesson-cell', currentCellClass, '"', rowspan > 1 ? ' rowspan="' + rowspan + '"' : "", hasParallelEvent ? ' style="--schedule-parallel-slots:' + escapeValue(String(parallelSlotCount)) + ';"' : '', ">",
-        '<button class="schedule-compact__lesson-box', rowspan > 1 ? " is-double" : "", (lessonStatus && lessonStatus.isCancelled) || (outageInfo && outageInfo.isCancelled) ? ' is-cancelled' : '', hasParallelEvent ? ' has-parallel-event' : '', '"' + actionAttributes + ' style="', buildLessonBoxStyle(resolvedClass), " ", boxStyle, '">',
+        '<button class="schedule-compact__lesson-box', rowspan > 1 ? " is-double" : "", availableBlockSlots.length === 0 ? ' is-cancelled' : '', hasParallelEvent ? ' has-parallel-event' : '', '"' + actionAttributes + ' style="', buildLessonBoxStyle(resolvedClass), " ", boxStyle, '">',
         '<div class="schedule-compact__lesson-title">', escapeValue(getClassDisplayName(resolvedClass)), "</div>",
         lessonTopic ? '<div class="schedule-compact__lesson-topic">' + escapeValue(lessonTopic) + '</div>' : '',
+        hasPartialOutage ? '<div class="schedule-compact__lesson-topic">Teilausfall · ' + escapeValue(String(availableBlockSlots.length)) + ' von ' + escapeValue(String(rowspan)) + ' Stunden</div>' : '',
         '<div class="schedule-compact__lesson-room">', escapeValue(resolvedRoom || "Raum offen"), "</div>",
         "</button>",
         '<button class="schedule-compact__info-button', hasParallelEvent ? ' has-parallel-event' : '', '" type="button" aria-label="Informationen zur Unterrichtsstunde" onclick="return window.UnterrichtsassistentApp.openPlanningInstructionLessonModal(\'', escapeValue(lessonDateValue), '\', \'', escapeValue(resolvedClassId), '\')">&#9432;</button>',
@@ -1443,6 +1211,7 @@ window.Unterrichtsassistent.ui.views.stundenplan = {
       '<div class="panel-grid panel-grid--klasse">',
       '<article class="panel panel--full">',
       timetable ? (isManageMode ? renderManageTable() : (rows.length ? renderCompactTable() : '<p class="empty-message">Fuer den aktuell gueltigen Stundenplan ist noch kein Zeitraster hinterlegt.</p>')) : '<p class="empty-message">Noch kein Stundenplan vorhanden. Lege im Modus Verwalten ueber den Plus-Button den ersten Stundenplan an.</p>',
+      !isManageMode ? renderWeekAdditionalLessons() : '',
       !isManageMode ? buildPlanningInstructionLessonModalForClass() : '',
       !isManageMode ? buildTimetablePlanningEventDetailModal() : '',
       "</article>",

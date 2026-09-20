@@ -713,6 +713,17 @@ class SchoolService {
     const effectiveDate = date || this.getReferenceDate();
     const weekday = getCurrentWeekdayIndex(effectiveDate);
     const currentMinutes = (effectiveDate.getHours() * 60) + effectiveDate.getMinutes();
+    const scheduleApi = window.UnterrichtsassistentApp && window.UnterrichtsassistentApp.getInstructionSchedule;
+    if (typeof scheduleApi === "function") {
+      const day = getLocalDateValue(effectiveDate);
+      const actualLessons = this.getAllClasses().reduce((entries, schoolClass) => entries.concat(scheduleApi(schoolClass.id, this.snapshot, effectiveDate).lessons), [])
+        .filter(function (entry) { return entry.startTime && entry.endTime; })
+        .sort(function (a, b) { return [a.lessonDate, a.startTime].join("|").localeCompare([b.lessonDate, b.startTime].join("|")); });
+      const lesson = actualLessons.find(function (entry) {
+        return entry.lessonDate === day && entry.slots.some(function (slot) { return timeToMinutes(slot.startTime) <= currentMinutes && timeToMinutes(slot.endTime) > currentMinutes; });
+      }) || actualLessons.find(function (entry) { return entry.lessonDate > day || (entry.lessonDate === day && timeToMinutes(entry.startTime) > currentMinutes); });
+      return lesson ? Object.assign({}, lesson, { contextId: lesson.id, id: lesson.recordLessonId || lesson.id }) : null;
+    }
     const scheduledLessons = this.getScheduledLessons(effectiveDate);
 
     return scheduledLessons.find(function (lesson) {
@@ -725,6 +736,14 @@ class SchoolService {
   getCurrentLessonForClass(classId, date) {
     const effectiveDate = date || this.getReferenceDate();
     const currentMinutes = (effectiveDate.getHours() * 60) + effectiveDate.getMinutes();
+    const scheduleApi = window.UnterrichtsassistentApp && window.UnterrichtsassistentApp.getInstructionSchedule;
+    if (typeof scheduleApi === "function") {
+      const day = getLocalDateValue(effectiveDate);
+      const lesson = scheduleApi(classId, this.snapshot, effectiveDate).lessons.find(function (entry) {
+        return entry.lessonDate === day && entry.slots.some(function (slot) { return slot.startTime && slot.endTime && timeToMinutes(slot.startTime) <= currentMinutes && timeToMinutes(slot.endTime) > currentMinutes; });
+      });
+      return lesson ? Object.assign({}, lesson, { contextId: lesson.id, id: lesson.recordLessonId || lesson.id }) : null;
+    }
 
     return this.getLessonUnitsForClass(classId, effectiveDate).find(function (lessonUnit) {
       const starts = timeToMinutes(lessonUnit.startTime);
@@ -895,8 +914,8 @@ class SchoolService {
 
   getAttendanceContextForClass(classId, date) {
     const effectiveDate = date || this.getReferenceDate();
-    const lesson = this.getCurrentLessonForClass(classId, effectiveDate);
     const lessonDate = getLocalDateValue(effectiveDate);
+    const lesson = this.getCurrentLessonForClass(classId, effectiveDate);
     const room = this.getRelevantRoomForClass(classId, effectiveDate) || "";
 
     if (!lesson) {
@@ -904,11 +923,13 @@ class SchoolService {
     }
 
     return {
-      id: lesson.id,
+      id: lesson.recordLessonId || lesson.id,
+      contextId: lesson.contextId || lesson.id,
       classId: classId,
       lessonDate: lessonDate,
       room: lesson.room || room || "",
       startTime: lesson.startTime || "",
+      endTime: lesson.endTime || "",
       isFallback: false
     };
   }

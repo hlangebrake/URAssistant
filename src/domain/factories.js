@@ -80,6 +80,9 @@ function createDomainSnapshot(rawData) {
     hidePastPlanningMonths: rawData.hidePastPlanningMonths !== false,
     autoApplyCalculatedCurriculumHourDemands: rawData.autoApplyCalculatedCurriculumHourDemands === true,
     timetables: timetables,
+    lessonReflections: (Array.isArray(rawData.lessonReflections) ? rawData.lessonReflections : []).filter(item => item && typeof item === "object").map(item => JSON.parse(JSON.stringify(item))),
+    learningActions: (Array.isArray(rawData.learningActions) ? rawData.learningActions : []).filter(item => item && typeof item === "object").map(item => JSON.parse(JSON.stringify(item))),
+    lessonResources: (Array.isArray(rawData.lessonResources) ? rawData.lessonResources : []).filter(item => item && typeof item === "object").map(item => JSON.parse(JSON.stringify(item))),
     students: students.map((item) => new Student(item)),
     studentJournalEntries: (Array.isArray(rawData.studentJournalEntries) ? rawData.studentJournalEntries : []).filter(item => item && typeof item === "object").map(item => new StudentJournalEntry(item)),
     classes: classes.map((item) => new SchoolClass(item)),
@@ -337,6 +340,9 @@ function serializeDomainSnapshot(snapshot) {
     hidePastPlanningMonths: snapshot.hidePastPlanningMonths !== false,
     autoApplyCalculatedCurriculumHourDemands: snapshot.autoApplyCalculatedCurriculumHourDemands === true,
     timetables: (snapshot.timetables || []).map(cloneTimetable),
+    lessonReflections: JSON.parse(JSON.stringify(snapshot.lessonReflections || [])),
+    learningActions: JSON.parse(JSON.stringify(snapshot.learningActions || [])),
+    lessonResources: JSON.parse(JSON.stringify(snapshot.lessonResources || [])),
     students: cloneItems(snapshot.students, ["id", "firstName", "lastName", "className", "gender", "strengths", "gaps", "attendanceRate", "socialRelations"]).map(function (item) {
       const sourceSocialRelations = item.socialRelations && typeof item.socialRelations === "object" ? item.socialRelations : {};
 
@@ -425,7 +431,7 @@ function serializeDomainSnapshot(snapshot) {
     seatPlans: cloneItems(snapshot.seatPlans, ["id", "classId", "room", "validFrom", "validTo", "updatedAt", "seats", "deskLayoutItems", "deskLayoutLinks", "roomWindowSide", "roomWidth", "roomHeight"]),
     planningEvents: cloneItems(snapshot.planningEvents || [], ["id", "title", "startDate", "endDate", "startTime", "endTime", "category", "description", "priority", "showInTimetable", "causesInstructionOutage", "isRecurring", "recurrenceInterval", "recurrenceUnit", "recurrenceUntilDate", "recurrenceMonthlyWeekday", "isExternallyControlled", "controlledByView", "controlledById"]),
     planningCategories: cloneItems(snapshot.planningCategories || [], ["id", "name", "color", "filterLabels"]),
-    planningInstructionLessonStatuses: cloneItems(snapshot.planningInstructionLessonStatuses || [], ["id", "classId", "lessonDate", "isCancelled", "cancelReason", "isAdditionalLesson", "additionalLessonType", "additionalLessonNote"]),
+    planningInstructionLessonStatuses: cloneItems(snapshot.planningInstructionLessonStatuses || [], ["id", "classId", "lessonDate", "isCancelled", "cancelReason", "isAdditionalLesson", "additionalLessonType", "additionalLessonNote", "additionalStartTime", "additionalEndTime"]),
     curriculumSeries: cloneItems(snapshot.curriculumSeries || [], ["id", "classId", "topic", "hourDemand", "color", "startMode", "startDate", "curriculumTopicNodeIds", "nextSeriesId"]).map(function (item) {
       return Object.assign({}, item, {
         curriculumTopicNodeIds: Array.isArray(item.curriculumTopicNodeIds) ? item.curriculumTopicNodeIds.slice() : []

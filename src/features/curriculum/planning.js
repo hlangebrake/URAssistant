@@ -195,7 +195,71 @@
     return "#d9d4cb";
   }
 
+  function removeLessonResources(snapshot, lessonIds) {
+    const ids = new Set(Array.isArray(lessonIds) ? lessonIds : []);
+    const resources = getItems(snapshot, "lessonResources");
+    snapshot.lessonResources = resources.filter(function (resource) { return !ids.has(resource.lessonPlanId); });
+    return resources.length - snapshot.lessonResources.length;
+  }
+
+  function createStandardLessonFlow(lesson, createId) {
+    const isDouble = lesson.hourType === "double";
+    const durations = isDouble ? [10, 35, 20, 20, 5] : [5, 20, 10, 8, 2];
+    const templates = [
+      ["Einstieg", "Vorwissen aktivieren", "Vorwissen sammeln und die Leitfrage der Stunde klären.", "plenum", "afb1"],
+      ["Erarbeitung", "Aufgabe bearbeiten", "Arbeitsauftrag und erwartetes Ergebnis ergänzen.", "partner", "afb2"],
+      ["Sicherung", "Ergebnisse sichern", "Ergebnisse vergleichen, fachlich klären und festhalten.", "plenum", "afb2"],
+      ["Anwendung", "Erkenntnis anwenden", "Eine passende Übungs- oder Transferaufgabe ergänzen.", "einzel", "afb2/3"],
+      ["Abschluss", "Lernziel prüfen", "Kurze Rückmeldung zur Leitfrage und Ausblick auf die nächste Stunde.", "plenum", "afb1/2"]
+    ];
+    const phases = [];
+    const steps = [];
+    templates.forEach(function (entry, index) {
+      const phaseId = createId("phase");
+      phases.push({ id: phaseId, lessonPlanId: lesson.id, title: entry[0], durationMinutes: durations[index], isReserve: false, situationType: lesson.situationType || "lernen", demandLevel: entry[4], nextPhaseId: "" });
+      steps.push({ id: createId("step"), phaseId: phaseId, title: entry[1], content: entry[2], durationMinutes: durations[index], socialForm: entry[3], material: "", competencyAspectIds: [], nextStepId: "" });
+    });
+    reconnectChain(phases, "nextPhaseId");
+    return { phases: phases, steps: steps };
+  }
+
+  function appendQuickLessons(snapshot, sequenceId, text, hourType, withTemplate, createId) {
+    const sequences = getItems(snapshot, "curriculumSequences");
+    const sequence = sequences.find(function (item) { return item.id === sequenceId; });
+    const titles = String(text || "").split(/\r?\n/).map(function (line) { return line.trim().replace(/^(?:[-*•]|\d+[.)])\s+/, ""); }).filter(Boolean);
+    if (!sequence || !titles.length || titles.length > 50) { return { lessonIds: [], error: "Bitte eine Sequenz und 1 bis 50 Stundenthemen angeben (ein Thema je Zeile)." }; }
+    snapshot.curriculumLessonPlans = getItems(snapshot, "curriculumLessonPlans");
+    snapshot.curriculumLessonPhases = getItems(snapshot, "curriculumLessonPhases");
+    snapshot.curriculumLessonSteps = getItems(snapshot, "curriculumLessonSteps");
+    const collections = { series: getItems(snapshot, "curriculumSeries"), sequences: sequences, lessons: snapshot.curriculumLessonPlans };
+    const ordered = getOrderedLessonsForSequence(collections, sequenceId);
+    const lessonIds = [];
+    titles.forEach(function (topic) {
+      const lesson = {
+        id: createId("lesson"), sequenceId: sequenceId, topic: topic, summary: "", hourType: hourType === "double" ? "double" : "single",
+        functionType: "erarbeiten", situationType: "lernen", demandLevel: "", preparationMode: "", preparationText: "", preparationTodoId: "",
+        homeworkText: "", homeworkDueMode: "", homeworkDueAmount: 1, homeworkDueUnit: "tage", competencyFocusAspectId: "", competencyAspectIds: [], curriculumTopicNodeIds: [], nextLessonId: ""
+      };
+      snapshot.curriculumLessonPlans.push(lesson);
+      ordered.push(lesson);
+      lessonIds.push(lesson.id);
+      if (withTemplate) {
+        const flow = createStandardLessonFlow(lesson, createId);
+        snapshot.curriculumLessonPhases.push.apply(snapshot.curriculumLessonPhases, flow.phases);
+        snapshot.curriculumLessonSteps.push.apply(snapshot.curriculumLessonSteps, flow.steps);
+      }
+    });
+    reconnectLessonChain(ordered);
+    sequence.hourDemand = Math.max(Number(sequence.hourDemand) || 0, getCalculatedSequenceHourDemand(collections, sequenceId));
+    const series = collections.series.find(function (item) { return item.id === sequence.seriesId; });
+    if (series) { series.hourDemand = Math.max(Number(series.hourDemand) || 0, getCalculatedSeriesHourDemand(collections, series.id)); }
+    return { lessonIds: lessonIds, error: "" };
+  }
+
   window.Unterrichtsassistent.features.curriculum.planning = {
+    removeLessonResources: removeLessonResources,
+    createStandardLessonFlow: createStandardLessonFlow,
+    appendQuickLessons: appendQuickLessons,
     getOrderedSeriesForClass: getOrderedSeriesForClass,
     getOrderedSequencesForSeries: getOrderedSequencesForSeries,
     getOrderedLessonsForSequence: getOrderedLessonsForSequence,

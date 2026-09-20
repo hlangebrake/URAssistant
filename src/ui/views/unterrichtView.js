@@ -887,6 +887,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         return true;
       }
 
+      if (targetSlot.recordLessonId) { return recordLessonId === targetSlot.recordLessonId; }
       return recordLessonId === targetSourceRowId
         || recordLessonId.slice(-targetSourceRowId.length) === targetSourceRowId;
     }
@@ -1163,168 +1164,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
     }
 
     function buildInstructionAssignmentSlotsForClass(classId) {
-      const startDate = parseLocalDate(schoolYearStart);
-      const endDate = parseLocalDate(schoolYearEnd);
-      const cursor = startDate ? new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()) : null;
-      const lastDate = endDate ? new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate()) : null;
-      const lessonSlots = [];
-      const orderedSeries = getOrderedCurriculumSeriesForClass(classId);
-      let previousSeriesLastAssignedSlotIndex = -1;
-
-      if (!classId || !cursor || !lastDate || !service || typeof service.getLessonUnitsForClass !== "function") {
-        return [];
-      }
-
-      while (cursor <= lastDate) {
-        const isoDate = toIsoDate(cursor);
-        const lessonStatus = lessonStatusLookup[[String(classId || "").trim(), isoDate].join("::")] || null;
-
-        if (!isInstructionFreeDateValue(isoDate) && !(lessonStatus && lessonStatus.isCancelled)) {
-          service.getLessonUnitsForClass(classId, cursor).forEach(function (lessonUnit) {
-            const outageInfo = getInstructionOutageInfoForLesson(classId, isoDate, lessonUnit && lessonUnit.startTime, lessonUnit && lessonUnit.endTime);
-            const currentTimetable = typeof service.getCurrentTimetable === "function"
-              ? service.getCurrentTimetable(cursor)
-              : null;
-            const timetableRows = currentTimetable && typeof service.getTimetableRows === "function"
-              ? service.getTimetableRows(currentTimetable)
-              : [];
-            const weekdayKey = String(Number(lessonUnit && lessonUnit.weekday));
-            const sourceRowId = String(lessonUnit && lessonUnit.sourceRowId || "");
-            const lessonCount = timetableRows.filter(function (row) {
-              const cell = row && row.cells ? row.cells[weekdayKey] : null;
-              const effectiveClassId = row && row.type === "lesson" && cell
-                ? (cell.isBlocked ? cell.inheritedClassId : cell.classId)
-                : "";
-              const effectiveSourceRowId = row && row.type === "lesson" && cell
-                ? String(cell.isBlocked ? (cell.sourceRowId || row.id) : row.id)
-                : "";
-
-              return effectiveClassId === classId && effectiveSourceRowId === sourceRowId;
-            }).length || 1;
-            let partIndex = 0;
-
-            if (outageInfo && outageInfo.isCancelled) {
-              return;
-            }
-
-            while (partIndex < Math.max(1, lessonCount)) {
-              lessonSlots.push({
-                lessonDate: isoDate,
-                sourceRowId: sourceRowId,
-                startTime: String(lessonUnit && lessonUnit.startTime || "").trim(),
-                endTime: String(lessonUnit && lessonUnit.endTime || "").trim(),
-                unitIndex: partIndex,
-                unitCount: Math.max(1, lessonCount),
-                assignedSeriesId: "",
-                assignedSequenceId: "",
-                assignedLessonId: ""
-              });
-              partIndex += 1;
-            }
-          });
-        }
-
-        cursor.setDate(cursor.getDate() + 1);
-      }
-
-      orderedSeries.forEach(function (seriesItem) {
-        const seriesId = String(seriesItem && seriesItem.id || "").trim();
-        const startMode = String(seriesItem && seriesItem.startMode || "").trim() === "manual" ? "manual" : "automatic";
-        const manualStartDate = String(seriesItem && seriesItem.startDate || "").slice(0, 10);
-        let remainingDemand = Math.max(0, Number(seriesItem && seriesItem.hourDemand) || 0);
-        const earliestAllowedSlotIndex = previousSeriesLastAssignedSlotIndex + 1;
-        let startIndex = -1;
-        let cursorIndex;
-        let lastAssignedSlotIndex = -1;
-
-        if (!remainingDemand) {
-          return;
-        }
-
-        startIndex = lessonSlots.findIndex(function (slot, slotIndex) {
-          if (slotIndex < earliestAllowedSlotIndex || slot.assignedSeriesId) {
-            return false;
-          }
-
-          if (startMode === "manual" && manualStartDate) {
-            return String(slot.lessonDate || "") >= manualStartDate;
-          }
-
-          return true;
-        });
-
-        if (startIndex < 0) {
-          return;
-        }
-
-        cursorIndex = startIndex;
-
-        while (cursorIndex < lessonSlots.length && remainingDemand > 0) {
-          if (!lessonSlots[cursorIndex].assignedSeriesId) {
-            lessonSlots[cursorIndex].assignedSeriesId = seriesId;
-            remainingDemand -= 1;
-            lastAssignedSlotIndex = cursorIndex;
-          }
-
-          cursorIndex += 1;
-        }
-
-        if (lastAssignedSlotIndex >= 0) {
-          previousSeriesLastAssignedSlotIndex = lastAssignedSlotIndex;
-        }
-      });
-
-      orderedSeries.forEach(function (seriesItem) {
-        const seriesId = String(seriesItem && seriesItem.id || "").trim();
-        const seriesSlots = lessonSlots.filter(function (slot) {
-          return String(slot && slot.assignedSeriesId || "").trim() === seriesId;
-        });
-        const orderedSequences = getOrderedCurriculumSequencesForSeries(seriesId);
-        let seriesSlotIndex = 0;
-
-        orderedSequences.forEach(function (sequenceItem) {
-          const sequenceId = String(sequenceItem && sequenceItem.id || "").trim();
-          let remainingDemand = Math.max(0, Number(sequenceItem && sequenceItem.hourDemand) || 0);
-
-          while (seriesSlotIndex < seriesSlots.length && remainingDemand > 0) {
-            if (seriesSlots[seriesSlotIndex]) {
-              seriesSlots[seriesSlotIndex].assignedSequenceId = sequenceId;
-              remainingDemand -= 1;
-            }
-
-            seriesSlotIndex += 1;
-          }
-        });
-      });
-
-      (Array.isArray(snapshot.curriculumSequences) ? snapshot.curriculumSequences : []).forEach(function (sequenceItem) {
-        const sequenceId = String(sequenceItem && sequenceItem.id || "").trim();
-        const sequenceSlots = lessonSlots.filter(function (slot) {
-          return String(slot && slot.assignedSequenceId || "").trim() === sequenceId;
-        });
-        const orderedLessons = getOrderedCurriculumLessonsForSequence(sequenceId);
-        let sequenceSlotIndex = 0;
-
-        orderedLessons.forEach(function (lessonItem) {
-          let remainingDemand = getCurriculumLessonHourDemand(lessonItem);
-          const lessonId = String(lessonItem && lessonItem.id || "").trim();
-
-          while (sequenceSlotIndex < sequenceSlots.length && remainingDemand > 0) {
-            if (sequenceSlots[sequenceSlotIndex]) {
-              sequenceSlots[sequenceSlotIndex].assignedLessonId = lessonId;
-              remainingDemand -= 1;
-            }
-
-            sequenceSlotIndex += 1;
-          }
-        });
-      });
-
-      lessonSlots.forEach(function (slot, slotIndex) {
-        slot.slotIndex = slotIndex;
-      });
-
-      return lessonSlots;
+      return window.UnterrichtsassistentApp.getInstructionSchedule(classId, snapshot).slots;
     }
 
     function getCurrentAssignedCurriculumLessonFlow() {
@@ -1393,7 +1233,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         if (lastSegment && String(lastSegment.lessonPlan && lastSegment.lessonPlan.id || "").trim() === lessonId) {
           lastSegment.slotCount += 1;
           lastSegment.endSlotIndex = currentIndex;
-          lastSegment.endMinutes += segmentDurationMinutes;
+          lastSegment.endMinutes = timeToMinutes(slot.endTime);
           return result;
         }
 
@@ -1406,8 +1246,8 @@ window.Unterrichtsassistent.ui.views.unterricht = {
           startSlotIndex: currentIndex,
           endSlotIndex: currentIndex,
           slotCount: 1,
-          startMinutes: timeToMinutes(currentClassLesson.startTime) + (currentIndex * segmentDurationMinutes),
-          endMinutes: timeToMinutes(currentClassLesson.startTime) + ((currentIndex + 1) * segmentDurationMinutes)
+          startMinutes: timeToMinutes(slot.startTime),
+          endMinutes: timeToMinutes(slot.endTime)
         });
 
         result[result.length - 1].series = result[result.length - 1].sequence
@@ -1994,6 +1834,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
         '<article class="unterricht-layout__live-flow">',
         '<div class="unterricht-live-flow__header">',
         '<h2 class="unterricht-live-flow__title">Stundenverlauf</h2>',
+        '<button class="header-utility-button" type="button" onclick="return window.UnterrichtsassistentApp.workspace.openReflection()">Stunde abschließen</button>',
         lessonDateLabel ? '<div class="unterricht-live-flow__meta"><span class="unterricht-live-flow__meta-date">' + escapeValue(lessonDateLabel) + '</span></div>' : "",
         '</div>',
         renderLiveDueHomeworkItems(lessonFlowData),
@@ -2017,6 +1858,7 @@ window.Unterrichtsassistent.ui.views.unterricht = {
             segmentItem.slotCount > 1 ? '<span class="unterricht-live-flow__lesson-toggle-meta">x' + escapeValue(String(segmentItem.slotCount)) + '</span>' : '',
             '</button>',
             '<button class="unterricht-live-flow__lesson-info-button' + (isInfoOpen ? ' is-active' : '') + '" type="button" aria-label="Infos zur geplanten Stunde" onclick="window.UnterrichtsassistentApp.stopEventPropagation(event); return window.UnterrichtsassistentApp.toggleUnterrichtLiveLessonInfo(\'' + escapeValue(lessonPlanId) + '\')">i</button>',
+            '<button class="header-utility-button" type="button" onclick="return window.UnterrichtsassistentApp.workspace.openResources(\'' + escapeValue(lessonPlanId) + '\')">Materiallinks</button>',
             '</div>',
             isInfoOpen ? [
               '<div class="unterricht-live-flow__lesson-info">',
@@ -2138,8 +1980,8 @@ window.Unterrichtsassistent.ui.views.unterricht = {
                     (!isStepCompleted && !isStepSkipped && stepContent) ? '<div class="unterricht-live-flow__step-content">' + escapeValue(stepContent) + '</div>' : "",
                     '</div>',
                     '<div class="unterricht-live-flow__step-side">',
-                    '<div class="unterricht-live-flow__step-meta"><span>S</span><strong>' + escapeValue(getCurriculumLessonStepSocialFormShortLabel(stepItem && stepItem.socialForm)) + '</strong></div>',
-                    '<div class="unterricht-live-flow__step-meta"><span>M</span><strong>' + escapeValue(stepMaterial || "-") + '</strong></div>',
+                    '<div class="unterricht-live-flow__step-meta"><span>Sozialform</span><strong>' + escapeValue(getCurriculumLessonStepSocialFormLabel(stepItem && stepItem.socialForm)) + '</strong></div>',
+                    '<div class="unterricht-live-flow__step-meta"><span>Material</span><strong>' + escapeValue(stepMaterial || "-") + '</strong></div>',
                     '</div>',
                     '</div>'
                   ].join("");
@@ -3194,17 +3036,19 @@ window.Unterrichtsassistent.ui.views.unterricht = {
       ].join("");
     }
 
-    if (currentClassLesson && activeClass) {
-      const liveOutageInfo = getInstructionOutageInfoForLesson(
-        String(activeClass.id || "").trim(),
-        toIsoDate(referenceDate),
-        currentClassLesson && currentClassLesson.startTime,
-        currentClassLesson && currentClassLesson.endTime
-      );
+    if (activeClass) {
+      const today = toIsoDate(referenceDate);
+      const currentMinutes = referenceDate.getHours() * 60 + referenceDate.getMinutes();
+      const datedLessons = window.UnterrichtsassistentApp.getInstructionSchedule(activeClass.id, snapshot).lessons.filter(function (lesson) {
+        return lesson.lessonDate === today && lesson.startTime && lesson.endTime;
+      });
+      currentClassLesson = datedLessons.find(function (lesson) {
+        return timeToMinutes(lesson.startTime) <= currentMinutes && timeToMinutes(lesson.endTime) > currentMinutes;
+      }) || datedLessons.find(function (lesson) { return timeToMinutes(lesson.startTime) > currentMinutes; }) || datedLessons[datedLessons.length - 1] || null;
+    }
 
-      if (liveOutageInfo && liveOutageInfo.isCancelled) {
-        currentClassLesson = null;
-      }
+    if (currentClassLesson) {
+      currentClassLesson = Object.assign({}, currentClassLesson, { contextId: currentClassLesson.id, id: currentClassLesson.recordLessonId || currentClassLesson.id });
     }
 
     if (viewMode === "live") {

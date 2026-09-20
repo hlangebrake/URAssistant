@@ -3,6 +3,7 @@ window.Unterrichtsassistent.ui = window.Unterrichtsassistent.ui || {};
 window.Unterrichtsassistent.ui.views = window.Unterrichtsassistent.ui.views || {};
 
 window.Unterrichtsassistent.ui.viewConfig = {
+  overview: window.Unterrichtsassistent.ui.views.overview,
   unterricht: window.Unterrichtsassistent.ui.views.unterricht,
   klasse: window.Unterrichtsassistent.ui.views.klasse,
   stundenplan: window.Unterrichtsassistent.ui.views.stundenplan,

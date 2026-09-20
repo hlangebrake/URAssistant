@@ -658,153 +658,7 @@ window.Unterrichtsassistent.ui.views.planung = {
     }
 
     function buildInstructionLessonOccurrences() {
-      const occurrencesByDate = {};
-      const cursor = startDate ? new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()) : null;
-      const lastDate = endDate ? new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate()) : null;
-      const lessonStatusLookup = (Array.isArray(snapshot.planningInstructionLessonStatuses) ? snapshot.planningInstructionLessonStatuses : []).reduce(function (lookup, statusItem) {
-        const classId = String(statusItem && statusItem.classId || "").trim();
-        const lessonDate = String(statusItem && statusItem.lessonDate || "").slice(0, 10);
-
-        if (!Boolean(statusItem && statusItem.isAdditionalLesson) && classId && lessonDate) {
-          lookup[[classId, lessonDate].join("::")] = statusItem;
-        }
-
-        return lookup;
-      }, {});
-      const additionalLessonStatuses = (Array.isArray(snapshot.planningInstructionLessonStatuses) ? snapshot.planningInstructionLessonStatuses : []).filter(function (statusItem) {
-        return Boolean(statusItem && statusItem.isAdditionalLesson)
-          && String(statusItem && statusItem.classId || "").trim() === String(activeClass && activeClass.id || "").trim()
-          && String(statusItem && statusItem.lessonDate || "").slice(0, 10);
-      });
-
-      if (!activeClass || !cursor || !lastDate || !service || typeof service.getLessonUnitsForClass !== "function") {
-        return [];
-      }
-
-      function isLessonOccurrencePast(lessonDateValue, lessonEndTime) {
-        const lessonDate = parseLocalDate(lessonDateValue);
-        const endTimeValue = String(lessonEndTime || "").trim();
-        let endMoment;
-
-        if (!activePlanningDate || !lessonDate) {
-          return false;
-        }
-
-        if (!endTimeValue) {
-          return lessonDateValue < toIsoDate(activePlanningDate);
-        }
-
-        endMoment = new Date(
-          lessonDate.getFullYear(),
-          lessonDate.getMonth(),
-          lessonDate.getDate(),
-          Number(endTimeValue.slice(0, 2)) || 0,
-          Number(endTimeValue.slice(3, 5)) || 0,
-          59,
-          999
-        );
-
-        return endMoment < activePlanningDate;
-      }
-
-      while (cursor <= lastDate) {
-        const isoDate = toIsoDate(cursor);
-
-        if (!isInstructionFreeDateValue(isoDate)) {
-          service.getLessonUnitsForClass(activeClass.id, cursor).forEach(function (lessonUnit) {
-            const currentTimetable = typeof service.getCurrentTimetable === "function"
-              ? service.getCurrentTimetable(cursor)
-              : null;
-            const timetableRows = currentTimetable && typeof service.getTimetableRows === "function"
-              ? service.getTimetableRows(currentTimetable)
-              : [];
-            const weekdayKey = String(Number(lessonUnit && lessonUnit.weekday));
-            const sourceRowId = String(lessonUnit && lessonUnit.sourceRowId || "");
-            const lessonCount = timetableRows.filter(function (row) {
-              const cell = row && row.cells ? row.cells[weekdayKey] : null;
-              const effectiveClassId = row && row.type === "lesson" && cell
-                ? (cell.isBlocked ? cell.inheritedClassId : cell.classId)
-                : "";
-              const effectiveSourceRowId = row && row.type === "lesson" && cell
-                ? String(cell.isBlocked ? (cell.sourceRowId || row.id) : row.id)
-                : "";
-
-              return effectiveClassId === activeClass.id && effectiveSourceRowId === sourceRowId;
-            }).length || 1;
-
-            if (!occurrencesByDate[isoDate]) {
-              const lessonStatus = lessonStatusLookup[[String(activeClass.id || "").trim(), isoDate].join("::")] || null;
-
-              occurrencesByDate[isoDate] = {
-                id: "unterrichtstag::" + isoDate,
-                lessonDate: isoDate,
-                lessonCount: 0,
-                cancelledLessonCount: 0,
-                remainingLessonCount: 0,
-                isCancelled: Boolean(lessonStatus && lessonStatus.isCancelled),
-                cancelReason: String(lessonStatus && lessonStatus.cancelReason || "").trim()
-              };
-            }
-
-            const outageInfo = getInstructionOutageInfoForLesson(isoDate, lessonUnit && lessonUnit.startTime, lessonUnit && lessonUnit.endTime);
-            const isLessonCancelled = Boolean(occurrencesByDate[isoDate].isCancelled) || Boolean(outageInfo && outageInfo.isCancelled);
-
-            occurrencesByDate[isoDate].lessonCount += Math.max(1, lessonCount);
-            if (isLessonCancelled) {
-              occurrencesByDate[isoDate].cancelledLessonCount += Math.max(1, lessonCount);
-              if (!occurrencesByDate[isoDate].cancelReason) {
-                occurrencesByDate[isoDate].cancelReason = String(outageInfo && (outageInfo.reason || outageInfo.title) || "").trim();
-              }
-            }
-
-            if (!isLessonCancelled && !isLessonOccurrencePast(isoDate, lessonUnit && lessonUnit.endTime)) {
-              occurrencesByDate[isoDate].remainingLessonCount += Math.max(1, lessonCount);
-            }
-          });
-        }
-
-        cursor.setDate(cursor.getDate() + 1);
-      }
-
-      additionalLessonStatuses.forEach(function (statusItem) {
-        const isoDate = String(statusItem && statusItem.lessonDate || "").slice(0, 10);
-        const lessonType = String(statusItem && statusItem.additionalLessonType || "").trim() === "double" ? "double" : "single";
-        const lessonCount = lessonType === "double" ? 2 : 1;
-        const isPast = isLessonOccurrencePast(isoDate, "");
-        const statusId = String(statusItem && statusItem.id || "").trim();
-
-        if (!statusId || !isoDate || isoDate < toIsoDate(startDate) || isoDate > toIsoDate(endDate)) {
-          return;
-        }
-
-        occurrencesByDate["zusatzstunde::" + statusId] = {
-          id: "zusatzstunde::" + statusId,
-          additionalLessonId: statusId,
-          isAdditionalLesson: true,
-          additionalLessonNote: String(statusItem && statusItem.additionalLessonNote || "").trim(),
-          additionalLessonType: lessonType,
-          lessonDate: isoDate,
-          lessonCount: lessonCount,
-          cancelledLessonCount: 0,
-          remainingLessonCount: isPast ? 0 : lessonCount,
-          isCancelled: false,
-          cancelReason: ""
-        };
-      });
-
-      return Object.keys(occurrencesByDate).map(function (dateKey) {
-        const entry = occurrencesByDate[dateKey];
-
-        if (entry && Number(entry.lessonCount || 0) > 0 && Number(entry.cancelledLessonCount || 0) >= Number(entry.lessonCount || 0)) {
-          entry.isCancelled = true;
-        }
-
-        return occurrencesByDate[dateKey];
-      }).sort(function (left, right) {
-        const leftKey = [left.lessonDate, left.id].join("|");
-        const rightKey = [right.lessonDate, right.id].join("|");
-        return leftKey.localeCompare(rightKey);
-      });
+      return window.UnterrichtsassistentApp.getInstructionSchedule(activeClass && activeClass.id, snapshot).occurrences;
     }
 
     function formatInstructionSeriesRange(startValue, endValue) {
@@ -820,322 +674,7 @@ window.Unterrichtsassistent.ui.views.planung = {
     }
 
     function buildInstructionLessonAssignmentData() {
-      const lessonOccurrences = buildInstructionLessonOccurrences();
-      const orderedSeries = getOrderedCurriculumSeriesForActiveClass();
-      const lessonSlots = [];
-      const occurrenceLookup = {};
-      const seriesAssignments = {};
-      const sequenceAssignments = {};
-      const lessonPlanAssignments = {};
-      let previousSeriesLastAssignedSlotIndex = -1;
-
-      lessonOccurrences.forEach(function (occurrence) {
-        const occurrenceId = String(occurrence && occurrence.id || "").trim();
-        const totalUnits = Math.max(1, Number(occurrence && occurrence.lessonCount || 1));
-        const availableUnits = Math.max(0, Number(occurrence && occurrence.remainingLessonCount || 0));
-        const isCancelled = Boolean(occurrence && occurrence.isCancelled);
-        const assignmentColors = [];
-        const assignmentSequenceIds = [];
-        const assignmentSeriesIds = [];
-        const assignmentLessonIds = [];
-        let slotIndex = 0;
-
-        occurrenceLookup[occurrenceId] = {
-          occurrence: occurrence,
-          totalUnits: totalUnits,
-          availableUnits: availableUnits,
-          isCancelled: isCancelled,
-          cancelReason: String(occurrence && occurrence.cancelReason || "").trim(),
-          assignmentColors: assignmentColors,
-          assignmentSequenceIds: assignmentSequenceIds,
-          assignmentSeriesIds: assignmentSeriesIds,
-          assignmentLessonIds: assignmentLessonIds
-        };
-
-        while (slotIndex < (isCancelled ? 0 : totalUnits)) {
-          lessonSlots.push({
-            occurrenceId: occurrenceId,
-            lessonDate: String(occurrence && occurrence.lessonDate || "").trim(),
-            assignedSeriesId: "",
-            assignedColor: ""
-          });
-          slotIndex += 1;
-        }
-      });
-
-      orderedSeries.forEach(function (seriesItem) {
-        const seriesId = String(seriesItem && seriesItem.id || "").trim();
-        const startMode = String(seriesItem && seriesItem.startMode || "").trim() === "manual" ? "manual" : "automatic";
-        const manualStartDate = String(seriesItem && seriesItem.startDate || "").slice(0, 10);
-        const hourDemand = Math.max(0, Number(seriesItem && seriesItem.hourDemand) || 0);
-        const seriesColor = String(seriesItem && seriesItem.color || "#d9d4cb");
-        let remainingDemand = hourDemand;
-        const earliestAllowedSlotIndex = previousSeriesLastAssignedSlotIndex + 1;
-        let startIndex = -1;
-        let cursorIndex;
-        let lastAssignedSlotIndex = -1;
-
-        seriesAssignments[seriesId] = {
-          firstDate: "",
-          lastDate: "",
-          assignedUnitCount: 0,
-          color: seriesColor
-        };
-
-        if (!remainingDemand) {
-          return;
-        }
-
-        startIndex = lessonSlots.findIndex(function (slot, slotIndex) {
-          if (slotIndex < earliestAllowedSlotIndex) {
-            return false;
-          }
-
-          if (slot.assignedSeriesId) {
-            return false;
-          }
-
-          if (startMode === "manual" && manualStartDate) {
-            return String(slot.lessonDate || "") >= manualStartDate;
-          }
-
-          return true;
-        });
-
-        if (startIndex < 0) {
-          return;
-        }
-
-        cursorIndex = startIndex;
-
-        while (cursorIndex < lessonSlots.length && remainingDemand > 0) {
-          const slot = lessonSlots[cursorIndex];
-          const occurrenceEntry = occurrenceLookup[String(slot && slot.occurrenceId || "").trim()];
-
-          if (slot && !slot.assignedSeriesId && occurrenceEntry) {
-            slot.assignedSeriesId = seriesId;
-            slot.assignedColor = seriesColor;
-            occurrenceEntry.assignmentColors.push(seriesColor);
-            occurrenceEntry.assignmentSeriesIds.push(seriesId);
-            seriesAssignments[seriesId].assignedUnitCount += 1;
-
-            if (!seriesAssignments[seriesId].firstDate) {
-              seriesAssignments[seriesId].firstDate = String(slot.lessonDate || "").trim();
-            }
-
-            seriesAssignments[seriesId].lastDate = String(slot.lessonDate || "").trim();
-            remainingDemand -= 1;
-            lastAssignedSlotIndex = cursorIndex;
-          }
-
-          cursorIndex += 1;
-        }
-
-        if (lastAssignedSlotIndex >= 0) {
-          previousSeriesLastAssignedSlotIndex = lastAssignedSlotIndex;
-        }
-      });
-
-      orderedSeries.forEach(function (seriesItem) {
-        const seriesId = String(seriesItem && seriesItem.id || "").trim();
-        const seriesSlots = lessonSlots.filter(function (slot) {
-          return String(slot && slot.assignedSeriesId || "").trim() === seriesId;
-        });
-        const orderedSequences = getOrderedCurriculumSequencesForSeries(seriesId);
-        let seriesSlotIndex = 0;
-
-        orderedSequences.forEach(function (sequenceItem) {
-          const sequenceId = String(sequenceItem && sequenceItem.id || "").trim();
-          let remainingDemand = Math.max(0, Number(sequenceItem && sequenceItem.hourDemand) || 0);
-
-          sequenceAssignments[sequenceId] = {
-            firstDate: "",
-            lastDate: "",
-            assignedUnitCount: 0,
-            seriesId: seriesId
-          };
-
-          while (seriesSlotIndex < seriesSlots.length && remainingDemand > 0) {
-            const slot = seriesSlots[seriesSlotIndex];
-            const occurrenceEntry = occurrenceLookup[String(slot && slot.occurrenceId || "").trim()];
-
-            if (slot) {
-              slot.assignedSequenceId = sequenceId;
-              if (occurrenceEntry) {
-                occurrenceEntry.assignmentSequenceIds.push(sequenceId);
-              }
-              sequenceAssignments[sequenceId].assignedUnitCount += 1;
-
-              if (!sequenceAssignments[sequenceId].firstDate) {
-                sequenceAssignments[sequenceId].firstDate = String(slot.lessonDate || "").trim();
-              }
-
-              sequenceAssignments[sequenceId].lastDate = String(slot.lessonDate || "").trim();
-              remainingDemand -= 1;
-            }
-
-            seriesSlotIndex += 1;
-          }
-        });
-      });
-
-      Object.keys(sequenceAssignments).forEach(function (sequenceId) {
-        const sequenceSlots = lessonSlots.filter(function (slot) {
-          return String(slot && slot.assignedSequenceId || "").trim() === sequenceId;
-        });
-        const orderedLessons = getOrderedCurriculumLessonsForSequence(sequenceId);
-        let sequenceSlotIndex = 0;
-
-        orderedLessons.forEach(function (lessonItem) {
-          const lessonId = String(lessonItem && lessonItem.id || "").trim();
-          let remainingDemand = getCurriculumLessonHourDemand(lessonItem);
-
-          lessonPlanAssignments[lessonId] = {
-            firstDate: "",
-            lastDate: "",
-            assignedUnitCount: 0,
-            sequenceId: sequenceId
-          };
-
-          while (sequenceSlotIndex < sequenceSlots.length && remainingDemand > 0) {
-            const slot = sequenceSlots[sequenceSlotIndex];
-            const occurrenceEntry = occurrenceLookup[String(slot && slot.occurrenceId || "").trim()];
-
-            if (slot) {
-              slot.assignedLessonId = lessonId;
-              if (occurrenceEntry) {
-                occurrenceEntry.assignmentLessonIds.push(lessonId);
-              }
-              lessonPlanAssignments[lessonId].assignedUnitCount += 1;
-
-              if (!lessonPlanAssignments[lessonId].firstDate) {
-                lessonPlanAssignments[lessonId].firstDate = String(slot.lessonDate || "").trim();
-              }
-
-              lessonPlanAssignments[lessonId].lastDate = String(slot.lessonDate || "").trim();
-              remainingDemand -= 1;
-            }
-
-            sequenceSlotIndex += 1;
-          }
-        });
-      });
-
-      orderedSeries.forEach(function (seriesItem) {
-        const seriesId = String(seriesItem && seriesItem.id || "").trim();
-        const manualHourDemand = Math.max(0, Number(seriesItem && seriesItem.hourDemand) || 0);
-        const assignedUnitCount = seriesAssignments[seriesId]
-          ? Math.max(0, Number(seriesAssignments[seriesId].assignedUnitCount) || 0)
-          : 0;
-
-        if (seriesAssignments[seriesId]) {
-          seriesAssignments[seriesId].hasUnassignedDemand = manualHourDemand > assignedUnitCount;
-          seriesAssignments[seriesId].unassignedDemand = Math.max(0, manualHourDemand - assignedUnitCount);
-          if (seriesAssignments[seriesId].hasUnassignedDemand) {
-            seriesAssignments[seriesId].hasWarning = true;
-          }
-        }
-      });
-
-      Object.keys(occurrenceLookup).forEach(function (occurrenceId) {
-        const occurrenceEntry = occurrenceLookup[occurrenceId];
-        const totalUnits = occurrenceEntry ? Math.max(1, Number(occurrenceEntry.totalUnits) || 1) : 1;
-        const uniqueSeriesIds = occurrenceEntry && Array.isArray(occurrenceEntry.assignmentSeriesIds)
-          ? occurrenceEntry.assignmentSeriesIds.filter(Boolean).filter(function (seriesId, index, source) {
-              return source.indexOf(seriesId) === index;
-            })
-          : [];
-        const uniqueSequenceIds = occurrenceEntry && Array.isArray(occurrenceEntry.assignmentSequenceIds)
-          ? occurrenceEntry.assignmentSequenceIds.filter(Boolean).filter(function (sequenceId, index, source) {
-              return source.indexOf(sequenceId) === index;
-            })
-          : [];
-        const uniqueLessonIds = occurrenceEntry && Array.isArray(occurrenceEntry.assignmentLessonIds)
-          ? occurrenceEntry.assignmentLessonIds.filter(Boolean).filter(function (lessonId, index, source) {
-              return source.indexOf(lessonId) === index;
-            })
-          : [];
-
-        if (!occurrenceEntry || totalUnits < 2) {
-          return;
-        }
-
-        if (uniqueSeriesIds.length > 1) {
-          uniqueSeriesIds.forEach(function (seriesId) {
-            if (seriesAssignments[seriesId]) {
-              seriesAssignments[seriesId].hasWarning = true;
-            }
-          });
-        }
-
-        if (uniqueSequenceIds.length > 1) {
-          uniqueSequenceIds.forEach(function (sequenceId) {
-            if (sequenceAssignments[sequenceId]) {
-              sequenceAssignments[sequenceId].hasWarning = true;
-            }
-          });
-        }
-
-        if (uniqueLessonIds.length > 1) {
-          uniqueLessonIds.forEach(function (lessonId) {
-            if (lessonPlanAssignments[lessonId]) {
-              lessonPlanAssignments[lessonId].hasSplitOccurrence = true;
-            }
-          });
-        }
-
-        occurrenceEntry.hasSeriesConflict = uniqueSeriesIds.length > 1;
-        occurrenceEntry.hasSequenceConflict = uniqueSequenceIds.length > 1;
-      });
-
-      Object.keys(lessonPlanAssignments).forEach(function (lessonId) {
-        const lessonAssignment = lessonPlanAssignments[lessonId];
-        const lessonItem = getOrderedCurriculumLessonsForSequence(String(lessonAssignment && lessonAssignment.sequenceId || "").trim()).find(function (entry) {
-          return String(entry && entry.id || "").trim() === lessonId;
-        }) || null;
-        const isDoubleLesson = String(lessonItem && lessonItem.hourType || "").trim() === "double";
-
-        lessonAssignment.hasWarning = Boolean(isDoubleLesson && lessonAssignment && lessonAssignment.hasSplitOccurrence);
-
-        if (lessonAssignment.hasWarning && sequenceAssignments[String(lessonAssignment.sequenceId || "").trim()]) {
-          sequenceAssignments[String(lessonAssignment.sequenceId || "").trim()].hasWarning = true;
-        }
-      });
-
-      Object.keys(occurrenceLookup).forEach(function (occurrenceId) {
-        const occurrenceEntry = occurrenceLookup[occurrenceId];
-        const lessonIds = occurrenceEntry && Array.isArray(occurrenceEntry.assignmentLessonIds)
-          ? occurrenceEntry.assignmentLessonIds.filter(Boolean)
-          : [];
-
-        occurrenceEntry.hasProblem = Boolean(
-          occurrenceEntry
-          && (
-            occurrenceEntry.hasSeriesConflict
-            || occurrenceEntry.hasSequenceConflict
-            || lessonIds.some(function (lessonId) {
-              return Boolean(lessonPlanAssignments[lessonId] && lessonPlanAssignments[lessonId].hasWarning);
-            })
-          )
-        );
-      });
-
-      Object.keys(sequenceAssignments).forEach(function (sequenceId) {
-        const sequenceAssignment = sequenceAssignments[sequenceId];
-        const seriesId = String(sequenceAssignment && sequenceAssignment.seriesId || "").trim();
-
-        if (sequenceAssignment && sequenceAssignment.hasWarning && seriesAssignments[seriesId]) {
-          seriesAssignments[seriesId].hasWarning = true;
-        }
-      });
-
-      return {
-        lessonOccurrences: lessonOccurrences,
-        occurrenceLookup: occurrenceLookup,
-        seriesAssignments: seriesAssignments,
-        sequenceAssignments: sequenceAssignments,
-        lessonPlanAssignments: lessonPlanAssignments
-      };
+      return window.UnterrichtsassistentApp.getInstructionSchedule(activeClass && activeClass.id, snapshot);
     }
 
     function buildCurrentCurriculumHighlightData(instructionAssignmentData) {
@@ -1432,6 +971,8 @@ window.Unterrichtsassistent.ui.views.planung = {
           '<section class="planning-instruction-modal__section planning-instruction-modal__section--settings">',
           '<label class="import-modal__field"><span>Datum</span><input id="planningInstructionLessonAdditionalDateInput" type="date" value="', escapeValue(String(draft.lessonDate || "").slice(0, 10)), '"></label>',
           '<label class="import-modal__field"><span>Stundentyp</span><select id="planningInstructionLessonAdditionalTypeInput"><option value="single"', String(draft.additionalLessonType || "").trim() === "double" ? '' : ' selected', '>Einzelstunde</option><option value="double"', String(draft.additionalLessonType || "").trim() === "double" ? ' selected' : '', '>Doppelstunde</option></select></label>',
+          '<div class="planning-quick-fields"><label class="import-modal__field"><span>Beginn (optional)</span><input id="planningInstructionLessonAdditionalStartInput" type="time" value="', escapeValue(draft.additionalStartTime || ''), '" oninput="document.getElementById(\'planningInstructionLessonAdditionalEndInput\').setCustomValidity(\'\')"></label><label class="import-modal__field"><span>Ende (optional)</span><input id="planningInstructionLessonAdditionalEndInput" type="time" value="', escapeValue(draft.additionalEndTime || ''), '" oninput="this.setCustomValidity(\'\')"></label></div>',
+          '<p class="import-modal__hint">Mit Uhrzeit erscheint die Zusatzstunde auch im Live-Unterricht. Ohne Uhrzeit bleibt sie im Wochenplan sichtbar.</p>',
           '<label class="import-modal__field planning-instruction-modal__reason"><span>Grund / Notiz</span><textarea id="planningInstructionLessonAdditionalNoteInput" rows="3" placeholder="Kurzer Grund fuer die Zusatzstunde">', escapeValue(String(draft.additionalLessonNote || "").trim()), '</textarea></label>',
           !draft.isNewAdditionalLesson
             ? '<button class="header-utility-button header-utility-button--danger" type="button" onclick="return window.UnterrichtsassistentApp.deletePlanningInstructionAdditionalLesson()">Zusatzstunde loeschen</button>'
@@ -1494,6 +1035,25 @@ window.Unterrichtsassistent.ui.views.planung = {
         '</div>',
         '</div>'
       ].join("");
+    }
+
+    function buildQuickPlanningPanel() {
+      const options = getOrderedCurriculumSeriesForActiveClass().map(function (series) {
+        return getOrderedCurriculumSequencesForSeries(series.id).map(function (sequence) {
+          return '<option value="' + escapeValue(sequence.id) + '">' + escapeValue(series.topic + ' · ' + sequence.topic) + '</option>';
+        }).join('');
+      }).join('');
+      if (!options) { return ''; }
+      return [
+        '<details class="planning-quick-panel"><summary>Mehrere Stunden schnell anlegen</summary>',
+        '<p>Ein Thema je Zeile. Die Stunden werden an die gewählte Sequenz angehängt. Ein Standardverlauf lässt sich danach frei anpassen.</p>',
+        '<form class="planning-quick-form" data-local-only-form onsubmit="return window.UnterrichtsassistentApp.submitQuickCurriculumLessons(event)">',
+        '<div class="planning-quick-fields"><label class="import-modal__field"><span>Sequenz</span><select id="planningQuickSequence" required>', options, '</select></label>',
+        '<label class="import-modal__field"><span>Stundentyp</span><select id="planningQuickHourType"><option value="single">Einzelstunde · 45 Minuten</option><option value="double">Doppelstunde · 90 Minuten</option></select></label></div>',
+        '<label class="import-modal__field"><span>Stundenthemen</span><textarea id="planningQuickTopics" rows="5" required placeholder="Grundlagen erarbeiten&#10;Ergebnisse anwenden&#10;Wiederholen und sichern"></textarea></label>',
+        '<label class="planning-quick-template"><input id="planningQuickTemplate" type="checkbox" checked> Mit Standardverlauf: Einstieg, Erarbeitung, Sicherung, Anwendung, Abschluss</label>',
+        '<p id="planningQuickMessage" role="status"></p><button class="header-utility-button" type="submit">Stunden anlegen</button></form></details>'
+      ].join('');
     }
 
     function buildInstructionPlanningContent() {
@@ -1576,6 +1136,8 @@ window.Unterrichtsassistent.ui.views.planung = {
         hasPlanningCapacityWarning
           ? '<p class="empty-message planning-instruction__warning-message">Nicht genuegend verfuegbare Stunden vorhanden: Mindestens eine Unterrichtsreihe hat noch offene Bedarfsstunden, die aktuell nicht mehr zugeordnet werden koennen. Es wurden insgesamt ' + escapeValue(String(missingPlanningCapacityUnits)) + ' Unterrichtsstunden zu viel geplant.</p>'
           : '',
+        !instructionAssignmentData.hasSchoolYearRange ? '<p class="empty-message">Noch kein Schuljahr festgelegt: Angezeigt werden diese und nächste Woche. Für die Jahresplanung bitte Schuljahrsgrenzen ergänzen.</p>' : '',
+        buildQuickPlanningPanel(),
         buildStoffPlanningContent(false),
         buildCurriculumLessonFlowContent(instructionAssignmentData),
         '</section>',
@@ -2817,11 +2379,13 @@ window.Unterrichtsassistent.ui.views.planung = {
         '<div class="planning-lesson-flow__lesson-summary">',
         '<div class="planning-lesson-flow__lesson-summary-text">', escapeValue(lessonSummary || "Noch keine Zusammenfassung hinterlegt."), '</div>',
         '<button class="planning-lesson-flow__summary-edit" type="button" onclick="return window.UnterrichtsassistentApp.openCurriculumLessonModal(\'', escapeValue(String(seriesItem && seriesItem.id || "").trim()), '\', \'', escapeValue(String(sequenceItem && sequenceItem.id || "").trim()), '\', \'', escapeValue(normalizedLessonId), '\')">Edit</button>',
+        '<button class="planning-lesson-flow__summary-edit" type="button" onclick="return window.UnterrichtsassistentApp.workspace.openResources(\'', escapeValue(normalizedLessonId), '\')">Materiallinks</button>',
         '</div>',
         '</div>',
         '<table class="planning-lesson-flow__phase-table">',
         '<tbody>',
         buildCurriculumLessonPreparationRow(normalizedLessonId, lessonItem),
+        !orderedPhases.length ? '<tr><td><div class="planning-quick-empty"><p>Mit einem anpassbaren Standardverlauf beginnen: Einstieg, Erarbeitung, Sicherung, Anwendung und Abschluss.</p><button class="header-utility-button" type="button" onclick="return window.UnterrichtsassistentApp.applyStandardCurriculumLessonFlow(\'' + escapeValue(normalizedLessonId) + '\')">' + (lessonItem.hourType === 'double' ? '90' : '45') + '-Minuten-Verlauf einfügen</button></div></td></tr>' : '',
         orderedPhases.length ? orderedPhases.map(function (phaseItem) {
           const phaseId = String(phaseItem && phaseItem.id || "").trim();
           const orderedSteps = getOrderedCurriculumLessonStepsForPhase(phaseId);

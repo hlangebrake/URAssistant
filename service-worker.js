@@ -1,110 +1,83 @@
-const CACHE_NAME = "unterrichtsassistent-allinone-v8";
-const APP_SHELL_URL = "./index.html";
-const PRECACHE_URLS = [
-  APP_SHELL_URL,
-  "./service-worker.js",
-  "./manifest.webmanifest",
-  "./icon.png",
-  "./apple-touch-icon.png",
-  "./apple-touch-icon-167x167.png",
-  "./apple-touch-icon-152x152.png",
-  "./src/data/kc-mathematik-sek-1-sek-2.json",
-  "./src/data/kc-informatik-sek-2.json"
+// Bump this release when publishing changed app files. An update becomes active
+// after all old app windows close, so one session never mixes two app releases.
+const CACHE_PREFIX = "unterrichtsassistent-shell-";
+const CACHE_NAME = CACHE_PREFIX + "20260920-workspace-5";
+const SHELL_PAGES = ["./index.html", "./auth.html"];
+const EXTRA_ASSETS = [
+  "./manifest.webmanifest", "./icon.png", "./apple-touch-icon.png",
+  "./apple-touch-icon-167x167.png", "./apple-touch-icon-152x152.png",
+  "./src/data/kc-mathematik-sek-1-sek-2.json", "./src/data/kc-informatik-sek-2.json"
 ];
 
-function isNetworkFirstRequest(request) {
-  const requestUrl = new URL(request.url);
-  const pathName = String(requestUrl.pathname || "").toLowerCase();
-
-  return request.mode === "navigate"
-    || pathName.endsWith(".html")
-    || pathName.endsWith(".js")
-    || pathName.endsWith(".css");
+function canonicalUrl(value) {
+  const url = new URL(value, self.registration.scope);
+  url.search = "";
+  url.hash = "";
+  return url.href;
 }
 
-function updateCache(cacheKey, request, response) {
-  if (!response || !response.ok) {
-    return Promise.resolve();
-  }
-
-  return caches.open(CACHE_NAME).then(function (cache) {
-    return cache.put(cacheKey, response.clone());
+function referencedAssets(html) {
+  const assets = [];
+  const tags = String(html).match(/<(?:script|link)\b[^>]*>/gi) || [];
+  tags.forEach(function (tag) {
+    const match = tag.match(/\b(?:src|href)\s*=\s*["']([^"']+)["']/i);
+    if (match) {
+      const url = new URL(match[1], self.registration.scope);
+      if (url.origin === self.location.origin) assets.push(url.href);
+    }
   });
+  return assets;
 }
 
 self.addEventListener("install", function (event) {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(function (cache) {
-      return cache.addAll(PRECACHE_URLS);
-    }).then(function () {
-      return self.skipWaiting();
-    })
-  );
+  event.waitUntil((async function () {
+    const cache = await caches.open(CACHE_NAME);
+    const assets = new Set(EXTRA_ASSETS.map(canonicalUrl));
+    try {
+      for (const page of SHELL_PAGES) {
+        const response = await fetch(new Request(new URL(page, self.registration.scope), { cache: "reload" }));
+        if (!response.ok) throw new Error("App-Seite nicht verfügbar: " + page);
+        referencedAssets(await response.clone().text()).forEach(function (url) { assets.add(url); });
+        await cache.put(canonicalUrl(page), response);
+      }
+      await Promise.all(Array.from(assets).map(async function (asset) {
+        const response = await fetch(new Request(asset, { cache: "reload" }));
+        if (!response.ok) throw new Error("App-Datei nicht verfügbar: " + asset);
+        await cache.put(canonicalUrl(asset), response);
+      }));
+    } catch (error) {
+      await caches.delete(CACHE_NAME);
+      throw error;
+    }
+  }()));
 });
 
 self.addEventListener("activate", function (event) {
-  event.waitUntil(
-    caches.keys().then(function (cacheNames) {
-      return Promise.all(
-        cacheNames.map(function (cacheName) {
-          if (cacheName !== CACHE_NAME) {
-            return caches.delete(cacheName);
-          }
-
-          return Promise.resolve(false);
-        })
-      );
-    }).then(function () {
-      return self.clients.claim();
-    })
-  );
+  event.waitUntil((async function () {
+    const names = await caches.keys();
+    await Promise.all(names.filter(function (name) {
+      return name !== CACHE_NAME && (name.indexOf(CACHE_PREFIX) === 0 || name.indexOf("unterrichtsassistent-allinone-") === 0);
+    }).map(function (name) { return caches.delete(name); }));
+    await self.clients.claim();
+  }()));
 });
 
 self.addEventListener("fetch", function (event) {
   const request = event.request;
-  const requestUrl = new URL(request.url);
-  const isSameOrigin = requestUrl.origin === self.location.origin;
+  const url = new URL(request.url);
+  if (request.method !== "GET" || url.origin !== self.location.origin) return;
+  event.respondWith((async function () {
+    const scopeUrl = new URL(self.registration.scope);
+    const requestedUrl = url.pathname === scopeUrl.pathname ? canonicalUrl("./index.html") : canonicalUrl(url.href);
+    const cache = await caches.open(CACHE_NAME);
+    const cached = await cache.match(requestedUrl);
+    // Auth remains auth even with ?mode=unlock. Never substitute index for auth.
+    return cached || fetch(request);
+  }()));
+});
 
-  if (request.method !== "GET" || !isSameOrigin) {
-    return;
+self.addEventListener("message", function (event) {
+  if (event.data && event.data.type === "OFFLINE_STATUS" && event.ports && event.ports[0]) {
+    event.ports[0].postMessage({ ready: true, version: CACHE_NAME });
   }
-
-  if (isNetworkFirstRequest(request)) {
-    event.respondWith(
-      fetch(request).then(function (response) {
-        const cacheKey = request.mode === "navigate" ? APP_SHELL_URL : request;
-
-        event.waitUntil(updateCache(cacheKey, request, response));
-
-        return response;
-      }).catch(function () {
-        const cacheKey = request.mode === "navigate" ? APP_SHELL_URL : request;
-        return caches.match(cacheKey, { ignoreSearch: true });
-      })
-    );
-    return;
-  }
-
-  event.respondWith(
-    caches.match(request, { ignoreSearch: true }).then(function (cachedResponse) {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-
-      return fetch(request).then(function (response) {
-        if (!response || !response.ok) {
-          return response;
-        }
-
-        const responseClone = response.clone();
-        event.waitUntil(
-          caches.open(CACHE_NAME).then(function (cache) {
-            return cache.put(request, responseClone);
-          })
-        );
-
-        return response;
-      });
-    })
-  );
 });

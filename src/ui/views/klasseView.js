@@ -1387,6 +1387,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
         const raw = record.raw || {};
         return {
           content: String(raw.content || raw.knowledgeGap || "").trim(),
+          sourceId: record.type === "knowledgeGap" ? String(raw.id || "") : "",
           status: String(raw.status || (record.type === "assessment" ? "offen" : "")).trim() || "offen",
           note: String(raw.note || "").trim(),
           date: record.date
@@ -1417,7 +1418,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
         '<div class="student-analysis-two-column">',
         '<div><h4>Offene Inhalte</h4><ul class="student-analysis-list">',
         knowledgeGaps.slice(0, 7).map(function (gap) {
-          return '<li><strong>' + escapeValue(gap.content) + '</strong><span>' + escapeValue([formatDetailValue("status", gap.status), formatFullDateLabel(gap.date), gap.note].filter(Boolean).join(" | ")) + '</span></li>';
+          return '<li><strong>' + escapeValue(gap.content) + '</strong><span>' + escapeValue([formatDetailValue("status", gap.status), formatFullDateLabel(gap.date), gap.note].filter(Boolean).join(" | ")) + '</span>' + (gap.sourceId && gap.status !== "geschlossen" ? '<button class="ws-button" type="button" data-source="' + escapeValue(gap.sourceId) + '" onclick="return window.UnterrichtsassistentApp.workspace.openAction(this.dataset.source)">Maßnahme planen</button>' : '') + '</li>';
         }).join("") || '<li><span>Keine Wissensluecken erfasst.</span></li>',
         '</ul></div>',
         '<div><h4>Naechste Schritte</h4><ul class="student-analysis-list">',
