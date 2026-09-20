@@ -30,6 +30,7 @@ function createDomainSnapshot(rawData) {
     SeatOrder,
     SeatPlan,
     Student,
+    StudentJournalEntry,
     Timetable,
     TodoItem,
     TaskPerson,
@@ -80,6 +81,7 @@ function createDomainSnapshot(rawData) {
     autoApplyCalculatedCurriculumHourDemands: rawData.autoApplyCalculatedCurriculumHourDemands === true,
     timetables: timetables,
     students: students.map((item) => new Student(item)),
+    studentJournalEntries: (Array.isArray(rawData.studentJournalEntries) ? rawData.studentJournalEntries : []).filter(item => item && typeof item === "object").map(item => new StudentJournalEntry(item)),
     classes: classes.map((item) => new SchoolClass(item)),
     lessons: lessons.map((item) => new Lesson(item)),
     assessments: assessments.map((item) => new Assessment(item)),
@@ -265,7 +267,7 @@ function serializeDomainSnapshot(snapshot) {
   }
 
   function cloneEvidenceObservations(items) {
-    return cloneItems(items || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "toolId", "situationType", "demandLevel", "category", "lessonPlanId", "lessonPhaseId", "lessonStepId", "note", "selections"]).map(function (item) {
+    return cloneItems(items || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "updatedAt", "toolId", "situationType", "demandLevel", "category", "lessonPlanId", "lessonPhaseId", "lessonStepId", "note", "selections"]).map(function (item) {
       return Object.assign({}, item, {
         selections: Array.isArray(item.selections)
           ? item.selections.map(function (selection) {
@@ -347,9 +349,10 @@ function serializeDomainSnapshot(snapshot) {
         }
       });
     }),
-    classes: cloneItems(snapshot.classes, ["id", "name", "room", "subject", "studentIds", "displayColor", "curriculumLessonCompetencyToolId", "curriculumInstructionTopicTreePlanId", "curriculumInstructionTopicTreeGradeFilter"]),
+    classes: cloneItems(snapshot.classes, ["id", "name", "room", "subject", "studentIds", "displayColor", "gradingScheme", "curriculumLessonCompetencyToolId", "curriculumInstructionTopicTreePlanId", "curriculumInstructionTopicTreeGradeFilter"]),
+    studentJournalEntries: cloneItems(snapshot.studentJournalEntries || [], ["id", "classId", "studentId", "kind", "date", "gradingScheme", "grade", "note", "createdAt", "updatedAt"]),
     lessons: cloneItems(snapshot.lessons, ["id", "classId", "subject", "room", "weekday", "startTime", "endTime", "topic"]),
-    assessments: cloneItems(snapshot.assessments, ["id", "studentId", "classId", "type", "score", "maxScore", "date", "lessonId", "lessonDate", "room", "recordedAt", "category", "situationType", "demandLevel", "afb1", "afb2", "afb3", "workBehavior", "socialBehavior", "knowledgeGap", "note"]),
+    assessments: cloneItems(snapshot.assessments, ["id", "studentId", "classId", "type", "score", "maxScore", "date", "lessonId", "lessonDate", "room", "recordedAt", "updatedAt", "category", "situationType", "demandLevel", "afb1", "afb2", "afb3", "workBehavior", "socialBehavior", "knowledgeGap", "overallImpression", "note"]),
     evaluationSheets: cloneEvaluationSheets(snapshot.evaluationSheets || []),
     evidenceTools: cloneEvidenceTools(snapshot.evidenceTools || []),
     evidenceObservations: cloneEvidenceObservations(snapshot.evidenceObservations || []),
@@ -359,7 +362,7 @@ function serializeDomainSnapshot(snapshot) {
     homeworkRecords: cloneItems(snapshot.homeworkRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "quality", "ignored"]),
     warningRecords: cloneItems(snapshot.warningRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "category", "note"]),
     knowledgeGapRecords: cloneItems(snapshot.knowledgeGapRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "content", "status", "note"]),
-    mathObservationRecords: cloneItems(snapshot.mathObservationRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "mathObservationQualityScale", "primaryCompetency", "competencyIds", "competencyQualities", "processQuality", "marker", "markers", "markerDirection", "markerQuality", "situationType", "demandLevel", "category", "lessonPlanId", "lessonPhaseId", "lessonStepId", "note"]).map(function (item) {
+    mathObservationRecords: cloneItems(snapshot.mathObservationRecords || [], ["id", "studentId", "classId", "lessonId", "lessonDate", "room", "recordedAt", "updatedAt", "mathObservationQualityScale", "primaryCompetency", "competencyIds", "competencyQualities", "processQuality", "marker", "markers", "markerDirection", "markerQuality", "situationType", "demandLevel", "category", "lessonPlanId", "lessonPhaseId", "lessonStepId", "note"]).map(function (item) {
       return Object.assign({}, item, {
         competencyIds: Array.isArray(item.competencyIds) ? item.competencyIds.slice() : [],
         competencyQualities: Array.isArray(item.competencyQualities)

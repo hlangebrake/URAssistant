@@ -932,6 +932,8 @@ function syncSchoolServiceWithRawState() {
 function clearSensitiveRuntimeState() {
   if (taskReconciler && taskReconciler.reset) taskReconciler.reset();
   if (window.UnterrichtsassistentApp.kanban) window.UnterrichtsassistentApp.kanban.clear();
+  if (window.UnterrichtsassistentApp.nachpflege) window.UnterrichtsassistentApp.nachpflege.clear();
+  if (window.UnterrichtsassistentApp.studentOverview) window.UnterrichtsassistentApp.studentOverview.clear();
   rawState = null;
   schoolService = null;
   unlockedMasterKeyBytes = null;
@@ -4479,6 +4481,7 @@ const MERGE_COLLECTIONS = [
   { key: "lessons", label: "Unterrichtsstunden", labelFields: ["subject", "weekday", "startTime"] },
   { key: "timetables", label: "Stundenplaene", labelFields: ["validFrom", "validTo", "startTime"] },
   { key: "assessments", label: "Bewertungen", labelFields: ["studentId", "type", "lessonDate", "recordedAt"] },
+  { key: "studentJournalEntries", label: "Zwischennoten und Kommentare", labelFields: ["studentId", "kind", "date", "note"] },
   { key: "evaluationSheets", label: "Bewertungsboegen", labelFields: ["title", "createdAt"] },
   { key: "evidenceTools", label: "Evidenzraster", labelFields: ["titel", "symbol"] },
   { key: "evidenceObservations", label: "Evidenz-Beobachtungen", labelFields: ["studentId", "lessonDate", "recordedAt"] },
@@ -32617,11 +32620,14 @@ window.UnterrichtsassistentApp.updateActiveClassField = function (fieldName, nex
   const currentRawSnapshot = serializeSnapshot(schoolService.snapshot);
   const trimmedValue = String(nextValue || "").trim();
 
-  if (!activeClass || ["name", "subject", "displayColor"].indexOf(fieldName) === -1) {
+  if (!activeClass || ["name", "subject", "displayColor", "gradingScheme"].indexOf(fieldName) === -1) {
     return false;
   }
 
   if (fieldName === "name" && !trimmedValue) {
+    return false;
+  }
+  if (fieldName === "gradingScheme" && ["grades", "points"].indexOf(trimmedValue) === -1) {
     return false;
   }
 
@@ -32783,6 +32789,9 @@ window.UnterrichtsassistentApp.deleteStudent = function (studentId) {
   });
   currentRawSnapshot.assessments = currentRawSnapshot.assessments.filter(function (assessment) {
     return assessment.studentId !== studentId;
+  });
+  currentRawSnapshot.studentJournalEntries = (currentRawSnapshot.studentJournalEntries || []).filter(function (entry) {
+    return entry.studentId !== studentId;
   });
   currentRawSnapshot.attendanceRecords = getAttendanceRecordsCollection(currentRawSnapshot).filter(function (record) {
     return record.studentId !== studentId;
@@ -33011,6 +33020,9 @@ window.UnterrichtsassistentApp.deleteActiveClass = function () {
   });
   currentRawSnapshot.assessments = currentRawSnapshot.assessments.filter(function (assessment) {
     return assessment.classId !== activeClass.id && !studentIdsToDelete[assessment.studentId];
+  });
+  currentRawSnapshot.studentJournalEntries = (currentRawSnapshot.studentJournalEntries || []).filter(function (entry) {
+    return entry.classId !== activeClass.id && !studentIdsToDelete[entry.studentId];
   });
   currentRawSnapshot.evaluationSheets = getEvaluationSheetsCollection(currentRawSnapshot).filter(function (sheet) {
     return String(sheet && sheet.classId || "").trim() !== String(activeClass.id || "").trim();
@@ -33545,6 +33557,49 @@ window.addEventListener("unload", function () {
 if (passwordAuthApi) {
   bindIdleLockTracking();
 }
+
+window.UnterrichtsassistentApp.studentOverview = window.Unterrichtsassistent.features.evaluation.studentOverview.createController({
+  escape: escapeHtml,
+  now: getCurrentTimestamp,
+  newId: function () { return "journal-" + window.crypto.randomUUID(); },
+  getContext: function () {
+    const activeClass = schoolService && schoolService.getActiveClass();
+    return { snapshot: rawState || {}, classId: activeClass ? activeClass.id : "", studentIds: activeClass ? activeClass.studentIds || [] : [] };
+  },
+  refresh: function () { if (activeViewId === "klasse") setActiveView("klasse"); },
+  save: function (snapshot) { return saveAndRefreshSnapshot(snapshot, "klasse", { forcePersist: true }); },
+  openRecord: function (studentId, date, id, type, groupKey) {
+    window.UnterrichtsassistentApp.openClassAnalysisDetail(studentId, groupKey || date, date.split("-").reverse().join("."));
+  }
+});
+
+window.UnterrichtsassistentApp.nachpflege = window.Unterrichtsassistent.features.evaluation.nachpflege.createController({
+  escape: escapeHtml,
+  mathCompetencies: MATH_OBSERVATION_COMPETENCIES,
+  mathQualities: MATH_OBSERVATION_QUALITY_LABELS,
+  mathMarkers: MATH_OBSERVATION_MARKERS,
+  timestamp: getReferenceDateTimeValue,
+  getContext: function () {
+    const activeClass = schoolService && schoolService.getActiveClass();
+    const date = schoolService ? schoolService.getReferenceDate() : new Date();
+    const lesson = activeClass ? getRelevantUnterrichtLesson(activeClass, date) : null;
+    return {
+      snapshot: rawState || {},
+      classId: activeClass ? activeClass.id : "",
+      className: activeClass ? activeClass.name : "",
+      students: activeClass ? schoolService.getStudentsForClass(activeClass.id) : [],
+      lessonDate: getReferenceDateValue(),
+      lessonId: lesson ? lesson.id : "",
+      room: activeClass ? schoolService.getRelevantRoomForClass(activeClass.id, date) : ""
+    };
+  },
+  save: function (snapshot) {
+    // Keep the editor mounted while typing; the standard persistence queue serializes writes.
+    rawState = snapshot;
+    syncSchoolServiceWithRawState();
+    queueSnapshotPersist(snapshot, { immediate: true });
+  }
+});
 
 initializeSidebarSubviewDrag();
 renderPersistenceIndicator();

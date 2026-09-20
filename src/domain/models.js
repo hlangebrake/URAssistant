@@ -34,13 +34,14 @@ class Student {
 }
 
 class SchoolClass {
-  constructor({ id, name, room, subject, studentIds = [], displayColor = "", curriculumLessonCompetencyToolId = "", curriculumInstructionTopicTreePlanId = "", curriculumInstructionTopicTreeGradeFilter = "" }) {
+  constructor({ id, name, room, subject, studentIds = [], displayColor = "", gradingScheme = "grades", curriculumLessonCompetencyToolId = "", curriculumInstructionTopicTreePlanId = "", curriculumInstructionTopicTreeGradeFilter = "" }) {
     this.id = id;
     this.name = name;
     this.room = room;
     this.subject = subject;
     this.studentIds = studentIds;
     this.displayColor = displayColor;
+    this.gradingScheme = gradingScheme === "points" ? "points" : "grades";
     this.curriculumLessonCompetencyToolId = String(curriculumLessonCompetencyToolId || "").trim();
     this.curriculumInstructionTopicTreePlanId = String(curriculumInstructionTopicTreePlanId || "").trim();
     this.curriculumInstructionTopicTreeGradeFilter = String(curriculumInstructionTopicTreeGradeFilter || "").trim();
@@ -95,12 +96,14 @@ class Assessment {
     category = "",
     situationType = "",
     demandLevel = "",
-    afb1 = "--",
-    afb2 = "--",
-    afb3 = "--",
+    afb1 = "",
+    afb2 = "",
+    afb3 = "",
     workBehavior = "",
     socialBehavior = "",
     knowledgeGap = "",
+    overallImpression = "",
+    updatedAt = "",
     note = ""
   }) {
     const normalizedSituationType = String(situationType || "").trim().toLowerCase();
@@ -128,6 +131,8 @@ class Assessment {
     this.workBehavior = workBehavior;
     this.socialBehavior = socialBehavior;
     this.knowledgeGap = knowledgeGap;
+    this.overallImpression = overallImpression !== "" && overallImpression !== null && [-2, -1, 0, 1, 2].includes(Number(overallImpression)) ? Number(overallImpression) : "";
+    this.updatedAt = String(updatedAt || "");
     this.note = note;
   }
 
@@ -560,12 +565,13 @@ class MathObservationRecord {
     primaryCompetency = "",
     competencyIds = [],
     competencyQualities = [],
-    processQuality = 0,
+    processQuality = "",
     marker = "",
     markers = [],
     markerDirection = "",
     markerQuality = "",
     mathObservationQualityScale = "",
+    updatedAt = "",
     situationType = "",
     demandLevel = "",
     category = "",
@@ -668,6 +674,7 @@ class MathObservationRecord {
     this.room = room;
     this.recordedAt = recordedAt;
     this.mathObservationQualityScale = "0-4";
+    this.updatedAt = String(updatedAt || "");
     if (!effectivePrimary && normalizedCompetencyQualities.length) {
       effectivePrimary = normalizedCompetencyQualities[0].competencyId;
     }
@@ -684,10 +691,10 @@ class MathObservationRecord {
     })));
     this.competencyQualities = normalizedCompetencyQualities.length
       ? normalizedCompetencyQualities
-      : (effectivePrimary ? [{ competencyId: effectivePrimary, quality: normalizeQualityValue(processQuality, false) }] : []);
+      : (effectivePrimary && normalizeQualityValue(processQuality, true) !== "" ? [{ competencyId: effectivePrimary, quality: normalizeQualityValue(processQuality, true) }] : []);
     this.processQuality = this.competencyQualities.length
       ? this.competencyQualities[0].quality
-      : normalizeQualityValue(processQuality, false);
+      : normalizeQualityValue(processQuality, true);
     this.marker = !normalizedMarker
       ? (normalizedMarkers.length ? normalizedMarkers[0].marker : "")
       : (allowedMarkers.indexOf(normalizedMarker) >= 0 ? normalizedMarker : "beitrag");
@@ -723,7 +730,7 @@ class MathObservationRecord {
 }
 
 class EvidenceObservationRecord {
-  constructor({ id, studentId, classId, lessonId = "", lessonDate = "", room = "", recordedAt = "", toolId = "", situationType = "", demandLevel = "", category = "", lessonPlanId = "", lessonPhaseId = "", lessonStepId = "", note = "", selections = [] }) {
+  constructor({ id, studentId, classId, lessonId = "", lessonDate = "", room = "", recordedAt = "", updatedAt = "", toolId = "", situationType = "", demandLevel = "", category = "", lessonPlanId = "", lessonPhaseId = "", lessonStepId = "", note = "", selections = [] }) {
     this.id = id;
     this.studentId = String(studentId || "").trim();
     this.classId = String(classId || "").trim();
@@ -732,6 +739,7 @@ class EvidenceObservationRecord {
     this.room = String(room || "").trim();
     this.recordedAt = String(recordedAt || "").trim();
     this.toolId = String(toolId || "").trim();
+    this.updatedAt = String(updatedAt || "");
     this.situationType = ["lernen", "leisten"].indexOf(String(situationType || "").trim().toLowerCase()) >= 0
       ? String(situationType || "").trim().toLowerCase()
       : "";
@@ -764,6 +772,22 @@ class EvidenceObservationRecord {
     }).filter(function (selection) {
       return Boolean(selection.aspectId);
     });
+  }
+}
+
+class StudentJournalEntry {
+  constructor({ id, classId, studentId, kind = "comment", date = "", grade = "", gradingScheme = "grades", note = "", createdAt = "", updatedAt = "" }) {
+    this.id = String(id || "");
+    this.classId = String(classId || "");
+    this.studentId = String(studentId || "");
+    this.kind = kind === "grade" ? "grade" : "comment";
+    this.date = String(date || "").slice(0, 10);
+    this.gradingScheme = this.kind === "grade" ? (gradingScheme === "points" ? "points" : "grades") : "";
+    const value = grade === "" || grade === null ? NaN : Number(grade);
+    this.grade = this.kind === "grade" && Number.isInteger(value) && value >= (this.gradingScheme === "points" ? 0 : 1) && value <= (this.gradingScheme === "points" ? 15 : 6) ? value : "";
+    this.note = String(note || "").trim();
+    this.createdAt = String(createdAt || "");
+    this.updatedAt = String(updatedAt || "");
   }
 }
 
@@ -1226,6 +1250,7 @@ class CurriculumLessonStepStatus {
 
 window.Unterrichtsassistent.domain.Student = Student;
 window.Unterrichtsassistent.domain.SchoolClass = SchoolClass;
+window.Unterrichtsassistent.domain.StudentJournalEntry = StudentJournalEntry;
 window.Unterrichtsassistent.domain.Lesson = Lesson;
 window.Unterrichtsassistent.domain.Timetable = Timetable;
 window.Unterrichtsassistent.domain.TimetableRow = TimetableRow;

@@ -1,0 +1,40 @@
+.nachpflege-layout { display: grid; grid-template-columns: minmax(230px, 0.8fr) minmax(0, 2fr); gap: 20px; align-items: start; }
+.nachpflege-layout .panel { min-width: 0; }
+.nachpflege-roster { position: sticky; top: 12px; }
+.nachpflege-roster h2, .nachpflege-editor h2 { margin: 0; }
+.nachpflege-hint { color: #617582; font-size: 0.85rem; line-height: 1.5; }
+.nachpflege-students { display: grid; gap: 7px; max-height: calc(100dvh - 245px); overflow-y: auto; padding: 3px; }
+.nachpflege-student { display: grid; gap: 5px; width: 100%; padding: 13px 14px; text-align: left; color: #254c5d; background: #f5f8fa; border: 1px solid #dce5ea; border-radius: 13px; cursor: pointer; overflow-wrap: anywhere; }
+.nachpflege-student span { font-size: 0.76rem; color: #617582; }
+.nachpflege-student.is-active { background: #e0edf0; border-color: #254c5d; box-shadow: inset 3px 0 #254c5d; }
+.nachpflege-editor { display: grid; gap: 20px; }
+.nachpflege-editor__header { display: flex; align-items: start; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding-bottom: 16px; border-bottom: 1px solid #dce5ea; }
+.nachpflege-editor__header h2 { margin-top: 4px; }
+.nachpflege-overall { border: 0; padding: 0; margin: 0; min-width: 0; }
+.nachpflege-overall legend { font-weight: 700; margin-bottom: 10px; }
+.nachpflege-scale { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.nachpflege-scale button { min-height: 56px; border: 1px solid #c5d5dd; border-radius: 13px; background: #f5f8fa; color: #254c5d; font-size: 1.35rem; font-weight: 700; cursor: pointer; }
+.nachpflege-scale button[aria-pressed="true"] { background: #254c5d; border-color: #254c5d; color: white; box-shadow: 0 3px 10px #254c5d22; }
+.nachpflege-clear { border: 0; background: transparent; color: #617582; padding: 9px 0 0; text-decoration: underline; cursor: pointer; font-size: 0.8rem; }
+.nachpflege-field { display: grid; gap: 7px; min-width: 0; font-size: 0.86rem; }
+.nachpflege-field > span { font-weight: 600; }
+.nachpflege-field select, .nachpflege-field textarea { box-sizing: border-box; width: 100%; min-width: 0; min-height: 42px; padding: 10px; border: 1px solid #c5d5dd; border-radius: 9px; font: inherit; color: #213f4e; background: white; }
+.nachpflege-field textarea { resize: vertical; }
+.nachpflege-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 12px; }
+.nachpflege-section { border: 1px solid #d2dfe5; border-radius: 13px; background: #fafcfd; min-width: 0; }
+.nachpflege-section > summary { padding: 16px; cursor: pointer; font-weight: 700; color: #254c5d; }
+.nachpflege-section[open] > summary { border-bottom: 1px solid #dce5ea; }
+.nachpflege-section__body, #nachpflegeToolBody { display: grid; gap: 16px; min-width: 0; }
+.nachpflege-section__body { padding: 16px; }
+.nachpflege-graph { max-width: 420px; width: 100%; margin: auto; touch-action: none; cursor: crosshair; }
+.nachpflege-graph svg { display: block; width: 100%; height: auto; color: #254c5d; font: 14px sans-serif; fill: currentColor; user-select: none; }
+.nachpflege-graph + p { margin: -8px 0 0; text-align: center; }
+.nachpflege-aspect { margin: 0; padding: 12px; border: 1px solid #dce5ea; border-radius: 9px; display: grid; gap: 12px; min-width: 0; }
+.nachpflege-aspect legend { font-weight: 600; }
+.nachpflege-layout :is(button, select, textarea, summary):focus-visible { outline: 3px solid #538fa8; outline-offset: 2px; }
+@media (max-width: 760px) {
+  .nachpflege-layout { grid-template-columns: minmax(0, 1fr); }
+  .nachpflege-roster { position: static; }
+  .nachpflege-students { max-height: 230px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+  .nachpflege-fields { grid-template-columns: minmax(0, 1fr); }
+}

@@ -133,7 +133,9 @@ window.Unterrichtsassistent.ui.views.klasse = {
     }
 
     function getAverage(values) {
-      const numericValues = values.map(function (value) {
+      const numericValues = values.filter(function (value) {
+        return value !== null && value !== undefined && String(value).trim() !== "";
+      }).map(function (value) {
         return Number(value);
       }).filter(function (value) {
         return Number.isFinite(value);
@@ -243,6 +245,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
         afb1: "AFB1",
         afb2: "AFB2",
         afb3: "AFB3",
+        overallImpression: "Gesamteindruck",
         workBehavior: "AV",
         socialBehavior: "SV",
         knowledgeGap: "Wissensluecke",
@@ -676,6 +679,10 @@ window.Unterrichtsassistent.ui.views.klasse = {
         }[normalizedValue.toLowerCase()] || normalizedValue;
       }
 
+      if (key === "overallImpression") {
+        return { "-2": "−−", "-1": "−", "0": "○", "1": "+", "2": "++" }[normalizedValue] || normalizedValue;
+      }
+
       if (key === "afb1" || key === "afb2" || key === "afb3") {
         return {
           "-2": "--",
@@ -771,7 +778,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
     function buildAnalysisDetailSummary(record) {
       const hasCompetencyQualities = Array.isArray(record && record.competencyQualities) && record.competencyQualities.length > 0;
       const hasMarkers = Array.isArray(record && record.markers) && record.markers.length > 0;
-      const orderedKeys = ["status", "quality", "category", "content", "competencyQualities", "primaryCompetency", "competencyIds", "processQuality", "markers", "marker", "markerDirection", "markerQuality", "situationType", "demandLevel", "lessonPlanId", "lessonPhaseId", "lessonStepId", "note", "afb1", "afb2", "afb3", "workBehavior", "socialBehavior", "knowledgeGap"];
+      const orderedKeys = ["status", "quality", "category", "content", "overallImpression", "competencyQualities", "primaryCompetency", "competencyIds", "processQuality", "markers", "marker", "markerDirection", "markerQuality", "situationType", "demandLevel", "lessonPlanId", "lessonPhaseId", "lessonStepId", "note", "afb1", "afb2", "afb3", "workBehavior", "socialBehavior", "knowledgeGap"];
 
       return orderedKeys.filter(function (key) {
         const value = record[key];
@@ -1014,7 +1021,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
       return String(record && (record.recordedAt || record.effectiveAt || record.lessonDate || record.date) || "");
     }
 
-    const allAnalysisRecords = schoolClass ? []
+    const allAnalysisRecords = (schoolClass ? []
       .concat((service.snapshot.assessments || []).filter(function (record) {
         return record.classId === schoolClass.id;
       }).map(function (record, index) {
@@ -1122,7 +1129,9 @@ window.Unterrichtsassistent.ui.views.klasse = {
           evaluationSheet: evaluationSheet
         };
       }))
-      : [];
+      : []).map(function (record) {
+        return Object.assign({}, record, { date: record.date || normalizeDateValue(record.raw.recordedAt || record.raw.completedAt || record.raw.createdAt) });
+      });
     const analysisRecords = allAnalysisRecords.filter(function (record) {
       return analysisEnabledTypes[String(record.type || "")] !== false;
     }).map(function (record) {
@@ -1218,7 +1227,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
 
     function getAverageNumber(values) {
       const numericValues = values.filter(function (value) {
-        return Number.isFinite(Number(value));
+        return value !== null && value !== undefined && String(value).trim() !== "" && Number.isFinite(Number(value));
       }).map(Number);
 
       return numericValues.length
@@ -1238,97 +1247,15 @@ window.Unterrichtsassistent.ui.views.klasse = {
         : numericValue.toFixed(1).replace(".", ",");
     }
 
-    function getStudentAnalysisSourceCounts(records) {
-      return records.reduce(function (lookup, record) {
-        const key = String(record && record.type || "").trim();
-
-        if (key) {
-          lookup[key] = (lookup[key] || 0) + 1;
-        }
-
-        return lookup;
-      }, {});
-    }
-
-    function getStudentAnalysisEvidenceDayCount(records) {
-      return Object.keys(records.reduce(function (lookup, record) {
-        const dateKey = normalizeDateValue(record && record.date);
-
-        if (dateKey && ["assessment", "mathObservation", "evidenceObservation", "completedEvaluation"].indexOf(String(record && record.type || "")) >= 0) {
-          lookup[dateKey] = true;
-        }
-
-        return lookup;
-      }, {})).length;
-    }
-
-    function getStudentAnalysisObservationContexts(records) {
-      return records.reduce(function (lookup, record) {
-        const raw = record && record.raw || {};
-        const situation = String(raw.situationType || "").trim();
-        const demandLevel = String(raw.demandLevel || "").trim();
-
-        if (situation) {
-          lookup.situation[situation] = (lookup.situation[situation] || 0) + 1;
-        }
-
-        if (demandLevel) {
-          lookup.demandLevel[demandLevel] = (lookup.demandLevel[demandLevel] || 0) + 1;
-        }
-
-        return lookup;
-      }, { situation: {}, demandLevel: {} });
-    }
-
-    function buildStudentAnalysisMetricCard(label, value, detail) {
-      return [
-        '<div class="student-analysis-card">',
-        '<span class="student-analysis-card__label">', escapeValue(label), '</span>',
-        '<strong class="student-analysis-card__value">', escapeValue(value), '</strong>',
-        detail ? '<span class="student-analysis-card__detail">' + escapeValue(detail) + '</span>' : '',
-        '</div>'
-      ].join("");
-    }
-
-    function buildStudentAnalysisSourceBar(sourceCounts, totalRecords) {
-      const sourceOrder = ["completedEvaluation", "assessment", "mathObservation", "evidenceObservation", "knowledgeGap", "homework", "attendance", "warning"];
-      const total = Math.max(1, Number(totalRecords) || 0);
-
-      return [
-        '<div class="student-analysis-sourcebar">',
-        sourceOrder.filter(function (key) {
-          return Number(sourceCounts[key] || 0) > 0;
-        }).map(function (key) {
-          const count = Number(sourceCounts[key] || 0);
-          return [
-            '<div class="student-analysis-sourcebar__item student-analysis-sourcebar__item--', escapeValue(key), '" style="--source-share:', escapeValue(String(Math.max(6, Math.round((count / total) * 100)))), '%">',
-            '<span>', escapeValue(getRecordTypeLabel(key)), '</span>',
-            '<strong>', escapeValue(String(count)), '</strong>',
-            '</div>'
-          ].join("");
-        }).join("") || '<div class="student-analysis-sourcebar__empty">Noch keine Datensaetze</div>',
-        '</div>'
-      ].join("");
-    }
-
-    function buildStudentAnalysisContextList(contexts) {
-      const situationItems = [
-        ["lernen", "Lernen"],
-        ["leisten", "Leisten"]
-      ].map(function (entry) {
-        return '<span><strong>' + escapeValue(String(contexts.situation[entry[0]] || 0)) + '</strong> ' + escapeValue(entry[1]) + '</span>';
-      }).join("");
-      const demandItems = ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].map(function (key) {
-        return '<span><strong>' + escapeValue(String(contexts.demandLevel[key] || 0)) + '</strong> ' + escapeValue(formatDetailValue("demandLevel", key)) + '</span>';
-      }).join("");
-
-      return '<div class="student-analysis-context-list">' + situationItems + demandItems + '</div>';
-    }
-
     function buildStudentAnalysisSelector(selectedStudent) {
       return [
         '<aside class="student-analysis-selector" aria-label="Schueler auswaehlen">',
         '<div class="student-analysis-selector__title">Schueler</div>',
+        '<label class="student-analysis-mobile-picker">Person auswählen<select onchange="window.UnterrichtsassistentApp.selectClassStudentAnalysisStudent(this.value)">',
+        students.map(function (student) {
+          return '<option value="' + escapeValue(student.id) + '"' + (selectedStudent && student.id === selectedStudent.id ? ' selected' : '') + '>' + escapeValue(getStudentFullName(student)) + '</option>';
+        }).join(""),
+        '</select></label>',
         students.map(function (student) {
           const isSelected = selectedStudent && String(selectedStudent.id || "") === String(student && student.id || "");
 
@@ -1376,14 +1303,14 @@ window.Unterrichtsassistent.ui.views.klasse = {
 
           competencyEntries.forEach(function (entry) {
             const key = String(entry && entry.competencyId || "").trim().toLowerCase();
-            if (!key) {
+            if (!key || entry.quality === null || entry.quality === undefined || String(entry.quality).trim() === "" || !Number.isFinite(Number(entry.quality))) {
               return;
             }
             if (!mathStats[key]) {
               mathStats[key] = { count: 0, qualities: [], latest: "" };
             }
             mathStats[key].count += 1;
-            mathStats[key].qualities.push(Number(entry.quality));
+            mathStats[key].qualities.push(Math.max(0, Math.min(4, Number(entry.quality) + (raw.mathObservationQualityScale === "0-4" ? 0 : 2))));
             mathStats[key].latest = record.date > mathStats[key].latest ? record.date : mathStats[key].latest;
           });
         } else if (record.type === "evidenceObservation") {
@@ -1503,116 +1430,33 @@ window.Unterrichtsassistent.ui.views.klasse = {
       ].join("");
     }
 
-    function buildStudentAnalysisPerformance(records) {
-      const completedPercents = records.map(getCompletedEvaluationPercent).filter(function (value) {
-        return Number.isFinite(Number(value));
-      });
-      const assessments = records.filter(function (record) {
-        return record.type === "assessment";
-      }).map(function (record) {
-        return getAssessmentPerformanceValue(record.raw || {});
-      }).filter(function (value) {
-        return Number.isFinite(Number(value));
-      });
-      const workBehavior = records.filter(function (record) {
-        return record.type === "assessment";
-      }).map(function (record) {
-        return getAssessmentWorkBehaviorValue(record.raw || {});
-      }).filter(function (value) {
-        return Number.isFinite(Number(value));
-      });
-      const contexts = getStudentAnalysisObservationContexts(records);
-
-      return [
-        '<section class="student-analysis-section student-analysis-section--performance">',
-        '<h3>Leistung nach Kontext</h3>',
-        '<div class="student-analysis-performance-grid">',
-        buildStudentAnalysisMetricCard("Bewertungen", completedPercents.length ? Math.round(getAverageNumber(completedPercents)) + " %" : "-", completedPercents.length ? String(completedPercents.length) + " abgeschlossene Bewertungen" : "keine abgeschlossenen Punktewerte"),
-        buildStudentAnalysisMetricCard("Unterrichtsleistung", assessments.length ? formatStudentAnalysisNumber(getAverageNumber(assessments)) : "-", assessments.length ? "AFB-Raster aus " + String(assessments.length) + " Eintraegen" : "keine Unterrichtsbewertungen"),
-        buildStudentAnalysisMetricCard("Arbeitsverhalten", workBehavior.length ? formatStudentAnalysisNumber(getAverageNumber(workBehavior)) : "-", workBehavior.length ? "A=4 bis D=1" : "keine AV-Daten"),
-        '<div class="student-analysis-card student-analysis-card--wide"><span class="student-analysis-card__label">Beobachtungskontext</span>', buildStudentAnalysisContextList(contexts), '</div>',
-        '</div>',
-        '</section>'
-      ].join("");
-    }
-
-    function buildStudentAnalysisTimeline(records) {
-      const sortedRecords = records.slice().sort(function (left, right) {
-        return String(right.sortKey || right.date || "").localeCompare(String(left.sortKey || left.date || ""));
-      }).slice(0, 14);
-
-      return [
-        '<section class="student-analysis-section student-analysis-section--timeline">',
-        '<h3>Timeline</h3>',
-        '<div class="student-analysis-timeline">',
-        sortedRecords.map(function (record) {
-          const context = getRecordContextLabel(record);
-          return [
-            '<button class="student-analysis-timeline__item" type="button" onclick="return window.UnterrichtsassistentApp.openClassAnalysisDetail(\'', escapeValue(record.studentId), '\', \'', escapeValue(getGroupInfoForDate(record.date).key), '\', \'', escapeValue(formatFullDateLabel(record.date)), '\')">',
-            '<span class="student-analysis-timeline__date">', escapeValue(formatFullDateLabel(record.date)), '</span>',
-            '<strong>', escapeValue(getRecordTypeLabel(record.type)), '</strong>',
-            '<span>', escapeValue(getStudentRecordSummary(record)), '</span>',
-            context ? '<em>' + escapeValue(context) + '</em>' : '',
-            '</button>'
-          ].join("");
-        }).join("") || '<div class="student-analysis-timeline__empty">Noch keine Datensaetze fuer diesen Schueler.</div>',
-        '</div>',
-        '</section>'
-      ].join("");
-    }
-
     function buildStudentAnalysisView() {
       const selectedStudent = students.find(function (student) {
         return String(student && student.id || "") === activeClassStudentAnalysisStudentId;
       }) || students[0] || null;
-      const records = selectedStudent
-        ? allAnalysisRecords.filter(function (record) {
-            return String(record && record.studentId || "") === String(selectedStudent.id || "");
-          })
-        : [];
-      const sourceCounts = getStudentAnalysisSourceCounts(records);
-      const evidenceDayCount = getStudentAnalysisEvidenceDayCount(records);
-      const latestRecord = records.slice().sort(function (left, right) {
-        return String(right.sortKey || right.date || "").localeCompare(String(left.sortKey || left.date || ""));
-      })[0] || null;
-      const openGapCount = records.filter(function (record) {
-        return record.type === "knowledgeGap" && String(record.raw && record.raw.status || "offen") !== "geschlossen";
-      }).length;
-      const homeworkIssueCount = records.filter(function (record) {
-        const quality = String(record.raw && record.raw.quality || "").trim();
-        return record.type === "homework" && ["fehlt", "unvollstaendig", "abgeschrieben"].indexOf(quality) >= 0 && !record.raw.ignored;
-      }).length;
-      const absentCount = records.filter(function (record) {
-        return record.type === "attendance" && String(record.raw && record.raw.status || "") === "absent";
-      }).length;
-
-      return [
-        '<div class="student-analysis-layout">',
-        buildStudentAnalysisSelector(selectedStudent),
-        '<div class="student-analysis-main">',
-        selectedStudent ? [
-          '<section class="student-analysis-hero">',
-          '<div>',
-          '<div class="student-analysis-hero__kicker">Lerngruppe &gt; Schueler</div>',
-          '<h2>', escapeValue(getStudentFullName(selectedStudent) || getStudentAnalysisName(selectedStudent)), '</h2>',
-          '<p>', escapeValue([schoolClass && schoolClass.name, schoolClass && schoolClass.subject].filter(Boolean).join(" | ")), '</p>',
-          '</div>',
-          '<div class="student-analysis-hero__cards">',
-          buildStudentAnalysisMetricCard("Datenlage", String(evidenceDayCount), "Evidenztage"),
-          buildStudentAnalysisMetricCard("Datensaetze", String(records.length), latestRecord ? "zuletzt " + formatFullDateLabel(latestRecord.date) : "noch keine Daten"),
-          buildStudentAnalysisMetricCard("Offene Luecken", String(openGapCount), "Wissensluecken"),
-          buildStudentAnalysisMetricCard("Kontextsignale", String(homeworkIssueCount + absentCount), "HA/Abwesenheit"),
-          '</div>',
-          '</section>',
-          buildStudentAnalysisSourceBar(sourceCounts, records.length),
-          buildStudentAnalysisPerformance(records),
-          buildStudentAnalysisCompetencies(records),
-          buildStudentAnalysisGapsAndSteps(records),
-          buildStudentAnalysisTimeline(records)
-        ].join("") : '<p class="empty-message">Noch keine Schuelerdaten in dieser Lerngruppe.</p>',
-        '</div>',
-        '</div>'
-      ].join("");
+      if (!selectedStudent) return '<p class="empty-message">Noch keine Schülerdaten in dieser Lerngruppe.</p>';
+      const records = allAnalysisRecords.filter(function (record) {
+        return record.studentId === selectedStudent.id;
+      }).map(function (record) {
+        return Object.assign({}, record, {
+          date: record.date || normalizeDateValue(record.raw.recordedAt || record.raw.completedAt || record.raw.createdAt),
+          groupKey: getGroupInfoForDate(record.date).key,
+          label: getRecordTypeLabel(record.type),
+          summary: [getStudentRecordSummary(record), record.type === "evidenceObservation" ? String(record.raw.note || "").trim() : ""].filter(Boolean).join(" | "),
+          context: getRecordContextLabel(record),
+          percent: getCompletedEvaluationPercent(record)
+        });
+      });
+      return '<div class="student-analysis-layout">' + buildStudentAnalysisSelector(selectedStudent)
+        + window.UnterrichtsassistentApp.studentOverview.render({
+          snapshot: service.snapshot,
+          schoolClass: schoolClass,
+          student: selectedStudent,
+          studentName: getStudentFullName(selectedStudent) || getStudentAnalysisName(selectedStudent),
+          referenceDate: window.Unterrichtsassistent.ui.viewHelpers.toIsoDate(service.getReferenceDate()),
+          records: records,
+          buildDetails: function (filteredRecords) { return buildStudentAnalysisCompetencies(filteredRecords) + buildStudentAnalysisGapsAndSteps(filteredRecords); }
+        }) + '</div>';
     }
     const analysisGroups = Array.from(new Map(analysisRecords.filter(function (record) {
       return Boolean(record.groupKey);
@@ -2238,6 +2082,13 @@ window.Unterrichtsassistent.ui.views.klasse = {
         '<label class="class-meta-editor__field">',
         '<span>Anzeigefarbe</span>',
         '<input class="student-table__input class-color-input" type="color" value="', escapeValue(classDisplayColor), '" onchange="window.UnterrichtsassistentApp.updateActiveClassField(\'displayColor\', this.value)">',
+        '</label>',
+        '<label class="class-meta-editor__field">',
+        '<span>Notenschema für Zwischennoten</span>',
+        '<select id="classGradingScheme" class="student-table__select" onchange="window.UnterrichtsassistentApp.updateActiveClassField(\'gradingScheme\', this.value)">',
+        '<option value="grades"', schoolClass.gradingScheme !== "points" ? ' selected' : '', '>Deutsche Noten (1–6)</option>',
+        '<option value="points"', schoolClass.gradingScheme === "points" ? ' selected' : '', '>Oberstufe (0–15 Punkte)</option>',
+        '</select>',
         '</label>',
         '</div>',
         '<div class="table-header">',

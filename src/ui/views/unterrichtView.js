@@ -10,6 +10,9 @@ window.Unterrichtsassistent.ui.views.unterricht = {
     const viewMode = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getUnterrichtViewMode === "function"
       ? window.UnterrichtsassistentApp.getUnterrichtViewMode()
       : "live";
+    if (viewMode === "nachpflege" && window.UnterrichtsassistentApp.nachpflege) {
+      return window.UnterrichtsassistentApp.nachpflege.render();
+    }
     const toolMode = window.UnterrichtsassistentApp && typeof window.UnterrichtsassistentApp.getUnterrichtToolMode === "function"
       ? window.UnterrichtsassistentApp.getUnterrichtToolMode()
       : "attendance";
