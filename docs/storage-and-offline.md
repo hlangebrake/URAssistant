@@ -77,3 +77,30 @@ werden über `unterrichtsassistent:storage-status` als CustomEvent veröffentlic
 mit einer kontrollierten Uhr, Fehlerversuche, Status, die Wiederherstellung mit
 echter WebCrypto-Verschlüsselung und den Service Worker mit isolierten Caches.
 Diese Tests ersetzen keinen Offline-Neustart auf dem tatsächlichen iPad.
+
+`node --test tests/*.test.cjs` führt auch `tests/release.test.cjs` aus. Der
+Release-Test prüft für beide Einstiegsseiten, dass jede lokale Skript- und
+Stylesheet-URL genau einen `v`-Parameter mit der Release-Kennung aus
+`service-worker.js` enthält und die referenzierte Datei existiert. Icons und
+Manifest benötigen keinen Versionsparameter.
+
+Zusätzlich vergleicht er alle Dateien unter `src/` und die App-Dateien im
+Repository-Hauptverzeichnis (einschließlich Service Worker, HTML, Styles,
+Manifest und Icons) mit einem Git-Basisstand. Hinzufügen, Entfernen oder Ändern
+dieser Dateien erfordert eine andere Release-Kennung, auch wenn sämtliche
+URL-Parameter noch untereinander übereinstimmen. Reine Dokumentations- und
+Teständerungen erfordern keinen Versionswechsel.
+
+Lokal ist der Basisstand `HEAD` (Prüfung noch nicht committeter Änderungen).
+Für bereits committete Änderungen den Stand vor der Veröffentlichung explizit
+angeben: `RELEASE_BASE_REF=<Basis-Commit> node --test tests/release.test.cjs`.
+Ein fehlender Git-Basisstand ist ein Fehler; der Vergleich wird nicht übersprungen.
+Die GitHub-Actions-Prüfung lädt die vollständige Historie und verwendet für Pull
+Requests den Basis-Commit, für Pushes auf `master` den vorherigen Branch-Stand.
+Für mehrere Commits wird damit der gesamte Änderungssatz geprüft.
+
+Die Negativtests arbeiten ausschließlich mit synthetischen Quelldateien und
+einem temporären Git-Repository. Ein dort committiertes Update ohne Cache-Bump
+muss den Testprozess mit Exit-Code 1 beenden; nach gemeinsamem Versionswechsel
+von Worker und HTML-URLs muss derselbe Test wieder erfolgreich sein.
+
