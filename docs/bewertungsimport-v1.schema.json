@@ -1,0 +1,488 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UR Assistant – vollständiger Bewertungsimport v1",
+  "description": "Zusätzlich semantische Regeln aus bewertungsimport-v1.md prüfen (IDs, Referenzen, Summen, Dateisignaturen).",
+  "type": "object",
+  "properties": {
+    "format": {
+      "const": "ur-assistant.assessment"
+    },
+    "version": {
+      "const": 1
+    },
+    "exportId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "\\S"
+    },
+    "exportedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "appId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "\\S"
+        },
+        "appName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "appId",
+        "appName"
+      ],
+      "additionalProperties": true
+    },
+    "assessment": {
+      "$ref": "#/$defs/assessment"
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/result"
+      },
+      "maxItems": 1000,
+      "minItems": 1
+    }
+  },
+  "required": [
+    "format",
+    "version",
+    "exportId",
+    "exportedAt",
+    "source",
+    "assessment",
+    "results"
+  ],
+  "additionalProperties": true,
+  "$defs": {
+    "assessment": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "\\S"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "date": {
+          "type": "string",
+          "format": "date"
+        },
+        "type": {
+          "enum": [
+            "schriftliche",
+            "sonstige"
+          ]
+        },
+        "subject": {
+          "type": "string",
+          "maxLength": 100000
+        },
+        "className": {
+          "type": "string",
+          "maxLength": 100000
+        },
+        "workingTimeMinutes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 525600
+        },
+        "instructions": {
+          "type": "string",
+          "maxLength": 100000
+        },
+        "gradingScale": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "pattern": "\\S"
+              },
+              "minPercent": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100
+              }
+            },
+            "required": [
+              "label",
+              "minPercent"
+            ],
+            "additionalProperties": true
+          },
+          "maxItems": 30,
+          "minItems": 1
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/task"
+          },
+          "maxItems": 200,
+          "minItems": 1
+        },
+        "documents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/document"
+          },
+          "maxItems": 100,
+          "minItems": 0
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "date",
+        "type",
+        "gradingScale",
+        "tasks"
+      ],
+      "additionalProperties": true
+    },
+    "task": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "\\S"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 100000
+        },
+        "subtasks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/subtask"
+          },
+          "maxItems": 200,
+          "minItems": 1
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "subtasks"
+      ],
+      "additionalProperties": true
+    },
+    "subtask": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "\\S"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 100000
+        },
+        "expectedAnswer": {
+          "type": "string",
+          "maxLength": 100000
+        },
+        "maxPoints": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100000,
+          "multipleOf": 0.5
+        },
+        "isAdditionalTask": {
+          "type": "boolean"
+        },
+        "afb": {
+          "enum": [
+            "afb1",
+            "afb1/2",
+            "afb2",
+            "afb2/3",
+            "afb3"
+          ]
+        },
+        "topics": {
+          "type": "string",
+          "maxLength": 100000
+        },
+        "criteria": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/criterion"
+          },
+          "maxItems": 200,
+          "minItems": 0
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "maxPoints"
+      ],
+      "additionalProperties": true
+    },
+    "criterion": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "\\S"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100000
+        },
+        "maxPoints": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100000,
+          "multipleOf": 0.5
+        }
+      },
+      "required": [
+        "id",
+        "text",
+        "maxPoints"
+      ],
+      "additionalProperties": true
+    },
+    "student": {
+      "type": "object",
+      "properties": {
+        "externalId": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "urStudentId": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "firstName": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "lastName": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "\\S"
+        },
+        "student": {
+          "$ref": "#/$defs/student"
+        },
+        "status": {
+          "enum": [
+            "present",
+            "absent"
+          ]
+        },
+        "subtaskResults": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/subtaskResult"
+          },
+          "maxItems": 1000,
+          "minItems": 0
+        },
+        "gradeLabel": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "overallComment": {
+          "type": "string",
+          "maxLength": 100000
+        }
+      },
+      "required": [
+        "id",
+        "student",
+        "status"
+      ],
+      "additionalProperties": true
+    },
+    "subtaskResult": {
+      "type": "object",
+      "properties": {
+        "subtaskId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "\\S"
+        },
+        "points": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100000,
+          "multipleOf": 0.5
+        },
+        "gradeLabel": {
+          "type": "string",
+          "maxLength": 100000
+        },
+        "comment": {
+          "type": "string",
+          "maxLength": 100000
+        },
+        "answer": {
+          "type": "string",
+          "maxLength": 100000
+        },
+        "positiveNotes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100000
+          },
+          "maxItems": 200,
+          "minItems": 0
+        },
+        "negativeNotes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100000
+          },
+          "maxItems": 200,
+          "minItems": 0
+        },
+        "criterionResults": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "criterionId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "pattern": "\\S"
+              },
+              "points": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100000,
+                "multipleOf": 0.5
+              },
+              "comment": {
+                "type": "string",
+                "maxLength": 100000
+              }
+            },
+            "required": [
+              "criterionId",
+              "points"
+            ],
+            "additionalProperties": true
+          },
+          "maxItems": 200,
+          "minItems": 0
+        }
+      },
+      "required": [
+        "subtaskId",
+        "points"
+      ],
+      "additionalProperties": true
+    },
+    "document": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "\\S"
+        },
+        "fileName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[^\\\\/\\u0000-\\u001f]+\\.([pP][dD][fF]|[pP][nN][gG]|[jJ][pP][eE]?[gG])$"
+        },
+        "mimeType": {
+          "enum": [
+            "application/pdf",
+            "image/png",
+            "image/jpeg"
+          ]
+        },
+        "role": {
+          "enum": [
+            "question-paper",
+            "rubric",
+            "correction"
+          ]
+        },
+        "studentRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "\\S"
+        },
+        "dataBase64": {
+          "type": "string",
+          "minLength": 4,
+          "contentEncoding": "base64"
+        }
+      },
+      "required": [
+        "id",
+        "fileName",
+        "mimeType",
+        "role",
+        "dataBase64"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

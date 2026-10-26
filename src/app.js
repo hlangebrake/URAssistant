@@ -950,6 +950,7 @@ function clearSensitiveRuntimeState() {
   if (window.UnterrichtsassistentApp.nachpflege) window.UnterrichtsassistentApp.nachpflege.clear();
   if (window.UnterrichtsassistentApp.studentOverview) window.UnterrichtsassistentApp.studentOverview.clear();
   if (window.UnterrichtsassistentApp.workspace) window.UnterrichtsassistentApp.workspace.clear();
+  if (window.UnterrichtsassistentApp.assessmentImport) window.UnterrichtsassistentApp.assessmentImport.clear();
   rawState = null;
   schoolService = null;
   unlockedMasterKeyBytes = null;
@@ -13055,7 +13056,7 @@ function buildPerformedEvaluationSummary(plannedEvaluation, evaluationSheet, per
     totalReachable: totalReachable,
     totalAdditionalReachable: totalAdditionalReachable,
     percent: percent,
-    stageLabel: getPlannedEvaluationStageLabelForPoints(plannedEvaluation && plannedEvaluation.gradingSystem, totalAchieved, totalReachable)
+    stageLabel: String(performedEvaluation && performedEvaluation.gradeLabel || "").trim() || getPlannedEvaluationStageLabelForPoints(plannedEvaluation && plannedEvaluation.gradingSystem, totalAchieved, totalReachable)
   };
 }
 
@@ -13274,6 +13275,7 @@ function buildPerformedEvaluationPdfDocument(plannedEvaluation, evaluationSheet,
             '<tr>',
             '<td class="task-title">', escapeHtml(String(subtask && subtask.title || "").trim() || "Ohne Titel"), isEvaluationSubtaskAdditional(subtask) ? '<span class="additional-badge">Zusatzaufgabe</span>' : '', '</td>',
             '<td>',
+            subtaskResult && subtaskResult.gradeLabel ? '<div class="feedback-block"><strong>Teilnote:</strong> ' + escapeHtml(subtaskResult.gradeLabel) + '</div>' : '',
             buildFeedbackBlock("Negative Aspekte", negativeItems),
             buildFeedbackBlock("Positive Aspekte", positiveItems),
             noteValue ? '<div class="feedback-block"><strong>Bemerkung:</strong> ' + escapeHtml(noteValue) + '</div>' : '',
@@ -15564,17 +15566,21 @@ function normalizeEvaluationTaskSheet(rawTaskSheet) {
       return {
         id: String(taskSource.id || createEvaluationTaskId()).trim(),
         title: String(taskSource.title || "").trim(),
+        text: String(taskSource.text || ""),
         subtasks: subtasks.map(function (subtask) {
           const subtaskSource = subtask && typeof subtask === "object" ? subtask : {};
 
           return {
             id: String(subtaskSource.id || createEvaluationSubtaskId()).trim(),
             title: String(subtaskSource.title || "").trim(),
+            text: String(subtaskSource.text || ""),
+            expectedAnswer: String(subtaskSource.expectedAnswer || ""),
+            criteria: Array.isArray(subtaskSource.criteria) ? JSON.parse(JSON.stringify(subtaskSource.criteria)) : [],
             topics: String(subtaskSource.topics || "").trim(),
             afb: ["afb1", "afb1/2", "afb2", "afb2/3", "afb3"].indexOf(String(subtaskSource.afb || "").trim().toLowerCase()) >= 0
               ? String(subtaskSource.afb || "").trim().toLowerCase()
               : "afb1",
-            be: Math.max(0, Number.isFinite(Number(subtaskSource.be)) ? Math.round(Number(subtaskSource.be)) : 0),
+            be: Math.max(0, Number.isFinite(Number(subtaskSource.be)) ? Math.round(Number(subtaskSource.be) * 2) / 2 : 0),
             isAdditionalTask: Boolean(subtaskSource.isAdditionalTask),
             competencyAspectIds: normalizeEvaluationCompetencyAspectIds(subtaskSource.competencyAspectIds),
             curriculumTopicNodeIds: normalizeCurriculumTopicNodeIds(subtaskSource.curriculumTopicNodeIds)
@@ -28054,6 +28060,19 @@ window.UnterrichtsassistentApp.closePlannedEvaluationModal = function () {
 
   return false;
 };
+window.UnterrichtsassistentApp.assessmentImport = window.Unterrichtsassistent.features.evaluation.assessmentImport.createController({
+  snapshot: function () { return schoolService ? serializeSnapshot(schoolService.snapshot) : {}; },
+  activeClass: function () { return schoolService ? schoolService.getActiveClass() : null; },
+  students: function (classId) { return schoolService ? schoolService.getStudentsForClass(classId) : []; },
+  render: function () { if (activeViewId === "bewertung") setActiveView("bewertung"); },
+  commit: function (result) {
+    activePerformedPlannedEvaluationId = result.planned.id;
+    activePerformedEvaluationStudentId = result.planned.studentIds[0];
+    activePerformedEvaluationStudentFilter = "alle";
+    activePlannedEvaluationDraft = null;
+    return saveAndRefreshSnapshot(result.snapshot, "bewertung", { forcePersist: true });
+  }
+});
 window.UnterrichtsassistentApp.openClasstimeImportFilePicker = function () {
   const fileInput = document.getElementById("classtimeImportInput");
 
@@ -29355,7 +29374,13 @@ window.UnterrichtsassistentApp.updatePerformedEvaluationSubtaskField = function 
   }
 
   if (normalizedFieldName === "points") {
-    subtaskResult.points = normalizePerformedEvaluationPoints(nextValue, maxValue);
+    const nextPoints = normalizePerformedEvaluationPoints(nextValue, maxValue);
+    if (nextPoints !== subtaskResult.points) {
+      performedEvaluation.gradeLabel = "";
+      subtaskResult.gradeLabel = "";
+      subtaskResult.criterionResults = [];
+    }
+    subtaskResult.points = nextPoints;
   } else {
     subtaskResult[normalizedFieldName] = normalizePerformedEvaluationText(nextValue);
   }
@@ -30101,7 +30126,7 @@ window.UnterrichtsassistentApp.updateEvaluationSubtaskField = function (taskId, 
   const subtask = task ? getEvaluationSubtaskById(task, subtaskId) : null;
   const normalizedFieldName = String(fieldName || "").trim();
   const normalizedAfb = String(nextValue || "").trim().toLowerCase();
-  const beValue = Math.max(0, Number.isFinite(Number(nextValue)) ? Math.round(Number(nextValue)) : 0);
+  const beValue = Math.max(0, Number.isFinite(Number(nextValue)) ? Math.round(Number(nextValue) * 2) / 2 : 0);
 
   if (!repository || !schoolService || !currentRawSnapshot || !activeSheet || !subtask) {
     return false;

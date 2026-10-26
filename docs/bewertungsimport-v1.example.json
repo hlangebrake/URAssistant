@@ -1,0 +1,190 @@
+{
+  "format": "ur-assistant.assessment",
+  "version": 1,
+  "exportId": "export-chemie-2026-10-26-001",
+  "exportedAt": "2026-10-26T15:30:00+01:00",
+  "source": {
+    "appId": "de.beispiel.klausurkorrektur",
+    "appName": "Klausurkorrektur"
+  },
+  "assessment": {
+    "id": "klausur-chemie-11-2026-10-23",
+    "title": "Chemie – Atombau",
+    "date": "2026-10-23",
+    "type": "schriftliche",
+    "subject": "Chemie",
+    "className": "11a",
+    "workingTimeMinutes": 45,
+    "instructions": "Bearbeite alle regulären Teilaufgaben. Die Zusatzaufgabe ist freiwillig.",
+    "gradingScale": [
+      {
+        "label": "1",
+        "minPercent": 90
+      },
+      {
+        "label": "2",
+        "minPercent": 75
+      },
+      {
+        "label": "3",
+        "minPercent": 60
+      },
+      {
+        "label": "4",
+        "minPercent": 45
+      },
+      {
+        "label": "5",
+        "minPercent": 20
+      },
+      {
+        "label": "6",
+        "minPercent": 0
+      }
+    ],
+    "tasks": [
+      {
+        "id": "a1",
+        "title": "1. Atombau",
+        "text": "Beschreibe das Kern-Hülle-Modell.",
+        "subtasks": [
+          {
+            "id": "a1a",
+            "title": "1a – Teilchen",
+            "text": "Benenne die Teilchen und ihre Ladungen.",
+            "expectedAnswer": "Protonen sind positiv, Neutronen neutral und Elektronen negativ geladen.",
+            "maxPoints": 3,
+            "isAdditionalTask": false,
+            "afb": "afb1",
+            "topics": "Atombau, Elementarteilchen",
+            "criteria": [
+              {
+                "id": "c-proton",
+                "text": "Proton: positiv",
+                "maxPoints": 1
+              },
+              {
+                "id": "c-neutron",
+                "text": "Neutron: neutral",
+                "maxPoints": 1
+              },
+              {
+                "id": "c-elektron",
+                "text": "Elektron: negativ",
+                "maxPoints": 1
+              }
+            ]
+          },
+          {
+            "id": "a1b",
+            "title": "1b – Aufbau",
+            "text": "Ordne die Teilchen dem Kern beziehungsweise der Hülle zu.",
+            "expectedAnswer": "Protonen und Neutronen befinden sich im Kern, Elektronen in der Hülle.",
+            "maxPoints": 2.5,
+            "afb": "afb1"
+          },
+          {
+            "id": "a1z",
+            "title": "Zusatz – Modellgrenze",
+            "text": "Nenne eine Grenze dieses Modells.",
+            "expectedAnswer": "Das Modell beschreibt nicht die quantenmechanische Aufenthaltswahrscheinlichkeit der Elektronen.",
+            "maxPoints": 1,
+            "isAdditionalTask": true,
+            "afb": "afb3"
+          }
+        ]
+      }
+    ],
+    "documents": []
+  },
+  "results": [
+    {
+      "id": "result-anna",
+      "student": {
+        "externalId": "person-17",
+        "firstName": "Anna",
+        "lastName": "Mueller",
+        "displayName": "Anna Mueller"
+      },
+      "status": "present",
+      "gradeLabel": "2",
+      "overallComment": "Solide Grundlagen; die Zuordnung zum Kern noch präzisieren.",
+      "subtaskResults": [
+        {
+          "subtaskId": "a1a",
+          "points": 3,
+          "gradeLabel": "1",
+          "answer": "Proton +, Neutron 0, Elektron −",
+          "positiveNotes": [
+            "Alle Ladungen richtig."
+          ],
+          "negativeNotes": [],
+          "comment": "Vollständig.",
+          "criterionResults": [
+            {
+              "criterionId": "c-proton",
+              "points": 1,
+              "comment": "Richtig."
+            },
+            {
+              "criterionId": "c-neutron",
+              "points": 1
+            },
+            {
+              "criterionId": "c-elektron",
+              "points": 1
+            }
+          ]
+        },
+        {
+          "subtaskId": "a1b",
+          "points": 1.5,
+          "gradeLabel": "3",
+          "negativeNotes": [
+            "Zuordnung zum Kern unvollständig."
+          ],
+          "comment": "Die Neutronen im Kern fehlen."
+        },
+        {
+          "subtaskId": "a1z",
+          "points": 0,
+          "comment": "Nicht bearbeitet."
+        }
+      ]
+    },
+    {
+      "id": "result-ben",
+      "student": {
+        "externalId": "person-18",
+        "displayName": "Ben"
+      },
+      "status": "present",
+      "subtaskResults": [
+        {
+          "subtaskId": "a1a",
+          "points": 2,
+          "gradeLabel": "3",
+          "comment": "Neutronenladung fehlt."
+        },
+        {
+          "subtaskId": "a1b",
+          "points": 2.5,
+          "gradeLabel": "1"
+        },
+        {
+          "subtaskId": "a1z",
+          "points": 0
+        }
+      ]
+    },
+    {
+      "id": "result-clara",
+      "student": {
+        "externalId": "person-19",
+        "displayName": "Clara Kurz"
+      },
+      "status": "absent",
+      "subtaskResults": []
+    }
+  ]
+}

@@ -1,9 +1,10 @@
 // Bump this release when publishing changed app files. An update becomes active
 // after all old app windows close, so one session never mixes two app releases.
 const CACHE_PREFIX = "unterrichtsassistent-shell-";
-const CACHE_NAME = CACHE_PREFIX + "20260920-workspace-5";
+const CACHE_NAME = CACHE_PREFIX + "20261026-assessment-import-1";
 const SHELL_PAGES = ["./index.html", "./auth.html"];
 const EXTRA_ASSETS = [
+  "./docs/bewertungsimport-v1.md", "./docs/bewertungsimport-v1.schema.json", "./docs/bewertungsimport-v1.example.json",
   "./manifest.webmanifest", "./icon.png", "./apple-touch-icon.png",
   "./apple-touch-icon-167x167.png", "./apple-touch-icon-152x152.png",
   "./src/data/kc-mathematik-sek-1-sek-2.json", "./src/data/kc-informatik-sek-2.json"

@@ -145,7 +145,7 @@ class Assessment {
 }
 
 class EvaluationSheet {
-  constructor({ id, classId = "", type = "aufgabenbogen", title = "", createdAt = "", workingTimeMinutes = 0, taskSheet = {}, competencyGrid = {}, competencySourceToolId = "", curriculumSeriesIds = [], curriculumSequenceIds = [], curriculumLessonIds = [] }) {
+  constructor({ id, classId = "", type = "aufgabenbogen", title = "", createdAt = "", workingTimeMinutes = 0, instructions = "", documents = [], taskSheet = {}, competencyGrid = {}, competencySourceToolId = "", curriculumSeriesIds = [], curriculumSequenceIds = [], curriculumLessonIds = [] }) {
     const normalizedType = String(type || "").trim().toLowerCase() === "kompetenzraster"
       ? "kompetenzraster"
       : "aufgabenbogen";
@@ -161,15 +161,19 @@ class EvaluationSheet {
           return {
             id: String(taskSource.id || "").trim(),
             title: String(taskSource.title || "").trim(),
+            text: String(taskSource.text || ""),
             subtasks: subtasks.map(function (subtask) {
               const subtaskSource = subtask && typeof subtask === "object" ? subtask : {};
 
               return {
                 id: String(subtaskSource.id || "").trim(),
                 title: String(subtaskSource.title || "").trim(),
+                text: String(subtaskSource.text || ""),
+                expectedAnswer: String(subtaskSource.expectedAnswer || ""),
+                criteria: Array.isArray(subtaskSource.criteria) ? JSON.parse(JSON.stringify(subtaskSource.criteria)) : [],
                 topics: String(subtaskSource.topics || "").trim(),
                 afb: String(subtaskSource.afb || "").trim(),
-                be: Math.max(0, Number.isFinite(Number(subtaskSource.be)) ? Math.round(Number(subtaskSource.be)) : 0),
+                be: Math.max(0, Number.isFinite(Number(subtaskSource.be)) ? Math.round(Number(subtaskSource.be) * 2) / 2 : 0),
                 isAdditionalTask: Boolean(subtaskSource.isAdditionalTask),
                 competencyAspectIds: Array.isArray(subtaskSource.competencyAspectIds)
                   ? subtaskSource.competencyAspectIds.map(function (aspectId) {
@@ -255,6 +259,8 @@ class EvaluationSheet {
     this.title = String(title || "").trim();
     this.createdAt = String(createdAt || "").trim();
     this.workingTimeMinutes = Math.max(0, Number.isFinite(Number(workingTimeMinutes)) ? Math.round(Number(workingTimeMinutes)) : 0);
+    this.instructions = String(instructions || "");
+    this.documents = Array.isArray(documents) ? JSON.parse(JSON.stringify(documents)) : [];
     this.competencySourceToolId = String(competencySourceToolId || "").trim();
     this.curriculumSeriesIds = Array.isArray(curriculumSeriesIds) ? curriculumSeriesIds.slice() : [];
     this.curriculumSequenceIds = Array.isArray(curriculumSequenceIds) ? curriculumSequenceIds.slice() : [];
@@ -403,7 +409,7 @@ class EvidenceTool {
 }
 
 class PlannedEvaluation {
-  constructor({ id, classId = "", type = "sonstige", evaluationSheetId = "", date = "", studentIds = [], createPlanningEvent = true, planningEventId = "", createdAt = "", gradingSystem = [] }) {
+  constructor({ id, classId = "", type = "sonstige", evaluationSheetId = "", date = "", studentIds = [], createPlanningEvent = true, planningEventId = "", createdAt = "", gradingSystem = [], importSource = null }) {
     this.id = id;
     this.classId = String(classId || "").trim();
     this.type = String(type || "").trim().toLowerCase() === "schriftliche"
@@ -419,6 +425,7 @@ class PlannedEvaluation {
     this.createPlanningEvent = Boolean(createPlanningEvent);
     this.planningEventId = String(planningEventId || "").trim();
     this.createdAt = String(createdAt || "").trim();
+    this.importSource = importSource && typeof importSource === "object" ? JSON.parse(JSON.stringify(importSource)) : null;
     this.gradingSystem = Array.isArray(gradingSystem)
       ? gradingSystem.map(function (entry) {
           const source = entry && typeof entry === "object" ? entry : {};
@@ -436,7 +443,7 @@ class PlannedEvaluation {
 }
 
 class PerformedEvaluation {
-  constructor({ id, plannedEvaluationId = "", classId = "", studentId = "", evaluationSheetId = "", subtaskResults = [], competencyResults = [], overallNote = "", isCompleted = false, completedAt = "", createdAt = "", updatedAt = "" }) {
+  constructor({ id, plannedEvaluationId = "", classId = "", studentId = "", evaluationSheetId = "", subtaskResults = [], competencyResults = [], overallNote = "", gradeLabel = "", sourceResultId = "", sourceStudent = null, isCompleted = false, completedAt = "", createdAt = "", updatedAt = "" }) {
     this.id = id;
     this.plannedEvaluationId = String(plannedEvaluationId || "").trim();
     this.classId = String(classId || "").trim();
@@ -448,6 +455,9 @@ class PerformedEvaluation {
 
           return {
             subtaskId: String(source.subtaskId || "").trim(),
+            gradeLabel: String(source.gradeLabel || ""),
+            answer: String(source.answer || ""),
+            criterionResults: Array.isArray(source.criterionResults) ? JSON.parse(JSON.stringify(source.criterionResults)) : [],
             points: Math.max(0, Number.isFinite(Number(source.points)) ? Number(source.points) : 0),
             negativeNotes: Array.isArray(source.negativeNotes)
               ? source.negativeNotes.map(function (entry) { return String(entry || "").trim(); }).filter(Boolean)
@@ -486,6 +496,9 @@ class PerformedEvaluation {
           return Boolean(entry.rowId);
         })
       : [];
+    this.gradeLabel = String(gradeLabel || "").trim();
+    this.sourceResultId = String(sourceResultId || "");
+    this.sourceStudent = sourceStudent && typeof sourceStudent === "object" ? JSON.parse(JSON.stringify(sourceStudent)) : null;
     this.overallNote = String(overallNote || "").trim();
     this.isCompleted = Boolean(isCompleted);
     this.completedAt = this.isCompleted ? String(completedAt || "").trim() : "";

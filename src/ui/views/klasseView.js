@@ -1013,7 +1013,7 @@ window.Unterrichtsassistent.ui.views.klasse = {
         totalReachable: totalReachable,
         totalAdditionalReachable: totalAdditionalReachable,
         percent: percent,
-        stageLabel: getCompletedEvaluationStageLabel(plannedEvaluation, totalAchieved, totalReachable)
+        stageLabel: String(performedEvaluation && performedEvaluation.gradeLabel || "").trim() || getCompletedEvaluationStageLabel(plannedEvaluation, totalAchieved, totalReachable)
       };
     }
 

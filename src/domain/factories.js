@@ -140,8 +140,9 @@ function serializeDomainSnapshot(snapshot) {
   }
 
   function cloneEvaluationSheets(items) {
-    return cloneItems(items || [], ["id", "classId", "type", "title", "createdAt", "workingTimeMinutes", "competencySourceToolId", "taskSheet", "competencyGrid", "curriculumSeriesIds", "curriculumSequenceIds", "curriculumLessonIds"]).map(function (item) {
+    return cloneItems(items || [], ["id", "classId", "type", "title", "createdAt", "workingTimeMinutes", "instructions", "documents", "competencySourceToolId", "taskSheet", "competencyGrid", "curriculumSeriesIds", "curriculumSequenceIds", "curriculumLessonIds"]).map(function (item) {
       return Object.assign({}, item, {
+        documents: Array.isArray(item.documents) ? JSON.parse(JSON.stringify(item.documents)) : [],
         taskSheet: item.taskSheet && typeof item.taskSheet === "object"
           ? JSON.parse(JSON.stringify(item.taskSheet))
           : { tasks: [] },
@@ -234,8 +235,9 @@ function serializeDomainSnapshot(snapshot) {
   }
 
   function clonePlannedEvaluations(items) {
-    return cloneItems(items || [], ["id", "classId", "type", "evaluationSheetId", "date", "studentIds", "createPlanningEvent", "planningEventId", "createdAt", "gradingSystem"]).map(function (item) {
+    return cloneItems(items || [], ["id", "classId", "type", "evaluationSheetId", "date", "studentIds", "createPlanningEvent", "planningEventId", "createdAt", "gradingSystem", "importSource"]).map(function (item) {
       return Object.assign({}, item, {
+        importSource: item.importSource ? JSON.parse(JSON.stringify(item.importSource)) : null,
         studentIds: Array.isArray(item.studentIds) ? item.studentIds.slice() : [],
         gradingSystem: Array.isArray(item.gradingSystem)
           ? item.gradingSystem.map(function (entry) {
@@ -247,11 +249,12 @@ function serializeDomainSnapshot(snapshot) {
   }
 
   function clonePerformedEvaluations(items) {
-    return cloneItems(items || [], ["id", "plannedEvaluationId", "classId", "studentId", "evaluationSheetId", "subtaskResults", "competencyResults", "overallNote", "isCompleted", "completedAt", "createdAt", "updatedAt"]).map(function (item) {
+    return cloneItems(items || [], ["id", "plannedEvaluationId", "classId", "studentId", "evaluationSheetId", "subtaskResults", "competencyResults", "overallNote", "gradeLabel", "sourceResultId", "sourceStudent", "isCompleted", "completedAt", "createdAt", "updatedAt"]).map(function (item) {
       return Object.assign({}, item, {
+        sourceStudent: item.sourceStudent ? JSON.parse(JSON.stringify(item.sourceStudent)) : null,
         subtaskResults: Array.isArray(item.subtaskResults)
           ? item.subtaskResults.map(function (entry) {
-              return Object.assign({}, entry);
+              return JSON.parse(JSON.stringify(entry));
             })
           : [],
         competencyResults: Array.isArray(item.competencyResults)

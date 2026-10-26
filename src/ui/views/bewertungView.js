@@ -96,6 +96,11 @@ window.Unterrichtsassistent.ui.views.bewertung = {
     const formatShortDateLabel = window.Unterrichtsassistent.ui.viewHelpers.formatShortDateLabel;
     const formatLongDateLabel = window.Unterrichtsassistent.ui.viewHelpers.formatLongDateLabel;
 
+    function renderImportedDetails(sheet, result) {
+      const feature = window.Unterrichtsassistent.features && window.Unterrichtsassistent.features.evaluation && window.Unterrichtsassistent.features.evaluation.assessmentImport;
+      return feature ? feature.renderDetails(sheet, result) : "";
+    }
+
     function formatPointsLabel(value) {
       const numericValue = Number.isFinite(Number(value)) ? Number(value) : 0;
       const roundedValue = Math.round(numericValue * 2) / 2;
@@ -1189,7 +1194,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
     }
 
     function getBeValue(item) {
-      return Math.max(0, Number.isFinite(Number(item && item.be)) ? Math.round(Number(item.be)) : 0);
+      return Math.max(0, Number.isFinite(Number(item && item.be)) ? Number(item.be) : 0);
     }
 
     function isAdditionalSubtask(item) {
@@ -1875,7 +1880,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
           totalReachable: totalReachable,
           totalAdditionalReachable: totalAdditionalReachable,
           percent: percent,
-          stageLabel: getAchievedStageLabel(plannedEvaluation, totalAchieved, totalReachable),
+          stageLabel: String(performedEvaluation && performedEvaluation.gradeLabel || "").trim() || getAchievedStageLabel(plannedEvaluation, totalAchieved, totalReachable),
           isCompleted: Boolean(performedEvaluation && performedEvaluation.isCompleted),
           completedAt: String(performedEvaluation && performedEvaluation.completedAt || "").trim()
         };
@@ -2187,6 +2192,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
           '<button class="header-utility-button" type="button" onclick="return window.UnterrichtsassistentApp.exportActivePerformedEvaluationPdfSet()">PDF alle</button>',
           '</div>',
           '</div>',
+          renderImportedDetails(selectedEvaluationSheet),
           '<div class="bewertung-durchfuehrung__layout">',
           '<aside class="bewertung-durchfuehrung__students">',
           '<div class="bewertung-durchfuehrung__students-title">Schueler</div>',
@@ -2239,6 +2245,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
                       : '<button class="header-utility-button" type="button" onclick="return window.UnterrichtsassistentApp.togglePerformedEvaluationCompletionForSelectedStudent()">Fertig</button>',
                     '</div>',
                     '</div>',
+                    renderImportedDetails(selectedEvaluationSheet, selectedPerformedEvaluation),
                     isCompleted
                       ? (
                         tasks.length ? [
@@ -3198,7 +3205,9 @@ window.Unterrichtsassistent.ui.views.bewertung = {
 
         assignedStudents.forEach(function (student) {
           const achieved = getStudentColumnValue(student, totalColumn);
-          const stage = getAnalysisStageForPoints(achieved, maxValue, gradingStages);
+          const performed = performedLookup[String(student && student.id || "").trim()];
+          const importedGrade = String(performed && performed.gradeLabel || "").trim();
+          const stage = (importedGrade ? gradingStages.find(entry => entry.label === importedGrade) : null) || getAnalysisStageForPoints(achieved, maxValue, gradingStages);
           const stageId = String(stage && stage.id || noStageKey).trim();
 
           countsByStageId[stageId] = (countsByStageId[stageId] || 0) + 1;
@@ -3858,6 +3867,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
         '<div class="bewertung-task-sheet__header">',
         '<p class="bewertung-task-sheet__hint">Aufgaben werden nacheinander aufgebaut. Teilaufgaben koennen Themen, Anforderungsbereich, Bewertungseinheiten und Kompetenzen erhalten.</p>',
         '</div>',
+        renderImportedDetails(activeSheet),
         '<div class="bewertung-task-sheet__body">',
         tasks.map(function (task, taskIndex) {
           const taskId = String(task && task.id || "").trim();
@@ -3901,7 +3911,7 @@ window.Unterrichtsassistent.ui.views.bewertung = {
                 '</label>',
                 '<label class="bewertung-task-sheet__field">',
                 '<span class="bewertung-task-sheet__field-label">BE</span>',
-                '<input type="number" min="0" step="1" value="', escapeValue(String(Number(subtask && subtask.be) || 0)), '" onchange="return window.UnterrichtsassistentApp.updateEvaluationSubtaskField(\'', escapeValue(taskId), '\', \'', escapeValue(subtaskId), '\', \'be\', this.value)">',
+                '<input type="number" min="0" step="0.5" value="', escapeValue(String(Number(subtask && subtask.be) || 0)), '" onchange="return window.UnterrichtsassistentApp.updateEvaluationSubtaskField(\'', escapeValue(taskId), '\', \'', escapeValue(subtaskId), '\', \'be\', this.value)">',
                 '</label>',
                 '<label class="bewertung-task-sheet__field bewertung-task-sheet__field--additional">',
                 '<span class="bewertung-task-sheet__field-label">Zusatz</span>',
@@ -4491,20 +4501,23 @@ window.Unterrichtsassistent.ui.views.bewertung = {
     };
     const activeModeLabel = modeLabels[mode] || modeLabels.bewerten;
 
+    const importToolbar = window.UnterrichtsassistentApp && window.UnterrichtsassistentApp.assessmentImport
+      ? window.UnterrichtsassistentApp.assessmentImport.render() : "";
+
     if (mode === "erstellen" || mode === "entwerfen") {
-      return renderCreateMode();
+      return importToolbar + renderCreateMode();
     }
 
     if (mode === "bewerten") {
-      return renderBewertenMode();
+      return importToolbar + renderBewertenMode();
     }
 
     if (mode === "analysieren") {
-      return renderAnalysisMode();
+      return importToolbar + renderAnalysisMode();
     }
 
     if (mode === "evidenz") {
-      return renderEvidenceMode();
+      return importToolbar + renderEvidenceMode();
     }
 
     return [
